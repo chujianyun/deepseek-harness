@@ -61,6 +61,7 @@ function mountFrame() {
     if (key === 'sidebar') return <div data-testid="sidebar-content" />
     if (key === 'conversation') return <div data-testid="center-content" />
     if (key === 'details') return <div data-testid="details-content" />
+    if (key === 'shell.background') return <div data-testid="background-content" />
     if (key === 'conversation.empty') return <div data-testid="empty-content" />
     return <div data-testid="other-content" />
   }) as AppFrameProps['renderSlot']
@@ -96,8 +97,10 @@ function mountFrame() {
 }
 
 function tracks(frame: HTMLElement): number[] {
-  const m = /^(\d+)px minmax\(0, 1fr\) (\d+)px$/.exec(frame.style.gridTemplateColumns)
-  if (m === null) throw new Error(`unexpected template: ${frame.style.gridTemplateColumns}`)
+  const columns = frame.querySelector<HTMLElement>('[data-shell-columns]')
+  if (columns === null) throw new Error('missing columns layer')
+  const m = /^(\d+)px minmax\(0, 1fr\) (\d+)px$/.exec(columns.style.gridTemplateColumns)
+  if (m === null) throw new Error(`unexpected template: ${columns.style.gridTemplateColumns}`)
   return [Number(m[1]), Number(m[2])]
 }
 
@@ -140,6 +143,17 @@ describe('AppFrame', () => {
   it('renders three tracks from store state', () => {
     const { frame } = mountFrame()
     expect(tracks(frame)).toEqual([280, 0])
+  })
+
+  it('renders the frame background before columns and keeps the overlay above it', () => {
+    const { frame, getByTestId } = mountFrame()
+    const background = getByTestId('background-content').parentElement!
+    const columns = frame.querySelector('[data-shell-columns]')!
+    const overlay = frame.querySelector('[data-shell-overlay]')!
+    expect(background.hasAttribute('data-shell-background')).toBe(true)
+    expect(frame.firstElementChild).toBe(background)
+    expect(background.compareDocumentPosition(columns) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(background.compareDocumentPosition(overlay) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
   })
 
   it('renders the session pair with empty owner shares (sessionId is framework-standard)', () => {

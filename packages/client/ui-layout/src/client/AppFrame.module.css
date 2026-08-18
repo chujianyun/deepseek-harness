@@ -1,25 +1,31 @@
 .frame {
   position: relative; /* anchors the drag handles, which straddle column borders */
-  display: grid;
-  grid-template-rows: 100%;
   height: 100%;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
-  /* Collapse/expand animates the tracks on the deepsuite sider curve
-     (--ds-ease-in-out / --ds-transition-duration-slow, ui-theme base.css). */
-  transition: grid-template-columns var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
 /* Dragging writes widths at pointer cadence; easing them would detach the
    column from the handle. */
-.frame[data-dragging] {
+.frame[data-dragging] .columnsLayer {
   transition: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .frame {
+  .columnsLayer {
     transition: none;
   }
+}
+
+.columnsLayer {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: 100%;
+  height: 100%;
+  /* Collapse/expand animates the tracks on the deepsuite sider curve
+     (--ds-ease-in-out / --ds-transition-duration-slow, ui-theme base.css). */
+  transition: grid-template-columns var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
 .sidebarCol {
@@ -112,6 +118,18 @@
   inset: 0;
   z-index: 20;
   pointer-events: none;
+}
+
+.backgroundLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.backgroundLayer > * {
+  width: 100%;
+  height: 100%;
 }
 
 .overlayLayer > * {
