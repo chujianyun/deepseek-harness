@@ -43,3 +43,11 @@ Domain vocabulary for DeepSeek Harness uses one canonical term per concept. Term
 - **Ralph loop** — one foreground fresh-agent workflow run toward an immutable objective. It is a model-facing tool policy composed from workflow and subagent primitives, not a same-session goal, agent-loop mode, scheduler, or generic workflow-script feature. <a id="ralph-loop"></a>
 - **Ralph round** — one fresh child session in a [Ralph loop](#ralph-loop). The child receives no parent or prior-child conversation seed; the shared workspace and one bounded [Ralph handoff](#ralph-handoff) carry cross-round state. <a id="ralph-round"></a>
 - **Ralph handoff** — the normalized bounded structured report passed from one continuing Ralph round to the next, containing status, summary, evidence, next steps, and blocker text. It supplements the shared workspace rather than replacing it as authority. <a id="ralph-handoff"></a>
+
+## Skill Hub
+
+- **Skill Hub** — the tenant-scoped Skill marketplace hosted by the external user center (new-dsh-ms). DSH browses and installs the Skills it is allowed to see there; DSH never owns Skill review, visibility, or publishing. <a id="skill-hub"></a>
+- **hub sign-in** — the user-center sign-in that gates the whole application. One sign-in is bound to exactly one tenant employee profile; switching tenant is a fresh sign-in. It is independent of the model credentials (DeepSeek account or API key). _Avoid_: account, login (alone).
+- **market Skill** — a Skill installed into the user's machine from the [Skill Hub](#skill-hub); it remembers which hub Skill and which version it came from, so DSH can offer an update when the hub's current version is newer. <a id="market-skill"></a>
+- **custom Skill** — a user-level Skill the user placed on their machine themselves (user DSH or agents directory, or a configured custom directory). Project-level and bundled Skills are neither custom nor [market](#market-skill) Skills. <a id="custom-skill"></a>
+- **disabled Skill** — an installed Skill the user switched off: its files stay in place, but it is absent from the model's catalog and cannot be invoked with `/name`. _Avoid_: uninstalled, hidden.
