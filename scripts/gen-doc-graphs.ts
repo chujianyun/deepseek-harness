@@ -267,6 +267,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Lists the Session composition\'s user-invocable skills without activating a cold Agent.',
   },
   {
+    key: 'skillController',
+    pkg: 'skill-controller',
+    title: 'Installed-skill Remote controller',
+    mode: 'core',
+    note: 'Lists the user-level skills on this machine and applies the Desktop Skills page actions: switch, reveal, edit, and move to the trash.',
+  },
+  {
     key: 'jobController',
     pkg: 'api-job-controller',
     title: 'Host job Remote controller',

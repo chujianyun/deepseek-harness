@@ -10,13 +10,15 @@
  * @module @deepseek-ai/dsh-skill
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context, Service, type Volatile } from '@deepseek-ai/cordis'
+// Type-only: the Loader's `loader/volatile-update` event and the `settings` service that persists `setDisabled()`.
+import type {} from '@deepseek-ai/cordis-plugin-loader'
+import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-llm'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { NamedEntries, ScopedLayers, scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey, ScopeLayer } from '@deepseek-ai/dsh-scope'
 import z from '@deepseek-ai/schemastery'
-import type Schema from '@deepseek-ai/schemastery'
 
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const DEFAULT_COLLECT_CACHE_ENTRIES = 128
@@ -71,6 +73,8 @@ export interface SkillSummary {
   readonly provider: string
   /** Provider-specific base for relative resources. */
   readonly resourceBase?: SkillResourceBase
+  /** Present when the user disabled this skill; its invocation policy is then forced closed. */
+  readonly disabled?: true
 }
 
 /** Provider catalog entry used by the registry to merge and later load skills. */
@@ -278,7 +282,12 @@ export interface SkillProviderControl {
 export interface Config {
   /** Maximum number of completed cwd/provider catalogs kept in memory. */
   readonly collectCacheMaxEntries?: number
+  /** Skill names the user switched off; edited live through `setDisabled()`. */
+  readonly disabledSkills?: Volatile<readonly string[]>
 }
+
+/** Invocation policy of a disabled skill: neither the model nor the user can invoke it. */
+const DISABLED_INVOCATION: SkillInvocationPolicy = Object.freeze({ modelInvocable: false, userInvocable: false })
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -354,8 +363,10 @@ class SkillLayer implements ScopeLayer {
  * on demand.
  */
 export class SkillRegistry extends Service {
-  static Config: Schema<Config> = z.object({
+  static Config = z.object({
     collectCacheMaxEntries: z.number().default(DEFAULT_COLLECT_CACHE_ENTRIES),
+    disabledSkills: z.array(z.string()).default([]).volatile()
+      .description('Skill names the user switched off. A disabled skill stays listed with `disabled: true`, but neither the model nor the user can invoke it.'),
   })
 
   private readonly collectCacheMaxEntries: number
@@ -370,10 +381,43 @@ export class SkillRegistry extends Service {
   private readonly scopeIds = new WeakMap<ScopeKey, number>()
   private nextScopeId = 1
 
+  private readonly disabledSkills: Volatile<readonly string[]> | undefined
+  /** Profile-local entry id used by Settings; absent when the plugin was mounted without Loader. */
+  private readonly entryId: string | undefined
+
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'skills')
     this.collectCacheMaxEntries = config.collectCacheMaxEntries ?? DEFAULT_COLLECT_CACHE_ENTRIES
     assertPositiveInteger('collectCacheMaxEntries', this.collectCacheMaxEntries)
+    this.disabledSkills = config.disabledSkills
+    this.entryId = ctx.fiber.entry?.options.id
+    // The disabled list is applied on read, so catalogs stay cached; consumers only need to refetch.
+    ctx.on('loader/volatile-update', () => { this.ctx.emit(this.ctx, 'skills/change') })
+  }
+
+  /**
+   * Switch one skill on or off for this user by persisting the profile's `disabledSkills` list.
+   * A request that matches the current state writes nothing.
+   * @param name - kebab-case skill name; it need not be currently discovered.
+   * @param disabled - whether the skill should be disabled.
+   * @throws when the registry was mounted without Settings or a profile entry.
+   */
+  async setDisabled(name: string, disabled: boolean): Promise<void> {
+    if (!isSkillName(name)) throw new TypeError(`invalid skill name "${name}"`)
+    const current = this.disabledSkills?.get() ?? []
+    if (current.includes(name) === disabled) return
+    const settings = this.ctx.get('settings')
+    if (settings === undefined || this.entryId === undefined) {
+      throw new Error('disabling skills requires the settings service and a profile entry')
+    }
+    const next = disabled ? [...current, name].sort() : current.filter(item => item !== name)
+    await settings.update(this.entryId, { disabledSkills: next })
+  }
+
+  /** Force a disabled skill's invocation policy closed and mark it, leaving enabled skills untouched. */
+  private applyDisabled<T extends SkillSummary>(skill: T): T {
+    if (!(this.disabledSkills?.get() ?? []).includes(skill.name)) return skill
+    return { ...skill, invocation: DISABLED_INVOCATION, disabled: true }
   }
 
   /**
@@ -482,7 +526,7 @@ export class SkillRegistry extends Service {
     const collected = await this.collect(options)
     return {
       skills: [...collected.entries.values()]
-        .map(entry => toSummary(entry.candidate))
+        .map(entry => this.applyDisabled(toSummary(entry.candidate)))
         .sort(compareSkillSummary),
       complete: collected.cacheable,
     }
@@ -513,7 +557,7 @@ export class SkillRegistry extends Service {
       this.invalidateEntry(match)
       return undefined
     }
-    return definition
+    return this.applyDisabled(definition)
   }
 
   private async collect(options: SkillViewOptions): Promise<CollectResult> {

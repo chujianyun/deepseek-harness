@@ -51,12 +51,12 @@ async function writeSkill(root: string, name: string, description: string, body:
   await writeFile(join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`)
 }
 
-async function setup(home: string, config: toolSkill.Config = {}): Promise<Context> {
+async function setup(home: string, config: toolSkill.Config = {}, registryConfig: { disabledSkills?: string[] } = {}): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
-  await ctx.plugin(SkillRegistry)
+  await ctx.plugin(SkillRegistry, registryConfig)
   await ctx.plugin(SkillFileSystem, { dshHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false })
   await ctx.plugin(toolSkill, config)
   return ctx
@@ -1077,6 +1077,31 @@ describe('user-explicit invocation injection', () => {
     // own skill-catalog message; only skill-invocation sources matter here).
     expect(decision.messages.some(message =>
       (message.source as { kind?: string }).kind === 'skill-invocation')).toBe(false)
+  })
+
+  it('refuses a user-disabled skill everywhere: catalog, skill tool, and /name', async () => {
+    const home = await tempDir('disabled')
+    const skillsRoot = join(home, '.agents', 'skills')
+    await writePolicySkill(skillsRoot, 'shared-skill', 'Ordinary skill', '', 'Shared instructions.')
+    await writePolicySkill(skillsRoot, 'switched-off', 'Disabled skill', '', 'Must not be disclosed.')
+    const ctx = await setup(home, {}, { disabledSkills: ['switched-off'] })
+    const agent = agentForCwd(home)
+
+    const decision = await proposeStep(ctx, agent, [gesture('/switched-off run it')])
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    expect(decision.messages.some(message =>
+      (message.source as { kind?: string }).kind === 'skill-invocation')).toBe(false)
+    const catalog = decision.messages.find(message => (message.source as { kind?: string }).kind === 'skill-catalog')
+    const catalogBlock = catalog?.content[0]
+    if (catalogBlock?.type !== 'text') throw new Error('expected a catalog message')
+    expect(catalogBlock.text).toContain('shared-skill')
+    expect(catalogBlock.text).not.toContain('switched-off')
+
+    const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('disabled'), name: 'skill', arguments: { name: 'switched-off' } })
+    expect(result.isError).toBe(true)
+    const block = result.content[0]
+    if (block?.type !== 'text') throw new Error('expected text tool result')
+    expect(block.text).not.toContain('Must not be disclosed.')
   })
 
   it('never scans non-user sources and dedupes repeated gestures', async () => {

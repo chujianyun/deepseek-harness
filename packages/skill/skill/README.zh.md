@@ -33,7 +33,7 @@ kind: "package-reference"
 
 ### 挂载与配置
 
-像任何 Cordis 插件一样加载即可。唯一配置项限制内存中保留的已完成提供方目录数量；其余都是提供方行为。
+像任何 Cordis 插件一样加载即可。配置项限制内存中保留的已完成提供方目录数量，并保存用户停用的 skill；其余都是提供方行为。
 
 ```yaml
 - name: '@deepseek-ai/dsh-skill'
@@ -42,6 +42,7 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `collectCacheMaxEntries` | `128` | 内存中保留的已完成 cwd/提供方目录数 |
+| `disabledSkills` | `[]` | 用户停用的 skill 名称（volatile 列表） |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-skill)是每个受支持字段的穷尽式真源。
 
@@ -50,6 +51,7 @@ kind: "package-reference"
 - **合并后的单一目录。** 消费方查询工作区的当前目录，即可收到来自所有提供方的全部胜出 skill 摘要，并按名称排序——无需自行做提供方特有的排序或去重。
 - **按需加载。** 按名称查询某个 skill，会从拥有胜出候选项的提供方返回完整指令正文；注册表会重新验证加载的定义，并拒绝在发现与加载之间名称发生变化的陈旧选择。
 - **嵌入式 skill。** 插件可用 `ctx.skills.register(...)` 注册内存中的 skill；注册表会补入默认调用策略与 `runtime` 提供方标签。同层同名运行时注册采用先到先得，并记录警告。
+- **停用的 skill。** `ctx.skills.setDisabled(name, disabled)` 通过设置服务持久化 volatile 的 `disabledSkills` 列表。停用的 skill 仍以 `disabled: true` 出现在列表中，但 `list()`、`snapshot()` 与 `get()` 返回时会把两个调用控制都强制为 `false`，因此所有消费方都会拒绝它；变更会发出 `skills/change`。与当前状态一致的请求不写入任何内容；真正的变更在缺少设置服务或 profile 条目时抛错。
 - **提供方注册。** 提供方用 `ctx.skills.registerProvider(...)` 贡献目录；注册是同步的，返回的 disposer（资源释放）会移除该提供方。`runtime` 是保留的提供方名称。
 
 每个 skill 上的调用策略决定哪些接口可以展示并加载它：`modelInvocable` 用于面向模型的工具与目录，`userInvocable` 用于面向用户的命令。注册表保留全部四种组合，因此一次发现结果可以同时服务两个接口，而不会混淆各自的目录。

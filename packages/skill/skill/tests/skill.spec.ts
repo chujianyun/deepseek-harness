@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
+import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
 import SkillRegistry, {
   isModelInvocable,
   isUserInvocable,
@@ -1268,5 +1269,60 @@ describe('SkillRegistry scoped layers', () => {
     control?.invalidate()
     expect(await ctx.skills.list({ scope })).toEqual([])
     await preset.dispose()
+  })
+})
+
+describe('SkillRegistry disabled skills', () => {
+  /** Mount the registry behind Loader with a settings stub that writes patches back into its live entry config. */
+  async function mounted(initial: object = {}) {
+    const ctx = new Context()
+    const live = await liveConfig(ctx, SkillRegistry, initial)
+    const writes: object[] = []
+    ctx.provide('settings', { update: async (_entry: string, patch: Record<string, unknown>) => { writes.push(patch); await live.update(patch) } } as never)
+    const skills = ctx.get('skills')!
+    skills.registerProvider(() => new MemoryProvider([memorySkill('alpha', 'Alpha', 100), memorySkill('beta', 'Beta', 100)]))
+    return { ctx, skills, writes }
+  }
+
+  it('keeps a disabled skill listed but closes its invocation policy on list and get', async () => {
+    const { skills } = await mounted({ disabledSkills: ['beta'] })
+    const listed = await skills.list()
+    expect(listed.find(skill => skill.name === 'alpha')).not.toHaveProperty('disabled')
+    expect(listed.find(skill => skill.name === 'beta')).toMatchObject({ disabled: true, invocation: { modelInvocable: false, userInvocable: false } })
+    expect(listed.filter(isModelInvocable).map(skill => skill.name)).toEqual(['alpha'])
+    expect(listed.filter(isUserInvocable).map(skill => skill.name)).toEqual(['alpha'])
+    const loaded = await skills.get('beta')
+    expect(loaded).toMatchObject({ disabled: true, invocation: { modelInvocable: false, userInvocable: false }, content: 'beta body.' })
+  })
+
+  it('persists setDisabled through settings, notifies consumers, and re-enables', async () => {
+    const { ctx, skills, writes } = await mounted()
+    const changes = vi.fn()
+    ctx.on('skills/change', changes)
+    await skills.setDisabled('alpha', true)
+    expect(writes).toEqual([{ disabledSkills: ['alpha'] }])
+    expect(changes).toHaveBeenCalled()
+    expect((await skills.list()).find(skill => skill.name === 'alpha')).toMatchObject({ disabled: true })
+    await skills.setDisabled('alpha', true)
+    expect(writes).toHaveLength(1)
+    await skills.setDisabled('alpha', false)
+    expect(writes).toEqual([{ disabledSkills: ['alpha'] }, { disabledSkills: [] }])
+    expect((await skills.list()).find(skill => skill.name === 'alpha')).not.toHaveProperty('disabled')
+  })
+
+  it('rejects invalid names and refuses to persist without settings or a profile entry', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    await expect(ctx.skills.setDisabled('Not A Name', true)).rejects.toThrow('invalid skill name')
+    await expect(ctx.skills.setDisabled('alpha', true)).rejects.toThrow('settings service')
+  })
+
+  it('treats every skill as enabled when constructed without config, and an unchanged request as a no-op', async () => {
+    const ctx = new Context()
+    const skills = new SkillRegistry(ctx)
+    skills.registerProvider(() => new MemoryProvider([memorySkill('alpha', 'Alpha', 100)]))
+    expect((await skills.list())[0]).not.toHaveProperty('disabled')
+    await expect(skills.setDisabled('alpha', false)).resolves.toBeUndefined()
+    await ctx.fiber.dispose()
   })
 })

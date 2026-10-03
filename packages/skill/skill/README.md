@@ -33,7 +33,7 @@ Use `dsh-skill` when agents should load skills from more than one source through
 
 ### Mount and configure
 
-Load the plugin like any Cordis plugin. The only configuration limits how many completed provider catalogs are kept in memory; everything else is provider behavior.
+Load the plugin like any Cordis plugin. Configuration limits how many completed provider catalogs are kept in memory and holds the user's disabled skills; everything else is provider behavior.
 
 ```yaml
 - name: '@deepseek-ai/dsh-skill'
@@ -42,6 +42,7 @@ Load the plugin like any Cordis plugin. The only configuration limits how many c
 | Field | Default | Meaning |
 |---|---|---|
 | `collectCacheMaxEntries` | `128` | Completed cwd/provider catalogs kept in memory |
+| `disabledSkills` | `[]` | Volatile list of skill names the user switched off |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-skill) is the exhaustive source for every accepted field.
 
@@ -50,6 +51,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 - **One merged catalog.** A consumer asks for the current catalog of a workspace and receives every winning skill summary from every provider, sorted by name — no provider-specific ordering or deduplication to do.
 - **On-demand loading.** Asking for one skill by name returns the full instruction body from whichever provider owns the winning candidate; the registry re-validates the loaded definition and rejects a stale selection whose name changed between discovery and load.
 - **Embedded skills.** Plugins register an in-memory skill with `ctx.skills.register(...)`; the registry fills in a default invocation policy and the `runtime` provider label. Same-name runtime registrations in one layer are first-wins with a warning.
+- **Disabled skills.** `ctx.skills.setDisabled(name, disabled)` persists the volatile `disabledSkills` list through the settings service. A disabled skill stays listed with `disabled: true`, but `list()`, `snapshot()`, and `get()` return it with both invocation controls forced to `false`, so every consumer refuses it; a change emits `skills/change`. A request matching the current state writes nothing, and a real change without the settings service or a profile entry throws.
 - **Provider registration.** A provider contributes its catalog with `ctx.skills.registerProvider(...)`; registration is synchronous, and the returned disposer removes the provider. `runtime` is a reserved provider name.
 
 An invocation policy on every skill decides which surfaces may advertise and load it: `modelInvocable` for model-facing tools and catalogs, `userInvocable` for human-facing commands. The registry keeps all four combinations, so one discovery result can serve both surfaces without conflating their catalogs.

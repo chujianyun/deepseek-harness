@@ -59,8 +59,10 @@ export interface UiWorkspace {
    * Start a New Session flow and navigate to its Session; a creation the Host
    * refuses is shown through the Workspace notice and leaves the selection as it was.
    * @param workspaceId - explicit target; absent inherits the current or most recent Workspace.
+   * @param beforeOpen - optional synchronous preparation for the new Session, as `openWorkspace` runs it;
+   * never called when no Workspace exists and the blank New Session page opens instead.
    */
-  startSession(workspaceId?: WorkspaceId): void
+  startSession(workspaceId?: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): void
   /**
    * Archive a Session and clear it when it is the current selection.
    * @param sessionId - Session to archive.
@@ -220,7 +222,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     return this.sessions.fork({ sessionId, increaseTitle: true, ...onCreated === undefined ? {} : { onCreated } })
   }
 
-  startSession(workspaceId?: WorkspaceId): void {
+  startSession(workspaceId?: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): void {
     const workspace = this.workspaces.list.getSnapshot()
     const sessions = this.sessions.list.getSnapshot()
     const current = this.mainReference?.sessionId
@@ -235,7 +237,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       this.clearMain()
       return
     }
-    void this.openWorkspace(target).catch(
+    void this.openWorkspace(target, beforeOpen).catch(
       (reason: unknown) => { console.warn('new session failed:', reason) },
     )
   }

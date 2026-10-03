@@ -143,6 +143,12 @@
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'
 
+    # Installed user-level skills for the Desktop Skills page: list, switch on
+    # and off, reveal, edit, and move to the trash.
+    - id: skill-controller
+      name: '@deepseek-ai/dsh-skill-controller'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
+
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'
@@ -299,6 +305,12 @@
     # Without a profile-backed Host it reports itself unavailable.
     - id: ui-plugin-manager
       name: '@deepseek-ai/dsh-client-ui-plugin-manager'
+
+    # Desktop Skills page: the sidebar entry and the installed-skill cards over
+    # the `installedSkills` Remote.
+    - id: ui-skills
+      name: '@deepseek-ai/dsh-client-ui-skills'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
 
     # Read-only Plugin list tab in the Settings Plugins section; the built-in
     # bundles the sidebar page leaves out are inspected here.

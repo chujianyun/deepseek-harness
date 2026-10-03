@@ -689,10 +689,12 @@ describe('UiWorkspaceService', () => {
         workspace('recent-home', [recent.id]),
       ]),
     })
-    b.uiWorkspace.startSession(wid('old'))
+    const prepared: SessionId[] = []
+    b.uiWorkspace.startSession(wid('old'), (sessionId) => { prepared.push(sessionId) })
     await vi.waitFor(() => {
       expect(b.sessions.retain).toHaveBeenLastCalledWith(sid('created-old'), { source: 'mainView' })
     })
+    expect(prepared).toEqual([sid('created-old')])
     b.uiWorkspace.openSession(current.id)
     b.uiWorkspace.startSession()
     await vi.waitFor(() => {

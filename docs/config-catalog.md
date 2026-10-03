@@ -2837,16 +2837,45 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-skill`
 
-- `source`: [`packages/skill/skill/src/index.ts:278`](../packages/skill/skill/src/index.ts)
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/skill/skill/src/index.ts:282`](../packages/skill/skill/src/index.ts)
 
 ```ts config-catalog
 /** Skill registry configuration. */
 export interface Config {
   /** Maximum number of completed cwd/provider catalogs kept in memory. */
   readonly collectCacheMaxEntries?: number
+  /** Skill names the user switched off; edited live through `setDisabled()`. */
+  readonly disabledSkills?: Volatile<readonly string[]>
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-skill-controller -->
+<a id="deepseek-aidsh-skill-controller"></a>
+
+## `@deepseek-ai/dsh-skill-controller`
+
+- `inject`: `skills`
+- `refs`: [`NativeCommandRunner`](../packages/util/native-command/src/index.ts)
+- `source`: [`packages/skill/skill-controller/src/index.ts:42`](../packages/skill/skill-controller/src/index.ts)
+
+```ts config-catalog
+/** Host integrations replaceable by direct unit tests. */
+export interface SkillControllerInternals {
+  /** Host platform; defaults to `process.platform`. */
+  readonly platform?: NodeJS.Platform
+  /** Home directory holding the platform trash; defaults to `os.homedir()`. */
+  readonly home?: string
+  /** Native command runner used by the Windows recycle-bin move. */
+  readonly run?: NativeCommandRunner
+  /** Reveal a path in the native file manager. */
+  readonly reveal?: (path: string, signal: AbortSignal) => Promise<void>
+  /** Open a text file in the native editor. */
+  readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill-controller -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-skill-filesystem -->
 <a id="deepseek-aidsh-skill-filesystem"></a>
@@ -4379,6 +4408,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-sidebar-right` | — | [`packages/client/ui-sidebar-right/src/index.ts`](../packages/client/ui-sidebar-right/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-sidebar-terminal` | — | [`packages/client/ui-sidebar-terminal/src/index.ts`](../packages/client/ui-sidebar-terminal/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-skill` | — | [`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-skills` | — | [`packages/client/ui-skills/src/index.ts`](../packages/client/ui-skills/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-subagent` | — | [`packages/client/ui-subagent/src/index.ts`](../packages/client/ui-subagent/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-tool` | — | [`packages/client/ui-tool/src/index.ts`](../packages/client/ui-tool/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-trajectory` | — | [`packages/client/ui-trajectory/src/index.ts`](../packages/client/ui-trajectory/src/index.ts) |

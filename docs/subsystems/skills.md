@@ -122,10 +122,14 @@ interface SkillSummary {
   readonly provider: string
   /** Provider-specific base for relative resources. */
   readonly resourceBase?: SkillResourceBase
+  /** Present when the user disabled this skill; its invocation policy is then forced closed. */
+  readonly disabled?: true
 }
 ```
 
 `ctx.skills.list()` preserves all four policy combinations. `isModelInvocable(skill)` and `isUserInvocable(skill)` read the corresponding required field. A model-only skill sets `{ modelInvocable: true, userInvocable: false }`, a user-only skill sets `{ modelInvocable: false, userInvocable: true }`, and setting both fields to `false` keeps the skill available only through trusted `ctx.skills.get()` callers. The local provider reads the exact kebab-case frontmatter keys `disable-model-invocation` and `user-invocable`, defaults omitted fields to `true`, and projects every parsed skill into this normalized policy.
+
+A skill the user disabled stays in `list()` with `disabled: true`, but the registry forces its invocation policy to `{ modelInvocable: false, userInvocable: false }` before `list()`, `snapshot()`, and `get()` return, so the model catalog, the `skill` tool, and `/name` refuse it without any extra check. The disabled list is the registry's volatile `disabledSkills` config, which `ctx.skills.setDisabled(name, disabled)` persists to the profile through the settings service; a change emits `skills/change`.
 
 `SkillCatalogSnapshot` distinguishes authoritative absence from transient provider failure or a catalog that kept changing during discovery. `skills` contains the sorted invocation-neutral summaries collected in that observation; `complete` is true only when every registered provider completed without a concurrent catalog revision. Incomplete snapshots are not cached, allowing each consumer to retain its last-good filtered catalog and retry.
 
@@ -221,6 +225,8 @@ The registry owns only its discovery-cache bound. The local provider owns filesy
 interface Config {
   /** Maximum number of completed cwd/provider catalogs kept in memory. */
   readonly collectCacheMaxEntries?: number
+  /** Skill names the user switched off; edited live through `setDisabled()`. */
+  readonly disabledSkills?: Volatile<readonly string[]>
 }
 ```
 
@@ -235,6 +241,8 @@ The model-facing `skill({ name })` tool validates the kebab-case name, finds the
 ## Browser Session catalog
 
 `SkillListRequest` addresses one Session by `sessionId`; `SkillListValue` returns the user-invocable entries with name, description, optional usage guidance, and model-invocation availability. `SessionSkillCatalog` reads the Session cwd and recorded preset without activating an Agent. A live Agent may supply its scoped registry, while a cold Session uses the preset's standing scope.
+
+The Desktop Skills page reads installed user-level skills through the `installedSkills` namespace owned by [dsh-skill-controller](../../packages/skill/skill-controller). `list()` returns `InstalledSkillListValue`: one `InstalledSkillView` per skill from the `user-dsh`, `user-agents`, and `custom` sources, carrying name, description, group, source, instruction-file path, and enabled state. `setEnabled(name, enabled)` answers the updated `InstalledSkillView`; `reveal`, `edit`, and `uninstall` answer `InstalledSkillActionValue` once the native file manager, the text editor, or the move to the trash accepted the request. Every method refuses names outside that user-level list.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -263,6 +271,59 @@ Host service backing `ctx.remote.skills` without activating a cold Agent.
 
 Source: [`packages/api/session-controller/src/skill-catalog.ts`](../../packages/api/session-controller/src/skill-catalog.ts)
 
+<a id="ctxskillcontroller--skillcontroller"></a>
+
+### `ctx.skillController` — `SkillController`
+
+Host service backing the generated `ctx.remote.installedSkills` namespace. Every action resolves the name against the current user-level catalog first, so project-level and bundled skills can never be toggled, revealed, or removed here.
+
+```ts cordis-catalog
+/**
+ * List the user-level skills installed on this machine, including disabled ones.
+ * @returns every custom skill sorted by name, with its enabled state.
+ * @throws RemoteError when skill discovery fails.
+ */
+@Remote async list(): Promise<InstalledSkillListValue>
+
+/**
+ * Switch one installed skill on or off for this user.
+ * @param name - installed skill name.
+ * @param enabled - whether the skill should be invocable.
+ * @returns the skill's view after the change.
+ * @throws RemoteError when the skill is not installed or the setting cannot be persisted.
+ */
+@Remote async setEnabled(name: string, enabled: boolean): Promise<InstalledSkillView>
+
+/**
+ * Reveal an installed skill's instruction file in the native file manager.
+ * @param name - installed skill name.
+ * @param signal - caller lifetime; abort terminates the native command.
+ * @returns confirmation after the file manager accepted the request.
+ * @throws RemoteError when the skill is not installed or the file manager fails.
+ */
+@Remote async reveal(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>
+
+/**
+ * Open an installed skill's instruction file in the native text editor.
+ * @param name - installed skill name.
+ * @param signal - caller lifetime; abort terminates the native command.
+ * @returns confirmation after the editor accepted the file.
+ * @throws RemoteError when the skill is not installed or the editor fails.
+ */
+@Remote async edit(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>
+
+/**
+ * Move an installed skill's folder (or flat file) to the platform trash and forget its disabled state.
+ * @param name - installed skill name.
+ * @param signal - caller lifetime; abort terminates the native command.
+ * @returns confirmation after the move.
+ * @throws RemoteError when the skill is not installed, the platform has no trash, or the move fails.
+ */
+@Remote async uninstall(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>
+```
+
+Source: [`packages/skill/skill-controller/src/index.ts`](../../packages/skill/skill-controller/src/index.ts)
+
 <a id="ctxskills--skillregistry"></a>
 
 ### `ctx.skills` — `SkillRegistry`
@@ -270,6 +331,15 @@ Source: [`packages/api/session-controller/src/skill-catalog.ts`](../../packages/
 Layered registry of skill providers, the host+per-scope shape the tools registry established. A registration files into the layer of its calling context's scope (scopeOf): host rows and repository plugins land in the global layer, while a plugin mounted by an agent preset's standing composition lands in that preset's layer. A read merges the global layer with the viewing scope's chain — the nearest layer's entry wins a duplicate name outright, and the rank order decides duplicates only within one layer. It exposes sorted invocation-neutral summaries and loads full skill bodies on demand.
 
 ```ts cordis-catalog
+/**
+ * Switch one skill on or off for this user by persisting the profile's `disabledSkills` list.
+ * A request that matches the current state writes nothing.
+ * @param name - kebab-case skill name; it need not be currently discovered.
+ * @param disabled - whether the skill should be disabled.
+ * @throws when the registry was mounted without Settings or a profile entry.
+ */
+async setDisabled(name: string, disabled: boolean): Promise<void>
+
 /**
  * Register a borrowed same-process provider synchronously during plugin
  * apply, into the calling context's layer: a scoped context (an agent

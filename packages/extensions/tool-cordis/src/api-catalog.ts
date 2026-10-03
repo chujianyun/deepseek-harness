@@ -2619,10 +2619,58 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'skillController',
+    summary: 'Host service backing the generated `ctx.remote.installedSkills` namespace.',
+    description: 'Host service backing the generated `ctx.remote.installedSkills` namespace. Every action resolves the name against the current user-level catalog first, so project-level and bundled skills can never be toggled, revealed, or removed here.',
+    methods: [
+      {
+        signature: '@Remote async list(): Promise<InstalledSkillListValue>',
+        description: 'List the user-level skills installed on this machine, including disabled ones.',
+        parameters: [],
+        returns: 'every custom skill sorted by name, with its enabled state.',
+        throws: ['RemoteError when skill discovery fails.'],
+      },
+      {
+        signature: '@Remote async setEnabled(name: string, enabled: boolean): Promise<InstalledSkillView>',
+        description: 'Switch one installed skill on or off for this user.',
+        parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'enabled', description: 'whether the skill should be invocable.' }],
+        returns: 'the skill\'s view after the change.',
+        throws: ['RemoteError when the skill is not installed or the setting cannot be persisted.'],
+      },
+      {
+        signature: '@Remote async reveal(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>',
+        description: 'Reveal an installed skill\'s instruction file in the native file manager.',
+        parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
+        returns: 'confirmation after the file manager accepted the request.',
+        throws: ['RemoteError when the skill is not installed or the file manager fails.'],
+      },
+      {
+        signature: '@Remote async edit(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>',
+        description: 'Open an installed skill\'s instruction file in the native text editor.',
+        parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
+        returns: 'confirmation after the editor accepted the file.',
+        throws: ['RemoteError when the skill is not installed or the editor fails.'],
+      },
+      {
+        signature: '@Remote async uninstall(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>',
+        description: 'Move an installed skill\'s folder (or flat file) to the platform trash and forget its disabled state.',
+        parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
+        returns: 'confirmation after the move.',
+        throws: ['RemoteError when the skill is not installed, the platform has no trash, or the move fails.'],
+      },
+    ],
+  },
+  {
     key: 'skills',
     summary: 'Layered registry of skill providers, the host+per-scope shape the tools registry established.',
     description: 'Layered registry of skill providers, the host+per-scope shape the tools registry established. A registration files into the layer of its calling context\'s scope (scopeOf): host rows and repository plugins land in the global layer, while a plugin mounted by an agent preset\'s standing composition lands in that preset\'s layer. A read merges the global layer with the viewing scope\'s chain — the nearest layer\'s entry wins a duplicate name outright, and the rank order decides duplicates only within one layer. It exposes sorted invocation-neutral summaries and loads full skill bodies on demand.',
     methods: [
+      {
+        signature: 'async setDisabled(name: string, disabled: boolean): Promise<void>',
+        description: 'Switch one skill on or off for this user by persisting the profile\'s `disabledSkills` list. A request that matches the current state writes nothing.',
+        parameters: [{ name: 'name', description: 'kebab-case skill name; it need not be currently discovered.' }, { name: 'disabled', description: 'whether the skill should be disabled.' }],
+        throws: ['when the registry was mounted without Settings or a profile entry.'],
+      },
       {
         signature: 'registerProvider(create: (control: SkillProviderControl) => SkillProvider): () => void',
         description: 'Register a borrowed same-process provider synchronously during plugin apply, into the calling context\'s layer: a scoped context (an agent preset\'s standing mount) registers for that scope alone, an unscoped context registers globally. Duplicate names within one layer and reserved names throw; remote initialization belongs in `list()`. Fiber disposal unregisters the provider and invalidates catalog caches.',
@@ -5386,6 +5434,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface InstallBundleOptions {\n    enabled?: boolean;\n    requestId?: PluginInstallRequestId;\n    approvedBuilds?: string[];\n    registry?: Registry;\n}',
   },
   {
+    name: 'InstalledSkillActionValue',
+    declaration: 'export interface InstalledSkillActionValue {\n    readonly done: true;\n}',
+  },
+  {
+    name: 'InstalledSkillGroup',
+    declaration: 'export type InstalledSkillGroup = \'custom\';',
+  },
+  {
+    name: 'InstalledSkillListValue',
+    declaration: 'export interface InstalledSkillListValue {\n    readonly skills: readonly InstalledSkillView[];\n}',
+  },
+  {
+    name: 'InstalledSkillView',
+    declaration: 'export interface InstalledSkillView {\n    readonly name: string;\n    readonly description: string;\n    readonly group: InstalledSkillGroup;\n    readonly source: string;\n    readonly path: string;\n    readonly enabled: boolean;\n}',
+  },
+  {
     name: 'InstallSpecKind',
     declaration: 'export type InstallSpecKind = \'registry\' | \'path\' | \'git\' | \'tarball\';',
   },
@@ -7099,7 +7163,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SkillSummary',
-    declaration: 'export interface SkillSummary {\n    readonly path?: string;\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly invocation: SkillInvocationPolicy;\n    readonly source: SkillSource;\n    readonly provider: string;\n    readonly resourceBase?: SkillResourceBase;\n}',
+    declaration: 'export interface SkillSummary {\n    readonly path?: string;\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly invocation: SkillInvocationPolicy;\n    readonly source: SkillSource;\n    readonly provider: string;\n    readonly resourceBase?: SkillResourceBase;\n    readonly disabled?: true;\n}',
   },
   {
     name: 'SkillViewOptions',

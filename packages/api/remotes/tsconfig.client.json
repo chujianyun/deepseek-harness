@@ -85,6 +85,9 @@
       "path": "../settings-controller"
     },
     {
+      "path": "../../skill/skill-controller"
+    },
+    {
       "path": "../workspace-controller/tsconfig.client.json"
     },
     {
