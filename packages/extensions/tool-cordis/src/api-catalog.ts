@@ -1242,6 +1242,56 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'hubAccount',
+    summary: 'Host owner of Hub sign-in and of the `hubAccount` Remote namespace.',
+    description: 'Host owner of Hub sign-in and of the `hubAccount` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote async getState(): Promise<HubAccountView>',
+        description: 'Read the sign-in state.',
+        parameters: [],
+        returns: 'status, profile, and the current attempt.',
+      },
+      {
+        signature: '@Remote async signIn(): Promise<HubAccountView>',
+        description: 'Start a browser sign-in, or join the one already running. The state stream carries the authorization page to open.',
+        parameters: [],
+        returns: 'the state with the attempt.',
+      },
+      {
+        signature: '@Remote async cancelSignIn(attemptId: string): Promise<HubAccountView>',
+        description: 'Cancel the named sign-in attempt.',
+        parameters: [{ name: 'attemptId', description: 'attempt to cancel.' }],
+        returns: 'the state after cancellation.',
+        throws: ['RemoteError when the attempt is not the current one.'],
+      },
+      {
+        signature: '@Remote async signOut(): Promise<HubAccountView>',
+        description: 'Sign out: forget the local grant and revoke it at the user center in the background. Model credentials are untouched.',
+        parameters: [],
+        returns: 'the signed-out state.',
+      },
+      {
+        signature: '@Remote async switchTenant(): Promise<HubAccountView>',
+        description: 'Switch tenant: sign out, then sign in again so the user center offers the tenant choice.',
+        parameters: [],
+        returns: 'the state with the new attempt.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<HubAccountView>',
+        description: 'Stream the sign-in state.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change.',
+      },
+      {
+        signature: 'async accessToken(): Promise<string | undefined>',
+        description: 'The current access token for user-center client APIs, refreshed first when it is due. Host only.',
+        parameters: [],
+        returns: 'the token, or undefined while signed out.',
+      },
+    ],
+  },
+  {
     key: 'inspector',
     summary: 'Shared Host/Client service façade over the realm\'s source publisher.',
     description: 'Shared Host/Client service façade over the realm\'s source publisher.',
@@ -1995,7 +2045,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'prompt\') prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue>',
-        description: 'Admit one prompt after explicitly resuming its Session.',
+        description: 'Admit one prompt after explicitly resuming its Session, unless an `api-session/prompt-admission` listener refuses it.',
         parameters: [{ name: 'request', description: 'Session identity, prompt content, source metadata, and delivery mode.' }, { name: 'signal', description: 'caller cancellation before prompt admission begins.' }],
         returns: 'acknowledgement that the Agent accepted the prompt.',
       },
@@ -3942,6 +3992,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'sessionId', description: 'Agent and Session identity.' }, { name: 'message', description: 'user-safe failure chain.' }],
   },
   {
+    name: 'api-session/prompt-admission',
+    mode: 'bail',
+    signature: '\'api-session/prompt-admission\'(sessionId: SessionId): RemoteError | undefined',
+    summary: 'A user prompt is about to be admitted.',
+    description: 'A user prompt is about to be admitted. A listener refuses it by returning the error the caller receives; prompts already admitted and turns already running are unaffected.',
+    parameters: [{ name: 'sessionId', description: 'addressed Session identity.' }],
+  },
+  {
     name: 'api-session/removed',
     mode: 'emit',
     signature: '\'api-session/removed\'(sessionId: SessionId): void',
@@ -4164,6 +4222,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Module replacements have finished loading.',
     description: 'Module replacements have finished loading.',
     parameters: [{ name: 'reloads', description: 'Replaced plugins and their module locations.' }],
+  },
+  {
+    name: 'hub-account/session-expired',
+    mode: 'emit',
+    signature: '\'hub-account/session-expired\'(): void',
+    summary: 'The user center refused to refresh the stored sign-in (employee or tenant disabled, grant revoked); the local grant is already removed.',
+    description: 'The user center refused to refresh the stored sign-in (employee or tenant disabled, grant revoked); the local grant is already removed.',
+    parameters: [],
   },
   {
     name: 'llm/adapters-updated',
@@ -5372,6 +5438,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'HostConnectionRpc',
     declaration: 'export interface HostConnectionRpc {\n    handle(channel: string, handler: ConnectionRpcHandler): () => Promise<void>;\n    intercept(channel: \'/api\', matches: ConnectionRpcEndpointMatcher, handler: ConnectionRpcHandler): () => Promise<void>;\n}',
+  },
+  {
+    name: 'HubAccountView',
+    declaration: 'export interface HubAccountView {\n    readonly status: \'signed-out\' | \'signed-in\';\n    readonly profile: HubProfile | null;\n    readonly reason: \'expired\' | null;\n    readonly attempt: HubSignInAttemptView | null;\n}',
+  },
+  {
+    name: 'HubProfile',
+    declaration: 'export interface HubProfile {\n    readonly nickname: string;\n    readonly phone: string;\n    readonly tenantId: string | null;\n    readonly tenantName: string | null;\n    readonly isTenantAdmin: boolean | null;\n}',
+  },
+  {
+    name: 'HubSignInAttemptView',
+    declaration: 'export interface HubSignInAttemptView {\n    readonly id: string;\n    readonly phase: HubSignInPhase;\n    readonly authorizeUrl?: string;\n    readonly error?: HubSignInError;\n}',
+  },
+  {
+    name: 'HubSignInError',
+    declaration: 'export type HubSignInError = \'denied\' | \'expired\' | \'protocol\' | \'network\' | \'storage\';',
+  },
+  {
+    name: 'HubSignInPhase',
+    declaration: 'export type HubSignInPhase = \'waiting-browser\' | \'exchanging\' | \'succeeded\' | \'cancelled\' | \'failed\';',
   },
   {
     name: 'ImageAttachmentLimits',

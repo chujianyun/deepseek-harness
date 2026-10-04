@@ -88,6 +88,9 @@
       "path": "../../skill/skill-controller"
     },
     {
+      "path": "../../credentials/hub-account"
+    },
+    {
       "path": "../workspace-controller/tsconfig.client.json"
     },
     {

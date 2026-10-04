@@ -12,6 +12,7 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
 import { subagentIdentityProjectionDefinition } from '@deepseek-ai/dsh-subagent/src/projection.ts'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
 import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import { createInboxStub, mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -964,5 +965,28 @@ describe('sessions.prompt synchronous rejection', () => {
         details: { reason: 'use subagent delivery for this child session' },
       })
     }
+  })
+})
+
+describe('sessions.prompt admission refusal', () => {
+  it('rejects a prompt an admission listener refuses before resolving its Session, and resolves it once the listener stops refusing', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    let refusing = true
+    const seen: string[] = []
+    ctx.on('api-session/prompt-admission', (sessionId) => {
+      seen.push(sessionId)
+      return refusing ? new RemoteError('gateway/bad-request', 'sign in first', {}) : undefined
+    })
+    const request = () => promptRequest({ sessionId: sid('session-admission'), mode: 'queue' as const, content: [{ type: 'text' as const, text: 'hello' }] })
+
+    expect(await remote.prompt(request())).toMatchObject({ ok: false, error: { code: 'gateway/bad-request', message: 'sign in first' } })
+    expect(seen).toEqual(['session-admission'])
+    refusing = false
+    // Past admission, the unknown Session is reported by the ordinary resolution.
+    expect(await remote.prompt(request())).toMatchObject({ ok: false, error: { code: 'session/not-found' } })
+    expect(seen).toHaveLength(2)
   })
 })

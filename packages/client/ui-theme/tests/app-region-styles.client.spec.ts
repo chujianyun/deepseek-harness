@@ -67,6 +67,12 @@ interface ChromeRow {
 
 const CHROME_ROWS: readonly ChromeRow[] = [
   {
+    file: 'client/ui-hub-account/src/client/HubGate.module.css',
+    selector: '.dragBand',
+    markup: 'client/ui-hub-account/src/client/HubGate.tsx',
+    inset: ['inset', '8px'],
+  },
+  {
     file: 'client/ui-settings-account/src/client/OnboardingSurface.module.css',
     selector: '.dragBand',
     markup: 'client/ui-settings-account/src/client/OnboardingSurface.tsx',

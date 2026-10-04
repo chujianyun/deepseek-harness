@@ -149,6 +149,19 @@
       name: '@deepseek-ai/dsh-skill-controller'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
 
+    # Hub sign-in for Desktop: the user center's OAuth2 code flow with PKCE
+    # over a loopback callback, token refresh, and the prompt gate. The user
+    # center is deployment configuration (DSH_HUB_ORIGIN, DSH_HUB_CLIENT_ID, or
+    # a private patch restating this row); without one the row stays off and
+    # Desktop runs ungated.
+    - id: hub-account
+      name: '@deepseek-ai/dsh-hub-account'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+      config:
+        origin: !!js process.env.DSH_HUB_ORIGIN
+        clientId: !!js process.env.DSH_HUB_CLIENT_ID
+        allowLoopbackHttp: !!js process.env.DSH_HUB_ALLOW_LOOPBACK_HTTP === '1'
+
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'
@@ -311,6 +324,12 @@
     - id: ui-skills
       name: '@deepseek-ai/dsh-client-ui-skills'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
+
+    # Desktop Hub sign-in gate and the Settings account section over the
+    # `hubAccount` Remote; mounted exactly when the hub-account row is.
+    - id: ui-hub-account
+      name: '@deepseek-ai/dsh-client-ui-hub-account'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
     # Read-only Plugin list tab in the Settings Plugins section; the built-in
     # bundles the sidebar page leaves out are inspected here.

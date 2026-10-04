@@ -889,7 +889,8 @@ workspaceDesktop(): { name: string; available: boolean; fileManager: 'finder' | 
 @Remote('fork') fork(request: SessionForkRequest): Promise<SessionForkValue>
 
 /**
- * Admit one prompt after explicitly resuming its Session.
+ * Admit one prompt after explicitly resuming its Session, unless an `api-session/prompt-admission`
+ * listener refuses it.
  * @param request - Session identity, prompt content, source metadata, and delivery mode.
  * @param signal - caller cancellation before prompt admission begins.
  * @returns acknowledgement that the Agent accepted the prompt.
@@ -1159,6 +1160,27 @@ One Agent failed outside a durable turn position.
 ```
 
 Types: [SessionId](core.zh.md)
+
+Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
+
+<a id="api-sessionprompt-admission--bail"></a>
+
+#### `api-session/prompt-admission` — bail
+
+A user prompt is about to be admitted. A listener refuses it by returning the error the caller receives; prompts already admitted and turns already running are unaffected.
+
+```ts cordis-catalog
+/**
+ * A user prompt is about to be admitted. A listener refuses it by returning the error the caller
+ * receives; prompts already admitted and turns already running are unaffected.
+ * @mode bail
+ * @param sessionId - addressed Session identity.
+ * @returns the refusal, or undefined to admit the prompt.
+ */
+'api-session/prompt-admission'(sessionId: SessionId): RemoteError | undefined
+```
+
+Types: [RemoteError](typert.zh.md) · [SessionId](core.zh.md)
 
 Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
 

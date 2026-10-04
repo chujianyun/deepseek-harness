@@ -61,6 +61,10 @@ AccountDetails.balance 将充值钱包投影为 value、赠送钱包投影为 bo
 
 赠金通知查询返回 AccountBonusBatch，包含当前 Platform 账号 id 和按服务端顺序排列的可通知订单。AccountBonusNotification 保留服务端消息与到期时间，不投影凭证。确认请求携带预期账号 id 和订单 id；账号变化后 Host 拒绝该请求。两项通知操作都通过 x-client-locale 传递发起界面的语言，不使用语言查询参数。
 
+## Hub 登录
+
+Desktop 的 Hub 登录是与模型凭证并列、相互独立的另一种登录：[`hub-account`](../../packages/credentials/hub-account/README.zh.md) 为记录 `hub-account/default` 注册一个授权 flow，以公共客户端身份经本机回环回调走用户中心的 OAuth2 授权码 + PKCE 流程，把授权记录留在 Host 上，并在到期前刷新。用户中心拒绝刷新时，删除授权记录并发出 `hub-account/session-expired`。没有授权记录时，该包通过 `api-session/prompt-admission` 拒绝新消息；正在运行的轮次照常继续。[`ui-hub-account`](../../packages/client/ui-hub-account/README.zh.md) 渲染全屏门禁和设置中的账号分区。这条链路从不读写模型凭证（`deepseek-account`、API Key）。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -366,6 +370,63 @@ abstract getDeviceIdentity(): Promise<{ deviceId?: string; userId?: AccountUserI
 
 Source: [`packages/credentials/deepseek-account/src/index.ts`](../../packages/credentials/deepseek-account/src/index.ts)
 
+<a id="ctxhubaccount--hubaccount"></a>
+
+### `ctx.hubAccount` — `HubAccount`
+
+Host owner of Hub sign-in and of the `hubAccount` Remote namespace.
+
+```ts cordis-catalog
+/**
+ * Read the sign-in state.
+ * @returns status, profile, and the current attempt.
+ */
+@Remote async getState(): Promise<HubAccountView>
+
+/**
+ * Start a browser sign-in, or join the one already running. The state stream carries the
+ * authorization page to open.
+ * @returns the state with the attempt.
+ */
+@Remote async signIn(): Promise<HubAccountView>
+
+/**
+ * Cancel the named sign-in attempt.
+ * @param attemptId - attempt to cancel.
+ * @returns the state after cancellation.
+ * @throws RemoteError when the attempt is not the current one.
+ */
+@Remote async cancelSignIn(attemptId: string): Promise<HubAccountView>
+
+/**
+ * Sign out: forget the local grant and revoke it at the user center in the background.
+ * Model credentials are untouched.
+ * @returns the signed-out state.
+ */
+@Remote async signOut(): Promise<HubAccountView>
+
+/**
+ * Switch tenant: sign out, then sign in again so the user center offers the tenant choice.
+ * @returns the state with the new attempt.
+ */
+@Remote async switchTenant(): Promise<HubAccountView>
+
+/**
+ * Stream the sign-in state.
+ * @param signal - stream lifetime.
+ * @returns the current state, then every change.
+ */
+@Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<HubAccountView>
+
+/**
+ * The current access token for user-center client APIs, refreshed first when it is due. Host only.
+ * @returns the token, or undefined while signed out.
+ */
+async accessToken(): Promise<string | undefined>
+```
+
+Source: [`packages/credentials/hub-account/src/index.ts`](../../packages/credentials/hub-account/src/index.ts)
+
 <a id="authorization-events"></a>
 
 ### `authorization/*` events
@@ -488,6 +549,27 @@ Local grant removal has completed.
 ```
 
 Source: [`packages/credentials/deepseek-account/src/index.ts`](../../packages/credentials/deepseek-account/src/index.ts)
+
+<a id="hub-account-events"></a>
+
+### `hub-account/*` events
+
+<a id="hub-accountsession-expired--emit"></a>
+
+#### `hub-account/session-expired` — emit
+
+The user center refused to refresh the stored sign-in (employee or tenant disabled, grant revoked); the local grant is already removed.
+
+```ts cordis-catalog
+/**
+ * The user center refused to refresh the stored sign-in (employee or tenant disabled, grant
+ * revoked); the local grant is already removed.
+ * @mode emit
+ */
+'hub-account/session-expired'(): void
+```
+
+Source: [`packages/credentials/hub-account/src/types.ts`](../../packages/credentials/hub-account/src/types.ts)
 <!-- END GENERATED cordis-surface -->
 
 账号服务定义提供 getState、getProfile、getBalance、getUnnotifiedBonuses、ackBonusNotified、startSignIn、cancelSignIn、signOut、watch 及仅限 Host 的 resolveToken 和 getPlatformSession。平台提供者使用 AuthorizationFlow 和私有 GrantRecord 实现这些操作。AccountView 区分本地存在与服务器验证；尝试 ID 将取消绑定到单次本地流程。参见[账号包](../../packages/credentials/deepseek-account/README.zh.md)。

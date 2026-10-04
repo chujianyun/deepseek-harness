@@ -7,6 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
+import type { NativeCommandRunner } from '@deepseek-ai/dsh-native-command'
 import { remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import SkillController, { type SkillControllerInternals } from '../src/index.ts'
 import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
@@ -149,11 +150,11 @@ describe('installedSkills Remote', () => {
   })
 
   it('sends a skill to the Windows recycle bin with the path quoted as a PowerShell literal', async () => {
-    const run = vi.fn(async () => ({ stdout: '', stderr: '' }))
+    const run = vi.fn<NativeCommandRunner>(async () => ({ stdout: '', stderr: '' }))
     const { controller, agentsHome } = await boot({ platform: 'win32', run })
     const signal = new AbortController().signal
     await controller.uninstall('alpha', signal)
-    const [command, args, passedSignal, window] = run.mock.calls[0] as unknown as [string, string[], AbortSignal, string]
+    const [command, args, passedSignal, window] = run.mock.calls[0]!
     expect([command, passedSignal, window]).toEqual(['powershell.exe', signal, 'hidden'])
     expect(args.at(-1)).toContain(`'${join(agentsHome, 'skills', 'alpha')}'`)
     expect(args.at(-1)).toContain('SendToRecycleBin')

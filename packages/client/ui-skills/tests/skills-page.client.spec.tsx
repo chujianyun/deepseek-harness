@@ -27,7 +27,7 @@ function renderPage(initial: Partial<InstalledSnapshot> = {}) {
     onUninstall: vi.fn(async () => {}),
     onChat: vi.fn(),
     onDismissFailure: vi.fn(),
-  } as unknown as SkillsPageProps
+  } satisfies SkillsPageProps
   render(<SkillsPage {...props} />)
   return { store, props }
 }

@@ -1515,6 +1515,37 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-webserver -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-hub-account -->
+<a id="deepseek-aidsh-hub-account"></a>
+
+## `@deepseek-ai/dsh-hub-account`
+
+- `inject`: `credentials` · `authorization`
+- `source`: [`packages/credentials/hub-account/src/index.ts:35`](../packages/credentials/hub-account/src/index.ts)
+
+```ts config-catalog
+/** Deployment configuration: which user center, as which registered client. */
+export interface Config {
+  /** User-center origin serving `/oauth/*`. */
+  origin: string
+  /** client_id of the public client registered for DSH. */
+  clientId: string
+  /** Scopes requested at sign-in. */
+  scope?: string
+  /** Allow an HTTP origin, only on loopback, for development and tests. */
+  allowLoopbackHttp?: boolean
+  /** Deadline of each user-center HTTP request. */
+  requestTimeoutMs?: number
+  /** Upper bound of one browser sign-in attempt. */
+  attemptTimeoutMs?: number
+  /** Refresh the access token this long before it expires. */
+  refreshMarginMs?: number
+  /** Retry delay after a refresh that failed without a verdict (network, server error). */
+  refreshRetryMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-hub-account -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-invariants -->
 <a id="deepseek-aidsh-invariants"></a>
 
@@ -4382,6 +4413,7 @@ export interface Config {
 | `@deepseek-ai/dsh-client-ui-directory-picker-browse` | — | [`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-directory-picker-native` | — | [`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-goal` | — | [`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-hub-account` | — | [`packages/client/ui-hub-account/src/index.ts`](../packages/client/ui-hub-account/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-input-trigger` | — | [`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-jobs` | — | [`packages/client/ui-jobs/src/index.ts`](../packages/client/ui-jobs/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-layout` | — | [`packages/client/ui-layout/src/index.ts`](../packages/client/ui-layout/src/index.ts) |

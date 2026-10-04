@@ -1,0 +1,12 @@
+# Enables the Desktop-only Hub sign-in rows for the keyless Web e2e (`hub-gate.e2e.ts`)
+# against the spec's mock user center. The shipped web-app bundle enables them only for
+# the `desktop` profile with a configured user center.
+- id: hub-account
+  disabled: false
+  config:
+    origin: !!js process.env.DSH_E2E_HUB_ORIGIN
+    clientId: dsh-desktop
+    allowLoopbackHttp: true
+    refreshMarginMs: 2000
+- id: ui-hub-account
+  disabled: false

@@ -6,19 +6,19 @@ import {
   Button, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular,
   IconNewChatOutlineRegular, IconTrashOutlineRegular, Menu, Modal, Switch, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { InstalledSkillsInjected } from './installed-source.ts'
 import css from './SkillsPage.module.css'
 
 /** Cards shown per "load more" step. */
 const PAGE_SIZE = 12
 
-/** Props the renderer binds for the page. */
-export type SkillsPageProps = PropsRuntime<'main'> & PropsLocale<'skills'> & InjectFace<InstalledSkillsInjected>
+/** Props the page reads from its `main` registration: the translator and the installed-skill face. */
+export type SkillsPageProps = PropsLocale<'skills'> & InjectFace<InstalledSkillsInjected>
 
 /**
  * Render the installed-skill page and read the list when it mounts.
- * @param props - the main-panel share, the `skills` translator, and the installed-skill face.
+ * @param props - the `skills` translator and the installed-skill face.
  * @returns the page element.
  */
 export function SkillsPage(props: SkillsPageProps) {
