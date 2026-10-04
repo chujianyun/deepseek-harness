@@ -286,6 +286,12 @@ export interface Config {
   readonly disabledSkills?: Volatile<readonly string[]>
 }
 
+/**
+ * Discovery sources the user owns, the only ones `disabledSkills` applies to: a project, bundled,
+ * or runtime skill that shares a disabled name stays invocable.
+ */
+const DISABLEABLE_SOURCES: ReadonlySet<SkillSource> = new Set<SkillSource>(['user-dsh', 'user-agents'])
+
 /** Invocation policy of a disabled skill: neither the model nor the user can invoke it. */
 const DISABLED_INVOCATION: SkillInvocationPolicy = Object.freeze({ modelInvocable: false, userInvocable: false })
 
@@ -384,6 +390,8 @@ export class SkillRegistry extends Service {
   private readonly disabledSkills: Volatile<readonly string[]> | undefined
   /** Profile-local entry id used by Settings; absent when the plugin was mounted without Loader. */
   private readonly entryId: string | undefined
+  /** Serializes `setDisabled()` writes: each one reads the list the previous write committed. */
+  private disabledWrites: Promise<void> = Promise.resolve()
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'skills')
@@ -392,31 +400,37 @@ export class SkillRegistry extends Service {
     this.disabledSkills = config.disabledSkills
     this.entryId = ctx.fiber.entry?.options.id
     // The disabled list is applied on read, so catalogs stay cached; consumers only need to refetch.
-    ctx.on('loader/volatile-update', () => { this.ctx.emit(this.ctx, 'skills/change') })
+    ctx.on('loader/volatile-update', () => { this.notifyChange() })
   }
 
   /**
-   * Switch one skill on or off for this user by persisting the profile's `disabledSkills` list.
-   * A request that matches the current state writes nothing.
+   * Switch one user-level skill on or off by persisting the profile's `disabledSkills` list.
+   * Writes are queued, so concurrent calls never overwrite each other's change; a request that
+   * matches the state committed by the previous write writes nothing.
    * @param name - kebab-case skill name; it need not be currently discovered.
    * @param disabled - whether the skill should be disabled.
    * @throws when the registry was mounted without Settings or a profile entry.
    */
-  async setDisabled(name: string, disabled: boolean): Promise<void> {
-    if (!isSkillName(name)) throw new TypeError(`invalid skill name "${name}"`)
-    const current = this.disabledSkills?.get() ?? []
-    if (current.includes(name) === disabled) return
-    const settings = this.ctx.get('settings')
-    if (settings === undefined || this.entryId === undefined) {
-      throw new Error('disabling skills requires the settings service and a profile entry')
-    }
-    const next = disabled ? [...current, name].sort() : current.filter(item => item !== name)
-    await settings.update(this.entryId, { disabledSkills: next })
+  setDisabled(name: string, disabled: boolean): Promise<void> {
+    if (!isSkillName(name)) return Promise.reject(new TypeError(`invalid skill name "${name}"`))
+    const write = this.disabledWrites.then(async () => {
+      const current = this.disabledSkills?.get() ?? []
+      if (current.includes(name) === disabled) return
+      const settings = this.ctx.get('settings')
+      if (settings === undefined || this.entryId === undefined) {
+        throw new Error('disabling skills requires the settings service and a profile entry')
+      }
+      const next = disabled ? [...current, name].sort() : current.filter(item => item !== name)
+      await settings.update(this.entryId, { disabledSkills: next })
+    })
+    // A failed write must not block the ones queued after it; the caller still sees its own failure.
+    this.disabledWrites = write.catch(() => {})
+    return write
   }
 
   /** Force a disabled skill's invocation policy closed and mark it, leaving enabled skills untouched. */
   private applyDisabled<T extends SkillSummary>(skill: T): T {
-    if (!(this.disabledSkills?.get() ?? []).includes(skill.name)) return skill
+    if (!DISABLEABLE_SOURCES.has(skill.source) || !(this.disabledSkills?.get() ?? []).includes(skill.name)) return skill
     return { ...skill, invocation: DISABLED_INVOCATION, disabled: true }
   }
 

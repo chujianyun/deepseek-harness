@@ -2860,7 +2860,7 @@ export interface Config {
 
 - `inject`: `skills`
 - `refs`: [`NativeCommandRunner`](../packages/util/native-command/src/index.ts)
-- `source`: [`packages/skill/skill-controller/src/index.ts:42`](../packages/skill/skill-controller/src/index.ts)
+- `source`: [`packages/skill/skill-controller/src/index.ts:46`](../packages/skill/skill-controller/src/index.ts)
 
 ```ts config-catalog
 /** Host integrations replaceable by direct unit tests. */

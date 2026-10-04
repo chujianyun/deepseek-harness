@@ -129,7 +129,7 @@ interface SkillSummary {
 
 `ctx.skills.list()` preserves all four policy combinations. `isModelInvocable(skill)` and `isUserInvocable(skill)` read the corresponding required field. A model-only skill sets `{ modelInvocable: true, userInvocable: false }`, a user-only skill sets `{ modelInvocable: false, userInvocable: true }`, and setting both fields to `false` keeps the skill available only through trusted `ctx.skills.get()` callers. The local provider reads the exact kebab-case frontmatter keys `disable-model-invocation` and `user-invocable`, defaults omitted fields to `true`, and projects every parsed skill into this normalized policy.
 
-A skill the user disabled stays in `list()` with `disabled: true`, but the registry forces its invocation policy to `{ modelInvocable: false, userInvocable: false }` before `list()`, `snapshot()`, and `get()` return, so the model catalog, the `skill` tool, and `/name` refuse it without any extra check. The disabled list is the registry's volatile `disabledSkills` config, which `ctx.skills.setDisabled(name, disabled)` persists to the profile through the settings service; a change emits `skills/change`.
+A user-level skill (`user-dsh` or `user-agents`) the user disabled stays in `list()` with `disabled: true`, but the registry forces its invocation policy to `{ modelInvocable: false, userInvocable: false }` before `list()`, `snapshot()`, and `get()` return, so the model catalog, the `skill` tool, and `/name` refuse it without any extra check. The disabled list is the registry's volatile `disabledSkills` config, which `ctx.skills.setDisabled(name, disabled)` persists to the profile through the settings service; a change emits `skills/change`. A project, bundled, or runtime skill that shares a disabled name is unaffected, and concurrent `setDisabled` calls are queued so none overwrites another.
 
 `SkillCatalogSnapshot` distinguishes authoritative absence from transient provider failure or a catalog that kept changing during discovery. `skills` contains the sorted invocation-neutral summaries collected in that observation; `complete` is true only when every registered provider completed without a concurrent catalog revision. Incomplete snapshots are not cached, allowing each consumer to retain its last-good filtered catalog and retry.
 
@@ -242,7 +242,7 @@ The model-facing `skill({ name })` tool validates the kebab-case name, finds the
 
 `SkillListRequest` addresses one Session by `sessionId`; `SkillListValue` returns the user-invocable entries with name, description, optional usage guidance, and model-invocation availability. `SessionSkillCatalog` reads the Session cwd and recorded preset without activating an Agent. A live Agent may supply its scoped registry, while a cold Session uses the preset's standing scope.
 
-The Desktop Skills page reads installed user-level skills through the `installedSkills` namespace owned by [dsh-skill-controller](../../packages/skill/skill-controller). `list()` returns `InstalledSkillListValue`: one `InstalledSkillView` per skill from the `user-dsh`, `user-agents`, and `custom` sources, carrying name, description, group, source, instruction-file path, and enabled state. `setEnabled(name, enabled)` answers the updated `InstalledSkillView`; `reveal`, `edit`, and `uninstall` answer `InstalledSkillActionValue` once the native file manager, the text editor, or the move to the trash accepted the request. Every method refuses names outside that user-level list.
+The Desktop Skills page reads installed user-level skills through the `installedSkills` namespace owned by [dsh-skill-controller](../../packages/skill/skill-controller). `list()` returns `InstalledSkillListValue`: one `InstalledSkillView` per skill from the `user-dsh` and `user-agents` sources (a `customSkillDirs` root is deployment configuration, not a user installation), carrying name, description, group, source, instruction-file path, and enabled state. `setEnabled(name, enabled)` answers the updated `InstalledSkillView`; `reveal`, `edit`, and `uninstall` answer `InstalledSkillActionValue` once the native file manager, the text editor, or the move to the trash accepted the request. Every method refuses names outside that user-level list.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -332,13 +332,14 @@ Layered registry of skill providers, the host+per-scope shape the tools registry
 
 ```ts cordis-catalog
 /**
- * Switch one skill on or off for this user by persisting the profile's `disabledSkills` list.
- * A request that matches the current state writes nothing.
+ * Switch one user-level skill on or off by persisting the profile's `disabledSkills` list.
+ * Writes are queued, so concurrent calls never overwrite each other's change; a request that
+ * matches the state committed by the previous write writes nothing.
  * @param name - kebab-case skill name; it need not be currently discovered.
  * @param disabled - whether the skill should be disabled.
  * @throws when the registry was mounted without Settings or a profile entry.
  */
-async setDisabled(name: string, disabled: boolean): Promise<void>
+setDisabled(name: string, disabled: boolean): Promise<void>
 
 /**
  * Register a borrowed same-process provider synchronously during plugin

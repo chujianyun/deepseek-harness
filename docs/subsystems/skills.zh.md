@@ -129,7 +129,7 @@ interface SkillSummary {
 
 `ctx.skills.list()` 保留全部四种策略组合。`isModelInvocable(skill)` 和 `isUserInvocable(skill)` 分别读取对应的必填字段。仅供模型调用的 skill 设置 `{ modelInvocable: true, userInvocable: false }`，仅供用户调用的 skill 设置 `{ modelInvocable: false, userInvocable: true }`，两个字段均设为 `false` 后，该 skill 只能由受信的 `ctx.skills.get()` 调用方获取。本地提供方读取名称完全匹配的 kebab-case frontmatter 键 `disable-model-invocation` 和 `user-invocable`，将省略的字段默认为 `true`，并为每个解析出的 skill 生成这个规范化策略。
 
-用户停用的 skill 仍保留在 `list()` 中并带 `disabled: true`，但注册表在 `list()`、`snapshot()` 和 `get()` 返回前把它的调用策略强制改为 `{ modelInvocable: false, userInvocable: false }`，因此模型目录、`skill` 工具和 `/name` 都无需额外判断即可拒绝它。停用名单是注册表的 volatile 配置 `disabledSkills`，由 `ctx.skills.setDisabled(name, disabled)` 通过设置服务写回 profile；变更会发出 `skills/change`。
+用户停用的用户级 skill（`user-dsh` 或 `user-agents`）仍保留在 `list()` 中并带 `disabled: true`，但注册表在 `list()`、`snapshot()` 和 `get()` 返回前把它的调用策略强制改为 `{ modelInvocable: false, userInvocable: false }`，因此模型目录、`skill` 工具和 `/name` 都无需额外判断即可拒绝它。停用名单是注册表的 volatile 配置 `disabledSkills`，由 `ctx.skills.setDisabled(name, disabled)` 通过设置服务写回 profile；变更会发出 `skills/change`。同名的项目级、随包附带或 runtime skill 不受影响；并发的 `setDisabled` 调用会排队，互不覆盖。
 
 `SkillCatalogSnapshot` 用于区分已确定的不存在与提供方的瞬时失败或发现期间持续变化的目录。`skills` 包含该次观测中收集、排序且与调用策略无关的摘要；只有每个已注册提供方都在没有并发目录修订时完成发现，`complete` 才为 true。不完整快照不会缓存，因此每个消费方可以保留上一份经过自身过滤的可用目录并重试。
 
@@ -242,7 +242,7 @@ interface Config {
 
 `SkillListRequest` 通过 `sessionId` 指定一个 Session；`SkillListValue` 返回允许用户调用的条目，其中包含名称、描述、可选使用提示与模型调用可用性。`SessionSkillCatalog` 在不激活 Agent 的前提下读取 Session cwd 与记录的 preset。live Agent 可以提供其作用域 registry，冷 Session 则使用 preset 的 standing scope。
 
-Desktop 的 Skills 页面通过 [dsh-skill-controller](../../packages/skill/skill-controller) 拥有的 `installedSkills` namespace 读取已安装的用户级 skill。`list()` 返回 `InstalledSkillListValue`：来源为 `user-dsh`、`user-agents` 与 `custom` 的每个 skill 各一个 `InstalledSkillView`，包含名称、描述、分组、来源、指令文件路径与启用状态。`setEnabled(name, enabled)` 返回更新后的 `InstalledSkillView`；`reveal`、`edit` 与 `uninstall` 在原生文件管理器、文本编辑器或移到废纸篓接受请求后返回 `InstalledSkillActionValue`。所有方法都拒绝不在该用户级列表中的名称。
+Desktop 的 Skills 页面通过 [dsh-skill-controller](../../packages/skill/skill-controller) 拥有的 `installedSkills` namespace 读取已安装的用户级 skill。`list()` 返回 `InstalledSkillListValue`：来源为 `user-dsh` 与 `user-agents` 的每个 skill（`customSkillDirs` 根目录属于部署配置，不算用户安装） 各一个 `InstalledSkillView`，包含名称、描述、分组、来源、指令文件路径与启用状态。`setEnabled(name, enabled)` 返回更新后的 `InstalledSkillView`；`reveal`、`edit` 与 `uninstall` 在原生文件管理器、文本编辑器或移到废纸篓接受请求后返回 `InstalledSkillActionValue`。所有方法都拒绝不在该用户级列表中的名称。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -332,13 +332,14 @@ Layered registry of skill providers, the host+per-scope shape the tools registry
 
 ```ts cordis-catalog
 /**
- * Switch one skill on or off for this user by persisting the profile's `disabledSkills` list.
- * A request that matches the current state writes nothing.
+ * Switch one user-level skill on or off by persisting the profile's `disabledSkills` list.
+ * Writes are queued, so concurrent calls never overwrite each other's change; a request that
+ * matches the state committed by the previous write writes nothing.
  * @param name - kebab-case skill name; it need not be currently discovered.
  * @param disabled - whether the skill should be disabled.
  * @throws when the registry was mounted without Settings or a profile entry.
  */
-async setDisabled(name: string, disabled: boolean): Promise<void>
+setDisabled(name: string, disabled: boolean): Promise<void>
 
 /**
  * Register a borrowed same-process provider synchronously during plugin

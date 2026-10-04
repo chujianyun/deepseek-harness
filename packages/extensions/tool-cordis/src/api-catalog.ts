@@ -2666,8 +2666,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Layered registry of skill providers, the host+per-scope shape the tools registry established. A registration files into the layer of its calling context\'s scope (scopeOf): host rows and repository plugins land in the global layer, while a plugin mounted by an agent preset\'s standing composition lands in that preset\'s layer. A read merges the global layer with the viewing scope\'s chain — the nearest layer\'s entry wins a duplicate name outright, and the rank order decides duplicates only within one layer. It exposes sorted invocation-neutral summaries and loads full skill bodies on demand.',
     methods: [
       {
-        signature: 'async setDisabled(name: string, disabled: boolean): Promise<void>',
-        description: 'Switch one skill on or off for this user by persisting the profile\'s `disabledSkills` list. A request that matches the current state writes nothing.',
+        signature: 'setDisabled(name: string, disabled: boolean): Promise<void>',
+        description: 'Switch one user-level skill on or off by persisting the profile\'s `disabledSkills` list. Writes are queued, so concurrent calls never overwrite each other\'s change; a request that matches the state committed by the previous write writes nothing.',
         parameters: [{ name: 'name', description: 'kebab-case skill name; it need not be currently discovered.' }, { name: 'disabled', description: 'whether the skill should be disabled.' }],
         throws: ['when the registry was mounted without Settings or a profile entry.'],
       },

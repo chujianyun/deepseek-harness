@@ -93,6 +93,20 @@ describe('installed-skill source', () => {
     expect(source.hooks.installed.getSnapshot().skills.map(item => item.name)).toEqual(['beta'])
   })
 
+  it('drops a list read that was in flight when an action started, then reads again', async () => {
+    const stale = Promise.withResolvers<Awaited<ReturnType<InstalledDependencies['list']>>>()
+    const list = vi.fn()
+      .mockReturnValueOnce(stale.promise)
+      .mockResolvedValueOnce({ ok: true, value: { skills: [skill('beta', false)] } })
+    const source = createInstalledSource(deps({ list }))
+    const first = source.onRefresh()
+    await source.onUninstall('alpha')
+    stale.resolve({ ok: true, value: { skills: [skill('alpha'), skill('beta', false)] } })
+    await first
+    await vi.waitFor(() => { expect(list).toHaveBeenCalledTimes(2) })
+    await vi.waitFor(() => { expect(source.hooks.installed.getSnapshot()).toMatchObject({ status: 'ready', skills: [skill('beta', false)] }) })
+  })
+
   it('hands chat requests to the navigation dependency', () => {
     const d = deps()
     createInstalledSource(d).onChat('alpha')

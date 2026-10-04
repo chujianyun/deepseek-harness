@@ -1,5 +1,5 @@
 /** Installed user-level skills over a real registry and filesystem provider. */
-import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -37,7 +37,9 @@ async function boot(internals: SkillControllerInternals = {}) {
   await writeSkill(join(dshHome, 'skills'), 'beta')
   await writeSkill(join(agentsHome, 'skills'), 'alpha')
   await mkdir(customDir, { recursive: true })
-  await writeFile(join(customDir, 'flat.md'), '---\nname: flat\ndescription: Flat skill\n---\n\nFlat body.\n')
+  await writeFile(join(agentsHome, 'skills', 'flat.md'), '---\nname: flat\ndescription: Flat skill\n---\n\nFlat body.\n')
+  // A deployment-configured custom directory (shipped presets point it at packaged skills) is not user-installed.
+  await writeSkill(customDir, 'packaged')
   const ctx = new Context()
   const live = await liveConfig(ctx, SkillRegistry, {})
   const writes: object[] = []
@@ -54,14 +56,14 @@ describe('installedSkills Remote', () => {
     expect(remoteMethods(controller).map(method => method.method)).toEqual(['list', 'setEnabled', 'reveal', 'edit', 'uninstall'])
   })
 
-  it('lists user-level skills sorted by name, excluding bundled and runtime skills', async () => {
-    const { ctx, controller, dshHome, agentsHome, customDir } = await boot()
+  it('lists user-level skills sorted by name, excluding custom-directory, bundled, and runtime skills', async () => {
+    const { ctx, controller, dshHome, agentsHome } = await boot()
     ctx.skills.register({ name: 'runtime-only', description: 'Runtime', source: 'runtime', content: 'x' })
     const { skills } = await controller.list()
     expect(skills).toEqual([
       { name: 'alpha', description: 'alpha description', group: 'custom', source: 'user-agents', path: join(agentsHome, 'skills', 'alpha', 'SKILL.md'), enabled: true },
       { name: 'beta', description: 'beta description', group: 'custom', source: 'user-dsh', path: join(dshHome, 'skills', 'beta', 'SKILL.md'), enabled: true },
-      { name: 'flat', description: 'Flat skill', group: 'custom', source: 'custom', path: join(customDir, 'flat.md'), enabled: true },
+      { name: 'flat', description: 'Flat skill', group: 'custom', source: 'user-agents', path: join(agentsHome, 'skills', 'flat.md'), enabled: true },
     ])
   })
 
@@ -119,10 +121,31 @@ describe('installedSkills Remote', () => {
   })
 
   it('moves a flat skill file itself to the trash', async () => {
-    const { controller, home, customDir } = await boot({ platform: 'darwin' })
+    const { controller, home, agentsHome } = await boot({ platform: 'darwin' })
     await controller.uninstall('flat', new AbortController().signal)
-    expect(await readdir(customDir)).toEqual([])
+    expect(await readdir(join(agentsHome, 'skills'))).toEqual(['alpha'])
     expect(await readdir(join(home, '.Trash'))).toEqual(['flat.md'])
+  })
+
+  it('moves an installed symlink itself to the trash and leaves the folder it points to untouched', async () => {
+    const { controller, home, dshHome } = await boot({ platform: 'darwin' })
+    const source = join(home, 'code', 'linked')
+    await writeSkill(join(home, 'code'), 'linked')
+    await symlink(source, join(dshHome, 'skills', 'linked'))
+    await controller.uninstall('linked', new AbortController().signal)
+    expect(await readdir(source)).toEqual(['SKILL.md'])
+    expect(await readlink(join(home, '.Trash', 'linked'))).toBe(source)
+    expect(await readdir(join(dshHome, 'skills'))).toEqual(['beta'])
+  })
+
+  it('still reports an uninstall as done when forgetting its disabled state fails', async () => {
+    const { ctx, controller, home } = await boot({ platform: 'darwin' })
+    await controller.setEnabled('beta', false)
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    vi.spyOn(ctx.skills, 'setDisabled').mockRejectedValueOnce(new Error('profile locked'))
+    expect(await controller.uninstall('beta', new AbortController().signal)).toEqual({ done: true })
+    expect(await readdir(join(home, '.Trash'))).toEqual(['beta'])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('profile locked'))
   })
 
   it('sends a skill to the Windows recycle bin with the path quoted as a PowerShell literal', async () => {
@@ -136,11 +159,22 @@ describe('installedSkills Remote', () => {
     expect(args.at(-1)).toContain('SendToRecycleBin')
   })
 
+  it('refuses to uninstall a user-level skill whose provider reports no installed location', async () => {
+    const { ctx, controller } = await boot({ platform: 'darwin' })
+    ctx.skills.registerProvider(() => ({
+      name: 'virtual',
+      list: async () => [{ name: 'virtual-one', description: 'Virtual', invocation: { modelInvocable: true, userInvocable: true }, provider: 'virtual', source: 'user-dsh', rank: 1, path: '/virtual/SKILL.md', locator: null }],
+      get: async () => undefined,
+    }))
+    const failure = await controller.uninstall('virtual-one', new AbortController().signal).catch((error: unknown) => error)
+    expect(remoteErrorOf(failure)).toMatchObject({ code: 'installed-skills/rejected', details: { name: 'virtual-one' } })
+  })
+
   it('refuses to uninstall on a platform without a supported trash', async () => {
     const { controller, agentsHome } = await boot({ platform: 'linux' })
     const failure = await controller.uninstall('alpha', new AbortController().signal).catch((error: unknown) => error)
     expect(remoteErrorOf(failure)).toMatchObject({ code: 'installed-skills/rejected' })
-    expect(await readdir(join(agentsHome, 'skills'))).toEqual(['alpha'])
+    expect(await readdir(join(agentsHome, 'skills'))).toEqual(['alpha', 'flat.md'])
   })
 
   it('reads through the default agent preset scope and releases it', async () => {

@@ -49,5 +49,5 @@ DeepSeek Harness 的领域词汇为每个概念规定一个规范术语。各术
 - **Skill Hub**：由外部用户中心（new-dsh-ms）托管、按租户隔离的 Skill 市场。DSH 只浏览并安装其中自己有权看到的 Skill，从不负责 Skill 的审核、可见性或发布。<a id="skill-hub"></a>
 - **Hub 登录**：作为整个应用门禁的用户中心登录。一次登录只绑定一份租户员工档案；切换租户即重新登录。它与模型凭据（DeepSeek 账号或 API Key）相互独立。_避免_：账号、单说“登录”。
 - **市场 Skill**：从 [Skill Hub](#skill-hub) 安装到用户本机的 Skill；它记住自己来自哪个 Hub Skill 的哪个版本，因此当 Hub 的当前版本更新时，DSH 可以提示更新。<a id="market-skill"></a>
-- **自定义 Skill**：用户自己放到本机的用户级 Skill（用户 DSH 或 agents 目录，或已配置的 custom 目录）。项目级和随包附带的 Skill 既不是自定义 Skill，也不是[市场 Skill](#market-skill)。<a id="custom-skill"></a>
+- **自定义 Skill**：用户自己放到本机的用户级 Skill（用户 DSH 或 agents 目录）。项目级、随包附带以及部署配置的 custom 目录中的 Skill 既不是自定义 Skill，也不是[市场 Skill](#market-skill)。<a id="custom-skill"></a>
 - **停用的 Skill**：用户关闭的已安装 Skill：文件保留原处，但不出现在模型的 Skill 目录中，也无法通过 `/name` 调用。_避免_：卸载、隐藏。

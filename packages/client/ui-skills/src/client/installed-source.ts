@@ -44,7 +44,8 @@ export interface InstalledSkillsInjected {
 
 /**
  * Create the installed-skill source. Reads start when the page asks for them; every action
- * clears the previous failure, marks its skill busy until the Host answers, and records a refusal.
+ * clears the previous failure, marks its skill busy until the Host answers, records a refusal,
+ * and supersedes a list read still in flight so an older answer cannot undo it.
  * @param deps - Remote calls and the chat navigation.
  * @returns the observable snapshot and the page callbacks.
  */
@@ -64,11 +65,15 @@ export function createInstalledSource(deps: InstalledDependencies): InstalledSki
     patch(() => result.ok ? { status: 'ready', skills: result.value.skills } : { status: 'error' })
   }
 
-  /** Run one Host action for a skill; true when it succeeded. */
+  /** Run one Host action for a skill; true when it succeeded. A list read already in flight predates it and is dropped. */
   const act = async <T>(name: string, call: () => Promise<RemoteResult<T>>): Promise<boolean> => {
+    const supersedes = store.getSnapshot().status === 'loading'
+    epoch += 1
     patch(({ busy }) => ({ failure: null, busy: [...busy, name] }))
     const result = await call()
     patch(({ busy }) => ({ busy: busy.filter(item => item !== name), ...result.ok ? {} : { failure: result.error.message } }))
+    // The dropped read never published; read again so the page leaves its loading state.
+    if (supersedes) void onRefresh()
     return result.ok
   }
 

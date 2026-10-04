@@ -1273,15 +1273,20 @@ describe('SkillRegistry scoped layers', () => {
 })
 
 describe('SkillRegistry disabled skills', () => {
+  const userSkill = (name: string, description: string): SkillCandidate => ({ ...memorySkill(name, description, 100), source: 'user-dsh' })
+
   /** Mount the registry behind Loader with a settings stub that writes patches back into its live entry config. */
-  async function mounted(initial: object = {}) {
+  async function mounted(initial: object = {}, update?: (patch: Record<string, unknown>) => Promise<void>) {
     const ctx = new Context()
     const live = await liveConfig(ctx, SkillRegistry, initial)
     const writes: object[] = []
-    ctx.provide('settings', { update: async (_entry: string, patch: Record<string, unknown>) => { writes.push(patch); await live.update(patch) } } as never)
+    ctx.provide('settings', { update: async (_entry: string, patch: Record<string, unknown>) => {
+      writes.push(patch)
+      await (update ?? (next => live.update(next)))(patch)
+    } } as never)
     const skills = ctx.get('skills')!
-    skills.registerProvider(() => new MemoryProvider([memorySkill('alpha', 'Alpha', 100), memorySkill('beta', 'Beta', 100)]))
-    return { ctx, skills, writes }
+    skills.registerProvider(() => new MemoryProvider([userSkill('alpha', 'Alpha'), userSkill('beta', 'Beta')]))
+    return { ctx, skills, writes, live }
   }
 
   it('keeps a disabled skill listed but closes its invocation policy on list and get', async () => {
@@ -1310,6 +1315,39 @@ describe('SkillRegistry disabled skills', () => {
     expect((await skills.list()).find(skill => skill.name === 'alpha')).not.toHaveProperty('disabled')
   })
 
+  it('applies the disabled list to user-level skills only, never to a same-named project or runtime skill', async () => {
+    const ctx = new Context()
+    await liveConfig(ctx, SkillRegistry, { disabledSkills: ['shared', 'runtime-one'] })
+    const skills = ctx.get('skills')!
+    skills.registerProvider(() => new MemoryProvider([{ ...memorySkill('shared', 'Project copy', 100), source: 'project-dsh' }]))
+    skills.register({ name: 'runtime-one', description: 'Runtime', source: 'runtime', content: 'x' })
+    for (const skill of await skills.list()) {
+      expect(skill).not.toHaveProperty('disabled')
+      expect(isModelInvocable(skill)).toBe(true)
+    }
+  })
+
+  it('queues concurrent switches so neither overwrites the other, and a failed write does not block the queue', async () => {
+    const { skills, writes, live } = await mounted()
+    await Promise.all([skills.setDisabled('alpha', true), skills.setDisabled('beta', true)])
+    expect(writes).toEqual([{ disabledSkills: ['alpha'] }, { disabledSkills: ['alpha', 'beta'] }])
+    expect((await skills.list()).every(skill => skill.disabled === true)).toBe(true)
+
+    let failNext = true
+    const flaky = await mounted({}, async (patch) => {
+      if (failNext) {
+        failNext = false
+        throw new Error('profile locked')
+      }
+      await flaky.live.update(patch)
+    })
+    const [first, second] = await Promise.allSettled([flaky.skills.setDisabled('alpha', true), flaky.skills.setDisabled('beta', true)])
+    expect(first).toMatchObject({ status: 'rejected', reason: new Error('profile locked') })
+    expect(second.status).toBe('fulfilled')
+    expect((await flaky.skills.list()).find(skill => skill.name === 'beta')).toMatchObject({ disabled: true })
+    void live
+  })
+
   it('rejects invalid names and refuses to persist without settings or a profile entry', async () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
@@ -1320,7 +1358,7 @@ describe('SkillRegistry disabled skills', () => {
   it('treats every skill as enabled when constructed without config, and an unchanged request as a no-op', async () => {
     const ctx = new Context()
     const skills = new SkillRegistry(ctx)
-    skills.registerProvider(() => new MemoryProvider([memorySkill('alpha', 'Alpha', 100)]))
+    skills.registerProvider(() => new MemoryProvider([{ ...memorySkill('alpha', 'Alpha', 100), source: 'user-dsh' }]))
     expect((await skills.list())[0]).not.toHaveProperty('disabled')
     await expect(skills.setDisabled('alpha', false)).resolves.toBeUndefined()
     await ctx.fiber.dispose()

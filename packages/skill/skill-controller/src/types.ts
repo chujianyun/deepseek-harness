@@ -24,7 +24,7 @@ export interface InstalledSkillView {
   readonly description: string
   /** Page group this skill belongs to. */
   readonly group: InstalledSkillGroup
-  /** Discovery source that produced the winning skill (`user-dsh`, `user-agents`, or `custom`). */
+  /** Discovery source that produced the winning skill (`user-dsh` or `user-agents`). */
   readonly source: string
   /** Absolute path of the skill's instruction file. */
   readonly path: string

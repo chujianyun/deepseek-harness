@@ -1,0 +1,6 @@
+# Enables the Desktop-only Skills rows for the keyless Web e2e (`skills-page.e2e.ts`).
+# The shipped web-app bundle enables them only for the `desktop` profile.
+- id: skill-controller
+  disabled: false
+- id: ui-skills
+  disabled: false

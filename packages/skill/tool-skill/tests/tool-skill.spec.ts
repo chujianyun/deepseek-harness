@@ -1085,7 +1085,10 @@ describe('user-explicit invocation injection', () => {
     await writePolicySkill(skillsRoot, 'shared-skill', 'Ordinary skill', '', 'Shared instructions.')
     await writePolicySkill(skillsRoot, 'switched-off', 'Disabled skill', '', 'Must not be disclosed.')
     const ctx = await setup(home, {}, { disabledSkills: ['switched-off'] })
-    const agent = agentForCwd(home)
+    // A workspace below home, so ~/.agents/skills keeps its user-level source (the only one the disabled list applies to).
+    const workspace = join(home, 'workspace')
+    await mkdir(workspace)
+    const agent = agentForCwd(workspace)
 
     const decision = await proposeStep(ctx, agent, [gesture('/switched-off run it')])
     if (decision.kind !== 'enter') throw new Error('expected enter')

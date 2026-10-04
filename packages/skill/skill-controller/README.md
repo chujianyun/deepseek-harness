@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`@deepseek-ai/dsh-skill-controller` exposes the generated `ctx.remote.installedSkills` namespace for the Desktop "installed skills" page. It lists the custom skills the user placed on this machine (sources `user-dsh`, `user-agents`, and `custom`), switches one on or off through `ctx.skills.setDisabled()`, reveals or edits its instruction file with the native file manager or text editor, and moves its folder (or flat file) to the platform trash.
+`@deepseek-ai/dsh-skill-controller` exposes the generated `ctx.remote.installedSkills` namespace for the Desktop "installed skills" page. It lists the custom skills the user placed on this machine (sources `user-dsh` and `user-agents`), switches one on or off through `ctx.skills.setDisabled()`, reveals or edits its instruction file with the native file manager or text editor, and moves its folder (or flat file) to the platform trash.
 
 ## Table of Contents
 
@@ -23,9 +23,9 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this package as a Loader entry in a profile whose browser shows installed skills; it injects `skills`. `list()` reads the catalog through the default agent preset scope when `agentPresets` is mounted, otherwise through the global layer, with a working directory that has no project roots, so every user-level skill keeps its user source. Project-level, runtime, and bundled skills are never listed.
+Mount this package as a Loader entry in a profile whose browser shows installed skills; it injects `skills`. `list()` reads the catalog through the default agent preset scope when `agentPresets` is mounted, otherwise through the global layer, with a working directory that has no project roots, so every user-level skill keeps its user source. Project-level, runtime, bundled, and `customSkillDirs` skills are never listed; a custom directory is deployment configuration (the shipped presets point it at packaged skills), not a user installation.
 
-Every other method resolves the name against that same list first and fails with `installed-skills/not-found` for any other skill, so project and bundled skills cannot be toggled, revealed, or removed here. `setEnabled(name, enabled)` persists through the registry's `disabledSkills` setting and fails with `installed-skills/rejected` when the profile cannot be written. `reveal(name)` and `edit(name)` hand the instruction file to `revealNativePath` and `openNativeTextFile`. `uninstall(name)` moves `<name>/` (or the flat `<name>.md`) to `~/.Trash` on macOS, naming collisions `<name> 2`, `<name> 3`, … as Finder does, or to the recycle bin through PowerShell on Windows, and then clears the skill's disabled state; other platforms fail with `installed-skills/rejected`.
+Every other method resolves the name against that same list first and fails with `installed-skills/not-found` for any other skill, so project and bundled skills cannot be toggled, revealed, or removed here. `setEnabled(name, enabled)` persists through the registry's `disabledSkills` setting and fails with `installed-skills/rejected` when the profile cannot be written. `reveal(name)` and `edit(name)` hand the instruction file to `revealNativePath` and `openNativeTextFile`. `uninstall(name)` moves the installed entry — `<name>/` or the flat `<name>.md` under its root, an installed symlink as the link itself, never the folder it points to — to `~/.Trash` on macOS, naming collisions `<name> 2`, `<name> 3`, … as Finder does and copying then deleting when the trash is on another volume, or to the recycle bin through PowerShell on Windows, and then clears the skill's disabled state (a failure there is logged, the removal still succeeds); other platforms fail with `installed-skills/rejected`.
 
 -----
 
@@ -52,6 +52,7 @@ No direct effect; the skill catalog consumer appends a replacement catalog messa
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **Windows error dialogs** — the recycle-bin move asks `Microsoft.VisualBasic` for `OnlyErrorDialogs`, the quietest option that still recycles; an error dialog in the hidden PowerShell process waits until the caller's signal aborts the command.
 - **No trash on Linux** — `uninstall` refuses on Linux because the Desktop product ships for macOS and Windows only; a Linux Host would need the XDG trash layout.
 
 <a id="dev-note"></a>

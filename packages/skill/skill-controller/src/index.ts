@@ -6,9 +6,9 @@
  * @module @deepseek-ai/dsh-skill-controller
  */
 
-import { rename, mkdir, stat } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { cp, lstat, mkdir, rename, rm, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { basename, join, parse } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { openNativeTextFile, revealNativePath, runNativeCommand, type NativeCommandRunner } from '@deepseek-ai/dsh-native-command'
@@ -29,14 +29,18 @@ declare module '@deepseek-ai/cordis' {
 /** A discovered skill backed by a file on this machine. */
 type InstalledSkill = SkillSummary & { readonly path: string }
 
-/** Discovery sources whose skills the user placed on this machine themselves. */
-const CUSTOM_SOURCES: ReadonlySet<string> = new Set(['user-dsh', 'user-agents', 'custom'])
+/**
+ * Discovery sources whose skills the user placed on this machine themselves. `custom` is excluded:
+ * `customSkillDirs` is deployment configuration (the shipped presets point it at packaged skills).
+ */
+const CUSTOM_SOURCES: ReadonlySet<string> = new Set(['user-dsh', 'user-agents'])
 
 /**
- * Working directory used for user-level lookups. It has no `.git` ancestor and no `.dsh` or `.agents`
- * child, so project-level roots resolve to nothing and every user-level skill keeps its user source.
+ * Working directory used for user-level lookups: a never-created child of the filesystem root, so
+ * no `.git` ancestor (a home directory under version control included) turns user roots into project
+ * roots, and every user-level skill keeps its user source.
  */
-const NEUTRAL_CWD = join(tmpdir(), 'dsh-skill-controller')
+const NEUTRAL_CWD = join(parse(homedir()).root, '.dsh-skill-controller-neutral')
 
 /** Host integrations replaceable by direct unit tests. */
 export interface SkillControllerInternals {
@@ -52,9 +56,18 @@ export interface SkillControllerInternals {
   readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>
 }
 
-/** The file or directory that holds one skill: `<name>/` for a `SKILL.md` package, the file itself for a flat `<name>.md`. */
-function skillRoot(path: string): string {
-  return basename(path) === 'SKILL.md' ? dirname(path) : path
+/**
+ * The installed entry that holds one skill, as discovery found it under its root — `<root>/<name>/`
+ * for a `SKILL.md` package, `<root>/<name>.md` for a flat file. Discovery reports `path` with symlinks
+ * resolved, so the entry comes from the unresolved `resourceBase` instead: removing it removes an
+ * installed symlink itself, never the folder it points to.
+ * @param skill - installed skill.
+ * @returns the path to move to the trash.
+ */
+function installedEntry(skill: InstalledSkill): string {
+  const base = skill.resourceBase?.kind === 'directory' ? skill.resourceBase.path : undefined
+  if (base === undefined) throw new Error(`skill "${skill.name}" has no installed location`)
+  return basename(skill.path) === 'SKILL.md' ? base : join(base, `${skill.name}.md`)
 }
 
 function messageOf(error: unknown): string {
@@ -150,8 +163,13 @@ export class SkillController extends TypertRemoteService {
   @Remote
   async uninstall(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue> {
     const skill = await this.find(name)
-    const result = await this.act(name, () => this.moveToTrash(skillRoot(skill.path), signal))
-    if (skill.disabled === true) await this.ctx.skills.setDisabled(skill.name, false)
+    const result = await this.act(name, () => this.moveToTrash(installedEntry(skill), signal))
+    // The skill is already gone; a failure to forget its disabled state must not report the removal as failed.
+    if (skill.disabled === true) {
+      await this.ctx.skills.setDisabled(skill.name, false).catch((error: unknown) => {
+        this.ctx.logger.warn(`uninstalled skill "${name}" stays in disabledSkills: ${messageOf(error)}`)
+      })
+    }
     return result
   }
 
@@ -169,7 +187,7 @@ export class SkillController extends TypertRemoteService {
     if (platform === 'darwin') {
       const trash = join(this.internals.home, '.Trash')
       await mkdir(trash, { recursive: true })
-      await rename(path, await freeName(trash, basename(path)))
+      await moveAcrossVolumes(path, await freeName(trash, basename(path)))
       return
     }
     if (platform === 'win32') {
@@ -213,6 +231,23 @@ function view(skill: InstalledSkill): InstalledSkillView {
     source: skill.source,
     path: skill.path,
     enabled: skill.disabled !== true,
+  }
+}
+
+/**
+ * Rename `from` to `to`, copying then deleting when they are on different volumes (EXDEV). A symlink
+ * moves as the link itself.
+ * @param from - existing entry.
+ * @param to - free destination path.
+ */
+async function moveAcrossVolumes(from: string, to: string): Promise<void> {
+  try {
+    await rename(from, to)
+  } catch (error: unknown) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'EXDEV')) throw error
+    const entry = await lstat(from)
+    await cp(from, to, { recursive: entry.isDirectory(), verbatimSymlinks: true })
+    await rm(from, { recursive: true, force: true })
   }
 }
 
