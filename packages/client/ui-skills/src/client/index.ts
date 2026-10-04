@@ -64,7 +64,8 @@ export function apply(ctx: ClientContext): void {
     list: query => market.list(query),
     categories: () => market.categories(),
     detail: id => market.detail(id),
-    install: id => market.installSkill(id),
+    install: (id, options) => market.installSkill(id, options),
+    installedStatus: () => market.installedStatus(),
     installed: () => { void installed.onRefresh() },
   })
   const face = { ...installed, ...marketFace, hooks: { ...installed.hooks, ...marketFace.hooks } }

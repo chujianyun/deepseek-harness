@@ -16,7 +16,8 @@ import type { SkillsPageProps } from '../src/client/SkillsPage.tsx'
 export function pageProps(installed: Partial<InstalledSnapshot> = {}, market: Partial<MarketSnapshot> = {}) {
   const installedStore = createSnapshotStore<InstalledSnapshot>({ status: 'ready', skills: [], busy: [], failure: null, ...installed })
   const marketStore = createSnapshotStore<MarketSnapshot>({
-    status: 'ready', error: null, items: [], total: 0, page: 1, q: '', categoryId: null, categories: [], installing: [], failure: null, detail: null, ...market,
+    status: 'ready', error: null, items: [], total: 0, page: 1, q: '', categoryId: null, categories: [], installing: [], failure: null, detail: null,
+    statuses: {}, overwrite: null, ...market,
   })
   const props = {
     t: makeTranslate(zh),
@@ -37,6 +38,9 @@ export function pageProps(installed: Partial<InstalledSnapshot> = {}, market: Pa
     onOpenDetail: vi.fn(async () => {}),
     onCloseDetail: vi.fn(),
     onDismissMarketFailure: vi.fn(),
+    onConfirmOverwrite: vi.fn(async () => {}),
+    onCancelOverwrite: vi.fn(),
+    onRefreshStatus: vi.fn(async () => {}),
   } satisfies SkillsPageProps
   return { installedStore, marketStore, props }
 }

@@ -142,7 +142,15 @@ function MarketCard({ item, props }: { item: MarketSkillCard; props: SkillsPageP
 function InstallControl({ item, props, compact = false }: { item: MarketSkillCard; props: SkillsPageProps; compact?: boolean }) {
   const { t, useMarket, onInstall } = props
   const installing = useMarket(snapshot => snapshot.installing.includes(item.id))
-  if (item.installedVersion !== null) return <Tag>{t('installedVersion', { version: item.installedVersion })}</Tag>
+  if (item.installedVersion !== null && !item.updateAvailable) return <Tag>{t('installedVersion', { version: item.installedVersion })}</Tag>
+  if (item.updateAvailable) {
+    return (
+      <Button size="sm" variant={compact ? 'outline' : 'primary'} disabled={installing}
+        aria-label={t('update', { name: item.name })} onClick={() => { void onInstall(item.id) }}>
+        {installing ? t('installing') : t('updateTo', { version: item.version })}
+      </Button>
+    )
+  }
   const label = installing ? t('installing') : compact ? '+' : t('installButton')
   const button = (
     <Button size="sm" variant={compact ? 'outline' : 'primary'} disabled={installing || item.conflict}

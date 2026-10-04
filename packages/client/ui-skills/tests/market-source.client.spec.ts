@@ -3,7 +3,7 @@ import type { MarketSkillCard, MarketSkillDetail, MarketSkillPage } from '@deeps
 import { createMarketSource, MARKET_PAGE_SIZE, type MarketDependencies } from '../src/client/market-source.ts'
 
 const card = (name: string, installedVersion: string | null = null): MarketSkillCard => ({
-  id: `id-${name}`, name, description: name, category: null, version: '1.0.0', updatedAt: 'x', installedVersion, conflict: false,
+  id: `id-${name}`, name, description: name, category: null, version: '1.0.0', updatedAt: 'x', installedVersion, updateAvailable: false, conflict: false,
 })
 const ok = <T>(value: T) => Promise.resolve({ ok: true as const, value })
 const fail = (message: string) => Promise.resolve({ ok: false as const, error: { code: 'x', message, details: {} } as never })
@@ -15,6 +15,7 @@ function deps() {
     categories: vi.fn<MarketDependencies['categories']>(() => ok([{ id: 'c', name: 'C' }])),
     detail: vi.fn<MarketDependencies['detail']>(id => ok({ ...card('a'), id, ownerName: 'o', skillMd: '#', files: [] } satisfies MarketSkillDetail)),
     install: vi.fn<MarketDependencies['install']>(() => ok(card('a', '1.0.0'))),
+    installedStatus: vi.fn<MarketDependencies['installedStatus']>(() => ok([{ name: 'a', hubSkillId: 'id-a', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' as const }])),
     installed: vi.fn<MarketDependencies['installed']>(),
   }
 }
@@ -91,5 +92,35 @@ describe('market source', () => {
     expect(source.hooks.market.getSnapshot().detail).toEqual({ status: 'error', id: 'id-new', message: 'gone' })
     source.onCloseDetail()
     expect(source.hooks.market.getSnapshot().detail).toBeNull()
+  })
+
+  it('reads installed statuses and refreshes them after an install', async () => {
+    const d = deps()
+    const source = createMarketSource(d)
+    await source.onRefreshStatus()
+    expect(source.hooks.market.getSnapshot().statuses).toEqual({ a: { name: 'a', hubSkillId: 'id-a', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' } })
+    await source.onInstall('id-a')
+    expect(d.install).toHaveBeenCalledWith('id-a', {})
+    expect(d.installedStatus).toHaveBeenCalledTimes(2)
+    d.installedStatus.mockReturnValueOnce(fail('offline'))
+    await source.onRefreshStatus()
+    expect(source.hooks.market.getSnapshot().statuses.a?.state).toBe('current')
+  })
+
+  it('asks before overwriting local edits, and overwrites only when confirmed', async () => {
+    const d = deps()
+    d.install.mockReturnValueOnce(Promise.resolve({ ok: false as const, error: { code: 'skill-market/local-changes', message: 'x', details: { name: 'a', files: ['run.sh'] } } as never }))
+    const source = createMarketSource(d)
+    await source.onInstall('id-a')
+    expect(source.hooks.market.getSnapshot()).toMatchObject({ overwrite: { id: 'id-a', name: 'a', files: ['run.sh'] }, failure: null })
+    source.onCancelOverwrite()
+    expect(source.hooks.market.getSnapshot().overwrite).toBeNull()
+    await source.onConfirmOverwrite()
+    expect(d.install).toHaveBeenCalledTimes(1)
+    d.install.mockReturnValueOnce(Promise.resolve({ ok: false as const, error: { code: 'skill-market/local-changes', message: 'x', details: { name: 'a', files: ['run.sh'] } } as never }))
+    await source.onInstall('id-a')
+    await source.onConfirmOverwrite()
+    expect(d.install).toHaveBeenLastCalledWith('id-a', { overwriteLocalChanges: true })
+    expect(source.hooks.market.getSnapshot().overwrite).toBeNull()
   })
 })

@@ -2,7 +2,7 @@
 
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
-  MarketCategory, MarketSkillCard, MarketSkillDetail, MarketSkillPage, MarketSkillQuery,
+  MarketCategory, MarketInstalledStatus, MarketInstallOptions, MarketSkillCard, MarketSkillDetail, MarketSkillPage, MarketSkillQuery,
 } from '@deepseek-ai/dsh-skill-market/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
@@ -40,6 +40,10 @@ export interface MarketSnapshot {
   /** The last refused install until the next action or a dismissal. */
   readonly failure: MarketFailure | null
   readonly detail: MarketDetailState | null
+  /** Skill Hub state of each installed market Skill, by name; read when the installed view opens. */
+  readonly statuses: Readonly<Record<string, MarketInstalledStatus>>
+  /** An update waiting for the user to accept overwriting these locally edited files. */
+  readonly overwrite: { readonly id: string; readonly name: string; readonly files: readonly string[] } | null
 }
 
 /** Remote calls the source drives. */
@@ -47,7 +51,8 @@ export interface MarketDependencies {
   readonly list: (query: MarketSkillQuery) => Promise<RemoteResult<MarketSkillPage>>
   readonly categories: () => Promise<RemoteResult<readonly MarketCategory[]>>
   readonly detail: (id: string) => Promise<RemoteResult<MarketSkillDetail>>
-  readonly install: (id: string) => Promise<RemoteResult<MarketSkillCard>>
+  readonly install: (id: string, options: MarketInstallOptions) => Promise<RemoteResult<MarketSkillCard>>
+  readonly installedStatus: () => Promise<RemoteResult<readonly MarketInstalledStatus[]>>
   /** Runs after a successful install, so the installed list follows. */
   readonly installed: () => void
 }
@@ -60,7 +65,13 @@ export interface MarketInjected {
   readonly onSearch: (q: string) => Promise<void>
   readonly onCategory: (categoryId: string | null) => Promise<void>
   readonly onLoadMore: () => Promise<void>
+  /** Install or update; local edits in the way open the overwrite confirmation instead of failing. */
   readonly onInstall: (id: string) => Promise<void>
+  /** Overwrite the edited files of the pending update. */
+  readonly onConfirmOverwrite: () => Promise<void>
+  readonly onCancelOverwrite: () => void
+  /** Read where the installed market Skills stand on the Skill Hub. */
+  readonly onRefreshStatus: () => Promise<void>
   readonly onOpenDetail: (id: string) => Promise<void>
   readonly onCloseDetail: () => void
   readonly onDismissMarketFailure: () => void
@@ -75,6 +86,7 @@ export interface MarketInjected {
 export function createMarketSource(deps: MarketDependencies): MarketInjected {
   const store = createSnapshotStore<MarketSnapshot>({
     status: 'loading', error: null, items: [], total: 0, page: 0, q: '', categoryId: null, categories: [], installing: [], failure: null, detail: null,
+    statuses: {}, overwrite: null,
   })
   const patch = (next: (current: MarketSnapshot) => Partial<MarketSnapshot>): void => {
     const current = store.getSnapshot()
@@ -95,10 +107,33 @@ export function createMarketSource(deps: MarketDependencies): MarketInjected {
   }
 
   const markInstalled = (card: MarketSkillCard): void => {
+    const installed = { installedVersion: card.installedVersion, updateAvailable: card.updateAvailable }
     patch(({ items, detail }) => ({
-      items: items.map(item => item.id === card.id ? { ...item, installedVersion: card.installedVersion } : item),
-      ...detail?.status === 'ready' && detail.id === card.id ? { detail: { ...detail, value: { ...detail.value, installedVersion: card.installedVersion } } } : {},
+      items: items.map(item => item.id === card.id ? { ...item, ...installed } : item),
+      ...detail?.status === 'ready' && detail.id === card.id ? { detail: { ...detail, value: { ...detail.value, ...installed } } } : {},
     }))
+  }
+
+  const refreshStatus = async (): Promise<void> => {
+    const result = await deps.installedStatus()
+    if (result.ok) patch(() => ({ statuses: Object.fromEntries(result.value.map(status => [status.name, status])) }))
+  }
+
+  const install = async (id: string, options: MarketInstallOptions): Promise<void> => {
+    patch(({ installing }) => ({ failure: null, overwrite: null, installing: [...installing, id] }))
+    const result = await deps.install(id, options)
+    const local = !result.ok && result.error.code === 'skill-market/local-changes'
+      ? result.error.details as { name: string; files: readonly string[] } : undefined
+    const failure = result.ok || local !== undefined ? {} : { failure: { code: result.error.code, message: result.error.message } }
+    patch(({ installing }) => ({
+      installing: installing.filter(item => item !== id), ...failure,
+      ...local === undefined ? {} : { overwrite: { id, name: local.name, files: local.files } },
+    }))
+    if (result.ok) {
+      markInstalled(result.value)
+      deps.installed()
+      await refreshStatus()
+    }
   }
 
   return {
@@ -116,16 +151,13 @@ export function createMarketSource(deps: MarketDependencies): MarketInjected {
       await read(1)
     },
     onLoadMore: () => read(store.getSnapshot().page + 1),
-    onInstall: async (id) => {
-      patch(({ installing }) => ({ failure: null, installing: [...installing, id] }))
-      const result = await deps.install(id)
-      const failure = result.ok ? {} : { failure: { code: result.error.code, message: result.error.message } }
-      patch(({ installing }) => ({ installing: installing.filter(item => item !== id), ...failure }))
-      if (result.ok) {
-        markInstalled(result.value)
-        deps.installed()
-      }
+    onInstall: id => install(id, {}),
+    onConfirmOverwrite: async () => {
+      const pending = store.getSnapshot().overwrite
+      if (pending !== null) await install(pending.id, { overwriteLocalChanges: true })
     },
+    onCancelOverwrite: () => { patch(() => ({ overwrite: null })) },
+    onRefreshStatus: refreshStatus,
     onOpenDetail: async (id) => {
       patch(() => ({ detail: { status: 'loading', id } }))
       const result = await deps.detail(id)

@@ -10,7 +10,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join, parse } from 'node:path'
+import { dirname, join, parse, relative, sep } from 'node:path'
 import { Context, Service, type Volatile } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-settings'
@@ -28,7 +28,8 @@ import Schema from '@deepseek-ai/schemastery'
 import { unzipSync } from 'fflate'
 import { z } from 'zod'
 import type {
-  MarketCategory, MarketInstallRecord, MarketSkillCard, MarketSkillDetail, MarketSkillPage, MarketSkillQuery,
+  MarketCategory, MarketInstalledStatus, MarketInstallOptions, MarketInstallRecord, MarketSkillCard, MarketSkillDetail,
+  MarketSkillPage, MarketSkillQuery,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -91,6 +92,44 @@ const record = z.object({
 })
 
 const sha256 = (data: Uint8Array): string => createHash('sha256').update(data).digest('hex')
+
+/**
+ * Order two `x.y.z` versions numerically, part by part.
+ * @param left - one version.
+ * @param right - the other version.
+ * @returns a positive number when `left` is newer, negative when older, zero when equal.
+ */
+export function compareVersions(left: string, right: string): number {
+  const a = left.split('.').map(Number)
+  const b = right.split('.').map(Number)
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    const difference = (a[index] ?? 0) - (b[index] ?? 0)
+    if (difference !== 0) return difference
+  }
+  return 0
+}
+
+/**
+ * Files of an installed market Skill that differ from its install record: edited, removed, or added.
+ * @param dir - the installed Skill directory.
+ * @param installed - its install record, or undefined when the directory is not a market install.
+ * @returns the differing paths relative to the Skill root, sorted.
+ */
+async function localChanges(dir: string, installed: MarketInstallRecord | undefined): Promise<string[]> {
+  const recorded = new Map((installed?.files ?? []).map(file => [file.path, file.sha256]))
+  const changed = new Set<string>()
+  const entries = await readdir(dir, { recursive: true, withFileTypes: true })
+  const present = new Set<string>()
+  for (const entry of entries) {
+    if (!entry.isFile()) continue
+    const path = relative(dir, join(entry.parentPath, entry.name)).split(sep).join('/')
+    if (path === INSTALL_RECORD) continue
+    present.add(path)
+    if (recorded.get(path) !== sha256(await readFile(join(dir, path)))) changed.add(path)
+  }
+  for (const path of recorded.keys()) if (!present.has(path)) changed.add(path)
+  return [...changed].sort((a, b) => Number(a > b) - Number(a < b))
+}
 
 function invalid(reason: string): RemoteError {
   return new RemoteError('skill-market/invalid-package', `the Skill package is invalid: ${reason}`, { reason })
@@ -311,14 +350,18 @@ export class SkillMarket extends TypertRemoteService {
   /**
    * Install the current version of a market Skill for the signed-in tenant. The package is
    * downloaded and validated (layout and every file's sha256) in a staging directory beside the
-   * target, then moved into place in one rename; a failure leaves no partial Skill behind.
+   * target, then moved into place in one rename; a failure leaves no partial Skill behind. An
+   * installed copy is replaced the same way (an update), unless its files differ from its install
+   * record and the caller did not ask to overwrite them.
    * @param id - Skill Hub Skill id.
+   * @param options - whether local edits of an installed copy may be overwritten.
    * @param signal - caller lifetime.
    * @returns the card after install.
-   * @throws RemoteError on a name conflict with a user Skill, an invalid package, or an unreachable Hub.
+   * @throws RemoteError on a name conflict with a user Skill, local edits that would be overwritten,
+   *   an invalid package, or an unreachable Hub.
    */
   @Remote
-  async installSkill(id: string, signal: AbortSignal): Promise<MarketSkillCard> {
+  async installSkill(id: string, options: MarketInstallOptions, signal: AbortSignal): Promise<MarketSkillCard> {
     const tenantId = this.tenantId
     if (tenantId === undefined) throw new RemoteError('hub-account/signed-out', 'sign in to the Skill Hub first', {})
     const value = await this.fetchDetail(id, signal)
@@ -335,6 +378,13 @@ export class SkillMarket extends TypertRemoteService {
       throw invalid('the files do not match the published version')
     }
     const tenantDir = this.tenantDir(tenantId)
+    const target = join(tenantDir, value.name)
+    if (options.overwriteLocalChanges !== true && await exists(target)) {
+      const changed = await localChanges(target, (await this.records()).get(value.name))
+      if (changed.length > 0) {
+        throw new RemoteError('skill-market/local-changes', `local edits to "${value.name}" would be overwritten`, { name: value.name, files: changed })
+      }
+    }
     await mkdir(tenantDir, { recursive: true })
     const staging = await mkdtemp(join(tenantDir, '.installing-'))
     try {
@@ -349,7 +399,6 @@ export class SkillMarket extends TypertRemoteService {
           .sort((a, b) => Number(a.path > b.path) - Number(a.path < b.path)),
       }
       await writeFile(join(skillDir, INSTALL_RECORD), `${JSON.stringify(installRecord, null, 2)}\n`)
-      const target = join(tenantDir, value.name)
       if (await exists(target)) await rename(target, join(staging, '.replaced'))
       await rename(skillDir, target)
     } finally {
@@ -357,6 +406,28 @@ export class SkillMarket extends TypertRemoteService {
     }
     this.provider?.invalidate()
     return card(value, value.description, value.updatedAt, await this.records(), new Set())
+  }
+
+  /**
+   * Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the
+   * Hub no longer shows the employee is `unavailable`; its local copy stays installed and usable.
+   * @param signal - caller lifetime.
+   * @returns one status per installed market Skill, sorted by name.
+   */
+  @Remote
+  async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]> {
+    const installed = [...(await this.records()).values()].sort((a, b) => Number(a.name > b.name) - Number(a.name < b.name))
+    return Promise.all(installed.map(async (local): Promise<MarketInstalledStatus> => {
+      const base = { name: local.name, hubSkillId: local.hubSkillId, installedVersion: local.version }
+      try {
+        const latest = (await this.fetchDetail(local.hubSkillId, signal)).currentVersion.version
+        return { ...base, latestVersion: latest, state: compareVersions(latest, local.version) > 0 ? 'update' : 'current' }
+      } catch (error: unknown) {
+        if (signal.aborted) throw error
+        const notFound = error instanceof RemoteError && error.code === 'skill-market/not-found'
+        return { ...base, latestVersion: null, state: notFound ? 'unavailable' : 'unknown' }
+      }
+    }))
   }
 
   /**
@@ -415,9 +486,11 @@ function card(
   installed: ReadonlyMap<string, MarketInstallRecord>, custom: ReadonlySet<string>,
 ): MarketSkillCard {
   const local = installed.get(value.name)
+  const installedVersion = local?.hubSkillId === value.id ? local.version : null
   return {
     id: value.id, name: value.name, description, category: value.category, version: value.currentVersion.version, updatedAt,
-    installedVersion: local?.hubSkillId === value.id ? local.version : null,
+    installedVersion,
+    updateAvailable: installedVersion !== null && compareVersions(value.currentVersion.version, installedVersion) > 0,
     conflict: custom.has(value.name),
   }
 }

@@ -1,5 +1,5 @@
 /** The market source and the `skillMarket` Remote over a mock Skill Hub, a real registry, and a real credential store. */
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -12,7 +12,7 @@ import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import { createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import { remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import { strToU8, zipSync } from 'fflate'
-import SkillMarket, { INSTALL_RECORD } from '../src/index.ts'
+import SkillMarket, { compareVersions, INSTALL_RECORD } from '../src/index.ts'
 import { browse, startMockUserCenter, type MockSkill } from '../../../credentials/hub-account/tests/mock-user-center.ts'
 import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
 
@@ -67,13 +67,13 @@ describe('skillMarket', () => {
   it('publishes the namespace and its methods', async () => {
     const { market } = await boot()
     expect(market.typertRemote.namespace).toBe('skillMarket')
-    expect(remoteMethods(market).map(method => method.method)).toEqual(['list', 'categories', 'detail', 'installSkill'])
+    expect(remoteMethods(market).map(method => method.method)).toEqual(['list', 'categories', 'detail', 'installSkill', 'installedStatus'])
   })
 
   it('needs a Hub sign-in and discovers nothing while signed out', async () => {
     const { ctx, market } = await boot({ signedIn: false })
     expect(remoteErrorOf(await market.list({}, signal()).catch((error: unknown) => error))).toMatchObject({ code: 'hub-account/signed-out' })
-    expect(remoteErrorOf(await market.installSkill('s-pdf', signal()).catch((error: unknown) => error))).toMatchObject({ code: 'hub-account/signed-out' })
+    expect(remoteErrorOf(await market.installSkill('s-pdf', {}, signal()).catch((error: unknown) => error))).toMatchObject({ code: 'hub-account/signed-out' })
     expect((await ctx.skills.list()).filter(skill => skill.source === 'market')).toEqual([])
     expect(await market.records()).toEqual(new Map())
   })
@@ -84,7 +84,7 @@ describe('skillMarket', () => {
     expect(center.clientRequests.at(-1)).toBe('/api/client/skills?q=pdf&categoryId=c-doc&page=1&pageSize=12')
     expect(first).toEqual({
       total: 1, page: 1, pageSize: 12,
-      items: [{ id: 's-pdf', name: 'pdf-tools', description: 'Read PDF files', category: { id: 'c-doc', name: '文档' }, version: '1.0.0', updatedAt: '2026-10-01T08:00:00.000Z', installedVersion: null, conflict: false }],
+      items: [{ id: 's-pdf', name: 'pdf-tools', description: 'Read PDF files', category: { id: 'c-doc', name: '文档' }, version: '1.0.0', updatedAt: '2026-10-01T08:00:00.000Z', installedVersion: null, updateAvailable: false, conflict: false }],
     })
     expect((await market.list({ page: 2, pageSize: 1 }, signal())).items.map(item => item.name)).toEqual(['sql-helper'])
     expect(await market.categories(signal())).toEqual([{ id: 'c-doc', name: '文档' }, { id: 'c-dev', name: '研发' }])
@@ -101,7 +101,7 @@ describe('skillMarket', () => {
 
   it('installs into the tenant directory with a record, and the Skill joins the catalog as a market Skill', async () => {
     const { ctx, market, dshHome } = await boot()
-    const card = await market.installSkill('s-pdf', signal())
+    const card = await market.installSkill('s-pdf', {}, signal())
     expect(card).toMatchObject({ name: 'pdf-tools', installedVersion: '1.0.0', conflict: false })
     const dir = join(dshHome, 'skills-market', 't-a', 'pdf-tools')
     expect(await readFile(join(dir, 'scripts/run.sh'), 'utf8')).toBe('echo pdf\n')
@@ -117,9 +117,9 @@ describe('skillMarket', () => {
 
   it('replaces an installed Skill in one move when installed again', async () => {
     const { center, market, dshHome } = await boot()
-    await market.installSkill('s-pdf', signal())
+    await market.installSkill('s-pdf', {}, signal())
     center.skills = [{ ...PDF, version: '1.1.0', files: { 'scripts/run.sh': 'echo pdf 1.1\n' } }, SQL]
-    expect((await market.installSkill('s-pdf', signal())).installedVersion).toBe('1.1.0')
+    expect((await market.installSkill('s-pdf', {}, signal())).installedVersion).toBe('1.1.0')
     expect(await readFile(join(dshHome, 'skills-market', 't-a', 'pdf-tools', 'scripts/run.sh'), 'utf8')).toBe('echo pdf 1.1\n')
     expect(await readdir(join(dshHome, 'skills-market', 't-a'))).toEqual(['pdf-tools'])
   })
@@ -128,14 +128,14 @@ describe('skillMarket', () => {
     const { ctx, market, home, dshHome } = await boot()
     await writeSkill(join(home, '.agents', 'skills'), 'pdf-tools', 'My own PDF skill')
     expect((await market.list({}, signal())).items.find(item => item.name === 'pdf-tools')?.conflict).toBe(true)
-    expect(remoteErrorOf(await market.installSkill('s-pdf', signal()).catch((error: unknown) => error)))
+    expect(remoteErrorOf(await market.installSkill('s-pdf', {}, signal()).catch((error: unknown) => error)))
       .toMatchObject({ code: 'skill-market/name-conflict', details: { name: 'pdf-tools' } })
     await expect(readdir(join(dshHome, 'skills-market', 't-a'))).rejects.toThrow()
 
     const project = await temp()
     await mkdir(join(project, '.git'))
     await writeSkill(join(project, '.dsh', 'skills'), 'sql-helper', 'Project SQL')
-    await market.installSkill('s-sql', signal())
+    await market.installSkill('s-sql', {}, signal())
     expect((await ctx.skills.get('sql-helper', { cwd: project }))?.source).toBe('project-dsh')
     expect((await ctx.skills.get('sql-helper'))?.source).toBe('market')
   })
@@ -151,7 +151,7 @@ describe('skillMarket', () => {
     ])('%s', async (_label, body, reason) => {
       const { center, market, dshHome } = await boot()
       center.downloadBody = body
-      const error = remoteErrorOf(await market.installSkill('s-pdf', signal()).catch((failure: unknown) => failure))
+      const error = remoteErrorOf(await market.installSkill('s-pdf', {}, signal()).catch((failure: unknown) => failure))
       expect(error).toMatchObject({ code: 'skill-market/invalid-package' })
       expect(error?.message).toContain(reason)
       expect(await readdir(join(dshHome, 'skills-market', 't-a')).catch(() => [])).toEqual([])
@@ -160,7 +160,7 @@ describe('skillMarket', () => {
     it('a package over the size limit', async () => {
       const { ctx, live, dshHome } = await boot()
       await live.update({ maxPackageBytes: 10 })
-      const error = remoteErrorOf(await ctx.get('skillMarket')!.installSkill('s-pdf', signal()).catch((failure: unknown) => failure))
+      const error = remoteErrorOf(await ctx.get('skillMarket')!.installSkill('s-pdf', {}, signal()).catch((failure: unknown) => failure))
       expect(error?.message).toContain('too large')
       expect(await readdir(join(dshHome, 'skills-market', 't-a')).catch(() => [])).toEqual([])
     })
@@ -169,7 +169,7 @@ describe('skillMarket', () => {
       const { center, ctx, live, dshHome } = await boot()
       center.downloadBody = zipSync({ 'pdf-tools/SKILL.md': new Uint8Array(4096) }, { level: 9 })
       await live.update({ maxPackageBytes: 2048 })
-      const error = remoteErrorOf(await ctx.get('skillMarket')!.installSkill('s-pdf', signal()).catch((failure: unknown) => failure))
+      const error = remoteErrorOf(await ctx.get('skillMarket')!.installSkill('s-pdf', {}, signal()).catch((failure: unknown) => failure))
       expect(error?.message).toContain('too large')
       expect(await readdir(join(dshHome, 'skills-market', 't-a')).catch(() => [])).toEqual([])
     })
@@ -177,7 +177,7 @@ describe('skillMarket', () => {
     it('a Hub that fails or cannot be reached', async () => {
       const { center, market, dshHome } = await boot()
       center.clientStatus = 503
-      expect(remoteErrorOf(await market.installSkill('s-pdf', signal()).catch((failure: unknown) => failure)))
+      expect(remoteErrorOf(await market.installSkill('s-pdf', {}, signal()).catch((failure: unknown) => failure)))
         .toMatchObject({ code: 'skill-market/unavailable', details: { status: 503 } })
       center.clientStatus = undefined
       await center.close()
@@ -189,7 +189,7 @@ describe('skillMarket', () => {
 
   it('switches a market Skill off for the signed-in tenant only', async () => {
     const { ctx, center, hub, market, dshHome } = await boot()
-    await market.installSkill('s-pdf', signal())
+    await market.installSkill('s-pdf', {}, signal())
     await market.setDisabled('pdf-tools', true)
     expect(market.isDisabled('pdf-tools')).toBe(true)
     expect((await ctx.skills.get('pdf-tools'))?.invocation).toEqual({ modelInvocable: false, userInvocable: false })
@@ -202,7 +202,7 @@ describe('skillMarket', () => {
     await browse((await hub.getState()).attempt!.authorizeUrl!)
     await expect.poll(() => market.tenantId).toBe('t-b')
     expect(await ctx.skills.get('pdf-tools')).toBeUndefined()
-    await market.installSkill('s-pdf', signal())
+    await market.installSkill('s-pdf', {}, signal())
     expect(market.isDisabled('pdf-tools')).toBe(false)
     expect((await ctx.skills.get('pdf-tools'))?.invocation.userInvocable).toBe(true)
     expect(await readdir(join(dshHome, 'skills-market'))).toEqual(['t-a', 't-b'])
@@ -221,11 +221,11 @@ describe('skillMarket', () => {
     center.skills = [{ ...PDF, files: { 'a.txt': 'a', 'scripts/run.sh': 'echo pdf\n', 'z.txt': 'z' } }, { ...SQL, id: 's-bad', name: 'Bad_Name' }]
     const files = { 'SKILL.md': '---\nname: pdf-tools\ndescription: Read PDF files\n---\n\n# pdf-tools\n\nUse pdf-tools.\n', 'a.txt': 'a', 'scripts/run.sh': 'echo pdf\n', 'z.txt': 'z' }
     center.downloadBody = zipSync({ 'pdf-tools/': new Uint8Array(), 'pdf-tools/scripts/': new Uint8Array(), ...Object.fromEntries(Object.entries(files).map(([path, text]) => [`pdf-tools/${path}`, strToU8(text)])) })
-    expect((await market.installSkill('s-pdf', signal())).installedVersion).toBe('1.0.0')
+    expect((await market.installSkill('s-pdf', {}, signal())).installedVersion).toBe('1.0.0')
     const record = JSON.parse(await readFile(join(dshHome, 'skills-market', 't-a', 'pdf-tools', INSTALL_RECORD), 'utf8')) as { files: { path: string }[] }
     expect(record.files.map(file => file.path)).toEqual(['SKILL.md', 'a.txt', 'scripts/run.sh', 'z.txt'])
     center.downloadBody = undefined
-    expect(remoteErrorOf(await market.installSkill('s-bad', signal()).catch((error: unknown) => error))?.message).toContain('invalid Skill name')
+    expect(remoteErrorOf(await market.installSkill('s-bad', {}, signal()).catch((error: unknown) => error))?.message).toContain('invalid Skill name')
     await mkdir(join(dshHome, 'skills-market', 't-a', 'renamed'), { recursive: true })
     await writeFile(join(dshHome, 'skills-market', 't-a', 'renamed', INSTALL_RECORD), JSON.stringify({ ...record, hubSkillId: 'x', name: 'other', version: '1', installedAt: 'x' }))
     expect([...(await market.records()).keys()]).toEqual(['pdf-tools'])
@@ -233,7 +233,7 @@ describe('skillMarket', () => {
 
   it('switches a market Skill back on', async () => {
     const { ctx, market } = await boot()
-    await market.installSkill('s-pdf', signal())
+    await market.installSkill('s-pdf', {}, signal())
     await market.setDisabled('pdf-tools', true)
     await market.setDisabled('pdf-tools', false)
     expect(market.isDisabled('pdf-tools')).toBe(false)
@@ -262,5 +262,97 @@ describe('skillMarket', () => {
     expect(market.isDisabled('pdf-tools')).toBe(false)
     expect(market.tenantDir('t-x')).toMatch(/skills-market[/\\]t-x$/)
     await expect(market.setDisabled('pdf-tools', true)).rejects.toThrow('requires the settings service')
+  })
+
+  describe('updates and lifecycle (T24)', () => {
+    const v2 = { ...PDF, version: '1.1.0', files: { 'scripts/run.sh': 'echo pdf 1.1\n', 'scripts/new.sh': 'echo new\n' } }
+    const dirOf = (dshHome: string) => join(dshHome, 'skills-market', 't-a', 'pdf-tools')
+
+    it('offers an update when the Hub publishes a newer version, and the update lands the new files', async () => {
+      const { center, market, dshHome } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      expect(await market.installedStatus(signal())).toEqual([{ name: 'pdf-tools', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' }])
+      center.skills = [v2, SQL]
+      expect((await market.list({}, signal())).items[0]).toMatchObject({ installedVersion: '1.0.0', version: '1.1.0', updateAvailable: true })
+      expect((await market.detail('s-pdf', signal())).updateAvailable).toBe(true)
+      expect(await market.installedStatus(signal())).toEqual([{ name: 'pdf-tools', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.1.0', state: 'update' }])
+      expect(await market.installSkill('s-pdf', {}, signal())).toMatchObject({ installedVersion: '1.1.0', updateAvailable: false })
+      expect(await readFile(join(dirOf(dshHome), 'scripts/run.sh'), 'utf8')).toBe('echo pdf 1.1\n')
+      expect(await readFile(join(dirOf(dshHome), 'scripts/new.sh'), 'utf8')).toBe('echo new\n')
+      expect(JSON.parse(await readFile(join(dirOf(dshHome), INSTALL_RECORD), 'utf8'))).toMatchObject({ version: '1.1.0' })
+      expect((await market.installedStatus(signal()))[0]?.state).toBe('current')
+      await market.installSkill('s-sql', {}, signal())
+      expect((await market.installedStatus(signal())).map(status => status.name)).toEqual(['pdf-tools', 'sql-helper'])
+    })
+
+    it('refuses to overwrite local edits until asked, leaving the local files untouched', async () => {
+      const { center, market, dshHome } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      const dir = dirOf(dshHome)
+      await writeFile(join(dir, 'scripts/run.sh'), 'echo my edit\n')
+      await writeFile(join(dir, 'notes.md'), 'mine\n')
+      await unlink(join(dir, 'SKILL.md'))
+      center.skills = [v2, SQL]
+      const error = remoteErrorOf(await market.installSkill('s-pdf', {}, signal()).catch((failure: unknown) => failure))
+      expect(error).toMatchObject({ code: 'skill-market/local-changes', details: { name: 'pdf-tools', files: ['SKILL.md', 'notes.md', 'scripts/run.sh'] } })
+      expect(await readFile(join(dir, 'scripts/run.sh'), 'utf8')).toBe('echo my edit\n')
+      expect(JSON.parse(await readFile(join(dir, INSTALL_RECORD), 'utf8'))).toMatchObject({ version: '1.0.0' })
+      await market.installSkill('s-pdf', { overwriteLocalChanges: true }, signal())
+      expect(await readFile(join(dir, 'scripts/run.sh'), 'utf8')).toBe('echo pdf 1.1\n')
+      expect(await readdir(dir)).not.toContain('notes.md')
+    })
+
+    it('treats a same-named directory without an install record as local files to protect', async () => {
+      const { market, dshHome } = await boot()
+      await writeSkill(join(dshHome, 'skills-market', 't-a'), 'pdf-tools', 'Hand-placed copy')
+      expect(remoteErrorOf(await market.installSkill('s-pdf', {}, signal()).catch((failure: unknown) => failure)))
+        .toMatchObject({ code: 'skill-market/local-changes', details: { files: ['SKILL.md'] } })
+    })
+
+    it('keeps a Skill the Hub withdrew installed and usable, marked unavailable, and reports unknown when the Hub cannot be asked', async () => {
+      const { ctx, center, market } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      center.skills = [SQL]
+      expect(await market.installedStatus(signal())).toEqual([{ name: 'pdf-tools', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: null, state: 'unavailable' }])
+      expect((await ctx.skills.get('pdf-tools'))?.invocation.modelInvocable).toBe(true)
+      expect((await market.list({}, signal())).items.map(item => item.name)).toEqual(['sql-helper'])
+      center.clientStatus = 503
+      expect((await market.installedStatus(signal()))[0]).toMatchObject({ state: 'unknown', latestVersion: null })
+    })
+
+    it('stops reading the Hub when the caller withdraws', async () => {
+      const { market } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      const controller = new AbortController()
+      const pending = market.installedStatus(controller.signal)
+      controller.abort()
+      await expect(pending).rejects.toThrow()
+    })
+
+    it('shows only the signed-in tenant\'s market Skills, and brings them back after switching back', async () => {
+      const { ctx, center, hub, market } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      const switchTo = async (tenant: { tenantId: string; tenantName: string }) => {
+        center.tenant = tenant
+        await hub.switchTenant()
+        await expect.poll(async () => (await hub.getState()).attempt?.authorizeUrl).toBeDefined()
+        await browse((await hub.getState()).attempt!.authorizeUrl!)
+        await expect.poll(() => market.tenantId).toBe(tenant.tenantId)
+      }
+      const marketNames = async () => (await ctx.skills.list()).filter(skill => skill.source === 'market').map(skill => skill.name)
+      expect(await marketNames()).toEqual(['pdf-tools'])
+      await switchTo({ tenantId: 't-b', tenantName: '乙公司' })
+      expect(await marketNames()).toEqual([])
+      expect(await market.installedStatus(signal())).toEqual([])
+      await switchTo({ tenantId: 't-a', tenantName: '甲公司' })
+      expect(await marketNames()).toEqual(['pdf-tools'])
+    })
+
+    it('orders versions numerically', () => {
+      expect(compareVersions('1.10.0', '1.9.0')).toBeGreaterThan(0)
+      expect(compareVersions('1.0.0', '1.0.0')).toBe(0)
+      expect(compareVersions('1.0', '1.0.1')).toBeLessThan(0)
+      expect(compareVersions('1.0.1', '1.0')).toBeGreaterThan(0)
+    })
   })
 })

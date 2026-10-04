@@ -245,7 +245,7 @@ interface Config {
 
 Desktop 的 Skills 页面通过 [dsh-skill-controller](../../packages/skill/skill-controller) 拥有的 `installedSkills` namespace 读取已安装的用户级 skill。`list()` 返回 `InstalledSkillListValue`：来源为 `user-dsh` 与 `user-agents` 的每个 skill（`customSkillDirs` 根目录属于部署配置，不算用户安装） 各一个 `InstalledSkillView`，包含名称、描述、分组、来源、指令文件路径与启用状态。`setEnabled(name, enabled)` 返回更新后的 `InstalledSkillView`；`reveal`、`edit` 与 `uninstall` 在原生文件管理器、文本编辑器或移到废纸篓接受请求后返回 `InstalledSkillActionValue`。从 Skill Hub 市场安装的 Skill 以 `group: 'market'` 加入该列表；它们的开关是市场按租户的设置。
 
-Desktop 市场通过 [dsh-skill-market](../../packages/skill/skill-market) 拥有的 `skillMarket` namespace 读取 Skill Hub：`list(query)` 返回一页 `MarketSkillPage`，其中每个 `MarketSkillCard` 带安装状态和同名冲突标记；`categories()` 返回本租户的 `MarketCategory` 列表；`detail(id)` 返回带 SKILL.md 原文与文件清单的 `MarketSkillDetail`；`installSkill(id)` 在校验通过的安装完成后返回卡片。每个市场 Skill 目录在 `.hub-install.json` 中保存一份 `MarketInstallRecord`。
+Desktop 市场通过 [dsh-skill-market](../../packages/skill/skill-market) 拥有的 `skillMarket` namespace 读取 Skill Hub：`list(query)` 返回一页 `MarketSkillPage`，其中每个 `MarketSkillCard` 带安装状态和同名冲突标记；`categories()` 返回本租户的 `MarketCategory` 列表；`detail(id)` 返回带 SKILL.md 原文与文件清单的 `MarketSkillDetail`；`installSkill(id, options)` 在校验通过的安装或更新完成后返回卡片（除非设置 `overwriteLocalChanges`，否则拒绝覆盖本地修改）；`installedStatus()` 为每个已装市场 Skill 返回一个 `MarketInstalledStatus`。每个市场 Skill 目录在 `.hub-install.json` 中保存一份 `MarketInstallRecord`。
 
 `installedSkills` 的所有方法都拒绝不在该列表中的名称。
 
@@ -384,13 +384,25 @@ setDisabled(name: string, disabled: boolean): Promise<void>
 /**
  * Install the current version of a market Skill for the signed-in tenant. The package is
  * downloaded and validated (layout and every file's sha256) in a staging directory beside the
- * target, then moved into place in one rename; a failure leaves no partial Skill behind.
+ * target, then moved into place in one rename; a failure leaves no partial Skill behind. An
+ * installed copy is replaced the same way (an update), unless its files differ from its install
+ * record and the caller did not ask to overwrite them.
  * @param id - Skill Hub Skill id.
+ * @param options - whether local edits of an installed copy may be overwritten.
  * @param signal - caller lifetime.
  * @returns the card after install.
- * @throws RemoteError on a name conflict with a user Skill, an invalid package, or an unreachable Hub.
+ * @throws RemoteError on a name conflict with a user Skill, local edits that would be overwritten,
+ *   an invalid package, or an unreachable Hub.
  */
-@Remote async installSkill(id: string, signal: AbortSignal): Promise<MarketSkillCard>
+@Remote async installSkill(id: string, options: MarketInstallOptions, signal: AbortSignal): Promise<MarketSkillCard>
+
+/**
+ * Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the
+ * Hub no longer shows the employee is `unavailable`; its local copy stays installed and usable.
+ * @param signal - caller lifetime.
+ * @returns one status per installed market Skill, sorted by name.
+ */
+@Remote async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]>
 
 /**
  * Install records of the signed-in tenant's market Skills, keyed by Skill name.

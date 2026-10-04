@@ -245,7 +245,7 @@ The model-facing `skill({ name })` tool validates the kebab-case name, finds the
 
 The Desktop Skills page reads installed user-level skills through the `installedSkills` namespace owned by [dsh-skill-controller](../../packages/skill/skill-controller). `list()` returns `InstalledSkillListValue`: one `InstalledSkillView` per skill from the `user-dsh` and `user-agents` sources (a `customSkillDirs` root is deployment configuration, not a user installation), carrying name, description, group, source, instruction-file path, and enabled state. `setEnabled(name, enabled)` answers the updated `InstalledSkillView`; `reveal`, `edit`, and `uninstall` answer `InstalledSkillActionValue` once the native file manager, the text editor, or the move to the trash accepted the request. Skills installed from the Skill Hub market join that list with `group: 'market'`; their switch is the market's per-tenant setting.
 
-The Desktop market reads the Skill Hub through the `skillMarket` namespace owned by [dsh-skill-market](../../packages/skill/skill-market): `list(query)` returns one `MarketSkillPage` of `MarketSkillCard`s with their install state and name conflict, `categories()` the tenant's `MarketCategory` list, `detail(id)` a `MarketSkillDetail` with the SKILL.md source and file list, and `installSkill(id)` the card after a validated install. Each market Skill directory keeps a `MarketInstallRecord` in `.hub-install.json`.
+The Desktop market reads the Skill Hub through the `skillMarket` namespace owned by [dsh-skill-market](../../packages/skill/skill-market): `list(query)` returns one `MarketSkillPage` of `MarketSkillCard`s with their install state and name conflict, `categories()` the tenant's `MarketCategory` list, `detail(id)` a `MarketSkillDetail` with the SKILL.md source and file list, `installSkill(id, options)` the card after a validated install or update (refusing local edits unless `overwriteLocalChanges`), and `installedStatus()` one `MarketInstalledStatus` per installed market Skill. Each market Skill directory keeps a `MarketInstallRecord` in `.hub-install.json`.
 
 Every `installedSkills` method refuses names outside that list.
 
@@ -384,13 +384,25 @@ setDisabled(name: string, disabled: boolean): Promise<void>
 /**
  * Install the current version of a market Skill for the signed-in tenant. The package is
  * downloaded and validated (layout and every file's sha256) in a staging directory beside the
- * target, then moved into place in one rename; a failure leaves no partial Skill behind.
+ * target, then moved into place in one rename; a failure leaves no partial Skill behind. An
+ * installed copy is replaced the same way (an update), unless its files differ from its install
+ * record and the caller did not ask to overwrite them.
  * @param id - Skill Hub Skill id.
+ * @param options - whether local edits of an installed copy may be overwritten.
  * @param signal - caller lifetime.
  * @returns the card after install.
- * @throws RemoteError on a name conflict with a user Skill, an invalid package, or an unreachable Hub.
+ * @throws RemoteError on a name conflict with a user Skill, local edits that would be overwritten,
+ *   an invalid package, or an unreachable Hub.
  */
-@Remote async installSkill(id: string, signal: AbortSignal): Promise<MarketSkillCard>
+@Remote async installSkill(id: string, options: MarketInstallOptions, signal: AbortSignal): Promise<MarketSkillCard>
+
+/**
+ * Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the
+ * Hub no longer shows the employee is `unavailable`; its local copy stays installed and usable.
+ * @param signal - caller lifetime.
+ * @returns one status per installed market Skill, sorted by name.
+ */
+@Remote async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]>
 
 /**
  * Install records of the signed-in tenant's market Skills, keyed by Skill name.

@@ -3,13 +3,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { MarketSkillCard, MarketSkillDetail } from '@deepseek-ai/dsh-skill-market/types'
 import { MarketView, skillMdBody } from '../src/client/MarketView.tsx'
-import { SkillsPage } from '../src/client/SkillsPage.tsx'
+import { InstalledView, SkillsPage } from '../src/client/SkillsPage.tsx'
 import { pageProps } from './page-props.client.ts'
 
 afterEach(cleanup)
 
 function card(name: string, extra: Partial<MarketSkillCard> = {}): MarketSkillCard {
-  return { id: `id-${name}`, name, description: `${name} description`, category: null, version: '1.0.0', updatedAt: '2026-10-01T08:00:00.000Z', installedVersion: null, conflict: false, ...extra }
+  return { id: `id-${name}`, name, description: `${name} description`, category: null, version: '1.0.0', updatedAt: '2026-10-01T08:00:00.000Z', installedVersion: null, updateAvailable: false, conflict: false, ...extra }
 }
 
 const detail: MarketSkillDetail = {
@@ -130,6 +130,58 @@ describe('Market view', () => {
       act(() => { marketStore.set({ ...marketStore.getSnapshot(), failure: { code, message: 'x' } }) })
       expect(screen.getByRole('alert').textContent).toContain(text)
     }
+  })
+
+  it('offers an update on cards and in the detail when the Hub has a newer version', () => {
+    const { props } = pageProps({}, {
+      items: [card('pdf-tools', { installedVersion: '1.0.0', version: '1.1.0', updateAvailable: true })], total: 1,
+      detail: { status: 'ready', id: 'id-pdf-tools', value: { ...detail, installedVersion: '1.0.0', version: '1.1.0', updateAvailable: true } },
+    })
+    render(<MarketView {...props} onShowInstalled={() => {}} />)
+    const buttons = screen.getAllByRole('button', { name: '更新 pdf-tools' })
+    expect(buttons.map(button => button.textContent)).toEqual(['更新到 v1.1.0', '更新到 v1.1.0'])
+    fireEvent.click(buttons[0]!)
+    expect(props.onInstall).toHaveBeenCalledWith('id-pdf-tools')
+  })
+
+  it('marks an update in flight', () => {
+    const { props } = pageProps({}, { items: [card('pdf-tools', { installedVersion: '1.0.0', updateAvailable: true })], total: 1, installing: ['id-pdf-tools'] })
+    render(<MarketView {...props} onShowInstalled={() => {}} />)
+    expect(screen.getByRole('button', { name: '更新 pdf-tools' }).textContent).toBe('安装中…')
+  })
+
+  it('shows update and unavailable states on installed market cards and reads them when the view opens', () => {
+    const market = (name: string) => ({ name, description: `${name} description`, group: 'market' as const, source: 'market', path: `/m/${name}/SKILL.md`, enabled: true })
+    const { props, marketStore } = pageProps({ skills: [market('pdf-tools'), market('old-skill'), market('fresh')] }, {
+      statuses: {
+        'pdf-tools': { name: 'pdf-tools', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.1.0', state: 'update' },
+        'old-skill': { name: 'old-skill', hubSkillId: 's-old', installedVersion: '1.0.0', latestVersion: null, state: 'unavailable' },
+        'fresh': { name: 'fresh', hubSkillId: 's-fresh', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' },
+      },
+    })
+    render(<InstalledView {...props} onBack={() => {}} />)
+    expect(props.onRefreshStatus).toHaveBeenCalledOnce()
+    expect(screen.getByText('可更新到 v1.1.0')).toBeTruthy()
+    expect(screen.getByText('市场已不可用')).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: /^更新 / })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: '更新 pdf-tools' }))
+    expect(props.onInstall).toHaveBeenCalledWith('s-pdf')
+    act(() => { marketStore.set({ ...marketStore.getSnapshot(), installing: ['s-pdf'] }) })
+    expect(screen.getByRole('button', { name: '更新 pdf-tools' }).textContent).toBe('安装中…')
+  })
+
+  it('asks before overwriting local edits', () => {
+    const { props, marketStore } = pageProps({}, { overwrite: { id: 's-pdf', name: 'pdf-tools', files: ['scripts/run.sh', 'notes.md'] } })
+    render(<SkillsPage {...props} />)
+    const dialog = screen.getByRole('dialog', { name: '本地修改将被覆盖' })
+    expect(dialog.textContent).toContain('「pdf-tools」的以下文件在本机被修改过')
+    expect(within(dialog).getByText('scripts/run.sh')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: '覆盖并更新' }))
+    expect(props.onConfirmOverwrite).toHaveBeenCalledOnce()
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+    expect(props.onCancelOverwrite).toHaveBeenCalledOnce()
+    act(() => { marketStore.set({ ...marketStore.getSnapshot(), overwrite: null }) })
+    expect(screen.queryByRole('dialog', { name: '本地修改将被覆盖' })).toBeNull()
   })
 
   it('strips YAML frontmatter from SKILL.md', () => {

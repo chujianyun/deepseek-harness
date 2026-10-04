@@ -30,9 +30,40 @@ export type SkillsPageProps = PropsLocale<'skills'> & InjectFace<SkillsInjected>
  */
 export function SkillsPage(props: SkillsPageProps) {
   const [view, setView] = useState<'market' | 'installed'>('market')
-  return view === 'market'
-    ? <MarketView {...props} onShowInstalled={() => { setView('installed') }} />
-    : <InstalledView {...props} onBack={() => { setView('market') }} />
+  return (
+    <>
+      {view === 'market'
+        ? <MarketView {...props} onShowInstalled={() => { setView('installed') }} />
+        : <InstalledView {...props} onBack={() => { setView('market') }} />}
+      <OverwriteDialog {...props} />
+    </>
+  )
+}
+
+/**
+ * Ask before an update overwrites locally edited files of a market Skill.
+ * @param props - the page props.
+ * @returns the confirmation dialog, open while an update waits for the answer.
+ */
+export function OverwriteDialog({ t, useMarket, onConfirmOverwrite, onCancelOverwrite }: SkillsPageProps) {
+  const pending = useMarket(snapshot => snapshot.overwrite)
+  return (
+    <Modal
+      open={pending !== null}
+      title={t('overwriteTitle')}
+      description={t('overwriteDescription', { name: pending?.name ?? '' })}
+      closeLabel={t('uninstallClose')}
+      onClose={onCancelOverwrite}
+      footer={pending !== null && (
+        <div className={css.dialogActions}>
+          <Button variant="outline" onClick={onCancelOverwrite}>{t('overwriteCancel')}</Button>
+          <Button variant="primary" onClick={() => { void onConfirmOverwrite() }}>{t('overwriteConfirm')}</Button>
+        </div>
+      )}
+    >
+      {pending !== null && <ul className={css.files}>{pending.files.map(file => <li key={file}><code>{file}</code></li>)}</ul>}
+    </Modal>
+  )
 }
 
 /**
@@ -47,7 +78,10 @@ export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
   const failure = useInstalled(snapshot => snapshot.failure)
   const [uninstalling, setUninstalling] = useState<string>()
 
-  useEffect(() => { void onRefresh() }, [onRefresh])
+  useEffect(() => {
+    void onRefresh()
+    void props.onRefreshStatus()
+  }, [onRefresh, props.onRefreshStatus])
 
   return (
     <div className={css.page}>
@@ -177,6 +211,7 @@ function SkillCard({ skill, props, onUninstall }: {
         />
       </div>
       <p className={css.description}>{skill.description}</p>
+      {skill.group === 'market' && <MarketStatus name={skill.name} props={props} />}
     </li>
   )
 }
@@ -201,5 +236,23 @@ function UninstallDialog({ name, t, onClose, onConfirm }: {
         </div>
       )}
     />
+  )
+}
+
+/** A market Skill's Skill Hub state on its installed card: an update to take, or a Skill the Hub no longer offers. */
+function MarketStatus({ name, props }: { name: string; props: SkillsPageProps }) {
+  const { t, useMarket, onInstall } = props
+  const status = useMarket(snapshot => snapshot.statuses[name])
+  const installing = useMarket(snapshot => status !== undefined && snapshot.installing.includes(status.hubSkillId))
+  if (status?.state === 'unavailable') return <span className={css.unavailable}>{t('marketUnavailable')}</span>
+  if (status?.state !== 'update') return null
+  return (
+    <div className={css.statusRow}>
+      <span className={css.meta}>{t('updateAvailable', { version: String(status.latestVersion) })}</span>
+      <Button size="sm" variant="outline" disabled={installing} aria-label={t('update', { name })}
+        onClick={() => { void onInstall(status.hubSkillId) }}>
+        {installing ? t('installing') : t('updateButton')}
+      </Button>
+    </div>
   )
 }

@@ -202,6 +202,22 @@
   text-decoration: underline;
 }
 
+.unavailable {
+  align-self: flex-start;
+  padding: 1px 6px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .conflict {
   color: var(--dsw-alias-state-error);
   font-size: 12px;

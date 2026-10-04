@@ -35,12 +35,13 @@ async function bench() {
     uninstall: vi.fn(async () => done),
   }
   const page = { items: [], total: 0, page: 1, pageSize: 12 }
-  const card = { id: 's1', name: 'pdf-tools', description: '', category: null, version: '1.0.0', updatedAt: '', installedVersion: '1.0.0', conflict: false }
+  const card = { id: 's1', name: 'pdf-tools', description: '', category: null, version: '1.0.0', updatedAt: '', installedVersion: '1.0.0', updateAvailable: false, conflict: false }
   const skillMarket = {
     list: vi.fn(async () => ({ ok: true as const, value: page })),
     categories: vi.fn(async () => ({ ok: true as const, value: [] })),
     detail: vi.fn(async () => ({ ok: true as const, value: { ...card, ownerName: '', skillMd: '', files: [] } })),
     installSkill: vi.fn(async () => ({ ok: true as const, value: card })),
+    installedStatus: vi.fn(async () => ({ ok: true as const, value: [] })),
   }
   new TestRemote(ctx, { installedSkills, skillMarket })
   const setDraft = vi.fn()
@@ -129,7 +130,8 @@ describe('ui-skills browser plugin', () => {
     expect(b.skillMarket.list).toHaveBeenCalledWith({ q: '', page: 1, pageSize: 12 })
     expect(b.skillMarket.categories).toHaveBeenCalledOnce()
     expect(b.skillMarket.detail).toHaveBeenCalledWith('s1')
-    expect(b.skillMarket.installSkill).toHaveBeenCalledWith('s1')
+    expect(b.skillMarket.installSkill).toHaveBeenCalledWith('s1', {})
+    expect(b.skillMarket.installedStatus).toHaveBeenCalledOnce()
     await vi.waitFor(() => { expect(b.installedSkills.list).toHaveBeenCalledOnce() })
   })
 

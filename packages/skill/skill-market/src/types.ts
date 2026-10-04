@@ -15,6 +15,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'skill-market/name-conflict': { readonly name: string }
     /** The downloaded package failed validation; nothing was installed. */
     'skill-market/invalid-package': { readonly reason: string }
+    /** Installing would overwrite local edits to an installed market Skill; retry with `overwriteLocalChanges`. */
+    'skill-market/local-changes': { readonly name: string; readonly files: readonly string[] }
   }
 }
 
@@ -49,6 +51,8 @@ export interface MarketSkillCard {
   readonly updatedAt: string
   /** Version installed on this machine for the signed-in tenant, or null. */
   readonly installedVersion: string | null
+  /** True when installed and the Skill Hub's current version is newer. */
+  readonly updateAvailable: boolean
   /** True when a Skill the user placed on this machine (`~/.dsh/skills`, `~/.agents/skills`) uses the same name. */
   readonly conflict: boolean
 }
@@ -75,6 +79,30 @@ export interface MarketSkillDetail extends MarketSkillCard {
   readonly skillMd: string
   /** Files of the current version, sorted by path. */
   readonly files: readonly MarketSkillFile[]
+}
+
+/** Options of one install or update. */
+export interface MarketInstallOptions {
+  /** Replace an installed copy even when its files were edited locally. */
+  readonly overwriteLocalChanges?: boolean
+}
+
+/**
+ * Where an installed market Skill stands on the Skill Hub: `current` (installed version is the
+ * current one), `update` (a newer version is published), `unavailable` (withdrawn, deleted, or no
+ * longer visible to the employee — the local copy keeps working), or `unknown` (the Hub could not
+ * be asked).
+ */
+export type MarketInstalledState = 'current' | 'update' | 'unavailable' | 'unknown'
+
+/** One installed market Skill of the signed-in tenant and its Skill Hub state. */
+export interface MarketInstalledStatus {
+  readonly name: string
+  readonly hubSkillId: string
+  readonly installedVersion: string
+  /** Current version on the Skill Hub; null unless the Hub answered with the Skill. */
+  readonly latestVersion: string | null
+  readonly state: MarketInstalledState
 }
 
 /** The install record written as `.hub-install.json` inside each market Skill directory. */

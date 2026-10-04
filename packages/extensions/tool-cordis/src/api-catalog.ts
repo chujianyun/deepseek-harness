@@ -2769,11 +2769,17 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the detail with its install state.',
       },
       {
-        signature: '@Remote async installSkill(id: string, signal: AbortSignal): Promise<MarketSkillCard>',
-        description: 'Install the current version of a market Skill for the signed-in tenant. The package is downloaded and validated (layout and every file\'s sha256) in a staging directory beside the target, then moved into place in one rename; a failure leaves no partial Skill behind.',
-        parameters: [{ name: 'id', description: 'Skill Hub Skill id.' }, { name: 'signal', description: 'caller lifetime.' }],
+        signature: '@Remote async installSkill(id: string, options: MarketInstallOptions, signal: AbortSignal): Promise<MarketSkillCard>',
+        description: 'Install the current version of a market Skill for the signed-in tenant. The package is downloaded and validated (layout and every file\'s sha256) in a staging directory beside the target, then moved into place in one rename; a failure leaves no partial Skill behind. An installed copy is replaced the same way (an update), unless its files differ from its install record and the caller did not ask to overwrite them.',
+        parameters: [{ name: 'id', description: 'Skill Hub Skill id.' }, { name: 'options', description: 'whether local edits of an installed copy may be overwritten.' }, { name: 'signal', description: 'caller lifetime.' }],
         returns: 'the card after install.',
-        throws: ['RemoteError on a name conflict with a user Skill, an invalid package, or an unreachable Hub.'],
+        throws: ['RemoteError on a name conflict with a user Skill, local edits that would be overwritten, an invalid package, or an unreachable Hub.'],
+      },
+      {
+        signature: '@Remote async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]>',
+        description: 'Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the Hub no longer shows the employee is `unavailable`; its local copy stays installed and usable.',
+        parameters: [{ name: 'signal', description: 'caller lifetime.' }],
+        returns: 'one status per installed market Skill, sorted by name.',
       },
       {
         signature: 'async records(): Promise<Map<string, MarketInstallRecord>>',
@@ -5925,12 +5931,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MarketCategory {\n    readonly id: string;\n    readonly name: string;\n}',
   },
   {
+    name: 'MarketInstalledState',
+    declaration: 'export type MarketInstalledState = \'current\' | \'update\' | \'unavailable\' | \'unknown\';',
+  },
+  {
+    name: 'MarketInstalledStatus',
+    declaration: 'export interface MarketInstalledStatus {\n    readonly name: string;\n    readonly hubSkillId: string;\n    readonly installedVersion: string;\n    readonly latestVersion: string | null;\n    readonly state: MarketInstalledState;\n}',
+  },
+  {
+    name: 'MarketInstallOptions',
+    declaration: 'export interface MarketInstallOptions {\n    readonly overwriteLocalChanges?: boolean;\n}',
+  },
+  {
     name: 'MarketInstallRecord',
     declaration: 'export interface MarketInstallRecord {\n    readonly hubSkillId: string;\n    readonly name: string;\n    readonly version: string;\n    readonly installedAt: string;\n    readonly files: readonly {\n        readonly path: string;\n        readonly sha256: string;\n    }[];\n}',
   },
   {
     name: 'MarketSkillCard',
-    declaration: 'export interface MarketSkillCard {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly category: MarketCategory | null;\n    readonly version: string;\n    readonly updatedAt: string;\n    readonly installedVersion: string | null;\n    readonly conflict: boolean;\n}',
+    declaration: 'export interface MarketSkillCard {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly category: MarketCategory | null;\n    readonly version: string;\n    readonly updatedAt: string;\n    readonly installedVersion: string | null;\n    readonly updateAvailable: boolean;\n    readonly conflict: boolean;\n}',
   },
   {
     name: 'MarketSkillDetail',

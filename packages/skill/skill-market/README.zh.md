@@ -27,7 +27,7 @@ kind: "package-reference"
 
 provider 通过 `ctx.skills.registerProvider()` 注册，借助文件系统 provider 发现当前登录租户的目录，来源为 `market`、rank 为 550：排在用户级目录之后、随包附带的 Skill 之前，所以同名的项目级 Skill 在该项目里仍然优先。切换租户时会换成新租户的目录；未登录时什么也不发现。
 
-`list(query)` 代理 `/api/client/skills`（搜索词、分类、页码、每页数量），`categories()` 代理本租户的分类，`detail(id)` 返回当前版本的 SKILL.md 和文件清单。每张卡片带 `installedVersion`（该 Hub Skill 在本租户下已安装的版本，没有则为 null）和 `conflict`（用户放在 `~/.dsh/skills` 或 `~/.agents/skills` 的 Skill 与之同名）。`installSkill(id)` 遇到同名冲突时以 `skill-market/name-conflict` 拒绝，然后下载当前版本，并在落地之前校验：每个条目都必须位于 `<name>/` 之下且不含 `.`/`..` 段，必须有 `SKILL.md`，文件必须与发布版本的 sha256 清单完全一致。文件先写到目标旁边的暂存目录，再用一次 rename 移到位（已有的安装同样整体替换），`.hub-install.json` 记录 Hub Skill id、版本、安装时间和每个文件的 sha256。任何一步失败都会删除暂存目录，不会留下半成品。Hub 出错报 `skill-market/unavailable`，Skill 不存在报 `skill-market/not-found`，安装包不合格报 `skill-market/invalid-package`。
+`list(query)` 代理 `/api/client/skills`（搜索词、分类、页码、每页数量），`categories()` 代理本租户的分类，`detail(id)` 返回当前版本的 SKILL.md 和文件清单。每张卡片带 `installedVersion`（该 Hub Skill 在本租户下已安装的版本，没有则为 null）、`updateAvailable`（已安装且 Hub 上的版本更新，按数字比较）和 `conflict`（用户放在 `~/.dsh/skills` 或 `~/.agents/skills` 的 Skill 与之同名）。`installSkill(id)` 遇到同名冲突时以 `skill-market/name-conflict` 拒绝，然后下载当前版本，并在落地之前校验：每个条目都必须位于 `<name>/` 之下且不含 `.`/`..` 段，必须有 `SKILL.md`，文件必须与发布版本的 sha256 清单完全一致。文件先写到目标旁边的暂存目录，再用一次 rename 移到位（已有的安装同样整体替换），`.hub-install.json` 记录 Hub Skill id、版本、安装时间和每个文件的 sha256。任何一步失败都会删除暂存目录，不会留下半成品。在已有安装之上再次安装就是更新：替换之前，`installSkill(id, options)` 会把已装副本与安装记录比对，发现改动时以 `skill-market/local-changes` 拒绝（列出所有被修改、新增或删除的文件），除非设置了 `options.overwriteLocalChanges`；没有安装记录的同名目录视为本地文件。`installedStatus()` 向 Hub 查询本租户每个已装市场 Skill 的状态：有新版本时为 `update`，否则 `current`；Hub 不再向该员工展示（下架、删除或不可见）时为 `unavailable`，本地副本保留且照常可用，绝不自动删除；Hub 无法访问时为 `unknown`。Hub 出错报 `skill-market/unavailable`，Skill 不存在报 `skill-market/not-found`，安装包不合格报 `skill-market/invalid-package`。
 
 `setDisabled(name, disabled)` 只对当前登录租户停用某个市场 Skill，在 `disabledSkills` 中记录 `<tenantId>/<name>`；停用的市场 Skill 仍然列出，但 provider 会同时对模型和用户关闭它的调用。[`@deepseek-ai/dsh-skill-controller`](../skill-controller/README.zh.md) 的已安装 Skill Remote 把市场 Skill 列在单独的分组里，并把它们的开关交给这里。
 
@@ -58,7 +58,8 @@ provider 通过 `ctx.skills.registerProvider()` 注册，借助文件系统 prov
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **还没有更新与本地改动检测**——安装记录保存了每个文件的 sha256 供此使用，但与 Hub 和磁盘的比对是单独的一步。
+- **更新靠拉取而非推送**——`installedStatus()` 在页面打开时询问 Hub；没有后台检查，只有用户要求时才安装更新。
+- **本地改动检测只比对普通文件**——用户在市场 Skill 目录里新加的符号链接不会被报告为本地修改。
 
 <a id="dev-note"></a>
 ### 开发备注
