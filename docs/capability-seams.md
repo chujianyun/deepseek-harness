@@ -73,6 +73,8 @@ flowchart LR
   svc_sessionSkillCatalog["ctx.sessionSkillCatalog<br/>Session-addressed skill Remote adapter"]
   pkg_hub_account["hub-account"]
   svc_hubAccount["ctx.hubAccount<br/>Hub sign-in Remote controller"]
+  pkg_skill_market["skill-market"]
+  svc_skillMarket["ctx.skillMarket<br/>Skill Hub market"]
   pkg_skill_controller["skill-controller"]
   svc_skillController["ctx.skillController<br/>Installed-skill Remote controller"]
   pkg_api_job_controller["api-job-controller"]
@@ -394,6 +396,7 @@ flowchart LR
   pkg_skill_badge --> svc_skills
   pkg_skill_controller --> svc_skillController
   pkg_skill_filesystem --> svc_skills
+  pkg_skill_market --> svc_skillMarket
   pkg_skill_office --> svc_skills
   pkg_spill --> svc_spillStore
   pkg_spill_local --> svc_spillStore
@@ -604,6 +607,7 @@ flowchart LR
 | `ctx.sessionFileReferences` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | Delegates file-reference discovery through the Session Controller's established Agent lookup policy. |
 | `ctx.sessionSkillCatalog` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | Lists the Session composition's user-invocable skills without activating a cold Agent. |
 | `ctx.hubAccount` | `core` | [`hub-account`](../packages/credentials/hub-account) | - | - | - | Signs Desktop in to the Skill Hub user center (OAuth2 + PKCE over a loopback callback), refreshes the token on the Host, and refuses new prompts while signed out. |
+| `ctx.skillMarket` | `core` | [`skill-market`](../packages/skill/skill-market) | - | - | - | Discovers the signed-in tenant's market Skills as the `market` source, browses the Skill Hub as the signed-in employee, and installs a validated package in one move. |
 | `ctx.skillController` | `core` | [`skill-controller`](../packages/skill/skill-controller) | - | - | - | Lists the user-level skills on this machine and applies the Desktop Skills page actions: switch, reveal, edit, and move to the trash. |
 | `ctx.jobController` | `core` | [`api-job-controller`](../packages/api/job-controller) | - | - | - | Streams one background job's observation record over the generated Remote namespace; the roster stays on the session control stream. |
 | `ctx.credentialsController` | `core` | [`api-settings-controller`](../packages/api/settings-controller) | - | - | - | Projects the credential-reference seam onto the generated Remote namespace: batch fan-out, view projection, and refusal mapping live here, not on the seam Definition. |

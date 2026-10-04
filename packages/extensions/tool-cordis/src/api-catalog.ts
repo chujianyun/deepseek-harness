@@ -1289,6 +1289,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
         returns: 'the token, or undefined while signed out.',
       },
+      {
+        signature: 'async request(path: string, init: RequestInit = {}): Promise<Response>',
+        description: 'Call a user-center client API (`/api/client/*`) as the signed-in employee. Host only: the token never leaves this process. A rejected token is refreshed once and the call retried.',
+        parameters: [{ name: 'path', description: 'absolute path on the user center, with its query.' }, { name: 'init', description: 'fetch options; its signal cancels the call.' }],
+        returns: 'the user center\'s response, whatever its status.',
+        throws: ['RemoteError `hub-account/signed-out` when no sign-in is stored.'],
+      },
     ],
   },
   {
@@ -2707,6 +2714,72 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
         returns: 'confirmation after the move.',
         throws: ['RemoteError when the skill is not installed, the platform has no trash, or the move fails.'],
+      },
+    ],
+  },
+  {
+    key: 'skillMarket',
+    summary: 'Host owner of the market source and of the `skillMarket` Remote namespace.',
+    description: 'Host owner of the market source and of the `skillMarket` Remote namespace.',
+    methods: [
+      {
+        signature: 'tenantId: string | undefined',
+        description: 'Tenant of the current Hub sign-in; undefined while signed out.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly watch: boolean',
+        description: 'Whether the tenant directory is watched for changes made outside DSH.',
+        parameters: [],
+      },
+      {
+        signature: 'tenantDir(tenantId: string): string',
+        description: 'Directory holding one tenant\'s market Skills.',
+        parameters: [{ name: 'tenantId', description: 'Skill Hub tenant.' }],
+        returns: '`<dshHome>/skills-market/<tenantId>`.',
+      },
+      {
+        signature: 'isDisabled(name: string): boolean',
+        description: 'Whether the signed-in tenant switched this market Skill off.',
+        parameters: [{ name: 'name', description: 'Skill name.' }],
+        returns: 'true when switched off.',
+      },
+      {
+        signature: 'setDisabled(name: string, disabled: boolean): Promise<void>',
+        description: 'Switch one market Skill of the signed-in tenant on or off, persisting the profile\'s list.',
+        parameters: [{ name: 'name', description: 'Skill name.' }, { name: 'disabled', description: 'whether to switch it off.' }],
+        throws: ['when signed out, or when mounted without Settings or a profile entry.'],
+      },
+      {
+        signature: '@Remote async list(query: MarketSkillQuery, signal: AbortSignal): Promise<MarketSkillPage>',
+        description: 'List the market as the signed-in employee sees it on the Skill Hub.',
+        parameters: [{ name: 'query', description: 'search text, category, and page.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'one page of cards with their install state.',
+      },
+      {
+        signature: '@Remote async categories(signal: AbortSignal): Promise<readonly MarketCategory[]>',
+        description: 'The signed-in tenant\'s Skill categories.',
+        parameters: [{ name: 'signal', description: 'caller lifetime.' }],
+        returns: 'categories in Hub order.',
+      },
+      {
+        signature: '@Remote async detail(id: string, signal: AbortSignal): Promise<MarketSkillDetail>',
+        description: 'One market Skill with its SKILL.md and file list.',
+        parameters: [{ name: 'id', description: 'Skill Hub Skill id.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'the detail with its install state.',
+      },
+      {
+        signature: '@Remote async installSkill(id: string, signal: AbortSignal): Promise<MarketSkillCard>',
+        description: 'Install the current version of a market Skill for the signed-in tenant. The package is downloaded and validated (layout and every file\'s sha256) in a staging directory beside the target, then moved into place in one rename; a failure leaves no partial Skill behind.',
+        parameters: [{ name: 'id', description: 'Skill Hub Skill id.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'the card after install.',
+        throws: ['RemoteError on a name conflict with a user Skill, an invalid package, or an unreachable Hub.'],
+      },
+      {
+        signature: 'async records(): Promise<Map<string, MarketInstallRecord>>',
+        description: 'Install records of the signed-in tenant\'s market Skills, keyed by Skill name.',
+        parameters: [],
+        returns: 'the readable records; a directory without one is not a market install.',
       },
     ],
   },
@@ -5525,7 +5598,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'InstalledSkillGroup',
-    declaration: 'export type InstalledSkillGroup = \'custom\';',
+    declaration: 'export type InstalledSkillGroup = \'custom\' | \'market\';',
   },
   {
     name: 'InstalledSkillListValue',
@@ -5846,6 +5919,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'MarketCategory',
+    declaration: 'export interface MarketCategory {\n    readonly id: string;\n    readonly name: string;\n}',
+  },
+  {
+    name: 'MarketInstallRecord',
+    declaration: 'export interface MarketInstallRecord {\n    readonly hubSkillId: string;\n    readonly name: string;\n    readonly version: string;\n    readonly installedAt: string;\n    readonly files: readonly {\n        readonly path: string;\n        readonly sha256: string;\n    }[];\n}',
+  },
+  {
+    name: 'MarketSkillCard',
+    declaration: 'export interface MarketSkillCard {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly category: MarketCategory | null;\n    readonly version: string;\n    readonly updatedAt: string;\n    readonly installedVersion: string | null;\n    readonly conflict: boolean;\n}',
+  },
+  {
+    name: 'MarketSkillDetail',
+    declaration: 'export interface MarketSkillDetail extends MarketSkillCard {\n    readonly ownerName: string;\n    readonly skillMd: string;\n    readonly files: readonly MarketSkillFile[];\n}',
+  },
+  {
+    name: 'MarketSkillFile',
+    declaration: 'export interface MarketSkillFile {\n    readonly path: string;\n    readonly size: number;\n}',
+  },
+  {
+    name: 'MarketSkillPage',
+    declaration: 'export interface MarketSkillPage {\n    readonly items: readonly MarketSkillCard[];\n    readonly total: number;\n    readonly page: number;\n    readonly pageSize: number;\n}',
+  },
+  {
+    name: 'MarketSkillQuery',
+    declaration: 'export interface MarketSkillQuery {\n    readonly q?: string;\n    readonly categoryId?: string;\n    readonly page?: number;\n    readonly pageSize?: number;\n}',
   },
   {
     name: 'McpResourceProvider',

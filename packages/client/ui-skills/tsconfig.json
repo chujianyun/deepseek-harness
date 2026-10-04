@@ -46,6 +46,9 @@
     },
     {
       "path": "../../skill/skill-controller"
+    },
+    {
+      "path": "../../skill/skill-market"
     }
   ]
 }

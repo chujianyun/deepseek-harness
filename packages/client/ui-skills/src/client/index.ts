@@ -1,6 +1,7 @@
 /**
  * Skills page, browser half: the **Skills** entry of the sidebar and the page it opens in the main
- * column. The page lists the skills installed on this machine through the `installedSkills` Remote,
+ * column. The page browses the Skill Hub market and installs from it through the `skillMarket` Remote,
+ * and lists the skills installed on this machine through the `installedSkills` Remote,
  * switches them on and off, and opens, edits, reveals, or uninstalls one.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -13,13 +14,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { createInstalledSource } from './installed-source.ts'
+import { createMarketSource } from './market-source.ts'
 import { en, zh, type SkillsLocaleKey } from './locales.ts'
 import { SkillsPage } from './SkillsPage.tsx'
 import { SkillsPanelIcon } from './SkillsPanelIcon.tsx'
 
 export type { InstalledSkillsInjected, InstalledSnapshot } from './installed-source.ts'
+export type { MarketInjected, MarketSnapshot } from './market-source.ts'
 export type { SkillsLocaleKey } from './locales.ts'
-export type { SkillsPageProps } from './SkillsPage.tsx'
+export type { SkillsInjected, SkillsPageProps } from './SkillsPage.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -31,8 +34,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'skills'
 const PANEL_ID = 'skills' as MainPanelId
 
-/** Services the page reads: the installed-skill Remote, and Session navigation with draft access for "chat with it". */
-export const inject = ['slots', 'locale', 'remote', 'remote.installedSkills', 'uiWorkspace', 'sessions', 'conversation']
+/** Services the page reads: the installed-skill and market Remotes, and Session navigation with draft access for "chat with it". */
+export const inject = ['slots', 'locale', 'remote', 'remote.installedSkills', 'remote.skillMarket', 'uiWorkspace', 'sessions', 'conversation']
 
 /**
  * Contribute the Skills sidebar entry and the page it opens.
@@ -42,7 +45,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-skills: dictionaries')
   const t = ctx.locale.bind(NS)
   const remote = ctx.remote.installedSkills
-  const face = createInstalledSource({
+  const installed = createInstalledSource({
     list: () => remote.list(),
     setEnabled: (name, enabled) => remote.setEnabled(name, enabled),
     reveal: name => remote.reveal(name),
@@ -56,6 +59,15 @@ export function apply(ctx: ClientContext): void {
       })
     },
   })
+  const market = ctx.remote.skillMarket
+  const marketFace = createMarketSource({
+    list: query => market.list(query),
+    categories: () => market.categories(),
+    detail: id => market.detail(id),
+    install: id => market.installSkill(id),
+    installed: () => { void installed.onRefresh() },
+  })
+  const face = { ...installed, ...marketFace, hooks: { ...installed.hooks, ...marketFace.hooks } }
   ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main',
     key: PANEL_ID,

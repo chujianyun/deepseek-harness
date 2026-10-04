@@ -290,6 +290,29 @@ export class HubAccount extends TypertRemoteService {
     return (await this.read())?.accessToken
   }
 
+  /**
+   * Call a user-center client API (`/api/client/*`) as the signed-in employee. Host only: the token
+   * never leaves this process. A rejected token is refreshed once and the call retried.
+   * @param path - absolute path on the user center, with its query.
+   * @param init - fetch options; its signal cancels the call.
+   * @returns the user center's response, whatever its status.
+   * @throws RemoteError `hub-account/signed-out` when no sign-in is stored.
+   */
+  async request(path: string, init: RequestInit = {}): Promise<Response> {
+    const send = async (): Promise<Response> => {
+      const token = await this.accessToken()
+      if (token === undefined) throw new RemoteError('hub-account/signed-out', 'sign in to the Skill Hub first', {})
+      return fetch(new URL(path, this.origin), {
+        ...init, redirect: 'error', headers: { ...init.headers as Record<string, string> | undefined, authorization: `Bearer ${token}` },
+        signal: AbortSignal.any([this.lifetime.signal, ...init.signal ? [init.signal] : []]),
+      })
+    }
+    const res = await send()
+    if (res.status !== 401) return res
+    await this.refresh()
+    return send()
+  }
+
   private changed(): void { for (const listener of this.listeners) listener() }
 
   private settle(attempt: Attempt, view: Partial<HubSignInAttemptView>): void {

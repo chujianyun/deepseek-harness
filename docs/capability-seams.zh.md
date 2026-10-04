@@ -75,6 +75,8 @@ flowchart LR
   svc_sessionSkillCatalog["ctx.sessionSkillCatalog<br/>Session-addressed skill Remote adapter"]
   pkg_hub_account["hub-account"]
   svc_hubAccount["ctx.hubAccount<br/>Hub sign-in Remote controller"]
+  pkg_skill_market["skill-market"]
+  svc_skillMarket["ctx.skillMarket<br/>Skill Hub market"]
   pkg_skill_controller["skill-controller"]
   svc_skillController["ctx.skillController<br/>Installed-skill Remote controller"]
   pkg_api_job_controller["api-job-controller"]
@@ -396,6 +398,7 @@ flowchart LR
   pkg_skill_badge --> svc_skills
   pkg_skill_controller --> svc_skillController
   pkg_skill_filesystem --> svc_skills
+  pkg_skill_market --> svc_skillMarket
   pkg_skill_office --> svc_skills
   pkg_spill --> svc_spillStore
   pkg_spill_local --> svc_spillStore
@@ -606,6 +609,7 @@ flowchart LR
 | `ctx.sessionFileReferences` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | 通过 Session Controller 的既有 Agent lookup 策略委托文件引用发现。 |
 | `ctx.sessionSkillCatalog` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | 在不激活冷 Agent 的前提下列出 Session 组合中允许用户调用的 skill。 |
 | `ctx.hubAccount` | `core` | [`hub-account`](../packages/credentials/hub-account) | - | - | - | 让 Desktop 登录 Skill Hub 的用户中心（经本机回环回调的 OAuth2 + PKCE），在 Host 上刷新令牌，未登录时拒绝新消息。 |
+| `ctx.skillMarket` | `core` | [`skill-market`](../packages/skill/skill-market) | - | - | - | 把当前登录租户的市场 Skill 作为 `market` 来源发现，以登录员工身份浏览 Skill Hub，并把校验通过的安装包一次移到位。 |
 | `ctx.skillController` | `core` | [`skill-controller`](../packages/skill/skill-controller) | - | - | - | 列出本机的用户级 skill，并执行 Desktop Skills 页面的操作：启停、显示位置、编辑与移到废纸篓。 |
 | `ctx.jobController` | `core` | [`api-job-controller`](../packages/api/job-controller) | - | - | - | 经生成的 Remote namespace 流式发送一个后台任务的观测 record；名册仍在会话控制流上。 |
 | `ctx.credentialsController` | `core` | [`api-settings-controller`](../packages/api/settings-controller) | - | - | - | 把凭据引用 seam 投影到生成的 Remote namespace：批量扇出、视图投影与拒绝映射都在这里，而不在 seam Definition 上。 |

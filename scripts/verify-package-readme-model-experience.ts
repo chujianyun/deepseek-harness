@@ -215,6 +215,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/api/settings-controller': { kind: 'none', reason: 'Configuration-surface API owner; it registers no prompt, tool, or session event.' },
   'packages/skill/skill-controller': { kind: 'indirect', reason: 'Installed-skill Remote owner; the skill registry and catalog consumer own every model-visible effect of a switch or removal.' },
   'packages/client/ui-skills': { kind: 'indirect', reason: 'Installed-skill page; the skill registry and catalog consumer own the model-visible effect of a switch, and a chat draft is only sent by the user.' },
+  'packages/skill/skill-market': { kind: 'indirect', reason: 'Market Skill source and installer; the skill registry and catalog consumer own the model-visible effect of an installed or switched-off market Skill.' },
   'packages/credentials/hub-account': { kind: 'none', reason: 'Hub sign-in adds no model context; a prompt refused while signed out never reaches a Session.' },
   'packages/client/ui-hub-account': { kind: 'none', reason: 'Sign-in gate and account section render Host state only; the Host decides whether a prompt is admitted.' },
   'packages/api/workspace-controller': { kind: 'none', reason: 'Workspace API and state projection owner; it registers no prompt, tool, or session event.' },

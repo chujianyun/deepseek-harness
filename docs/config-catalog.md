@@ -2889,7 +2889,7 @@ export interface Config {
 
 - `inject`: `skills`
 - `refs`: [`NativeCommandRunner`](../packages/util/native-command/src/index.ts)
-- `source`: [`packages/skill/skill-controller/src/index.ts:46`](../packages/skill/skill-controller/src/index.ts)
+- `source`: [`packages/skill/skill-controller/src/index.ts:49`](../packages/skill/skill-controller/src/index.ts)
 
 ```ts config-catalog
 /** Host integrations replaceable by direct unit tests. */
@@ -2914,6 +2914,7 @@ export interface SkillControllerInternals {
 ## `@deepseek-ai/dsh-skill-filesystem`
 
 - `inject`: `skills`
+- `refs`: [`SkillSource`](../packages/skill/skill/src/index.ts)
 - `source`: [`packages/skill/skill-filesystem/src/index.ts:49`](../packages/skill/skill-filesystem/src/index.ts)
 
 ```ts config-catalog
@@ -2929,6 +2930,10 @@ export interface Config {
   agentsHome?: string
   /** Additional skill roots scanned after project roots and before user roots. */
   customSkillDirs?: string[]
+  /** Discovery source reported for skills under `customSkillDirs`. Defaults to `custom`. */
+  customSource?: SkillSource
+  /** Precedence rank of `customSkillDirs`; lower ranks win duplicate names. Defaults to 300. */
+  customRank?: number
   /** Whether host-local skill roots are watched for catalog changes. */
   watch?: boolean
   /** Whether Chokidar uses polling instead of native filesystem events. */
@@ -2946,6 +2951,30 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill-filesystem -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-skill-market -->
+<a id="deepseek-aidsh-skill-market"></a>
+
+## `@deepseek-ai/dsh-skill-market`
+
+- `inject`: `skills` · `hubAccount`
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/skill/skill-market/src/index.ts:56`](../packages/skill/skill-market/src/index.ts)
+
+```ts config-catalog
+/** Market configuration. */
+export interface Config {
+  /** DeepSeek Harness home; market Skills live under `<dshHome>/skills-market`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** Market Skills switched off, as `<tenantId>/<name>`; edited live through `setDisabled()`. */
+  disabledSkills?: Volatile<readonly string[]>
+  /** Watch the tenant directory for changes made outside DSH. */
+  watch?: boolean
+  /** Largest Skill package accepted for install, in bytes. */
+  maxPackageBytes?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill-market -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-skill-office -->
 <a id="deepseek-aidsh-skill-office"></a>

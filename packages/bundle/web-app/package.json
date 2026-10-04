@@ -144,6 +144,7 @@
     "@deepseek-ai/dsh-session-stats": "workspace:*",
     "@deepseek-ai/dsh-session-turn-outline": "workspace:*",
     "@deepseek-ai/dsh-skill-controller": "workspace:*",
+    "@deepseek-ai/dsh-skill-market": "workspace:*",
     "@deepseek-ai/dsh-hub-account": "workspace:*",
     "@deepseek-ai/dsh-skill-filesystem": "workspace:*",
     "@deepseek-ai/dsh-subprocess": "workspace:*",

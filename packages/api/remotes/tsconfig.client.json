@@ -88,6 +88,9 @@
       "path": "../../skill/skill-controller"
     },
     {
+      "path": "../../skill/skill-market"
+    },
+    {
       "path": "../../credentials/hub-account"
     },
     {

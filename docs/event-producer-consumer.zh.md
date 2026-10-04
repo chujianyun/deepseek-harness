@@ -106,7 +106,7 @@
 | `internal/service` | - | [`agent-preset-registry`](../packages/preset/agent-preset-registry), `gateway` |
 | `internal/status` | - | [`agent`](../packages/core/agent), `inspector`, [`web`](../packages/web/web) |
 | `internal/update` | - | [`app-boot`](../packages/boot/app-boot) |
-| `loader/volatile-update` | - | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `product-analytics`, [`skill`](../packages/skill/skill), `speech-to-text` |
+| `loader/volatile-update` | - | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `product-analytics`, [`skill`](../packages/skill/skill), [`skill-market`](../packages/skill/skill-market), `speech-to-text` |
 | `slots/changed` | `ui-renderer` (`emit`) | - |
 <!-- END GENERATED event-producer-consumer:undeclared -->
 

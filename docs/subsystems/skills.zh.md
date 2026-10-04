@@ -72,6 +72,7 @@ interface SkillProviderControl {
 | 300 | `custom` | `Config.customSkillDirs` |
 | 400 | `user-dsh` | `<dshHome>/skills` |
 | 500 | `user-agents` | `<agentsHome>/skills` |
+| 550 | `market` | 当前登录 Skill Hub 租户的 `<dshHome>/skills-market/<tenantId>`（[dsh-skill-market](../../packages/skill/skill-market)，仅 Desktop） |
 | 600 | `bundled` | 配置了 `Config.bundledSkillDir` 时使用该目录 |
 
 项目根目录为包含 `.git` 的最近祖先目录；找不到时使用当前 cwd。当 `ctx.fs` 可用时，git-root 向上查找通过文件系统服务探测 `.git`，使远程或沙箱工作区不会回退到宿主文件系统边界。用户 DSH 根目录会跳过其 `.system` 子目录。本地提供方不会合成内置系统 skill；部署方通过已配置的 bundled 根目录或专用提供方提供随包 skill。
@@ -242,7 +243,11 @@ interface Config {
 
 `SkillListRequest` 通过 `sessionId` 指定一个 Session；`SkillListValue` 返回允许用户调用的条目，其中包含名称、描述、可选使用提示与模型调用可用性。`SessionSkillCatalog` 在不激活 Agent 的前提下读取 Session cwd 与记录的 preset。live Agent 可以提供其作用域 registry，冷 Session 则使用 preset 的 standing scope。
 
-Desktop 的 Skills 页面通过 [dsh-skill-controller](../../packages/skill/skill-controller) 拥有的 `installedSkills` namespace 读取已安装的用户级 skill。`list()` 返回 `InstalledSkillListValue`：来源为 `user-dsh` 与 `user-agents` 的每个 skill（`customSkillDirs` 根目录属于部署配置，不算用户安装） 各一个 `InstalledSkillView`，包含名称、描述、分组、来源、指令文件路径与启用状态。`setEnabled(name, enabled)` 返回更新后的 `InstalledSkillView`；`reveal`、`edit` 与 `uninstall` 在原生文件管理器、文本编辑器或移到废纸篓接受请求后返回 `InstalledSkillActionValue`。所有方法都拒绝不在该用户级列表中的名称。
+Desktop 的 Skills 页面通过 [dsh-skill-controller](../../packages/skill/skill-controller) 拥有的 `installedSkills` namespace 读取已安装的用户级 skill。`list()` 返回 `InstalledSkillListValue`：来源为 `user-dsh` 与 `user-agents` 的每个 skill（`customSkillDirs` 根目录属于部署配置，不算用户安装） 各一个 `InstalledSkillView`，包含名称、描述、分组、来源、指令文件路径与启用状态。`setEnabled(name, enabled)` 返回更新后的 `InstalledSkillView`；`reveal`、`edit` 与 `uninstall` 在原生文件管理器、文本编辑器或移到废纸篓接受请求后返回 `InstalledSkillActionValue`。从 Skill Hub 市场安装的 Skill 以 `group: 'market'` 加入该列表；它们的开关是市场按租户的设置。
+
+Desktop 市场通过 [dsh-skill-market](../../packages/skill/skill-market) 拥有的 `skillMarket` namespace 读取 Skill Hub：`list(query)` 返回一页 `MarketSkillPage`，其中每个 `MarketSkillCard` 带安装状态和同名冲突标记；`categories()` 返回本租户的 `MarketCategory` 列表；`detail(id)` 返回带 SKILL.md 原文与文件清单的 `MarketSkillDetail`；`installSkill(id)` 在校验通过的安装完成后返回卡片。每个市场 Skill 目录在 `.hub-install.json` 中保存一份 `MarketInstallRecord`。
+
+`installedSkills` 的所有方法都拒绝不在该列表中的名称。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -323,6 +328,78 @@ Host service backing the generated `ctx.remote.installedSkills` namespace. Every
 ```
 
 Source: [`packages/skill/skill-controller/src/index.ts`](../../packages/skill/skill-controller/src/index.ts)
+
+<a id="ctxskillmarket--skillmarket"></a>
+
+### `ctx.skillMarket` — `SkillMarket`
+
+Host owner of the market source and of the `skillMarket` Remote namespace.
+
+```ts cordis-catalog
+/**
+ * Directory holding one tenant's market Skills.
+ * @param tenantId - Skill Hub tenant.
+ * @returns `<dshHome>/skills-market/<tenantId>`.
+ */
+tenantDir(tenantId: string): string
+
+/**
+ * Whether the signed-in tenant switched this market Skill off.
+ * @param name - Skill name.
+ * @returns true when switched off.
+ */
+isDisabled(name: string): boolean
+
+/**
+ * Switch one market Skill of the signed-in tenant on or off, persisting the profile's list.
+ * @param name - Skill name.
+ * @param disabled - whether to switch it off.
+ * @throws when signed out, or when mounted without Settings or a profile entry.
+ */
+setDisabled(name: string, disabled: boolean): Promise<void>
+
+/**
+ * List the market as the signed-in employee sees it on the Skill Hub.
+ * @param query - search text, category, and page.
+ * @param signal - caller lifetime.
+ * @returns one page of cards with their install state.
+ */
+@Remote async list(query: MarketSkillQuery, signal: AbortSignal): Promise<MarketSkillPage>
+
+/**
+ * The signed-in tenant's Skill categories.
+ * @param signal - caller lifetime.
+ * @returns categories in Hub order.
+ */
+@Remote async categories(signal: AbortSignal): Promise<readonly MarketCategory[]>
+
+/**
+ * One market Skill with its SKILL.md and file list.
+ * @param id - Skill Hub Skill id.
+ * @param signal - caller lifetime.
+ * @returns the detail with its install state.
+ */
+@Remote async detail(id: string, signal: AbortSignal): Promise<MarketSkillDetail>
+
+/**
+ * Install the current version of a market Skill for the signed-in tenant. The package is
+ * downloaded and validated (layout and every file's sha256) in a staging directory beside the
+ * target, then moved into place in one rename; a failure leaves no partial Skill behind.
+ * @param id - Skill Hub Skill id.
+ * @param signal - caller lifetime.
+ * @returns the card after install.
+ * @throws RemoteError on a name conflict with a user Skill, an invalid package, or an unreachable Hub.
+ */
+@Remote async installSkill(id: string, signal: AbortSignal): Promise<MarketSkillCard>
+
+/**
+ * Install records of the signed-in tenant's market Skills, keyed by Skill name.
+ * @returns the readable records; a directory without one is not a market install.
+ */
+async records(): Promise<Map<string, MarketInstallRecord>>
+```
+
+Source: [`packages/skill/skill-market/src/index.ts`](../../packages/skill/skill-market/src/index.ts)
 
 <a id="ctxskills--skillregistry"></a>
 

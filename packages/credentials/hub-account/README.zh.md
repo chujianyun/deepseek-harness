@@ -27,7 +27,7 @@ kind: "package-reference"
 
 `signIn()` 发起一次登录尝试，已有尝试在进行时直接返回它：在临时的回环端口上监听，把授权页（带 `response_type=code`、配置的 `scope`、`state` 和 `S256` 的 `code_challenge` 的 `/oauth/authorize`）发布在尝试的 `authorizeUrl` 上，然后等待浏览器。`state` 不对的回调得到 400，尝试继续等待；用户中心返回 `error` 时尝试以 `failed` 结束（`access_denied` 记为 `denied`）。授权码带着 `code_verifier` 和同一个 `redirect_uri` 在 `/oauth/token` 换取令牌，`/oauth/userinfo` 提供昵称、手机号、租户和是否管理员，授权记录通过授权会话提交。浏览器页面在尝试结束后才得到应答。`cancelSignIn(attemptId)` 撤回尝试；`signOut()` 删除本地授权记录，并在后台到 `/oauth/revoke` 吊销 refresh token；`switchTenant()` 先退出再发起新的尝试，让用户中心重新给出租户选择。`watch()` 推送状态流，`getState()` 读取一次；两者都不带任何令牌。
 
-access token 在到期前 `refreshMarginMs` 刷新，同时轮换 refresh token。刷新得到 HTTP 400 或 401（员工或租户被停用、授权被吊销或过期）时，删除授权记录、置 `reason: 'expired'` 并发出 `hub-account/session-expired`；网络故障或服务端错误时保留登录，`refreshRetryMs` 后重试。来自其他用户中心或客户端的授权记录视为不存在。`accessToken()` 为 Host 上调用用户中心客户端接口的消费方返回当前令牌，临近到期时先刷新。
+access token 在到期前 `refreshMarginMs` 刷新，同时轮换 refresh token。刷新得到 HTTP 400 或 401（员工或租户被停用、授权被吊销或过期）时，删除授权记录、置 `reason: 'expired'` 并发出 `hub-account/session-expired`；网络故障或服务端错误时保留登录，`refreshRetryMs` 后重试。来自其他用户中心或客户端的授权记录视为不存在。`accessToken()` 为 Host 上调用用户中心客户端接口的消费方返回当前令牌，临近到期时先刷新。`request(path, init)` 以登录员工身份调用客户端接口（`/api/client/*`），令牌被拒时刷新一次后重试，没有登录记录时以 `hub-account/signed-out` 失败；令牌不会离开 Host。
 
 未登录时，本包对会话控制器的 `api-session/prompt-admission` 返回 `hub-account/signed-out`，Host 因此拒绝新消息。已经在运行的轮次和已排队的工作照常继续。
 

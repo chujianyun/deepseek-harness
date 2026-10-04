@@ -69,6 +69,7 @@ flowchart TD
     pkg_skill_badge["skill-badge"]
     pkg_skill_controller["skill-controller"]
     pkg_skill_filesystem["skill-filesystem"]
+    pkg_skill_market["skill-market"]
     pkg_skill_office["skill-office"]
     pkg_tool_skill["tool-skill"]
     pkg_tool_workspace_dependencies["tool-workspace-dependencies"]
@@ -1014,11 +1015,6 @@ flowchart TD
   pkg_token_meter --> pkg_llm_retry
   pkg_token_meter --> pkg_session
   pkg_token_meter --> pkg_session_projection
-  pkg_skill_controller --> pkg_agent_preset_registry
-  pkg_skill_controller --> pkg_native_command
-  pkg_skill_controller --> pkg_scope
-  pkg_skill_controller --> pkg_skill
-  pkg_skill_controller --> pkg_typert_protocol
   pkg_session_query --> pkg_brand
   pkg_session_query --> pkg_llm
   pkg_session_query --> pkg_session
@@ -1384,12 +1380,26 @@ flowchart TD
   pkg_client_test_runtime --> pkg_session
   pkg_client_test_runtime --> pkg_subagent
   pkg_client_test_runtime --> pkg_typert_protocol
+  pkg_skill_market --> pkg_agent_preset_registry
+  pkg_skill_market --> pkg_home_paths
+  pkg_skill_market --> pkg_hub_account
+  pkg_skill_market --> pkg_scope
+  pkg_skill_market --> pkg_settings
+  pkg_skill_market --> pkg_skill
+  pkg_skill_market --> pkg_skill_filesystem
+  pkg_skill_market --> pkg_typert_protocol
   pkg_subagent_dsh_sdk --> pkg_agent
   pkg_subagent_dsh_sdk --> pkg_llm
   pkg_subagent_dsh_sdk --> pkg_sdk_client
   pkg_subagent_dsh_sdk --> pkg_session
   pkg_subagent_dsh_sdk --> pkg_subagent
   pkg_subagent_dsh_sdk --> pkg_subprocess
+  pkg_skill_controller --> pkg_agent_preset_registry
+  pkg_skill_controller --> pkg_native_command
+  pkg_skill_controller --> pkg_scope
+  pkg_skill_controller --> pkg_skill
+  pkg_skill_controller --> pkg_skill_market
+  pkg_skill_controller --> pkg_typert_protocol
 ```
 
 <!-- BEGIN GENERATED module-graph:packages -->
@@ -1663,7 +1673,6 @@ flowchart TD
 | [`tool-workflow`](../packages/workflow/tool-workflow) | `workflow` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`jobs`](../packages/jobs/jobs), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools), [`workflow`](../packages/workflow/workflow) |
 | [`plugin-package-inventory-deepseek`](../packages/llm/plugin-package-inventory-deepseek) | `llm` | [`agent`](../packages/core/agent), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`deepseek-llm-api-extensions`](../packages/llm/deepseek-llm-api-extensions), [`session`](../packages/core/session) |
 | [`token-meter`](../packages/llm/token-meter) | `llm` | [`compaction`](../packages/compaction/compaction), [`compaction-image-offload`](../packages/compaction/compaction-image-offload), [`llm`](../packages/llm/llm), [`llm-retry`](../packages/llm/llm-retry), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection) |
-| [`skill-controller`](../packages/skill/skill-controller) | `skill` | [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`native-command`](../packages/util/native-command), [`scope`](../packages/core/scope), [`skill`](../packages/skill/skill), [`typert-protocol`](../packages/typert/protocol) |
 | [`session-query`](../packages/session-query/session-query) | `session-query` | [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection`](../packages/session/session-projection), [`session-projection-cache`](../packages/session/session-projection-cache), [`session-title`](../packages/session/session-title), [`tool-todo`](../packages/todo/tool-todo) |
 | [`api-settings-controller`](../packages/api/settings-controller) | `api` | [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`credentials`](../packages/credentials/credentials), [`native-command`](../packages/util/native-command), [`session`](../packages/core/session), [`settings`](../packages/settings/settings), [`typert-protocol`](../packages/typert/protocol) |
 | [`web-app`](../packages/bundle/web-app) | `bundle` | [`shell-env`](../packages/shell/shell-env), [`system-prompt`](../packages/core/system-prompt) |
@@ -1714,5 +1723,7 @@ flowchart TD
 | [`sdk-client`](../packages/sdk/client) | `sdk` | [`llm`](../packages/llm/llm), [`sdk-protocol`](../packages/sdk/protocol), [`session`](../packages/core/session) |
 | [`sdk-jsonrpc-server`](../packages/sdk/server) | `sdk` | [`agent`](../packages/core/agent), [`attachment`](../packages/attachment/attachment), [`llm`](../packages/llm/llm), [`llm-deepseek-api-key`](../packages/llm/llm-deepseek-api-key), [`scope`](../packages/core/scope), [`sdk-protocol`](../packages/sdk/protocol), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent) |
 | [`client-test-runtime`](../packages/test-support/client-runtime) | `test-support` | [`api-gateway`](../packages/api/gateway), [`api-session-controller`](../packages/api/session-controller), [`api-workspace-controller`](../packages/api/workspace-controller), [`attachment`](../packages/attachment/attachment), [`client-connection`](../packages/client/connection), [`client-hmr`](../packages/client/hmr), [`client-modules`](../packages/client/modules), [`client-store`](../packages/client/store), [`client-ui-chat`](../packages/client/ui-chat), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-renderer`](../packages/client/ui-renderer), [`client-ui-session`](../packages/client/ui-session), [`client-ui-settings`](../packages/client/ui-settings), [`client-ui-slots`](../packages/client/ui-slots), [`client-web`](../packages/client/web), [`remote-mock`](../packages/test-support/remote-mock), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`typert-protocol`](../packages/typert/protocol) |
+| [`skill-market`](../packages/skill/skill-market) | `skill` | [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`home-paths`](../packages/util/home-paths), [`hub-account`](../packages/credentials/hub-account), [`scope`](../packages/core/scope), [`settings`](../packages/settings/settings), [`skill`](../packages/skill/skill), [`skill-filesystem`](../packages/skill/skill-filesystem), [`typert-protocol`](../packages/typert/protocol) |
 | [`subagent-dsh-sdk`](../packages/subagent/subagent-dsh-sdk) | `subagent` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`sdk-client`](../packages/sdk/client), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess) |
+| [`skill-controller`](../packages/skill/skill-controller) | `skill` | [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`native-command`](../packages/util/native-command), [`scope`](../packages/core/scope), [`skill`](../packages/skill/skill), [`skill-market`](../packages/skill/skill-market), [`typert-protocol`](../packages/typert/protocol) |
 <!-- END GENERATED module-graph:packages -->

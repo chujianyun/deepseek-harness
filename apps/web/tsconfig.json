@@ -121,6 +121,7 @@
     "tests/composer-draft-scroll.e2e.ts",
     "tests/composer-placeholder.e2e.ts",
     "tests/hub-gate.e2e.ts",
+    "tests/skills-market.e2e.ts",
     "tests/skills-page.e2e.ts",
     "tests/context-meter.e2e.ts",
     "tests/cordis-tool-round.e2e.ts",

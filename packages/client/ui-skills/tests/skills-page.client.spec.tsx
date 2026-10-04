@@ -2,34 +2,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { InstalledSkillView } from '@deepseek-ai/dsh-skill-controller/types'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { InstalledSnapshot } from '../src/client/installed-source.ts'
-import { zh } from '../src/client/locales.ts'
-import { SkillsPage, type SkillsPageProps } from '../src/client/SkillsPage.tsx'
+import { InstalledView } from '../src/client/SkillsPage.tsx'
+import { pageProps } from './page-props.client.ts'
 import { SkillsPanelIcon } from '../src/client/SkillsPanelIcon.tsx'
 
 afterEach(cleanup)
 
-function skill(name: string, enabled = true): InstalledSkillView {
-  return { name, description: `${name} description`, group: 'custom', source: 'user-dsh', path: `/s/${name}/SKILL.md`, enabled }
+function skill(name: string, enabled = true, group: InstalledSkillView['group'] = 'custom'): InstalledSkillView {
+  return { name, description: `${name} description`, group, source: group === 'custom' ? 'user-dsh' : 'market', path: `/s/${name}/SKILL.md`, enabled }
 }
 
 function renderPage(initial: Partial<InstalledSnapshot> = {}) {
-  const store = createSnapshotStore<InstalledSnapshot>({ status: 'ready', skills: [], busy: [], failure: null, ...initial })
-  const props = {
-    t: makeTranslate(zh),
-    useInstalled: bindSnapshotSelector(store),
-    onRefresh: vi.fn(async () => {}),
-    onToggle: vi.fn(async () => {}),
-    onReveal: vi.fn(async () => {}),
-    onEdit: vi.fn(async () => {}),
-    onUninstall: vi.fn(async () => {}),
-    onChat: vi.fn(),
-    onDismissFailure: vi.fn(),
-  } satisfies SkillsPageProps
-  render(<SkillsPage {...props} />)
-  return { store, props }
+  const { installedStore: store, props } = pageProps(initial)
+  const onBack = vi.fn()
+  render(<InstalledView {...props} onBack={onBack} />)
+  return { store, props, onBack }
 }
 
 function openMenu(name: string): HTMLElement {
@@ -132,5 +120,21 @@ describe('Skills page', () => {
       usePanelInfo={unread} useSessions={unread} useSessionStatus={unread} useSessionRetainInfo={unread}
       useWorkspaces={unread} useResource={unread} />)
     expect(glyph.container.querySelector('svg')?.getAttribute('width')).toBe('18')
+  })
+
+  it('groups market Skills under 来自市场 with the same switch and menu, and goes back to the market', () => {
+    const { props, onBack } = renderPage({ skills: [skill('alpha'), skill('hub-pdf', false, 'market')] })
+    const market = screen.getByRole('region', { name: /来自市场/ })
+    expect(within(market).getByText('hub-pdf')).toBeTruthy()
+    expect(within(screen.getByRole('region', { name: /用户自定义/ })).queryByText('hub-pdf')).toBeNull()
+    fireEvent.click(within(market).getByRole('switch', { name: '启用 hub-pdf' }))
+    expect(props.onToggle).toHaveBeenCalledWith('hub-pdf', true)
+    fireEvent.click(screen.getByRole('button', { name: '返回 Skills' }))
+    expect(onBack).toHaveBeenCalledOnce()
+  })
+
+  it('says when nothing came from the market yet', () => {
+    renderPage({ skills: [skill('alpha')] })
+    expect(within(screen.getByRole('region', { name: /来自市场/ })).getByText('还没有从市场安装 Skill')).toBeTruthy()
   })
 })

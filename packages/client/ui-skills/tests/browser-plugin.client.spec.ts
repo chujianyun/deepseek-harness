@@ -7,6 +7,7 @@ import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-t
 import { apply, inject } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
 import type { InstalledSkillsInjected } from '../src/client/installed-source.ts'
+import type { MarketInjected } from '../src/client/market-source.ts'
 import { SkillsPage } from '../src/client/SkillsPage.tsx'
 import { SkillsPanelIcon } from '../src/client/SkillsPanelIcon.tsx'
 
@@ -33,7 +34,15 @@ async function bench() {
     edit: vi.fn(async () => done),
     uninstall: vi.fn(async () => done),
   }
-  new TestRemote(ctx, { installedSkills })
+  const page = { items: [], total: 0, page: 1, pageSize: 12 }
+  const card = { id: 's1', name: 'pdf-tools', description: '', category: null, version: '1.0.0', updatedAt: '', installedVersion: '1.0.0', conflict: false }
+  const skillMarket = {
+    list: vi.fn(async () => ({ ok: true as const, value: page })),
+    categories: vi.fn(async () => ({ ok: true as const, value: [] })),
+    detail: vi.fn(async () => ({ ok: true as const, value: { ...card, ownerName: '', skillMd: '', files: [] } })),
+    installSkill: vi.fn(async () => ({ ok: true as const, value: card })),
+  }
+  new TestRemote(ctx, { installedSkills, skillMarket })
   const setDraft = vi.fn()
   const sessionCtx = new Context()
   const binding = vi.fn((sessionId: string) => sessionId === 'fresh' ? { ctx: sessionCtx } : undefined)
@@ -50,7 +59,7 @@ async function bench() {
     },
   } as never, () => null)
   onTestFinished(removeRoot)
-  return { ctx, slots, installedSkills, startSession, setDraft }
+  return { ctx, slots, installedSkills, skillMarket, startSession, setDraft }
 }
 
 /**
@@ -108,6 +117,20 @@ describe('ui-skills browser plugin', () => {
     expect(b.setDraft).toHaveBeenCalledWith('/alpha ')
     beforeOpen('unknown')
     expect(b.setDraft).toHaveBeenCalledOnce()
+  })
+
+  it('wires the market callbacks to the skillMarket Remote and refreshes the installed list after an install', async () => {
+    const b = await bench()
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const face = pageFace(b.slots) as MarketInjected
+    await face.onOpenMarket()
+    await face.onOpenDetail('s1')
+    await face.onInstall('s1')
+    expect(b.skillMarket.list).toHaveBeenCalledWith({ q: '', page: 1, pageSize: 12 })
+    expect(b.skillMarket.categories).toHaveBeenCalledOnce()
+    expect(b.skillMarket.detail).toHaveBeenCalledWith('s1')
+    expect(b.skillMarket.installSkill).toHaveBeenCalledWith('s1')
+    await vi.waitFor(() => { expect(b.installedSkills.list).toHaveBeenCalledOnce() })
   })
 
   it('has a node half that contributes nothing', () => {

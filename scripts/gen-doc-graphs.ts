@@ -274,6 +274,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Signs Desktop in to the Skill Hub user center (OAuth2 + PKCE over a loopback callback), refreshes the token on the Host, and refuses new prompts while signed out.',
   },
   {
+    key: 'skillMarket',
+    pkg: 'skill-market',
+    title: 'Skill Hub market',
+    mode: 'core',
+    note: 'Discovers the signed-in tenant\'s market Skills as the `market` source, browses the Skill Hub as the signed-in employee, and installs a validated package in one move.',
+  },
+  {
     key: 'skillController',
     pkg: 'skill-controller',
     title: 'Installed-skill Remote controller',

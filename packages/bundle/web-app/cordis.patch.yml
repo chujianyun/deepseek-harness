@@ -162,6 +162,12 @@
         clientId: !!js process.env.DSH_HUB_CLIENT_ID
         allowLoopbackHttp: !!js process.env.DSH_HUB_ALLOW_LOOPBACK_HTTP === '1'
 
+    # Skill Hub market for Desktop: the per-tenant `market` skill source and
+    # one-click install over the Hub sign-in; mounted exactly when hub-account is.
+    - id: skill-market
+      name: '@deepseek-ai/dsh-skill-market'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'

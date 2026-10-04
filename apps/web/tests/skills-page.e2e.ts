@@ -31,7 +31,9 @@ it('lists installed skills, keeps a switched-off skill disabled across reloads, 
       await page.goto(scaffold.authenticatedUrl)
       await connectFreshWorkspace(page, scaffold.workspaceCwd, 'skills-page')
 
+      // The Skills entry opens the market; "Installed (N)" opens this machine's skills.
       await page.getByRole('button', { name: 'Skills', exact: true }).click()
+      await page.getByRole('button', { name: /^Installed \(\d+\)$/ }).click()
       await expect.poll(() => page.getByRole('heading', { name: 'Installed' }).isVisible()).toBe(true)
       await expect.poll(() => page.getByRole('switch', { name: 'Enable alpha-skill' }).isVisible()).toBe(true)
       expect(await page.getByRole('switch', { name: 'Enable beta-skill' }).getAttribute('aria-checked')).toBe('true')
@@ -41,6 +43,7 @@ it('lists installed skills, keeps a switched-off skill disabled across reloads, 
 
       await page.reload()
       await page.getByRole('button', { name: 'Skills', exact: true }).click()
+      await page.getByRole('button', { name: /^Installed \(\d+\)$/ }).click()
       await expect.poll(() => page.getByRole('switch', { name: 'Enable alpha-skill' }).getAttribute('aria-checked')).toBe('false')
 
       await page.getByRole('button', { name: 'More actions for beta-skill' }).click()

@@ -49,7 +49,7 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也�
 |---|---|---|
 | 100 | `project-dsh` | `<projectRoot>/.dsh/skills` |
 | 200 | `project-agents` | `<projectRoot>/.agents/skills` |
-| 300 | `custom` | `Config.customSkillDirs` |
+| 300 | `custom` | `Config.customSkillDirs`（来源与 rank 可配置） |
 | 400 | `user-dsh` | `<dshHome>/skills` |
 | 500 | `user-agents` | `<agentsHome>/skills` |
 
@@ -71,6 +71,8 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也�
 | `dshHome` | `$DSH_HOME` 或 `~/.dsh` | Harness 配置根目录；扫描其 `skills` 子目录 |
 | `agentsHome` | `$DSH_AGENTS_HOME` 或 `~/.agents` | 为兼容 skill 扫描的共享 agent 配置根目录 |
 | `customSkillDirs` | `[]` | 其他本地 skill 根目录，位于项目根之后、用户根之前 |
+| `customSource` | `custom` | `customSkillDirs` 下 skill 报告的来源；Skill Hub 市场等 provider 用它报告自己的来源 |
+| `customRank` | `300` | `customSkillDirs` 的优先级 rank；rank 越小，同名时越优先 |
 | `watch` | `true` | 监视本地根，并在目录可能变化时使提供方失效 |
 | `bundledSkillDir` | — | 配置后按 rank 600 扫描的随包提供的 skill 根目录 |
 

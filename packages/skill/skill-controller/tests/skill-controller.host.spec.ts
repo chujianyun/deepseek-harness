@@ -197,3 +197,52 @@ describe('installedSkills Remote', () => {
     expect(remoteErrorOf(failure)?.code).toBe('gateway/internal')
   })
 })
+
+describe('installedSkills market group', () => {
+  /**
+   * The installed-skill fixture plus a market directory discovered as source `market`, and a stand-in
+   * for the market's per-tenant switches.
+   */
+  async function bootMarket(withMarket = true) {
+    const fixture = await boot()
+    const marketDir = await temp()
+    await writeSkill(marketDir, 'hub-pdf', 'From the market')
+    await fixture.ctx.plugin(SkillFileSystem, {
+      providerName: 'market-fixture', includeDefaultRoots: false, customSkillDirs: [marketDir], customSource: 'market', customRank: 550, watch: false,
+    })
+    const disabled = new Set<string>()
+    if (withMarket) {
+      fixture.ctx.provide('skillMarket', {
+        isDisabled: (name: string) => disabled.has(name),
+        setDisabled: async (name: string, off: boolean) => { if (off) disabled.add(name); else disabled.delete(name) },
+      } as never)
+    }
+    return { ...fixture, marketDir, disabled }
+  }
+
+  it('lists market Skills in their own group with the market switch', async () => {
+    const { controller, marketDir, disabled } = await bootMarket()
+    disabled.add('hub-pdf')
+    expect((await controller.list()).skills.find(skill => skill.name === 'hub-pdf')).toEqual({
+      name: 'hub-pdf', description: 'From the market', group: 'market', source: 'market', path: join(marketDir, 'hub-pdf', 'SKILL.md'), enabled: false,
+    })
+    expect(await controller.setEnabled('hub-pdf', true)).toMatchObject({ group: 'market', enabled: true })
+    expect(disabled.has('hub-pdf')).toBe(false)
+    expect((await controller.list()).skills.filter(skill => skill.group === 'custom').map(skill => skill.name)).toEqual(['alpha', 'beta', 'flat'])
+  })
+
+  it('uninstalls a switched-off market Skill to the trash and forgets its switch', async () => {
+    const { controller, home, marketDir, disabled } = await bootMarket()
+    disabled.add('hub-pdf')
+    await controller.uninstall('hub-pdf', new AbortController().signal)
+    expect(await readdir(marketDir)).toEqual([])
+    expect(await readdir(join(home, '.Trash'))).toContain('hub-pdf')
+    expect(disabled.size).toBe(0)
+  })
+
+  it('refuses the market switch when the market is not mounted', async () => {
+    const { controller } = await bootMarket(false)
+    expect((await controller.list()).skills.find(skill => skill.name === 'hub-pdf')?.enabled).toBe(true)
+    expect(remoteErrorOf(await controller.setEnabled('hub-pdf', false).catch((error: unknown) => error))?.code).toBe('installed-skills/rejected')
+  })
+})

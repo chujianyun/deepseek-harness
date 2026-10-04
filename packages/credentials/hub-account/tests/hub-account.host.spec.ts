@@ -204,6 +204,20 @@ describe('hubAccount', () => {
     expect(center.revoked).toEqual([])
   })
 
+  it('calls client APIs as the signed-in employee and refreshes once when the token is rejected', async () => {
+    const { hub, center, signIn } = await boot()
+    expect(remoteErrorOf(await hub.request('/api/client/skills').catch((error: unknown) => error))).toMatchObject({ code: 'hub-account/signed-out' })
+    await signIn()
+    center.skills = [{ id: 's1', name: 'pdf-tools', description: 'PDF', category: null, version: '1.0.0' }]
+    const ok = await hub.request('/api/client/skills?page=1')
+    expect(ok.status).toBe(200)
+    expect((await ok.json() as { total: number }).total).toBe(1)
+    center.clientStatus = 401
+    const refreshes = () => center.tokenRequests.filter(request => request.get('grant_type') === 'refresh_token').length
+    expect((await hub.request('/api/client/skills')).status).toBe(401)
+    expect(refreshes()).toBe(1)
+  })
+
   it('stays signed in across a restart and ignores a grant from another user center', async () => {
     const center = await startMockUserCenter()
     cleanups.push(() => center.close())

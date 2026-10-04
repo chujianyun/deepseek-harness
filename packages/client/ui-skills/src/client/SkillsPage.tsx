@@ -1,42 +1,61 @@
-/** The Skills page: installed skills as cards with an on/off switch and an actions menu. */
+/** The Skills page: the Skill Hub market, and the installed Skills as cards with an on/off switch and an actions menu. */
 
 import { useEffect, useState } from 'react'
-import type { InstalledSkillView } from '@deepseek-ai/dsh-skill-controller/types'
+import type { InstalledSkillGroup, InstalledSkillView } from '@deepseek-ai/dsh-skill-controller/types'
 import {
   Button, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular,
   IconNewChatOutlineRegular, IconTrashOutlineRegular, Menu, Modal, Switch, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { InstalledSkillsInjected } from './installed-source.ts'
+import type { MarketInjected } from './market-source.ts'
+import { MarketView } from './MarketView.tsx'
 import css from './SkillsPage.module.css'
 
-/** Cards shown per "load more" step. */
+/** Cards shown per "load more" step of an installed group. */
 const PAGE_SIZE = 12
 
-/** Props the page reads from its `main` registration: the translator and the installed-skill face. */
-export type SkillsPageProps = PropsLocale<'skills'> & InjectFace<InstalledSkillsInjected>
+/** Business face of the whole page: installed Skills and the market. */
+export type SkillsInjected = Omit<InstalledSkillsInjected, 'hooks'> & Omit<MarketInjected, 'hooks'> & {
+  readonly hooks: InstalledSkillsInjected['hooks'] & MarketInjected['hooks']
+}
+
+/** Props the page reads from its `main` registration: the translator and the Skills face. */
+export type SkillsPageProps = PropsLocale<'skills'> & InjectFace<SkillsInjected>
 
 /**
- * Render the installed-skill page and read the list when it mounts.
- * @param props - the `skills` translator and the installed-skill face.
+ * Render the market, or the installed Skills after "我安装的"; each view reads its lists when it opens.
+ * @param props - the `skills` translator and the Skills face.
  * @returns the page element.
  */
 export function SkillsPage(props: SkillsPageProps) {
-  const { t, useInstalled, onRefresh, onDismissFailure } = props
+  const [view, setView] = useState<'market' | 'installed'>('market')
+  return view === 'market'
+    ? <MarketView {...props} onShowInstalled={() => { setView('installed') }} />
+    : <InstalledView {...props} onBack={() => { setView('market') }} />
+}
+
+/**
+ * The installed Skills in two groups: the ones the user placed on this machine, and the ones from the market.
+ * @param props - the page props and the way back to the market.
+ * @returns the installed view.
+ */
+export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
+  const { t, useInstalled, onRefresh, onDismissFailure, onBack } = props
   const status = useInstalled(snapshot => snapshot.status)
   const skills = useInstalled(snapshot => snapshot.skills)
   const failure = useInstalled(snapshot => snapshot.failure)
-  const [shown, setShown] = useState(PAGE_SIZE)
   const [uninstalling, setUninstalling] = useState<string>()
 
   useEffect(() => { void onRefresh() }, [onRefresh])
 
-  const visible = skills.slice(0, shown)
-  const remaining = skills.length - visible.length
   return (
     <div className={css.page}>
       <header className={css.header}>
-        <h1 className={css.title}>{t('installedTitle')}</h1>
+        <div className={css.headerRow}>
+          <h1 className={css.title}>{t('installedTitle')}</h1>
+          <Button size="sm" variant="outline" onClick={onBack}>{t('backToMarket')}</Button>
+        </div>
         <p className={css.intro}>{t('installedIntro')}</p>
       </header>
       {failure !== null && (
@@ -52,28 +71,10 @@ export function SkillsPage(props: SkillsPageProps) {
         </div>
       ) : status === 'loading' && skills.length === 0 ? (
         <p className={css.notice}>{t('loading')}</p>
-      ) : (
-        <section className={css.group} aria-labelledby="skills-custom-group">
-          <h2 id="skills-custom-group" className={css.groupTitle}>
-            {t('customGroup')}
-            <Tag>{String(skills.length)}</Tag>
-          </h2>
-          {skills.length === 0 ? <p className={css.notice}>{t('empty')}</p> : (
-            <ul className={css.grid}>
-              {visible.map(skill => (
-                <SkillCard key={skill.name} skill={skill} props={props} onUninstall={() => { setUninstalling(skill.name) }} />
-              ))}
-              {remaining > 0 && (
-                <li>
-                  <button type="button" className={css.loadMore} onClick={() => { setShown(count => count + PAGE_SIZE) }}>
-                    {t('loadMore', { count: String(remaining) })}
-                  </button>
-                </li>
-              )}
-            </ul>
-          )}
-        </section>
-      )}
+      ) : (['custom', 'market'] as const).map(group => (
+        <InstalledGroup key={group} group={group} skills={skills.filter(skill => skill.group === group)} props={props}
+          onUninstall={(name) => { setUninstalling(name) }} />
+      ))}
       <UninstallDialog
         name={uninstalling}
         t={t}
@@ -84,6 +85,41 @@ export function SkillsPage(props: SkillsPageProps) {
         }}
       />
     </div>
+  )
+}
+
+function InstalledGroup({ group, skills, props, onUninstall }: {
+  group: InstalledSkillGroup
+  skills: readonly InstalledSkillView[]
+  props: SkillsPageProps
+  onUninstall: (name: string) => void
+}) {
+  const { t } = props
+  const [shown, setShown] = useState(PAGE_SIZE)
+  const visible = skills.slice(0, shown)
+  const remaining = skills.length - visible.length
+  const titleId = `skills-${group}-group`
+  return (
+    <section className={css.group} aria-labelledby={titleId}>
+      <h2 id={titleId} className={css.groupTitle}>
+        {t(group === 'custom' ? 'customGroup' : 'marketGroup')}
+        <Tag>{String(skills.length)}</Tag>
+      </h2>
+      {skills.length === 0 ? <p className={css.notice}>{t(group === 'custom' ? 'empty' : 'emptyMarket')}</p> : (
+        <ul className={css.grid}>
+          {visible.map(skill => (
+            <SkillCard key={skill.name} skill={skill} props={props} onUninstall={() => { onUninstall(skill.name) }} />
+          ))}
+          {remaining > 0 && (
+            <li>
+              <button type="button" className={css.loadMore} onClick={() => { setShown(count => count + PAGE_SIZE) }}>
+                {t('loadMore', { count: String(remaining) })}
+              </button>
+            </li>
+          )}
+        </ul>
+      )}
+    </section>
   )
 }
 

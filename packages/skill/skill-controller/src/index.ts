@@ -11,6 +11,7 @@ import { homedir } from 'node:os'
 import { basename, join, parse } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
+import type {} from '@deepseek-ai/dsh-skill-market'
 import { openNativeTextFile, revealNativePath, runNativeCommand, type NativeCommandRunner } from '@deepseek-ai/dsh-native-command'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import { type SkillSummary } from '@deepseek-ai/dsh-skill'
@@ -34,6 +35,8 @@ type InstalledSkill = SkillSummary & { readonly path: string }
  * `customSkillDirs` is deployment configuration (the shipped presets point it at packaged skills).
  */
 const CUSTOM_SOURCES: ReadonlySet<string> = new Set(['user-dsh', 'user-agents'])
+/** Source of the Skills installed from the Skill Hub market (`@deepseek-ai/dsh-skill-market`). */
+const MARKET_SOURCE = 'market'
 
 /**
  * Working directory used for user-level lookups: a never-created child of the filesystem root, so
@@ -106,7 +109,7 @@ export class SkillController extends TypertRemoteService {
    */
   @Remote
   async list(): Promise<InstalledSkillListValue> {
-    return { skills: (await this.custom()).map(view) }
+    return { skills: (await this.custom()).map(skill => this.view(skill)) }
   }
 
   /**
@@ -120,11 +123,11 @@ export class SkillController extends TypertRemoteService {
   async setEnabled(name: string, enabled: boolean): Promise<InstalledSkillView> {
     const skill = await this.find(name)
     try {
-      await this.ctx.skills.setDisabled(skill.name, !enabled)
+      await this.setDisabled(skill, !enabled)
     } catch (error: unknown) {
       throw new RemoteError('installed-skills/rejected', `skill "${name}" could not be ${enabled ? 'enabled' : 'disabled'}: ${messageOf(error)}`, { name }, { cause: error })
     }
-    return { ...view(skill), enabled }
+    return { ...this.view(skill), enabled }
   }
 
   /**
@@ -165,8 +168,8 @@ export class SkillController extends TypertRemoteService {
     const skill = await this.find(name)
     const result = await this.act(name, () => this.moveToTrash(installedEntry(skill), signal))
     // The skill is already gone; a failure to forget its disabled state must not report the removal as failed.
-    if (skill.disabled === true) {
-      await this.ctx.skills.setDisabled(skill.name, false).catch((error: unknown) => {
+    if (this.view(skill).enabled === false) {
+      await this.setDisabled(skill, false).catch((error: unknown) => {
         this.ctx.logger.warn(`uninstalled skill "${name}" stays in disabledSkills: ${messageOf(error)}`)
       })
     }
@@ -211,26 +214,35 @@ export class SkillController extends TypertRemoteService {
     await using lease = await this.defaultScope()
     try {
       const skills = await this.ctx.skills.list({ cwd: NEUTRAL_CWD, ...lease === undefined ? {} : { scope: lease.key } })
-      return skills.filter((skill): skill is InstalledSkill => CUSTOM_SOURCES.has(skill.source) && skill.path !== undefined)
+      return skills.filter((skill): skill is InstalledSkill =>
+        (CUSTOM_SOURCES.has(skill.source) || skill.source === MARKET_SOURCE) && skill.path !== undefined)
     } catch (error: unknown) {
       throw new RemoteError('gateway/internal', `skill listing failed: ${messageOf(error)}`, {}, { cause: error })
+    }
+  }
+
+  /** Market Skills are switched per tenant by the market; user Skills through the registry. */
+  private setDisabled(skill: InstalledSkill, disabled: boolean): Promise<void> {
+    if (skill.source !== MARKET_SOURCE) return this.ctx.skills.setDisabled(skill.name, disabled)
+    const market = this.ctx.get('skillMarket')
+    return market === undefined ? Promise.reject(new Error('the Skill market is not mounted')) : market.setDisabled(skill.name, disabled)
+  }
+
+  private view(skill: InstalledSkill): InstalledSkillView {
+    const market = skill.source === MARKET_SOURCE
+    return {
+      name: skill.name,
+      description: skill.description,
+      group: market ? 'market' : 'custom',
+      source: skill.source,
+      path: skill.path,
+      enabled: market ? this.ctx.get('skillMarket')?.isDisabled(skill.name) !== true : skill.disabled !== true,
     }
   }
 
   private defaultScope(): Promise<({ key: ScopeKey } & AsyncDisposable) | undefined> {
     const presets = this.ctx.get('agentPresets')
     return presets === undefined ? Promise.resolve(undefined) : presets.acquireScope()
-  }
-}
-
-function view(skill: InstalledSkill): InstalledSkillView {
-  return {
-    name: skill.name,
-    description: skill.description,
-    group: 'custom',
-    source: skill.source,
-    path: skill.path,
-    enabled: skill.disabled !== true,
   }
 }
 

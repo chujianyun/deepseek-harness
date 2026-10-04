@@ -72,6 +72,7 @@ The shipped local provider scans roots in rank order:
 | 300 | `custom` | `Config.customSkillDirs` |
 | 400 | `user-dsh` | `<dshHome>/skills` |
 | 500 | `user-agents` | `<agentsHome>/skills` |
+| 550 | `market` | `<dshHome>/skills-market/<tenantId>` of the signed-in Skill Hub tenant ([dsh-skill-market](../../packages/skill/skill-market), Desktop only) |
 | 600 | `bundled` | `Config.bundledSkillDir` when configured |
 
 The project root is the nearest ancestor containing `.git`; without one, the current cwd is used. When `ctx.fs` is available, the git-root walk probes `.git` through the filesystem service so remote or sandboxed workspaces do not fall back to the host filesystem boundary. The user DSH root skips its `.system` child. The local provider does not synthesize built-in system skills; deployments supply packaged skills through configured bundled roots or dedicated providers.
@@ -242,7 +243,11 @@ The model-facing `skill({ name })` tool validates the kebab-case name, finds the
 
 `SkillListRequest` addresses one Session by `sessionId`; `SkillListValue` returns the user-invocable entries with name, description, optional usage guidance, and model-invocation availability. `SessionSkillCatalog` reads the Session cwd and recorded preset without activating an Agent. A live Agent may supply its scoped registry, while a cold Session uses the preset's standing scope.
 
-The Desktop Skills page reads installed user-level skills through the `installedSkills` namespace owned by [dsh-skill-controller](../../packages/skill/skill-controller). `list()` returns `InstalledSkillListValue`: one `InstalledSkillView` per skill from the `user-dsh` and `user-agents` sources (a `customSkillDirs` root is deployment configuration, not a user installation), carrying name, description, group, source, instruction-file path, and enabled state. `setEnabled(name, enabled)` answers the updated `InstalledSkillView`; `reveal`, `edit`, and `uninstall` answer `InstalledSkillActionValue` once the native file manager, the text editor, or the move to the trash accepted the request. Every method refuses names outside that user-level list.
+The Desktop Skills page reads installed user-level skills through the `installedSkills` namespace owned by [dsh-skill-controller](../../packages/skill/skill-controller). `list()` returns `InstalledSkillListValue`: one `InstalledSkillView` per skill from the `user-dsh` and `user-agents` sources (a `customSkillDirs` root is deployment configuration, not a user installation), carrying name, description, group, source, instruction-file path, and enabled state. `setEnabled(name, enabled)` answers the updated `InstalledSkillView`; `reveal`, `edit`, and `uninstall` answer `InstalledSkillActionValue` once the native file manager, the text editor, or the move to the trash accepted the request. Skills installed from the Skill Hub market join that list with `group: 'market'`; their switch is the market's per-tenant setting.
+
+The Desktop market reads the Skill Hub through the `skillMarket` namespace owned by [dsh-skill-market](../../packages/skill/skill-market): `list(query)` returns one `MarketSkillPage` of `MarketSkillCard`s with their install state and name conflict, `categories()` the tenant's `MarketCategory` list, `detail(id)` a `MarketSkillDetail` with the SKILL.md source and file list, and `installSkill(id)` the card after a validated install. Each market Skill directory keeps a `MarketInstallRecord` in `.hub-install.json`.
+
+Every `installedSkills` method refuses names outside that list.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -323,6 +328,78 @@ Host service backing the generated `ctx.remote.installedSkills` namespace. Every
 ```
 
 Source: [`packages/skill/skill-controller/src/index.ts`](../../packages/skill/skill-controller/src/index.ts)
+
+<a id="ctxskillmarket--skillmarket"></a>
+
+### `ctx.skillMarket` — `SkillMarket`
+
+Host owner of the market source and of the `skillMarket` Remote namespace.
+
+```ts cordis-catalog
+/**
+ * Directory holding one tenant's market Skills.
+ * @param tenantId - Skill Hub tenant.
+ * @returns `<dshHome>/skills-market/<tenantId>`.
+ */
+tenantDir(tenantId: string): string
+
+/**
+ * Whether the signed-in tenant switched this market Skill off.
+ * @param name - Skill name.
+ * @returns true when switched off.
+ */
+isDisabled(name: string): boolean
+
+/**
+ * Switch one market Skill of the signed-in tenant on or off, persisting the profile's list.
+ * @param name - Skill name.
+ * @param disabled - whether to switch it off.
+ * @throws when signed out, or when mounted without Settings or a profile entry.
+ */
+setDisabled(name: string, disabled: boolean): Promise<void>
+
+/**
+ * List the market as the signed-in employee sees it on the Skill Hub.
+ * @param query - search text, category, and page.
+ * @param signal - caller lifetime.
+ * @returns one page of cards with their install state.
+ */
+@Remote async list(query: MarketSkillQuery, signal: AbortSignal): Promise<MarketSkillPage>
+
+/**
+ * The signed-in tenant's Skill categories.
+ * @param signal - caller lifetime.
+ * @returns categories in Hub order.
+ */
+@Remote async categories(signal: AbortSignal): Promise<readonly MarketCategory[]>
+
+/**
+ * One market Skill with its SKILL.md and file list.
+ * @param id - Skill Hub Skill id.
+ * @param signal - caller lifetime.
+ * @returns the detail with its install state.
+ */
+@Remote async detail(id: string, signal: AbortSignal): Promise<MarketSkillDetail>
+
+/**
+ * Install the current version of a market Skill for the signed-in tenant. The package is
+ * downloaded and validated (layout and every file's sha256) in a staging directory beside the
+ * target, then moved into place in one rename; a failure leaves no partial Skill behind.
+ * @param id - Skill Hub Skill id.
+ * @param signal - caller lifetime.
+ * @returns the card after install.
+ * @throws RemoteError on a name conflict with a user Skill, an invalid package, or an unreachable Hub.
+ */
+@Remote async installSkill(id: string, signal: AbortSignal): Promise<MarketSkillCard>
+
+/**
+ * Install records of the signed-in tenant's market Skills, keyed by Skill name.
+ * @returns the readable records; a directory without one is not a market install.
+ */
+async records(): Promise<Map<string, MarketInstallRecord>>
+```
+
+Source: [`packages/skill/skill-market/src/index.ts`](../../packages/skill/skill-market/src/index.ts)
 
 <a id="ctxskills--skillregistry"></a>
 

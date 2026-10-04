@@ -13,8 +13,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   }
 }
 
-/** Where an installed skill came from, as the "我安装的" page groups it. */
-export type InstalledSkillGroup = 'custom'
+/** Where an installed skill came from, as the "我安装的" page groups it: placed by the user, or installed from the Skill Hub market. */
+export type InstalledSkillGroup = 'custom' | 'market'
 
 /** One user-level skill installed on this machine. */
 export interface InstalledSkillView {
@@ -24,7 +24,7 @@ export interface InstalledSkillView {
   readonly description: string
   /** Page group this skill belongs to. */
   readonly group: InstalledSkillGroup
-  /** Discovery source that produced the winning skill (`user-dsh` or `user-agents`). */
+  /** Discovery source that produced the winning skill (`user-dsh`, `user-agents`, or `market`). */
   readonly source: string
   /** Absolute path of the skill's instruction file. */
   readonly path: string

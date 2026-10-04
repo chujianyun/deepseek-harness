@@ -423,6 +423,16 @@ Host owner of Hub sign-in and of the `hubAccount` Remote namespace.
  * @returns the token, or undefined while signed out.
  */
 async accessToken(): Promise<string | undefined>
+
+/**
+ * Call a user-center client API (`/api/client/*`) as the signed-in employee. Host only: the token
+ * never leaves this process. A rejected token is refreshed once and the call retried.
+ * @param path - absolute path on the user center, with its query.
+ * @param init - fetch options; its signal cancels the call.
+ * @returns the user center's response, whatever its status.
+ * @throws RemoteError `hub-account/signed-out` when no sign-in is stored.
+ */
+async request(path: string, init: RequestInit = {}): Promise<Response>
 ```
 
 Source: [`packages/credentials/hub-account/src/index.ts`](../../packages/credentials/hub-account/src/index.ts)

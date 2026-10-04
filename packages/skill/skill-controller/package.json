@@ -52,6 +52,7 @@
     "@deepseek-ai/dsh-native-command": "workspace:*",
     "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/dsh-skill": "workspace:*",
+    "@deepseek-ai/dsh-skill-market": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*"
   },
   "devDependencies": {
@@ -60,6 +61,12 @@
     "@deepseek-ai/dsh-native-command": "workspace:*",
     "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/dsh-skill": "workspace:*",
+    "@deepseek-ai/dsh-skill-market": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-skill-market": {
+      "optional": true
+    }
   }
 }
