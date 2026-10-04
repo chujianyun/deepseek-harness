@@ -218,6 +218,83 @@
   gap: 8px;
 }
 
+.headerActions {
+  display: flex;
+  gap: 8px;
+}
+
+.sourceList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sourceItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-layer-1);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sourceItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.problems {
+  margin: 0;
+  padding: 8px 12px 8px 28px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error);
+  font-size: 13px;
+}
+
+.uploadForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.select {
+  padding: 6px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-layer-1);
+  color: inherit;
+  font: inherit;
+}
+
+.done {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
 .conflict {
   color: var(--dsw-alias-state-error);
   font-size: 12px;

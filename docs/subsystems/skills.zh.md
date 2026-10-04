@@ -245,7 +245,7 @@ interface Config {
 
 Desktop 的 Skills 页面通过 [dsh-skill-controller](../../packages/skill/skill-controller) 拥有的 `installedSkills` namespace 读取已安装的用户级 skill。`list()` 返回 `InstalledSkillListValue`：来源为 `user-dsh` 与 `user-agents` 的每个 skill（`customSkillDirs` 根目录属于部署配置，不算用户安装） 各一个 `InstalledSkillView`，包含名称、描述、分组、来源、指令文件路径与启用状态。`setEnabled(name, enabled)` 返回更新后的 `InstalledSkillView`；`reveal`、`edit` 与 `uninstall` 在原生文件管理器、文本编辑器或移到废纸篓接受请求后返回 `InstalledSkillActionValue`。从 Skill Hub 市场安装的 Skill 以 `group: 'market'` 加入该列表；它们的开关是市场按租户的设置。
 
-Desktop 市场通过 [dsh-skill-market](../../packages/skill/skill-market) 拥有的 `skillMarket` namespace 读取 Skill Hub：`list(query)` 返回一页 `MarketSkillPage`，其中每个 `MarketSkillCard` 带安装状态和同名冲突标记；`categories()` 返回本租户的 `MarketCategory` 列表；`detail(id)` 返回带 SKILL.md 原文与文件清单的 `MarketSkillDetail`；`installSkill(id, options)` 在校验通过的安装或更新完成后返回卡片（除非设置 `overwriteLocalChanges`，否则拒绝覆盖本地修改）；`installedStatus()` 为每个已装市场 Skill 返回一个 `MarketInstalledStatus`。每个市场 Skill 目录在 `.hub-install.json` 中保存一份 `MarketInstallRecord`。
+Desktop 市场通过 [dsh-skill-market](../../packages/skill/skill-market) 拥有的 `skillMarket` namespace 读取 Skill Hub：`list(query)` 返回一页 `MarketSkillPage`，其中每个 `MarketSkillCard` 带安装状态和同名冲突标记；`categories()` 返回本租户的 `MarketCategory` 列表；`detail(id)` 返回带 SKILL.md 原文与文件清单的 `MarketSkillDetail`；`installSkill(id, options)` 在校验通过的安装或更新完成后返回卡片（除非设置 `overwriteLocalChanges`，否则拒绝覆盖本地修改）；`installedStatus()` 为每个已装市场 Skill 返回一个 `MarketInstalledStatus`。每个市场 Skill 目录在 `.hub-install.json` 中保存一份 `MarketInstallRecord`。上传方向相反：`uploadSources()` 以 `MarketUploadSource` 列出用户自定义 Skill，`inspectFolder(dir)` 返回 `MarketUploadPreview`（文件、`MarketFolderProblem`、该员工在 Hub 上的自有 Skill 以及建议版本），`uploadOptions()` 返回 Hub 上传表单的 `MarketUploadOptions`，`uploadSkill(request)` 接收带 `MarketVisibility` 的 `MarketUploadRequest`，并返回待审核或已发布的 `MarketUploadResult`。
 
 `installedSkills` 的所有方法都拒绝不在该列表中的名称。
 
@@ -395,6 +395,40 @@ setDisabled(name: string, disabled: boolean): Promise<void>
  *   an invalid package, or an unreachable Hub.
  */
 @Remote async installSkill(id: string, options: MarketInstallOptions, signal: AbortSignal): Promise<MarketSkillCard>
+
+/**
+ * The Skills the user placed on this machine (`~/.dsh/skills`, `~/.agents/skills`), offered for upload.
+ * @returns one source per Skill folder, sorted by name.
+ */
+@Remote async uploadSources(): Promise<readonly MarketUploadSource[]>
+
+/**
+ * Read a local folder as an upload would: its SKILL.md, the files that would be sent, and whether
+ * the employee already owns a Skill of that name on the Hub (then the upload is its new version).
+ * @param dir - absolute folder path.
+ * @param signal - caller lifetime.
+ * @returns the preview; `problems` lists what keeps it from being uploaded.
+ */
+@Remote async inspectFolder(dir: string, signal: AbortSignal): Promise<MarketUploadPreview>
+
+/**
+ * Visibility and category choices for an upload, from the signed-in tenant.
+ * @param signal - caller lifetime.
+ * @returns categories, departments, and active employees.
+ */
+@Remote async uploadOptions(signal: AbortSignal): Promise<MarketUploadOptions>
+
+/**
+ * Upload a local Skill folder to the Skill Hub as the signed-in employee: a new version of the
+ * employee's own Skill of that name, otherwise a new Skill. The folder is packed without junk and
+ * left untouched. Employees' uploads are submitted for review; tenant admins' are published.
+ * @param request - folder, version, and (for a new Skill) visibility and category.
+ * @param signal - caller lifetime.
+ * @returns the Hub's answer, with the review link for a pending upload.
+ * @throws RemoteError `skill-market/invalid-folder` for a folder that cannot be uploaded, and
+ *   `skill-market/upload-rejected` carrying the Hub's own reason when it refuses.
+ */
+@Remote async uploadSkill(request: MarketUploadRequest, signal: AbortSignal): Promise<MarketUploadResult>
 
 /**
  * Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the

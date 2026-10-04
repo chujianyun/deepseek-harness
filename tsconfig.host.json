@@ -115,6 +115,7 @@
     "apps/web/tests/hub-gate.e2e.ts",
     "apps/web/tests/skills-market.e2e.ts",
     "apps/web/tests/skills-market-lifecycle.e2e.ts",
+    "apps/web/tests/skills-market-upload.e2e.ts",
     "apps/web/tests/skills-page.e2e.ts",
     "apps/web/tests/context-meter.e2e.ts",
     "apps/web/tests/cordis-tool-round.e2e.ts",

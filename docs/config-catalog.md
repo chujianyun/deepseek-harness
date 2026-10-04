@@ -2959,7 +2959,7 @@ export interface Config {
 
 - `inject`: `skills` · `hubAccount`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/skill/skill-market/src/index.ts:57`](../packages/skill/skill-market/src/index.ts)
+- `source`: [`packages/skill/skill-market/src/index.ts:59`](../packages/skill/skill-market/src/index.ts)
 
 ```ts config-catalog
 /** Market configuration. */

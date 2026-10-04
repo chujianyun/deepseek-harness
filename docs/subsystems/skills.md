@@ -245,7 +245,7 @@ The model-facing `skill({ name })` tool validates the kebab-case name, finds the
 
 The Desktop Skills page reads installed user-level skills through the `installedSkills` namespace owned by [dsh-skill-controller](../../packages/skill/skill-controller). `list()` returns `InstalledSkillListValue`: one `InstalledSkillView` per skill from the `user-dsh` and `user-agents` sources (a `customSkillDirs` root is deployment configuration, not a user installation), carrying name, description, group, source, instruction-file path, and enabled state. `setEnabled(name, enabled)` answers the updated `InstalledSkillView`; `reveal`, `edit`, and `uninstall` answer `InstalledSkillActionValue` once the native file manager, the text editor, or the move to the trash accepted the request. Skills installed from the Skill Hub market join that list with `group: 'market'`; their switch is the market's per-tenant setting.
 
-The Desktop market reads the Skill Hub through the `skillMarket` namespace owned by [dsh-skill-market](../../packages/skill/skill-market): `list(query)` returns one `MarketSkillPage` of `MarketSkillCard`s with their install state and name conflict, `categories()` the tenant's `MarketCategory` list, `detail(id)` a `MarketSkillDetail` with the SKILL.md source and file list, `installSkill(id, options)` the card after a validated install or update (refusing local edits unless `overwriteLocalChanges`), and `installedStatus()` one `MarketInstalledStatus` per installed market Skill. Each market Skill directory keeps a `MarketInstallRecord` in `.hub-install.json`.
+The Desktop market reads the Skill Hub through the `skillMarket` namespace owned by [dsh-skill-market](../../packages/skill/skill-market): `list(query)` returns one `MarketSkillPage` of `MarketSkillCard`s with their install state and name conflict, `categories()` the tenant's `MarketCategory` list, `detail(id)` a `MarketSkillDetail` with the SKILL.md source and file list, `installSkill(id, options)` the card after a validated install or update (refusing local edits unless `overwriteLocalChanges`), and `installedStatus()` one `MarketInstalledStatus` per installed market Skill. Each market Skill directory keeps a `MarketInstallRecord` in `.hub-install.json`. Uploading goes the other way: `uploadSources()` lists the custom Skills as `MarketUploadSource`s, `inspectFolder(dir)` answers a `MarketUploadPreview` (files, `MarketFolderProblem`s, the employee's own Hub Skill, and the suggested version), `uploadOptions()` the `MarketUploadOptions` of the Hub's upload form, and `uploadSkill(request)` takes a `MarketUploadRequest` with a `MarketVisibility` and answers a `MarketUploadResult` that is pending review or published.
 
 Every `installedSkills` method refuses names outside that list.
 
@@ -395,6 +395,40 @@ setDisabled(name: string, disabled: boolean): Promise<void>
  *   an invalid package, or an unreachable Hub.
  */
 @Remote async installSkill(id: string, options: MarketInstallOptions, signal: AbortSignal): Promise<MarketSkillCard>
+
+/**
+ * The Skills the user placed on this machine (`~/.dsh/skills`, `~/.agents/skills`), offered for upload.
+ * @returns one source per Skill folder, sorted by name.
+ */
+@Remote async uploadSources(): Promise<readonly MarketUploadSource[]>
+
+/**
+ * Read a local folder as an upload would: its SKILL.md, the files that would be sent, and whether
+ * the employee already owns a Skill of that name on the Hub (then the upload is its new version).
+ * @param dir - absolute folder path.
+ * @param signal - caller lifetime.
+ * @returns the preview; `problems` lists what keeps it from being uploaded.
+ */
+@Remote async inspectFolder(dir: string, signal: AbortSignal): Promise<MarketUploadPreview>
+
+/**
+ * Visibility and category choices for an upload, from the signed-in tenant.
+ * @param signal - caller lifetime.
+ * @returns categories, departments, and active employees.
+ */
+@Remote async uploadOptions(signal: AbortSignal): Promise<MarketUploadOptions>
+
+/**
+ * Upload a local Skill folder to the Skill Hub as the signed-in employee: a new version of the
+ * employee's own Skill of that name, otherwise a new Skill. The folder is packed without junk and
+ * left untouched. Employees' uploads are submitted for review; tenant admins' are published.
+ * @param request - folder, version, and (for a new Skill) visibility and category.
+ * @param signal - caller lifetime.
+ * @returns the Hub's answer, with the review link for a pending upload.
+ * @throws RemoteError `skill-market/invalid-folder` for a folder that cannot be uploaded, and
+ *   `skill-market/upload-rejected` carrying the Hub's own reason when it refuses.
+ */
+@Remote async uploadSkill(request: MarketUploadRequest, signal: AbortSignal): Promise<MarketUploadResult>
 
 /**
  * Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the

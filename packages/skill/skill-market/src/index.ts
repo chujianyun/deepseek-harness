@@ -20,16 +20,18 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import {
   isSkillName, type SkillCandidate, type SkillDefinition, type SkillInvocationPolicy, type SkillLookupOptions,
-  type SkillProvider, type SkillProviderControl, type SkillProviderObservation,
+  type SkillProvider, type SkillProviderControl, type SkillProviderObservation, type SkillSummary,
 } from '@deepseek-ai/dsh-skill'
 import { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import Schema from '@deepseek-ai/schemastery'
-import { unzipSync } from 'fflate'
+import { unzipSync, zipSync } from 'fflate'
+import { parse as parseYaml } from 'yaml'
 import { z } from 'zod'
 import type {
   MarketCategory, MarketInstalledStatus, MarketInstallOptions, MarketInstallRecord, MarketSkillCard, MarketSkillDetail,
-  MarketSkillPage, MarketSkillQuery,
+  MarketSkillPage, MarketSkillQuery, MarketUploadOptions, MarketUploadPreview, MarketUploadRequest, MarketUploadResult,
+  MarketUploadSource, MarketFolderProblem,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -86,6 +88,10 @@ const detail = summary.extend({
   files: z.array(z.object({ path: z.string(), size: z.number(), sha256: z.string() })),
 })
 const listItem = summary.extend({ currentVersion: versionInfo.extend({ description: z.string() }) })
+const ownSkill = z.object({
+  id: z.string(), name: z.string(), highestVersion: z.string(), currentVersion: z.string().nullable(),
+  workingStatus: z.enum(['draft', 'pending']).nullable(),
+})
 const record = z.object({
   hubSkillId: z.string(), name: z.string(), version: z.string(), installedAt: z.string(),
   files: z.array(z.object({ path: z.string(), sha256: z.string() })),
@@ -129,6 +135,56 @@ async function localChanges(dir: string, installed: MarketInstallRecord | undefi
   }
   for (const path of recorded.keys()) if (!present.has(path)) changed.add(path)
   return [...changed].sort((a, b) => Number(a > b) - Number(a < b))
+}
+
+/** Names never uploaded, matching the Skill Hub's own filter. */
+const IGNORED_NAMES: ReadonlySet<string> = new Set(['.DS_Store', '.git', 'node_modules', '__pycache__'])
+
+/**
+ * The next patch version: `1.2.3` → `1.2.4`.
+ * @param version - an `x.y.z` version.
+ * @returns the version with its last part incremented.
+ */
+export function nextPatch(version: string): string {
+  const parts = version.split('.')
+  const last = Number(parts.at(-1))
+  return Number.isInteger(last) ? [...parts.slice(0, -1), String(last + 1)].join('.') : version
+}
+
+/**
+ * The files of a local Skill folder that an upload sends: regular files only, junk and the market
+ * install record excluded.
+ * @param dir - the Skill folder.
+ * @returns file bytes keyed by path relative to the folder.
+ */
+async function uploadFiles(dir: string): Promise<Map<string, Uint8Array>> {
+  const files = new Map<string, Uint8Array>()
+  for (const entry of await readdir(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue
+    const path = relative(dir, join(entry.parentPath, entry.name)).split(sep).join('/')
+    if (path === INSTALL_RECORD || path.split('/').some(segment => IGNORED_NAMES.has(segment))) continue
+    files.set(path, await readFile(join(dir, path)))
+  }
+  return files
+}
+
+/**
+ * Read name and description from a SKILL.md frontmatter.
+ * @param text - SKILL.md source.
+ * @returns the parsed fields and the problems that keep the folder from being uploaded.
+ */
+function skillFrontmatter(text: string): { name: string | null; description: string | null; problems: MarketFolderProblem[] } {
+  const source = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1]
+  if (source === undefined) return { name: null, description: null, problems: ['no-frontmatter'] }
+  let data: unknown
+  try { data = parseYaml(source) } catch { return { name: null, description: null, problems: ['invalid-yaml'] } }
+  const fields = typeof data === 'object' && data !== null ? data as Record<string, unknown> : {}
+  const name = typeof fields.name === 'string' ? fields.name : null
+  const description = typeof fields.description === 'string' && fields.description.trim() !== '' ? fields.description : null
+  const problems: MarketFolderProblem[] = []
+  if (name === null || !isSkillName(name)) problems.push('invalid-name')
+  if (description === null) problems.push('no-description')
+  return { name, description, problems }
 }
 
 function invalid(reason: string): RemoteError {
@@ -409,6 +465,103 @@ export class SkillMarket extends TypertRemoteService {
   }
 
   /**
+   * The Skills the user placed on this machine (`~/.dsh/skills`, `~/.agents/skills`), offered for upload.
+   * @returns one source per Skill folder, sorted by name.
+   */
+  @Remote
+  async uploadSources(): Promise<readonly MarketUploadSource[]> {
+    const skills = await this.listSkills()
+    return skills
+      .filter(skill => CUSTOM_SOURCES.has(skill.source) && skill.resourceBase?.kind === 'directory' && skill.path?.endsWith('SKILL.md') === true)
+      .map(skill => ({
+        name: skill.name, description: skill.description, dir: (skill.resourceBase as { path: string }).path, source: skill.source,
+      }))
+      .sort((a, b) => Number(a.name > b.name) - Number(a.name < b.name))
+  }
+
+  /**
+   * Read a local folder as an upload would: its SKILL.md, the files that would be sent, and whether
+   * the employee already owns a Skill of that name on the Hub (then the upload is its new version).
+   * @param dir - absolute folder path.
+   * @param signal - caller lifetime.
+   * @returns the preview; `problems` lists what keeps it from being uploaded.
+   */
+  @Remote
+  async inspectFolder(dir: string, signal: AbortSignal): Promise<MarketUploadPreview> {
+    return (await this.inspect(dir, signal)).preview
+  }
+
+  /**
+   * Visibility and category choices for an upload, from the signed-in tenant.
+   * @param signal - caller lifetime.
+   * @returns categories, departments, and active employees.
+   */
+  @Remote
+  async uploadOptions(signal: AbortSignal): Promise<MarketUploadOptions> {
+    const [categories, visibility] = await Promise.all([
+      this.categories(signal),
+      this.hubJson('/api/client/skills/visibility-options', signal),
+    ])
+    const people = z.object({
+      departments: z.array(z.object({ id: z.string(), parentId: z.string().nullable(), name: z.string() })),
+      employees: z.array(z.object({ id: z.string(), name: z.string(), departmentName: z.string() })),
+    }).parse(visibility)
+    return { categories, ...people }
+  }
+
+  /**
+   * Upload a local Skill folder to the Skill Hub as the signed-in employee: a new version of the
+   * employee's own Skill of that name, otherwise a new Skill. The folder is packed without junk and
+   * left untouched. Employees' uploads are submitted for review; tenant admins' are published.
+   * @param request - folder, version, and (for a new Skill) visibility and category.
+   * @param signal - caller lifetime.
+   * @returns the Hub's answer, with the review link for a pending upload.
+   * @throws RemoteError `skill-market/invalid-folder` for a folder that cannot be uploaded, and
+   *   `skill-market/upload-rejected` carrying the Hub's own reason when it refuses.
+   */
+  @Remote
+  async uploadSkill(request: MarketUploadRequest, signal: AbortSignal): Promise<MarketUploadResult> {
+    const { preview, files } = await this.inspect(request.dir, signal)
+    if (preview.problems.length > 0 || preview.name === null) {
+      throw new RemoteError('skill-market/invalid-folder', `the folder cannot be uploaded: ${preview.problems.join('; ')}`, { problems: preview.problems })
+    }
+    const name = preview.name
+    const zip = zipSync(Object.fromEntries([...files].map(([path, data]) => [`${name}/${path}`, data])))
+    const form = new FormData()
+    form.set('file', new Blob([zip], { type: 'application/zip' }), `${name}.zip`)
+    form.set('version', request.version)
+    const existing = preview.existing
+    if (existing === null) {
+      if (request.visibility !== undefined) form.set('visibility', request.visibility)
+      for (const id of request.departmentIds ?? []) form.append('departmentIds', id)
+      for (const id of request.employeeIds ?? []) form.append('employeeIds', id)
+      if (request.categoryId !== undefined) form.set('categoryId', request.categoryId)
+    }
+    const path = existing === null ? '/api/client/skills' : `/api/client/skills/${encodeURIComponent(existing.skillId)}/versions`
+    let res: Response
+    try {
+      res = await this.ctx.hubAccount.request(path, { method: 'POST', body: form, signal })
+    } catch (error: unknown) {
+      if (error instanceof RemoteError || signal.aborted) throw error
+      throw new RemoteError('skill-market/unavailable', 'the Skill Hub cannot be reached', { status: null }, { cause: error })
+    }
+    const body: unknown = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      const message = (body as { message?: unknown }).message
+      const reason = Array.isArray(message) ? message.join('；') : typeof message === 'string' ? message : `the Skill Hub answered ${res.status}`
+      throw new RemoteError('skill-market/upload-rejected', reason, { status: res.status })
+    }
+    const result = z.object({
+      skillId: z.string(), name: z.string(), version: z.object({ version: z.string() }),
+      status: z.enum(['pending', 'published']), reviewUrl: z.string().nullable(),
+    }).parse(body)
+    return {
+      skillId: result.skillId, name: result.name, version: result.version.version, mode: existing === null ? 'create' : 'version',
+      status: result.status, reviewUrl: result.reviewUrl,
+    }
+  }
+
+  /**
    * Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the
    * Hub no longer shows the employee is `unavailable`; its local copy stays installed and usable.
    * @param signal - caller lifetime.
@@ -474,10 +627,37 @@ export class SkillMarket extends TypertRemoteService {
 
   /** Names of the Skills the user placed on this machine, as the default agent preset discovers them. */
   private async customNames(): Promise<Set<string>> {
+    return new Set((await this.listSkills()).filter(skill => CUSTOM_SOURCES.has(skill.source)).map(skill => skill.name))
+  }
+
+  /** User-level Skills as the default agent preset discovers them, without project roots. */
+  private async listSkills(): Promise<readonly SkillSummary[]> {
     const presets = this.ctx.get('agentPresets')
     await using lease: ({ key: ScopeKey } & AsyncDisposable) | undefined = presets === undefined ? undefined : await presets.acquireScope()
-    const skills = await this.ctx.skills.list({ cwd: NEUTRAL_CWD, ...lease === undefined ? {} : { scope: lease.key } })
-    return new Set(skills.filter(skill => CUSTOM_SOURCES.has(skill.source)).map(skill => skill.name))
+    return await this.ctx.skills.list({ cwd: NEUTRAL_CWD, ...lease === undefined ? {} : { scope: lease.key } })
+  }
+
+  /** Read a folder once: the preview and the exact files an upload of it sends. */
+  private async inspect(dir: string, signal: AbortSignal): Promise<{ preview: MarketUploadPreview; files: Map<string, Uint8Array> }> {
+    let files: Map<string, Uint8Array>
+    try { files = await uploadFiles(dir) } catch { return { preview: emptyPreview(dir, ['unreadable']), files: new Map() } }
+    const skillMd = files.get('SKILL.md')
+    if (skillMd === undefined) return { preview: { ...emptyPreview(dir, ['no-skill-md']), fileCount: files.size, sizeBytes: total(files) }, files }
+    const { name, description, problems } = skillFrontmatter(Buffer.from(skillMd).toString('utf8'))
+    const owned = name === null || problems.length > 0 ? undefined : (await this.ownSkills(signal)).find(skill => skill.name === name)
+    const preview: MarketUploadPreview = {
+      dir, name, description, fileCount: files.size, sizeBytes: total(files), problems,
+      existing: owned === undefined ? null : {
+        skillId: owned.id, highestVersion: owned.highestVersion, currentVersion: owned.currentVersion, workingStatus: owned.workingStatus,
+      },
+      suggestedVersion: owned === undefined ? '1.0.0' : nextPatch(owned.highestVersion),
+    }
+    return { preview, files }
+  }
+
+  /** The employee's own Skills on the Hub. */
+  private async ownSkills(signal: AbortSignal): Promise<z.infer<typeof ownSkill>[]> {
+    return z.array(ownSkill).parse(await this.hubJson('/api/client/skills/mine', signal))
   }
 }
 
@@ -493,6 +673,16 @@ function card(
     updateAvailable: installedVersion !== null && compareVersions(value.currentVersion.version, installedVersion) > 0,
     conflict: custom.has(value.name),
   }
+}
+
+function total(files: ReadonlyMap<string, Uint8Array>): number {
+  let bytes = 0
+  for (const data of files.values()) bytes += data.byteLength
+  return bytes
+}
+
+function emptyPreview(dir: string, problems: MarketFolderProblem[]): MarketUploadPreview {
+  return { dir, name: null, description: null, fileCount: 0, sizeBytes: 0, problems, existing: null, suggestedVersion: '1.0.0' }
 }
 
 async function exists(path: string): Promise<boolean> {

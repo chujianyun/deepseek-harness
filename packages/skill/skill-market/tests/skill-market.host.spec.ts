@@ -1,5 +1,5 @@
 /** The market source and the `skillMarket` Remote over a mock Skill Hub, a real registry, and a real credential store. */
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -12,7 +12,7 @@ import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import { createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import { remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import { strToU8, zipSync } from 'fflate'
-import SkillMarket, { compareVersions, INSTALL_RECORD } from '../src/index.ts'
+import SkillMarket, { compareVersions, INSTALL_RECORD, nextPatch } from '../src/index.ts'
 import { browse, startMockUserCenter, type MockSkill } from '../../../credentials/hub-account/tests/mock-user-center.ts'
 import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
 
@@ -67,7 +67,7 @@ describe('skillMarket', () => {
   it('publishes the namespace and its methods', async () => {
     const { market } = await boot()
     expect(market.typertRemote.namespace).toBe('skillMarket')
-    expect(remoteMethods(market).map(method => method.method)).toEqual(['list', 'categories', 'detail', 'installSkill', 'installedStatus'])
+    expect(remoteMethods(market).map(method => method.method)).toEqual(['list', 'categories', 'detail', 'installSkill', 'uploadSources', 'inspectFolder', 'uploadOptions', 'uploadSkill', 'installedStatus'])
   })
 
   it('needs a Hub sign-in and discovers nothing while signed out', async () => {
@@ -353,6 +353,137 @@ describe('skillMarket', () => {
       expect(compareVersions('1.0.0', '1.0.0')).toBe(0)
       expect(compareVersions('1.0', '1.0.1')).toBeLessThan(0)
       expect(compareVersions('1.0.1', '1.0')).toBeGreaterThan(0)
+    })
+  })
+
+  describe('upload to the Skill Hub (T25)', () => {
+    async function folder(root: string, name: string, frontmatter = `name: ${name}\ndescription: ${name} description`) {
+      const dir = join(root, name)
+      await mkdir(join(dir, 'scripts'), { recursive: true })
+      await mkdir(join(dir, 'node_modules', 'x'), { recursive: true })
+      await mkdir(join(dir, '__pycache__'), { recursive: true })
+      await writeFile(join(dir, 'SKILL.md'), `---\n${frontmatter}\n---\n\nBody.\n`)
+      await writeFile(join(dir, 'scripts', 'run.sh'), 'echo run\n')
+      await writeFile(join(dir, '.DS_Store'), 'junk')
+      await writeFile(join(dir, 'node_modules', 'x', 'index.js'), 'junk')
+      await writeFile(join(dir, '__pycache__', 'a.pyc'), 'junk')
+      return dir
+    }
+
+    it('offers the user\'s own Skills and previews a folder as an upload would send it', async () => {
+      const { market, dshHome } = await boot()
+      const dir = await folder(join(dshHome, 'skills'), 'report-writer')
+      const other = await folder(join(dshHome, 'skills'), 'alpha-notes')
+      expect(await market.uploadSources()).toEqual([
+        { name: 'alpha-notes', description: 'alpha-notes description', dir: other, source: 'user-dsh' },
+        { name: 'report-writer', description: 'report-writer description', dir, source: 'user-dsh' },
+      ])
+      expect(await market.inspectFolder(dir, signal())).toEqual({
+        dir, name: 'report-writer', description: 'report-writer description', fileCount: 2, sizeBytes: expect.any(Number) as number,
+        problems: [], existing: null, suggestedVersion: '1.0.0',
+      })
+    })
+
+    it('reports why a folder cannot be uploaded', async () => {
+      const { market, home } = await boot()
+      const root = join(home, 'loose')
+      await mkdir(join(root, 'empty'), { recursive: true })
+      expect((await market.inspectFolder(join(root, 'empty'), signal())).problems).toEqual(['no-skill-md'])
+      expect((await market.inspectFolder(join(root, 'missing'), signal())).problems).toEqual(['unreadable'])
+      await mkdir(join(root, 'plain'), { recursive: true })
+      await writeFile(join(root, 'plain', 'SKILL.md'), '# no frontmatter\n')
+      expect((await market.inspectFolder(join(root, 'plain'), signal())).problems).toEqual(['no-frontmatter'])
+      expect((await market.inspectFolder(await folder(root, 'yaml', 'name: [oops'), signal())).problems).toEqual(['invalid-yaml'])
+      expect((await market.inspectFolder(await folder(root, 'bad', 'name: Bad_Name\ndescription: x'), signal())).problems).toEqual(['invalid-name'])
+      expect((await market.inspectFolder(await folder(root, 'nodesc', 'name: nodesc'), signal())).problems).toEqual(['no-description'])
+      expect((await market.inspectFolder(await folder(root, 'list', '- a'), signal())).problems).toEqual(['invalid-name', 'no-description'])
+      expect((await market.inspectFolder(await folder(root, 'scalar', 'just text'), signal())).problems).toEqual(['invalid-name', 'no-description'])
+      expect(remoteErrorOf(await market.uploadSkill({ dir: join(root, 'empty'), version: '1.0.0' }, signal()).catch((error: unknown) => error)))
+        .toMatchObject({ code: 'skill-market/invalid-folder', details: { problems: ['no-skill-md'] } })
+    })
+
+    it('uploads a new Skill without junk and leaves the local folder untouched; an employee\'s upload is submitted for review', async () => {
+      const { center, market, home } = await boot()
+      const dir = await folder(join(home, 'work'), 'report-writer')
+      const before = (await stat(join(dir, 'SKILL.md'))).mtimeMs
+      const result = await market.uploadSkill({ dir, version: '1.0.0', visibility: 'departments', departmentIds: ['d-rd'], categoryId: 'c-doc' }, signal())
+      expect(result).toMatchObject({ name: 'report-writer', version: '1.0.0', mode: 'create', status: 'pending', reviewUrl: expect.stringContaining('/skills/review/') as string })
+      expect(center.uploads[0]).toEqual({
+        path: '/api/client/skills', fields: { version: '1.0.0', visibility: 'departments', departmentIds: 'd-rd', categoryId: 'c-doc' },
+        entries: ['report-writer/SKILL.md', 'report-writer/scripts/run.sh'],
+      })
+      expect((await readdir(dir)).sort()).toEqual(['.DS_Store', 'SKILL.md', '__pycache__', 'node_modules', 'scripts'])
+      expect((await stat(join(dir, 'SKILL.md'))).mtimeMs).toBe(before)
+    })
+
+    it('uploads the next version of the employee\'s own Skill, and a tenant admin\'s upload is published', async () => {
+      const { center, market, home } = await boot()
+      center.tenantAdmin = true
+      center.owned.push({ id: 's-own', name: 'report-writer', versions: [{ version: '1.2.0', status: 'published' }] })
+      const dir = await folder(join(home, 'work'), 'report-writer')
+      const preview = await market.inspectFolder(dir, signal())
+      expect(preview).toMatchObject({ existing: { skillId: 's-own', highestVersion: '1.2.0', currentVersion: '1.2.0', workingStatus: null }, suggestedVersion: '1.2.1' })
+      const result = await market.uploadSkill({ dir, version: '1.2.1', visibility: 'private', categoryId: 'c-doc' }, signal())
+      expect(result).toEqual({ skillId: 's-own', name: 'report-writer', version: '1.2.1', mode: 'version', status: 'published', reviewUrl: null })
+      expect(center.uploads[0]).toMatchObject({ path: '/api/client/skills/s-own/versions', fields: { version: '1.2.1' } })
+      expect((await market.list({}, signal())).items.map(item => item.name)).toContain('report-writer')
+    })
+
+    it('passes the Hub\'s reasons through verbatim', async () => {
+      const { center, market, home } = await boot()
+      const dir = await folder(join(home, 'work'), 'report-writer')
+      const reason = async (version: string) =>
+        (await market.uploadSkill({ dir, version }, signal()).catch((error: unknown) => error)) as Error
+      expect(remoteErrorOf(await reason('v1'))).toMatchObject({ code: 'skill-market/upload-rejected', message: '版本号格式应为 x.y.z（如 1.0.0）', details: { status: 400 } })
+      center.owned.push({ id: 's-own', name: 'report-writer', versions: [{ version: '1.0.0', status: 'published' }, { version: '1.1.0', status: 'pending' }] })
+      expect((await reason('1.2.0')).message).toBe('该 Skill 已有未成为正式的版本 1.1.0（审核中），请先处理后再上传新版本')
+      center.owned[0]!.versions.pop()
+      expect((await reason('0.9.0')).message).toBe('新版本号必须高于已有的最高版本 1.0.0')
+      center.clientStatus = 413
+      expect(remoteErrorOf(await reason('2.0.0'))).toMatchObject({ code: 'skill-market/unavailable', details: { status: 413 } })
+    })
+
+    it('reports a Hub that cannot be reached', async () => {
+      const { center, market, home } = await boot()
+      const dir = await folder(join(home, 'work'), 'report-writer')
+      await center.close()
+      expect(remoteErrorOf(await market.uploadSkill({ dir, version: '1.0.0' }, signal()).catch((error: unknown) => error))).toMatchObject({ code: 'skill-market/unavailable' })
+    })
+
+    it('sends an employee list, and reports rejections without a usable reason, dropped uploads, and withdrawn callers', async () => {
+      const { center, market, home } = await boot()
+      const dir = await folder(join(home, 'work'), 'report-writer')
+      await market.uploadSkill({ dir, version: '1.0.0', visibility: 'employees', employeeIds: ['e-li', 'e-han'] }, signal())
+      expect(center.uploads[0]?.fields).toMatchObject({ visibility: 'employees', employeeIds: ['e-li', 'e-han'] })
+      const other = await folder(join(home, 'work'), 'other-skill')
+      const attempt = async (controller = new AbortController()) => market.uploadSkill({ dir: other, version: '1.0.0' }, controller.signal).catch((error: unknown) => error)
+      center.uploadReply = { status: 400, body: JSON.stringify({ message: ['版本号格式应为 x.y.z', 'SKILL.md 缺少 description'] }) }
+      expect((await attempt() as Error).message).toBe('版本号格式应为 x.y.z；SKILL.md 缺少 description')
+      center.uploadReply = { status: 413, body: 'too large' }
+      expect(remoteErrorOf(await attempt())).toMatchObject({ code: 'skill-market/upload-rejected', message: 'the Skill Hub answered 413', details: { status: 413 } })
+      center.uploadReply = 'drop'
+      expect(remoteErrorOf(await attempt())).toMatchObject({ code: 'skill-market/unavailable' })
+      center.uploadReply = undefined
+      const controller = new AbortController()
+      const gate = Promise.withResolvers<undefined>()
+      center.uploadHook = () => { controller.abort(); return gate.promise }
+      expect(remoteErrorOf(await attempt(controller))).toBeUndefined()
+      gate.resolve(undefined)
+    })
+
+    it('reads visibility and category choices', async () => {
+      const { market } = await boot()
+      expect(await market.uploadOptions(signal())).toEqual({
+        categories: [{ id: 'c-doc', name: '文档' }, { id: 'c-dev', name: '研发' }],
+        departments: [{ id: 'd-root', parentId: null, name: '甲公司' }, { id: 'd-rd', parentId: 'd-root', name: '研发部' }],
+        employees: [{ id: 'e-li', name: '李雷', departmentName: '研发部' }, { id: 'e-han', name: '韩梅梅', departmentName: '甲公司' }],
+      })
+    })
+
+    it('suggests the next patch version', () => {
+      expect(nextPatch('1.2.3')).toBe('1.2.4')
+      expect(nextPatch('0.9.9')).toBe('0.9.10')
+      expect(nextPatch('weird')).toBe('weird')
     })
   })
 })

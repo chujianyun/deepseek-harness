@@ -79,7 +79,10 @@ export function MarketView(props: SkillsPageProps & { onShowInstalled: () => voi
       <header className={css.header}>
         <div className={css.headerRow}>
           <h1 className={css.title}>{t('marketTitle')}</h1>
-          <Button size="sm" variant="outline" onClick={onShowInstalled}>{t('installedButton', { count: String(installedCount) })}</Button>
+          <div className={css.headerActions}>
+            <Button size="sm" variant="outline" onClick={onShowInstalled}>{t('installedButton', { count: String(installedCount) })}</Button>
+            <Button size="sm" variant="primary" onClick={() => { void props.onOpenUpload() }}>{t('addSkill')}</Button>
+          </div>
         </div>
         <p className={css.intro}>{t('marketIntro')}</p>
       </header>

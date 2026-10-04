@@ -9,15 +9,17 @@ import {
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { InstalledSkillsInjected } from './installed-source.ts'
 import type { MarketInjected } from './market-source.ts'
+import type { UploadInjected } from './upload-source.ts'
+import { AddSkillDialog } from './AddSkillDialog.tsx'
 import { MarketView } from './MarketView.tsx'
 import css from './SkillsPage.module.css'
 
 /** Cards shown per "load more" step of an installed group. */
 const PAGE_SIZE = 12
 
-/** Business face of the whole page: installed Skills and the market. */
-export type SkillsInjected = Omit<InstalledSkillsInjected, 'hooks'> & Omit<MarketInjected, 'hooks'> & {
-  readonly hooks: InstalledSkillsInjected['hooks'] & MarketInjected['hooks']
+/** Business face of the whole page: installed Skills, the market, and uploads. */
+export type SkillsInjected = Omit<InstalledSkillsInjected, 'hooks'> & Omit<MarketInjected, 'hooks'> & Omit<UploadInjected, 'hooks'> & {
+  readonly hooks: InstalledSkillsInjected['hooks'] & MarketInjected['hooks'] & UploadInjected['hooks']
 }
 
 /** Props the page reads from its `main` registration: the translator and the Skills face. */
@@ -36,6 +38,7 @@ export function SkillsPage(props: SkillsPageProps) {
         ? <MarketView {...props} onShowInstalled={() => { setView('installed') }} />
         : <InstalledView {...props} onBack={() => { setView('market') }} />}
       <OverwriteDialog {...props} />
+      <AddSkillDialog {...props} />
     </>
   )
 }

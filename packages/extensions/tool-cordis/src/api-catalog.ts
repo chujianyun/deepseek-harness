@@ -2776,6 +2776,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RemoteError on a name conflict with a user Skill, local edits that would be overwritten, an invalid package, or an unreachable Hub.'],
       },
       {
+        signature: '@Remote async uploadSources(): Promise<readonly MarketUploadSource[]>',
+        description: 'The Skills the user placed on this machine (`~/.dsh/skills`, `~/.agents/skills`), offered for upload.',
+        parameters: [],
+        returns: 'one source per Skill folder, sorted by name.',
+      },
+      {
+        signature: '@Remote async inspectFolder(dir: string, signal: AbortSignal): Promise<MarketUploadPreview>',
+        description: 'Read a local folder as an upload would: its SKILL.md, the files that would be sent, and whether the employee already owns a Skill of that name on the Hub (then the upload is its new version).',
+        parameters: [{ name: 'dir', description: 'absolute folder path.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'the preview; `problems` lists what keeps it from being uploaded.',
+      },
+      {
+        signature: '@Remote async uploadOptions(signal: AbortSignal): Promise<MarketUploadOptions>',
+        description: 'Visibility and category choices for an upload, from the signed-in tenant.',
+        parameters: [{ name: 'signal', description: 'caller lifetime.' }],
+        returns: 'categories, departments, and active employees.',
+      },
+      {
+        signature: '@Remote async uploadSkill(request: MarketUploadRequest, signal: AbortSignal): Promise<MarketUploadResult>',
+        description: 'Upload a local Skill folder to the Skill Hub as the signed-in employee: a new version of the employee\'s own Skill of that name, otherwise a new Skill. The folder is packed without junk and left untouched. Employees\' uploads are submitted for review; tenant admins\' are published.',
+        parameters: [{ name: 'request', description: 'folder, version, and (for a new Skill) visibility and category.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'the Hub\'s answer, with the review link for a pending upload.',
+        throws: ['RemoteError `skill-market/invalid-folder` for a folder that cannot be uploaded, and `skill-market/upload-rejected` carrying the Hub\'s own reason when it refuses.'],
+      },
+      {
         signature: '@Remote async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]>',
         description: 'Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the Hub no longer shows the employee is `unavailable`; its local copy stays installed and usable.',
         parameters: [{ name: 'signal', description: 'caller lifetime.' }],
@@ -5931,6 +5956,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MarketCategory {\n    readonly id: string;\n    readonly name: string;\n}',
   },
   {
+    name: 'MarketFolderProblem',
+    declaration: 'export type MarketFolderProblem = \'unreadable\' | \'no-skill-md\' | \'no-frontmatter\' | \'invalid-yaml\' | \'invalid-name\' | \'no-description\';',
+  },
+  {
     name: 'MarketInstalledState',
     declaration: 'export type MarketInstalledState = \'current\' | \'update\' | \'unavailable\' | \'unknown\';',
   },
@@ -5965,6 +5994,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'MarketSkillQuery',
     declaration: 'export interface MarketSkillQuery {\n    readonly q?: string;\n    readonly categoryId?: string;\n    readonly page?: number;\n    readonly pageSize?: number;\n}',
+  },
+  {
+    name: 'MarketUploadOptions',
+    declaration: 'export interface MarketUploadOptions {\n    readonly categories: readonly MarketCategory[];\n    readonly departments: readonly {\n        readonly id: string;\n        readonly parentId: string | null;\n        readonly name: string;\n    }[];\n    readonly employees: readonly {\n        readonly id: string;\n        readonly name: string;\n        readonly departmentName: string;\n    }[];\n}',
+  },
+  {
+    name: 'MarketUploadPreview',
+    declaration: 'export interface MarketUploadPreview {\n    readonly dir: string;\n    readonly name: string | null;\n    readonly description: string | null;\n    readonly fileCount: number;\n    readonly sizeBytes: number;\n    readonly problems: readonly MarketFolderProblem[];\n    readonly existing: {\n        readonly skillId: string;\n        readonly highestVersion: string;\n        readonly currentVersion: string | null;\n        readonly workingStatus: \'draft\' | \'pending\' | null;\n    } | null;\n    readonly suggestedVersion: string;\n}',
+  },
+  {
+    name: 'MarketUploadRequest',
+    declaration: 'export interface MarketUploadRequest {\n    readonly dir: string;\n    readonly version: string;\n    readonly visibility?: MarketVisibility;\n    readonly departmentIds?: readonly string[];\n    readonly employeeIds?: readonly string[];\n    readonly categoryId?: string;\n}',
+  },
+  {
+    name: 'MarketUploadResult',
+    declaration: 'export interface MarketUploadResult {\n    readonly skillId: string;\n    readonly name: string;\n    readonly version: string;\n    readonly mode: \'create\' | \'version\';\n    readonly status: \'pending\' | \'published\';\n    readonly reviewUrl: string | null;\n}',
+  },
+  {
+    name: 'MarketUploadSource',
+    declaration: 'export interface MarketUploadSource {\n    readonly name: string;\n    readonly description: string;\n    readonly dir: string;\n    readonly source: string;\n}',
+  },
+  {
+    name: 'MarketVisibility',
+    declaration: 'export type MarketVisibility = \'tenant\' | \'departments\' | \'employees\' | \'private\';',
   },
   {
     name: 'McpResourceProvider',

@@ -5,7 +5,7 @@
  * and revoke. Shared by the package specs and the Desktop web e2e.
  */
 import { createHash, randomBytes } from 'node:crypto'
-import { strToU8, zipSync } from 'fflate'
+import { strToU8, unzipSync, zipSync } from 'fflate'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 
 /** One tenant the mock employee can sign in to. */
@@ -23,6 +23,23 @@ export interface MockSkill {
   readonly version: string
   /** Files relative to the Skill root; `SKILL.md` is generated from name and description when absent. */
   readonly files?: Readonly<Record<string, string>>
+}
+
+/** One upload the mock received through the client write API. */
+export interface MockUpload {
+  /** `/api/client/skills` or `/api/client/skills/:id/versions`. */
+  readonly path: string
+  /** Form fields other than the file; repeated fields are arrays. */
+  readonly fields: Readonly<Record<string, string | string[]>>
+  /** Entries of the uploaded zip. */
+  readonly entries: readonly string[]
+}
+
+/** A Skill the signed-in employee owns on the mock Hub (what `/mine` reports). */
+export interface MockOwnedSkill {
+  readonly id: string
+  readonly name: string
+  readonly versions: { readonly version: string; readonly status: 'published' | 'pending' }[]
 }
 
 /** Control and observation surface of the mock user center. */
@@ -59,6 +76,16 @@ export interface MockUserCenter {
   clientStatus: number | undefined
   /** Every client API path requested, with its query. */
   readonly clientRequests: string[]
+  /** Whether the signed-in employee administers the tenant: uploads then publish directly. */
+  tenantAdmin: boolean
+  /** Skills the signed-in employee owns. */
+  readonly owned: MockOwnedSkill[]
+  /** Every upload received. */
+  readonly uploads: MockUpload[]
+  /** When set, an upload is answered with this raw reply, or its connection is dropped. */
+  uploadReply: { status: number; body: string } | 'drop' | undefined
+  /** Called when an upload arrives, before it is answered. */
+  uploadHook: (() => Promise<void> | void) | undefined
   close(): Promise<void>
 }
 
@@ -130,13 +157,13 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
         mock.clientRequests.push(`${url.pathname}${url.search}`)
         if (access.get((req.headers.authorization ?? '').replace(/^Bearer /, '')) === undefined) { json(401, { message: 'invalid_token' }); return }
         if (mock.clientStatus !== undefined) { json(mock.clientStatus, { message: 'unavailable' }); return }
-        clientApi(url, res, json)
+        await clientApi(url, req, res, json)
       } else if (url.pathname === '/oauth/userinfo' && mock.userinfoReply !== undefined) {
         res.writeHead(mock.userinfoReply.status, { 'content-type': 'application/json' }).end(mock.userinfoReply.body)
       } else if (url.pathname === '/oauth/userinfo') {
         const bound = access.get((req.headers.authorization ?? '').replace(/^Bearer /, ''))
         if (bound === undefined) { json(401, { error: 'invalid_token' }); return }
-        json(200, { ...PROFILE, ...bound })
+        json(200, { ...PROFILE, ...bound, isTenantAdmin: mock.tenantAdmin })
       } else if (url.pathname === '/oauth/revoke' && req.method === 'POST') {
         const token = (await body(req)).get('token') ?? ''
         mock.revoked.push(token)
@@ -154,8 +181,79 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     currentVersion: { id: `${skill.id}-v`, version: skill.version, description: skill.description, uploaderName: '韩梅梅',
       uploadedAt: '2026-10-01T08:00:00.000Z', sizeBytes: 100, fileCount: Object.keys(filesOf(skill)).length, downloadCount: 0 },
   })
-  const clientApi = (url: URL, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void): void => {
+  const versionRule = /^\d+\.\d+\.\d+$/
+  const later = (a: string, b: string) => {
+    const x = a.split('.').map(Number); const y = b.split('.').map(Number)
+    for (let i = 0; i < 3; i += 1) if (x[i] !== y[i]) return x[i]! > y[i]!
+    return false
+  }
+  const upload = async (url: URL, req: IncomingMessage, json: (status: number, value: unknown) => void, existingId: string | undefined) => {
+    const raw: Buffer[] = []
+    for await (const chunk of req) raw.push(chunk as Buffer)
+    const form = await new Response(Buffer.concat(raw), { headers: { 'content-type': req.headers['content-type'] ?? '' } }).formData()
+    const fields: Record<string, string | string[]> = {}
+    for (const [key, value] of form.entries()) {
+      if (typeof value !== 'string') continue
+      const previous = fields[key]
+      fields[key] = previous === undefined ? value : [...[previous].flat(), value]
+    }
+    const file = form.get('file') as Blob
+    const entries = Object.keys(unzipSync(new Uint8Array(await file.arrayBuffer())))
+    mock.uploads.push({ path: url.pathname, fields, entries })
+    const version = String(fields.version ?? '')
+    if (!versionRule.test(version)) { json(400, { message: '版本号格式应为 x.y.z（如 1.0.0）' }); return }
+    const name = entries[0]!.split('/')[0]!
+    let owned = mock.owned.find(skill => skill.id === existingId)
+    if (existingId === undefined) {
+      if (mock.owned.some(skill => skill.name === name) || mock.skills.some(skill => skill.name === name)) {
+        json(409, { message: `本租户已存在名为「${name}」的 Skill，请到该 Skill 详情页上传新版本` }); return
+      }
+      owned = { id: `s-up-${mock.owned.length + 1}`, name, versions: [] }
+      mock.owned.push(owned)
+    } else {
+      if (owned === undefined) { json(403, { message: '只有所有者或租户管理员可以上传新版本' }); return }
+      const pending = owned.versions.find(v => v.status === 'pending')
+      if (pending !== undefined) { json(409, { message: `该 Skill 已有未成为正式的版本 ${pending.version}（审核中），请先处理后再上传新版本` }); return }
+      const highest = owned.versions.map(v => v.version).reduce((a, b) => (later(a, b) ? a : b))
+      if (!later(version, highest)) { json(400, { message: `新版本号必须高于已有的最高版本 ${highest}` }); return }
+    }
+    const status = mock.tenantAdmin ? 'published' as const : 'pending' as const
+    owned.versions.push({ version, status })
+    if (status === 'published') {
+      const ownedId = owned.id
+      mock.skills = [...mock.skills.filter(skill => skill.id !== ownedId), { id: ownedId, name, description: `${name} uploaded`, category: null, version }]
+    }
+    const versionId = `${owned.id}-v${owned.versions.length}`
+    json(201, {
+      skillId: owned.id, name, version: { id: versionId, version, description: '', uploaderName: '李雷', uploadedAt: '2026-10-04T00:00:00.000Z', sizeBytes: 1, fileCount: entries.length, downloadCount: 0 },
+      status, reviewPath: status === 'pending' ? `/skills/review/${versionId}` : null,
+      reviewUrl: status === 'pending' ? `${mock.origin}/skills/review/${versionId}` : null,
+    })
+  }
+  const clientApi = async (url: URL, req: IncomingMessage, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void): Promise<void> => {
     const parts = url.pathname.slice('/api/client/skills'.length).split('/').filter(Boolean)
+    if (req.method === 'POST') {
+      await mock.uploadHook?.()
+      if (mock.uploadReply === 'drop') { res.destroy(); return }
+      if (mock.uploadReply !== undefined) { res.writeHead(mock.uploadReply.status, { 'content-type': 'application/json' }).end(mock.uploadReply.body); return }
+      await upload(url, req, json, parts[1] === 'versions' ? parts[0] : undefined)
+      return
+    }
+    if (parts[0] === 'mine') {
+      json(200, mock.owned.map((skill) => {
+        const published = skill.versions.filter(v => v.status === 'published').at(-1)
+        const working = skill.versions.find(v => v.status === 'pending')
+        return { id: skill.id, name: skill.name, highestVersion: skill.versions.at(-1)!.version, currentVersion: published?.version ?? null, workingStatus: working === undefined ? null : 'pending' }
+      }))
+      return
+    }
+    if (parts[0] === 'visibility-options') {
+      json(200, {
+        departments: [{ id: 'd-root', parentId: null, name: '甲公司' }, { id: 'd-rd', parentId: 'd-root', name: '研发部' }],
+        employees: [{ id: 'e-li', name: '李雷', departmentName: '研发部' }, { id: 'e-han', name: '韩梅梅', departmentName: '甲公司' }],
+      })
+      return
+    }
     if (parts.length === 0) {
       const q = (url.searchParams.get('q') ?? '').toLowerCase()
       const categoryId = url.searchParams.get('categoryId')
@@ -193,6 +291,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     tenant, denyWith: undefined, refreshStatus: undefined, expiresIn: 7200,
     exchangeStatus: undefined, tokenBody: undefined, tokenGate: undefined, userinfoReply: undefined,
     skills: [], downloadBody: undefined, clientStatus: undefined, clientRequests: [],
+    tenantAdmin: false, owned: [], uploads: [], uploadReply: undefined, uploadHook: undefined,
     authorizeRequests: [], tokenRequests: [], revoked: [],
     close: () => new Promise((resolve) => { server.closeAllConnections(); server.close(() => { resolve() }) }),
   }

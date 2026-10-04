@@ -15,12 +15,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { createInstalledSource } from './installed-source.ts'
 import { createMarketSource } from './market-source.ts'
+import { createUploadSource } from './upload-source.ts'
+import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import { en, zh, type SkillsLocaleKey } from './locales.ts'
 import { SkillsPage } from './SkillsPage.tsx'
 import { SkillsPanelIcon } from './SkillsPanelIcon.tsx'
 
 export type { InstalledSkillsInjected, InstalledSnapshot } from './installed-source.ts'
 export type { MarketInjected, MarketSnapshot } from './market-source.ts'
+export type { UploadInjected, UploadSnapshot } from './upload-source.ts'
 export type { SkillsLocaleKey } from './locales.ts'
 export type { SkillsInjected, SkillsPageProps } from './SkillsPage.tsx'
 
@@ -68,7 +71,20 @@ export function apply(ctx: ClientContext): void {
     installedStatus: () => market.installedStatus(),
     installed: () => { void installed.onRefresh() },
   })
-  const face = { ...installed, ...marketFace, hooks: { ...installed.hooks, ...marketFace.hooks } }
+  const upload = createUploadSource({
+    uploadSources: () => market.uploadSources(),
+    inspectFolder: dir => market.inspectFolder(dir),
+    uploadOptions: () => market.uploadOptions(),
+    uploadSkill: request => market.uploadSkill(request),
+    // The Desktop folder chooser; a browse-only Host leaves the typed path as the way in.
+    pickDirectory: async () => {
+      const result = await ctx.remote.directoryPicker.pick()
+      return result.ok ? result.value : null
+    },
+    copy: text => writeClipboard(text),
+    published: () => { void marketFace.onOpenMarket() },
+  })
+  const face = { ...installed, ...marketFace, ...upload, hooks: { ...installed.hooks, ...marketFace.hooks, ...upload.hooks } }
   ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main',
     key: PANEL_ID,

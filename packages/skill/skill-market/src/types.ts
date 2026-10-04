@@ -17,6 +17,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'skill-market/invalid-package': { readonly reason: string }
     /** Installing would overwrite local edits to an installed market Skill; retry with `overwriteLocalChanges`. */
     'skill-market/local-changes': { readonly name: string; readonly files: readonly string[] }
+    /** The Skill Hub refused an upload; the message is the Hub's own reason. */
+    'skill-market/upload-rejected': { readonly status: number }
+    /** The local folder cannot be uploaded (no SKILL.md, invalid frontmatter, unreadable). */
+    'skill-market/invalid-folder': { readonly problems: readonly MarketFolderProblem[] }
   }
 }
 
@@ -103,6 +107,77 @@ export interface MarketInstalledStatus {
   /** Current version on the Skill Hub; null unless the Hub answered with the Skill. */
   readonly latestVersion: string | null
   readonly state: MarketInstalledState
+}
+
+/** A Skill the user placed on this machine, offered for upload to the Skill Hub. */
+export interface MarketUploadSource {
+  readonly name: string
+  readonly description: string
+  /** The Skill folder (the directory holding SKILL.md). */
+  readonly dir: string
+  /** Discovery source (`user-dsh` or `user-agents`). */
+  readonly source: string
+}
+
+/**
+ * Why a local folder cannot be uploaded: unreadable, no SKILL.md, no frontmatter, frontmatter that
+ * is not YAML, a name that is not lowercase letters, digits, and hyphens, or no description.
+ */
+export type MarketFolderProblem = 'unreadable' | 'no-skill-md' | 'no-frontmatter' | 'invalid-yaml' | 'invalid-name' | 'no-description'
+
+/** What an upload of one local folder would send, and where it would go. */
+export interface MarketUploadPreview {
+  readonly dir: string
+  /** Name from SKILL.md frontmatter; null when it cannot be read. */
+  readonly name: string | null
+  readonly description: string | null
+  /** Files that would be uploaded (junk such as `.DS_Store`, `.git/`, `node_modules/`, `__pycache__/` excluded). */
+  readonly fileCount: number
+  readonly sizeBytes: number
+  /** Why the folder cannot be uploaded; empty when it can. */
+  readonly problems: readonly MarketFolderProblem[]
+  /** The employee's own Skill of the same name on the Hub: the upload becomes its new version. */
+  readonly existing: {
+    readonly skillId: string
+    readonly highestVersion: string
+    readonly currentVersion: string | null
+    readonly workingStatus: 'draft' | 'pending' | null
+  } | null
+  /** `1.0.0` for a new Skill, otherwise the next patch after the highest existing version. */
+  readonly suggestedVersion: string
+}
+
+/** Who can see an uploaded Skill: the tenant, chosen departments or employees, or only the uploader. */
+export type MarketVisibility = 'tenant' | 'departments' | 'employees' | 'private'
+
+/** Visibility and category choices for an upload. */
+export interface MarketUploadOptions {
+  readonly categories: readonly MarketCategory[]
+  readonly departments: readonly { readonly id: string; readonly parentId: string | null; readonly name: string }[]
+  readonly employees: readonly { readonly id: string; readonly name: string; readonly departmentName: string }[]
+}
+
+/** One upload of a local Skill folder. Visibility and category apply to a new Skill only. */
+export interface MarketUploadRequest {
+  readonly dir: string
+  readonly version: string
+  readonly visibility?: MarketVisibility
+  readonly departmentIds?: readonly string[]
+  readonly employeeIds?: readonly string[]
+  readonly categoryId?: string
+}
+
+/** The Hub's answer to an upload. */
+export interface MarketUploadResult {
+  readonly skillId: string
+  readonly name: string
+  readonly version: string
+  /** `create` for a new Skill, `version` for a new version of the employee's existing one. */
+  readonly mode: 'create' | 'version'
+  /** `pending` (submitted for review) for employees, `published` for tenant admins. */
+  readonly status: 'pending' | 'published'
+  /** Where an administrator reviews a pending upload. */
+  readonly reviewUrl: string | null
 }
 
 /** The install record written as `.hub-install.json` inside each market Skill directory. */
