@@ -115,6 +115,8 @@
     "apps/web/tests/hub-account.e2e.ts",
     "apps/web/tests/embedding-settings.e2e.ts",
     "apps/web/tests/knowledge.e2e.ts",
+    "apps/web/tests/knowledge-sources.e2e.ts",
+    "apps/web/tests/knowledge-support.ts",
     "apps/web/tests/models-custom-provider.e2e.ts",
     "apps/web/tests/skills-market.e2e.ts",
     "apps/web/tests/skills-market-lifecycle.e2e.ts",

@@ -21,6 +21,9 @@
       "path": "../../typert/protocol"
     },
     {
+      "path": "../../web/web"
+    },
+    {
       "path": "../../util/home-paths"
     },
     {

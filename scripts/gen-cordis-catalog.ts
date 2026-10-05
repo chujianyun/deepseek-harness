@@ -359,6 +359,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   KnowledgeSearchHit: 'knowledge.md',
   KnowledgeRecallResult: 'knowledge.md',
   KnowledgeSettingsPatch: 'knowledge.md',
+  KnowledgeNote: 'knowledge.md',
   ResolvedRetryPolicy: 'llm-streaming.md',
   Message: 'llm-streaming.md',
   MessageSource: 'llm-streaming.md',

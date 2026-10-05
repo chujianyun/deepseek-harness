@@ -1,27 +1,15 @@
-/** The Knowledge page: knowledge bases on the left, the selected one's files on the right. */
+/** The Knowledge page: knowledge bases on the left, the selected one's sources, settings, and recall test on the right. */
 
-import { useRef, useState, type DragEvent } from 'react'
-import type { KnowledgeBaseView, KnowledgeItemView } from '@deepseek-ai/dsh-knowledge-base/types'
-import { Button, fileSizeText, Input, Modal, SegmentedTabs, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useState } from 'react'
+import type { KnowledgeBaseView } from '@deepseek-ai/dsh-knowledge-base/types'
+import { Button, Input, Modal, SegmentedTabs } from '@deepseek-ai/dsh-client-ui-primitives'
 import { KnowledgeRecallPanel } from './KnowledgeRecall.tsx'
 import { KnowledgeSettingsPanel } from './KnowledgeSettings.tsx'
+import { KnowledgeSources } from './KnowledgeSources.tsx'
 import { failureText, modelOptions, type KnowledgePageProps, type T } from './shared.ts'
 import css from './KnowledgePage.module.css'
 
 export type { KnowledgePageProps } from './shared.ts'
-
-/** The Desktop preload bridge: the real path of a dropped or picked file, '' when it has none. */
-interface HostPathBridge {
-  pathFor(file: File): string
-}
-
-const STATUS_TONE = { pending: 'neutral', processing: 'info', completed: 'success', failed: 'danger' } as const
-
-/** Local paths of picked or dropped files; files without one are left out. */
-function pathsOf(files: FileList | null): string[] {
-  const bridge = (globalThis as { __DSH_HOST_PATHS__?: HostPathBridge }).__DSH_HOST_PATHS__
-  return [...files ?? []].map(file => bridge?.pathFor(file) ?? '').filter(path => path !== '')
-}
 
 /**
  * Render the knowledge bases and the selected one's files, with dialogs to create, rename, and delete.
@@ -50,7 +38,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
             <button key={base.id} type="button" className={css.listItem} aria-current={base.id === selected?.id ? 'true' : undefined}
               onClick={() => { onSelect(base.id) }}>
               <span className={css.listName}>{base.name}</span>
-              <span className={css.listMeta}>{base.items.length}</span>
+              <span className={css.listMeta}>{base.items.filter(item => item.parentId === null).length}</span>
             </button>
           ))}
         </nav>
@@ -124,7 +112,7 @@ function Detail(props: KnowledgePageProps & { base: KnowledgeBaseView; openRenam
       {base.status === 'unavailable' && <p className={css.warning}>{t('unavailable')}</p>}
       {base.status === 'rebuilding' && <Rebuilding t={t} base={base} />}
       <div id={`knowledge-panel-${view}`} role="tabpanel" aria-labelledby={`knowledge-tab-${view}`} className={css.panel}>
-        {view === 'files' && <Files {...props} />}
+        {view === 'files' && <KnowledgeSources {...props} />}
         {view === 'settings' && <KnowledgeSettingsPanel {...props} />}
         {view === 'recall' && <KnowledgeRecallPanel {...props} />}
       </div>
@@ -140,68 +128,6 @@ function Rebuilding({ t, base }: { t: T; base: KnowledgeBaseView }) {
       <span>{t('rebuilding', { done: String(done), total: String(base.items.length) })}</span>
       <progress className={css.progress} max={base.items.length} value={done} aria-label={t('rebuildProgress')} />
     </div>
-  )
-}
-
-function Files(props: KnowledgePageProps & { base: KnowledgeBaseView }) {
-  const { t, base, useKnowledge, onAddFiles } = props
-  const busy = useKnowledge(snapshot => snapshot.busy)
-  const input = useRef<HTMLInputElement>(null)
-  const [dragging, setDragging] = useState(false)
-  const [noPath, setNoPath] = useState(false)
-  const add = (files: FileList | null): void => {
-    const paths = pathsOf(files)
-    setNoPath(paths.length === 0 && (files?.length ?? 0) > 0)
-    if (paths.length > 0) void onAddFiles(base.id, paths)
-  }
-  const drop = (event: DragEvent<HTMLDivElement>): void => {
-    event.preventDefault()
-    setDragging(false)
-    add(event.dataTransfer.files)
-  }
-  return (
-    <>
-      {noPath && <p className={css.alert} role="alert">{t('noPath')}</p>}
-      <div className={css.dropZone} data-dragging={dragging} onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
-        onDragLeave={() => { setDragging(false) }} onDrop={drop}>
-        <span className={css.muted}>{t('dropHint')}</span>
-        <Button variant="primary" disabled={busy} onClick={() => { input.current?.click() }}>{t('addFiles')}</Button>
-        <input ref={input} className={css.fileInput} type="file" multiple accept=".docx,.pdf,.md,.markdown,.txt" aria-label={t('addFiles')}
-          onChange={(event) => { add(event.target.files); event.target.value = '' }} />
-      </div>
-      <h3 className={css.sectionTitle}>{t('files')}</h3>
-      {base.items.length === 0 ? <p className={css.muted}>{t('itemsEmpty')}</p> : <Items {...props} />}
-    </>
-  )
-}
-
-function Items({ t, base, useKnowledge, onReprocess, onDeleteItem }: KnowledgePageProps & { base: KnowledgeBaseView }) {
-  const busy = useKnowledge(snapshot => snapshot.busy)
-  return (
-    <table className={css.table}>
-      <thead>
-        <tr><th>{t('columnName')}</th><th>{t('columnSize')}</th><th>{t('columnStatus')}</th><th>{t('columnChunks')}</th><th /></tr>
-      </thead>
-      <tbody>
-        {base.items.map((item: KnowledgeItemView) => (
-          <tr key={item.id}>
-            <td className={css.itemName}>{item.name}</td>
-            <td>{fileSizeText(item.size)}</td>
-            <td>
-              <Tag tone={STATUS_TONE[item.status]}>{t(`status.${item.status}`)}</Tag>
-              {item.error !== null && <span className={css.itemError}>{t(`error.${item.error}`)}</span>}
-            </td>
-            <td>{item.status === 'completed' ? item.chunkCount : '–'}</td>
-            <td className={css.rowActions} aria-label={t('itemActions', { name: item.name })}>
-              {(item.status === 'completed' || item.status === 'failed') && (
-                <Button variant="ghost" disabled={busy} onClick={() => { void onReprocess(base.id, item.id) }}>{t('reprocess')}</Button>
-              )}
-              <Button variant="ghost" disabled={busy} onClick={() => { void onDeleteItem(base.id, item.id) }}>{t('deleteItem')}</Button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   )
 }
 

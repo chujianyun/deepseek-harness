@@ -54,6 +54,11 @@ export function apply(ctx: ClientContext): void {
     updateSettings: (id, patch) => remote.updateSettings(id, patch),
     reprocessAll: id => remote.reprocessAll(id),
     recall: (id, query) => remote.recall(id, query),
+    addFolder: (id, path) => remote.addFolder(id, path),
+    addUrl: (id, url) => remote.addUrl(id, url),
+    createNote: (id, title, content) => remote.createNote(id, title, content),
+    updateNote: (id, itemId, title, content) => remote.updateNote(id, itemId, title, content),
+    getNote: (id, itemId) => remote.getNote(id, itemId),
   })
   const knowledge = ctx.remote.$stream<KnowledgeState>({
     name: 'knowledgeBases', open: signal => remote.watch(signal), ended: () => new Error('knowledge stream ended'),

@@ -43,7 +43,7 @@ Load the web service and the provider; configurable limits have safe defaults an
 | Field | Default | Meaning |
 |---|---|---|
 | `maxResponseBytes` | `5,000,000` | Maximum response body size in bytes |
-| `maxBodyChars` | `100,000` | Maximum decoded body length in characters |
+| `maxBodyChars` | `2,000,000` | Maximum decoded body length in characters; whole pages are kept for knowledge bases, which extract the article from all of a page, while `dsh-tool-web` cuts what it shows to its own output cap |
 | `timeoutMs` | `30,000` | Fetch timeout — a resource backstop, not the model-facing tool budget |
 | `maxRedirects` | `5` | Maximum same-origin redirect hops (`0` follows none) |
 | `userAgent` | `deepseek-harness/…` | `User-Agent` header sent on every request |

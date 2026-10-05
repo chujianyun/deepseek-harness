@@ -8,7 +8,9 @@ const base = (id: string, name: string) => ({
   id, name, embeddingModelId: 'local/q', embeddingModelName: 'Q', status: 'ready' as const, items: [], createdAt: '2026-10-05T00:00:00.000Z',
   dimensions: 4, settings: SETTINGS,
 })
-const state = (...bases: ReturnType<typeof base>[]): KnowledgeState => ({ tenantId: 't-a', bases })
+let revision = 0
+/** A state newer than every one before it. */
+const state = (...bases: ReturnType<typeof base>[]): KnowledgeState => ({ revision: ++revision, tenantId: 't-a', bases })
 const ok = <T>(value: T) => Promise.resolve({ ok: true as const, value })
 const refused = (code: string, message = code, details: object = {}) =>
   Promise.resolve({ ok: false as const, error: { code, message, details } } as never)
@@ -24,6 +26,11 @@ function deps() {
     updateSettings: vi.fn<KnowledgeDependencies['updateSettings']>(() => ok(state(base('a', '甲')))),
     reprocessAll: vi.fn<KnowledgeDependencies['reprocessAll']>(() => ok(state(base('a', '甲')))),
     recall: vi.fn<KnowledgeDependencies['recall']>(() => ok({ hits: [{ itemId: 'i1', itemName: 'a.md', ordinal: 0, text: '年假', score: 0.8 }], durationMs: 12 })),
+    addFolder: vi.fn<KnowledgeDependencies['addFolder']>(() => ok(state(base('a', '甲')))),
+    addUrl: vi.fn<KnowledgeDependencies['addUrl']>(() => ok(state(base('a', '甲')))),
+    createNote: vi.fn<KnowledgeDependencies['createNote']>(() => ok(state(base('a', '甲')))),
+    updateNote: vi.fn<KnowledgeDependencies['updateNote']>(() => ok(state(base('a', '甲')))),
+    getNote: vi.fn<KnowledgeDependencies['getNote']>(() => ok({ title: '笔记', content: '正文' })),
   }
 }
 
@@ -90,4 +97,52 @@ it('saves settings, reprocesses all, and keeps the recall test apart from action
   expect(snapshot().failure).toBeNull()
   void source.onRecall('b', '年假')
   expect(snapshot().recall).toMatchObject({ baseId: 'b', result: null })
+})
+
+it('adds folders and pages, writes notes, and words their refusals', async () => {
+  const d = deps()
+  const source = createKnowledgeSource(d)
+  const snapshot = () => source.hooks.knowledge.getSnapshot()
+  d.addFolder.mockReturnValueOnce(refused('knowledge/not-a-folder'))
+  await source.onAddFolder('a', '/x/a.txt')
+  expect(snapshot().failure).toEqual({ reason: 'not-a-folder' })
+  await source.onAddFolder('a', '/x/dir')
+  expect(d.addFolder).toHaveBeenLastCalledWith('a', '/x/dir')
+  d.addUrl.mockReturnValueOnce(refused('knowledge/invalid-url'))
+  expect(await source.onAddUrl('a', 'ftp://x')).toBe(false)
+  expect(snapshot().failure).toEqual({ reason: 'invalid-url' })
+  expect(await source.onAddUrl('a', 'https://x')).toBe(true)
+  d.createNote.mockReturnValueOnce(refused('knowledge/invalid-note', 'too long', { field: 'content', max: 1_000_000 }))
+  expect(await source.onCreateNote('a', '题', '长')).toBe(false)
+  expect(snapshot().failure).toEqual({ reason: 'invalid-note', field: 'content', max: 1_000_000 })
+  expect(await source.onCreateNote('a', '题', '文')).toBe(true)
+  expect(await source.onUpdateNote('a', 'n', '题', '文')).toBe(true)
+  expect(d.updateNote).toHaveBeenCalledWith('a', 'n', '题', '文')
+  expect(await source.onLoadNote('a', 'n')).toEqual({ title: '笔记', content: '正文' })
+  d.getNote.mockReturnValueOnce(refused('knowledge/not-found'))
+  expect(await source.onLoadNote('a', 'gone')).toBeUndefined()
+})
+
+it('keeps the newer state when an action\'s answer arrives after a newer stream frame', async () => {
+  const d = deps()
+  const source = createKnowledgeSource(d)
+  const snapshot = () => source.hooks.knowledge.getSnapshot()
+  const stale = state(base('a', '处理中'))
+  const fresh = state(base('a', '已失败'))
+  d.reprocessItem.mockImplementationOnce(async () => {
+    source.publish(fresh)
+    return { ok: true as const, value: stale }
+  })
+  await source.onReprocess('a', 'i1')
+  expect(snapshot().state).toBe(fresh)
+  source.publish(stale)
+  expect(snapshot().state).toBe(fresh)
+  // A created knowledge base is still selected when its answer is the older state.
+  d.createBase.mockImplementationOnce(async () => {
+    const answer = state(base('a', '甲'), base('n', '新'))
+    source.publish(state(base('a', '甲'), base('n', '新')))
+    return { ok: true as const, value: answer }
+  })
+  expect(await source.onCreate('新', 'local/q')).toBe(true)
+  expect(snapshot().selectedId).toBe('n')
 })

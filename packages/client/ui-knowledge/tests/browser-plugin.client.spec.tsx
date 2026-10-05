@@ -19,7 +19,7 @@ usePinnedBrowserLanguages('zh-CN')
 beforeAll(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 }, configurable: true }) })
 afterAll(() => { Reflect.deleteProperty(globalThis, 'dshDesktop') })
 
-const knowledgeState: KnowledgeState = { tenantId: 't-a', bases: [] }
+const knowledgeState: KnowledgeState = { revision: 1, tenantId: 't-a', bases: [] }
 const embeddingState: EmbeddingState = {
   local: { id: 'local/q', name: 'Q', status: 'installed', receivedBytes: 1, totalBytes: 1, dimensions: 4, error: null }, apiModels: [],
 }
@@ -63,6 +63,8 @@ async function bench() {
     addFiles: vi.fn(() => ok({ added: 0, rejected: [] })), reprocessItem: vi.fn(() => ok(knowledgeState)),
     deleteItem: vi.fn(() => ok(knowledgeState)), updateSettings: vi.fn(() => ok(knowledgeState)),
     reprocessAll: vi.fn(() => ok(knowledgeState)), recall: vi.fn(() => ok({ hits: [], durationMs: 1 })),
+    addFolder: vi.fn(() => ok(knowledgeState)), addUrl: vi.fn(() => ok(knowledgeState)), createNote: vi.fn(() => ok(knowledgeState)),
+    updateNote: vi.fn(() => ok(knowledgeState)), getNote: vi.fn(() => ok({ title: 't', content: 'c' })),
     watch: vi.fn(),
   }
   const embedding = { watch: vi.fn() }
@@ -121,6 +123,16 @@ describe('ui-knowledge browser plugin', () => {
     await injected.onSaveSettings('b', { documentCount: 3 })
     await injected.onReprocessAll('b')
     await injected.onRecall('b', '年假')
+    await injected.onAddFolder('b', '/d')
+    await injected.onAddUrl('b', 'https://x')
+    await injected.onCreateNote('b', 't', 'c')
+    await injected.onUpdateNote('b', 'n', 't', 'c')
+    await injected.onLoadNote('b', 'n')
+    expect(b.knowledgeBases.addFolder).toHaveBeenCalledWith('b', '/d')
+    expect(b.knowledgeBases.addUrl).toHaveBeenCalledWith('b', 'https://x')
+    expect(b.knowledgeBases.createNote).toHaveBeenCalledWith('b', 't', 'c')
+    expect(b.knowledgeBases.updateNote).toHaveBeenCalledWith('b', 'n', 't', 'c')
+    expect(b.knowledgeBases.getNote).toHaveBeenCalledWith('b', 'n')
     await injected.onDelete('b')
     expect(b.knowledgeBases.updateSettings).toHaveBeenCalledWith('b', { documentCount: 3 })
     expect(b.knowledgeBases.reprocessAll).toHaveBeenCalledWith('b')

@@ -5,9 +5,7 @@
 // knowledge base, deletes a file, runs recall tests under changed retrieval settings, reprocesses
 // every document with smaller chunks, rebuilds on a new embedding model, and sees another tenant's
 // sign-in show none of it.
-import { once } from 'node:events'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,40 +15,13 @@ import type {} from '@deepseek-ai/dsh-embedding'
 import type {} from '@deepseek-ai/dsh-hub-account'
 import type {} from '@deepseek-ai/dsh-knowledge-base'
 import { browse, startMockUserCenter } from '../../../packages/credentials/hub-account/tests/mock-user-center.ts'
-import { terms } from '../../../packages/knowledge/knowledge-base/src/terms.ts'
+import { startEmbeddingsEndpoint } from './knowledge-support.ts'
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
 import { saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
 
 const OVERLAYS = ['./hub-account.overlay.yml', './knowledge.overlay.yml'].map(path => fileURLToPath(new URL(path, import.meta.url)))
 const FIXTURES = fileURLToPath(new URL('../../../packages/knowledge/knowledge-base/tests/fixtures/', import.meta.url))
 const FILES = ['annual-leave.docx', 'expense-policy.pdf', 'product-manual.md', 'meeting-notes.txt']
-
-/** A mock `/v1/embeddings`: a 64-dimension bag of hashed terms, so texts sharing words point the same way. */
-async function startEmbeddingsEndpoint() {
-  const server = createServer((req, res) => {
-    let raw = ''
-    req.on('data', (chunk: Buffer) => { raw += chunk.toString() })
-    req.on('end', () => {
-      const body = JSON.parse(raw) as { input: string[] }
-      const data = body.input.map((text, index) => {
-        const embedding = new Array<number>(64).fill(0)
-        for (const term of terms(text)) {
-          let hash = 0
-          for (const char of term) hash = (hash * 31 + char.codePointAt(0)!) % 64
-          embedding[hash]! += 1
-        }
-        return { index, embedding }
-      })
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data }))
-    })
-  })
-  server.listen(0, '127.0.0.1')
-  await once(server, 'listening')
-  return {
-    baseURL: `http://127.0.0.1:${String((server.address() as { port: number }).port)}/v1`,
-    close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => { resolve() }) }),
-  }
-}
 
 it('creates a knowledge base, processes the four document kinds, tunes and tests its retrieval, and keeps it to its tenant', async () => {
   const api = await startEmbeddingsEndpoint()

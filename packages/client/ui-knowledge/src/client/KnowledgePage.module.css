@@ -64,3 +64,14 @@
 .hitScore { color: var(--dsw-alias-label-primary); font-variant-numeric: tabular-nums; }
 .hitText { display: -webkit-box; margin: 0; overflow: hidden; font-size: 13px; line-height: 1.6; white-space: pre-wrap; -webkit-box-orient: vertical; -webkit-line-clamp: 6; }
 .settingsRow > button { flex-shrink: 0; white-space: nowrap; }
+.sourceTabs { width: 420px; }
+.paneHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.folder { display: flex; flex-direction: column; gap: 6px; padding: 4px 0; border-top: 0.5px solid var(--dsw-alias-border-l2); }
+.folder > .table td { border-top: 0; }
+.folderName { display: block; font-weight: 600; }
+.itemSource { display: block; overflow: hidden; color: var(--dsw-alias-label-tertiary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.skipped { padding: 0 8px; font-size: 12px; }
+.linkButton { padding: 0; border: 0; background: none; color: var(--dsw-alias-label-secondary); font: inherit; text-decoration: underline; cursor: pointer; }
+.skippedList { margin: 6px 0 0; padding-left: 18px; color: var(--dsw-alias-label-tertiary); }
+.textarea { min-height: 240px; padding: 8px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: var(--dsw-radius-sm); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; line-height: 1.6; resize: vertical; }
+.dropZone > button { flex-shrink: 0; white-space: nowrap; }

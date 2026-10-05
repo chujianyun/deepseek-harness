@@ -6,7 +6,7 @@
 
 ## 存储与处理
 
-知识库属于当前 [Hub 登录](../glossary.zh.md#skill-hub)所在的租户，位于 `<dshHome>/knowledge/<tenantId>/<baseId>`：`base.json` 保存名称、嵌入模型及其测得的向量维度、分块与检索设置，以及是否正在重建；`files/` 保存每个加入文件的副本；`index.sqlite` 保存条目、条目的分块与嵌入向量，以及分块关键词的无内容 FTS5 索引。一个处理器按顺序处理当前登录租户的待处理条目：读取文本、分块、对分块向量化，并在一个事务中替换该条目的分块。登录另一个租户会停止处理器；当某租户再次成为当前登录租户时（或启动时），未完成的条目中使用本地嵌入模型的继续处理，使用 API 模型的以 `interrupted` 失败。
+知识库属于当前 [Hub 登录](../glossary.zh.md#skill-hub)所在的租户，位于 `<dshHome>/knowledge/<tenantId>/<baseId>`：`base.json` 保存名称、嵌入模型及其测得的向量维度、分块与检索设置，以及是否正在重建；`files/` 保存每个加入文件的副本、抓取网页的 Markdown 和每条笔记；`index.sqlite` 保存条目、条目的分块与嵌入向量，以及分块关键词的无内容 FTS5 索引。文件夹中受支持的文件成为其下的文件条目，在重新处理文件夹时同步；网页通过 `web` 服务在本机抓取并保存为 Markdown；笔记在 DSH 中编写。一个处理器按顺序处理当前登录租户的待处理条目：读取文本（网页先抓取）、分块、对分块向量化，并在一个事务中替换该条目的分块。登录另一个租户会停止处理器；当某租户再次成为当前登录租户时（或启动时），未完成的条目中使用本地嵌入模型的继续处理，使用 API 模型的以 `interrupted` 失败。
 
 [重建](../glossary.zh.md#rebuild)会原地更换知识库的嵌入模型：新模型先对一段试用文本向量化，随后删除全部分块、所有条目重新排队，知识库在没有剩余待处理条目之前拒绝检索。分块设置的修改则要等用户明确「重新处理全部文档」，期间旧分块仍可检索。
 
@@ -108,6 +108,56 @@ Host owner of the knowledge bases and of the `knowledgeBases` Remote namespace.
  * @throws RemoteError `knowledge/not-found`.
  */
 @Remote addFiles(id: string, paths: readonly string[]): Promise<KnowledgeAddResult>
+
+/**
+ * Add a folder: each supported file in it and its subfolders, up to `maxFolderFiles`, is copied in
+ * as a file item of the folder; unsupported files and those past the limit are listed as skipped.
+ * The folder is not watched; reprocessing it scans it again.
+ * @param id - knowledge base id.
+ * @param path - absolute path of a folder on this machine.
+ * @returns the state with the folder last.
+ * @throws RemoteError `knowledge/not-found` or `knowledge/not-a-folder`.
+ */
+@Remote addFolder(id: string, path: string): Promise<KnowledgeState>
+
+/**
+ * Add a web page, fetched on this machine when processed; only that page is read.
+ * @param id - knowledge base id.
+ * @param url - an http or https address.
+ * @returns the state with the page last.
+ * @throws RemoteError `knowledge/not-found` or `knowledge/invalid-url`.
+ */
+@Remote addUrl(id: string, url: string): Promise<KnowledgeState>
+
+/**
+ * Write a new note.
+ * @param id - knowledge base id.
+ * @param title - 1 to `maxNoteTitleLength` characters.
+ * @param content - Markdown body of at most `maxNoteChars` characters.
+ * @returns the state with the note last.
+ * @throws RemoteError `knowledge/not-found` or `knowledge/invalid-note`.
+ */
+@Remote createNote(id: string, title: string, content: string): Promise<KnowledgeState>
+
+/**
+ * Change a note; only that note is processed again.
+ * @param id - knowledge base id.
+ * @param itemId - the note.
+ * @param title - 1 to `maxNoteTitleLength` characters.
+ * @param content - Markdown body of at most `maxNoteChars` characters.
+ * @returns the state.
+ * @throws RemoteError `knowledge/not-found` or `knowledge/invalid-note`.
+ */
+@Remote updateNote(id: string, itemId: string, title: string, content: string): Promise<KnowledgeState>
+
+/**
+ * Read a note for editing.
+ * @param id - knowledge base id.
+ * @param itemId - the note.
+ * @returns its title and body.
+ * @throws RemoteError `knowledge/not-found`.
+ */
+@Remote async getNote(id: string, itemId: string): Promise<KnowledgeNote>
 
 /**
  * Process an item again from its stored copy.

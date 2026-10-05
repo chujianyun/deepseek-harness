@@ -20,9 +20,9 @@ const base = (over: Partial<KnowledgeBaseView> = {}): KnowledgeBaseView => ({
   dimensions: 1024,
   settings: { chunkStrategy: 'structured', chunkSeparator: '\\n\\n', chunkSize: 1024, chunkOverlap: 200, documentCount: 6, threshold: 0 },
   items: [
-    { id: 'i1', kind: 'file', name: '年假制度.docx', size: 36_947, status: 'completed', error: null, chunkCount: 3, addedAt: '2026-10-05T00:00:01.000Z' },
-    { id: 'i2', kind: 'file', name: '扫描件.pdf', size: 2048, status: 'failed', error: 'empty', chunkCount: 0, addedAt: '2026-10-05T00:00:02.000Z' },
-    { id: 'i3', kind: 'file', name: '会议纪要.txt', size: 100, status: 'processing', error: null, chunkCount: 0, addedAt: '2026-10-05T00:00:03.000Z' },
+    { id: 'i1', kind: 'file', parentId: null, source: null, skipped: [], skippedCount: 0, name: '年假制度.docx', size: 36_947, status: 'completed', error: null, chunkCount: 3, addedAt: '2026-10-05T00:00:01.000Z' },
+    { id: 'i2', kind: 'file', parentId: null, source: null, skipped: [], skippedCount: 0, name: '扫描件.pdf', size: 2048, status: 'failed', error: 'empty', chunkCount: 0, addedAt: '2026-10-05T00:00:02.000Z' },
+    { id: 'i3', kind: 'file', parentId: null, source: null, skipped: [], skippedCount: 0, name: '会议纪要.txt', size: 100, status: 'processing', error: null, chunkCount: 0, addedAt: '2026-10-05T00:00:03.000Z' },
   ],
   ...over,
 })
@@ -38,6 +38,10 @@ function mount(state: KnowledgeState | undefined, extra: Partial<KnowledgeSnapsh
     onAddFiles: vi.fn(async () => {}), onReprocess: vi.fn(async () => {}), onDeleteItem: vi.fn(async () => {}), onDismiss: vi.fn(),
     onSaveSettings: vi.fn(async (_id: string, _patch: object) => true), onReprocessAll: vi.fn(async () => {}),
     onRecall: vi.fn(async (_id: string, _query: string) => {}),
+    onAddFolder: vi.fn(async (_id: string, _path: string) => {}), onAddUrl: vi.fn(async (_id: string, _url: string) => true),
+    onCreateNote: vi.fn(async (_id: string, _title: string, _content: string) => true),
+    onUpdateNote: vi.fn(async (_id: string, _itemId: string, _title: string, _content: string) => true),
+    onLoadNote: vi.fn(async (_id: string, _itemId: string): Promise<{ title: string; content: string } | undefined> => ({ title: '旧标题', content: '旧正文' })),
   }
   render(<KnowledgePage {...props} />)
   return { props, store }
@@ -48,12 +52,12 @@ describe('knowledge page', () => {
     mount(undefined)
     expect(screen.queryByRole('heading')).toBeNull()
     cleanup()
-    mount({ tenantId: null, bases: [] })
+    mount({ revision: 1, tenantId: null, bases: [] })
     expect(screen.getByText(zh.signedOut)).toBeTruthy()
   })
 
   it.each([zh, en])('lists knowledge bases and shows the selected one\'s files with their status', (copy) => {
-    const { props } = mount({ tenantId: 't-a', bases: [base(), base({ id: 'b2', name: '产品资料', items: [], status: 'unavailable' })] }, {}, copy)
+    const { props } = mount({ revision: 1, tenantId: 't-a', bases: [base(), base({ id: 'b2', name: '产品资料', items: [], status: 'unavailable' })] }, {}, copy)
     const list = screen.getByRole('navigation', { name: copy.title })
     expect(within(list).getAllByRole('button').map(button => button.textContent)).toEqual([copy.create, '公司制度3', '产品资料0'])
     const detail = screen.getByRole('region', { name: '公司制度' })
@@ -75,13 +79,13 @@ describe('knowledge page', () => {
   })
 
   it('shows empty states', () => {
-    mount({ tenantId: 't-a', bases: [] })
+    mount({ revision: 1, tenantId: 't-a', bases: [] })
     expect(screen.getByText(zh.listEmpty)).toBeTruthy()
     expect(screen.getByText(zh.detailEmpty)).toBeTruthy()
   })
 
   it('adds dropped and picked files by their local paths, and explains files without one', () => {
-    const { props } = mount({ tenantId: 't-a', bases: [base()] })
+    const { props } = mount({ revision: 1, tenantId: 't-a', bases: [base()] })
     const file = (name: string) => new File(['x'], name)
     const zone = screen.getByText(zh.dropHint).parentElement!
     // Without the Desktop bridge, no file has a path.
@@ -105,27 +109,27 @@ describe('knowledge page', () => {
   })
 
   it('reports what was added and refused, or why an action failed, until dismissed', () => {
-    const { props } = mount({ tenantId: 't-a', bases: [base()] }, { added: { added: 2, rejected: [{ name: 'logo.png', reason: 'unsupported' }, { name: 'big.pdf', reason: 'too-large' }] } })
+    const { props } = mount({ revision: 1, tenantId: 't-a', bases: [base()] }, { added: { added: 2, rejected: [{ name: 'logo.png', reason: 'unsupported' }, { name: 'big.pdf', reason: 'too-large' }] } })
     expect(screen.getByRole('alert').textContent).toContain('已添加 2 个文件logo.png：不支持的格式big.pdf：超过 100MB')
     fireEvent.click(screen.getByRole('button', { name: zh.close }))
     expect(props.onDismiss).toHaveBeenCalledOnce()
     cleanup()
-    mount({ tenantId: 't-a', bases: [base()] }, { added: { added: 1, rejected: [] } })
+    mount({ revision: 1, tenantId: 't-a', bases: [base()] }, { added: { added: 1, rejected: [] } })
     expect(screen.getByRole('status').textContent).toContain('已添加 1 个文件')
     cleanup()
-    mount({ tenantId: 't-a', bases: [base()] }, { failure: { reason: 'other', message: 'disk full' } })
+    mount({ revision: 1, tenantId: 't-a', bases: [base()] }, { failure: { reason: 'other', message: 'disk full' } })
     expect(screen.getByRole('alert').textContent).toContain('操作失败：disk full')
     cleanup()
-    mount({ tenantId: 't-a', bases: [base()] }, { failure: { reason: 'invalid-name' } })
+    mount({ revision: 1, tenantId: 't-a', bases: [base()] }, { failure: { reason: 'invalid-name' } })
     expect(screen.getByRole('alert').textContent).toContain(zh['failure.invalid-name'])
     cleanup()
     // A failure shows even when no knowledge base is left to select, such as after deleting the last one fails.
-    mount({ tenantId: 't-a', bases: [] }, { failure: { reason: 'other', message: 'disk full' } })
+    mount({ revision: 1, tenantId: 't-a', bases: [] }, { failure: { reason: 'other', message: 'disk full' } })
     expect(screen.getByRole('alert').textContent).toContain('操作失败：disk full')
   })
 
   it('creates a knowledge base with a chosen embedding model, warning about API models', async () => {
-    const { props, store } = mount({ tenantId: 't-a', bases: [] })
+    const { props, store } = mount({ revision: 1, tenantId: 't-a', bases: [] })
     fireEvent.click(screen.getByRole('button', { name: zh.create }))
     const dialog = screen.getByRole('dialog', { name: zh.createTitle })
     const create = within(dialog).getByRole('button', { name: zh.confirmCreate })
@@ -151,7 +155,7 @@ describe('knowledge page', () => {
   })
 
   it('offers a downloading local model, and explains when no embedding model exists', () => {
-    const { store } = mount({ tenantId: 't-a', bases: [] }, { embedding: embedding('downloading') })
+    const { store } = mount({ revision: 1, tenantId: 't-a', bases: [] }, { embedding: embedding('downloading') })
     fireEvent.click(screen.getByRole('button', { name: zh.create }))
     expect(within(screen.getByRole('combobox')).getAllByRole('option')[0]!.textContent).toBe('Qwen3-Embedding-0.6B（本地，下载完成后可用）')
     act(() => { store.set({ ...store.getSnapshot(), embedding: { ...embedding('unsupported'), apiModels: [] } }) })
@@ -161,7 +165,7 @@ describe('knowledge page', () => {
   })
 
   it('renames and deletes the selected knowledge base after confirmation', async () => {
-    const { props, store } = mount({ tenantId: 't-a', bases: [base()] })
+    const { props, store } = mount({ revision: 1, tenantId: 't-a', bases: [base()] })
     fireEvent.click(screen.getByRole('button', { name: zh.rename }))
     const dialog = screen.getByRole('dialog', { name: zh.renameTitle })
     const field = within(dialog).getByRole<HTMLInputElement>('textbox')
@@ -190,7 +194,7 @@ describe('knowledge page', () => {
   })
 
   it('switches between files, settings, and the recall test, and shows a rebuild\'s progress', () => {
-    mount({ tenantId: 't-a', bases: [base({ status: 'rebuilding' })] })
+    mount({ revision: 1, tenantId: 't-a', bases: [base({ status: 'rebuilding' })] })
     const tabs = screen.getByRole('tablist', { name: zh.views })
     expect(within(tabs).getAllByRole('tab').map(tab => tab.textContent)).toEqual([zh['tab.files'], zh['tab.settings'], zh['tab.recall']])
     expect(screen.getByRole('status').textContent).toBe('正在用新的嵌入模型重建：已处理 2 / 3 个文档，完成前不能检索。')
@@ -200,11 +204,11 @@ describe('knowledge page', () => {
     fireEvent.click(within(tabs).getByRole('tab', { name: zh['tab.recall'] }))
     expect(screen.getByRole('tabpanel').textContent).toContain(zh['recall.emptyTitle'])
     fireEvent.click(within(tabs).getByRole('tab', { name: zh['tab.files'] }))
-    expect(screen.getByRole('tabpanel').textContent).toContain('年假制度.docx')
+    expect(screen.getByRole('tabpanel', { name: zh['tab.files'] }).textContent).toContain('年假制度.docx')
   })
 
   it('edits settings with Cherry Studio\'s rules and saves only what changed', async () => {
-    const { props, store } = mount({ tenantId: 't-a', bases: [base()] })
+    const { props, store } = mount({ revision: 1, tenantId: 't-a', bases: [base()] })
     fireEvent.click(screen.getByRole('tab', { name: zh['tab.settings'] }))
     const panel = screen.getByRole('tabpanel')
     expect(within(panel).getAllByRole('region').map(region => region.getAttribute('aria-label'))).toEqual([
@@ -246,7 +250,7 @@ describe('knowledge page', () => {
     })
     // The Host's new settings make the form clean again.
     act(() => {
-      store.set({ ...store.getSnapshot(), state: { tenantId: 't-a', bases: [base({ settings: {
+      store.set({ ...store.getSnapshot(), state: { revision: 1, tenantId: 't-a', bases: [base({ settings: {
         chunkStrategy: 'delimiter', chunkSeparator: '###', chunkSize: 512, chunkOverlap: 50, documentCount: 3, threshold: 0.35,
       } })] } })
     })
@@ -265,7 +269,7 @@ describe('knowledge page', () => {
   })
 
   it('asks before rebuilding for a new embedding model, and changes it directly when there are no documents', async () => {
-    const { props } = mount({ tenantId: 't-a', bases: [base()] })
+    const { props } = mount({ revision: 1, tenantId: 't-a', bases: [base()] })
     fireEvent.click(screen.getByRole('tab', { name: zh['tab.settings'] }))
     const model = screen.getByRole<HTMLSelectElement>('combobox', { name: zh.model })
     expect([...model.options].map(option => option.textContent)).toEqual(['Qwen3-Embedding-0.6B（本地）', 'bge-m3 · Acme 网关'])
@@ -285,7 +289,7 @@ describe('knowledge page', () => {
     expect(props.onSaveSettings).toHaveBeenCalledWith('b1', { embeddingModelId: 'acme/bge-m3' })
     cleanup()
     // No documents: nothing to rebuild, no question. A model Settings no longer lists still shows by name.
-    const empty = mount({ tenantId: 't-a', bases: [base({ items: [], embeddingModelId: 'gone/m', embeddingModelName: 'gone-model', dimensions: null })] }, { embedding: undefined })
+    const empty = mount({ revision: 1, tenantId: 't-a', bases: [base({ items: [], embeddingModelId: 'gone/m', embeddingModelName: 'gone-model', dimensions: null })] }, { embedding: undefined })
     fireEvent.click(screen.getByRole('tab', { name: zh['tab.settings'] }))
     const select = screen.getByRole<HTMLSelectElement>('combobox', { name: zh.model })
     expect(select.options[0]!.textContent).toBe('gone-model')
@@ -300,7 +304,7 @@ describe('knowledge page', () => {
   })
 
   it('runs a recall test under the retrieval settings and shows hits with sources and scores', async () => {
-    const { props, store } = mount({ tenantId: 't-a', bases: [base({ settings: { ...base().settings, documentCount: 3, threshold: 0.2 } })] })
+    const { props, store } = mount({ revision: 1, tenantId: 't-a', bases: [base({ settings: { ...base().settings, documentCount: 3, threshold: 0.2 } })] })
     fireEvent.click(screen.getByRole('tab', { name: zh['tab.recall'] }))
     const panel = screen.getByRole('tabpanel')
     expect(panel.textContent).toContain('最多返回 3 个片段，相似度阈值 0.20')
@@ -337,7 +341,7 @@ describe('knowledge page', () => {
   })
 
   it('words a failed trial of a new embedding model, beside Save as well', () => {
-    mount({ tenantId: 't-a', bases: [base()] }, { failure: { reason: 'probe-failed', message: 'HTTP 401' } })
+    mount({ revision: 1, tenantId: 't-a', bases: [base()] }, { failure: { reason: 'probe-failed', message: 'HTTP 401' } })
     expect(screen.getByRole('alert').textContent).toContain('新的嵌入模型试用失败，未更换：HTTP 401')
     fireEvent.click(screen.getByRole('tab', { name: zh['tab.settings'] }))
     expect(within(screen.getByRole('tabpanel')).getByRole('alert').textContent).toBe('新的嵌入模型试用失败，未更换：HTTP 401')

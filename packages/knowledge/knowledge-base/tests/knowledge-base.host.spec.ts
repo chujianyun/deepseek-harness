@@ -1,5 +1,5 @@
 /** Knowledge bases over controllable stand-ins for the embedding models and the Hub sign-in. */
-import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { extname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -9,7 +9,7 @@ import { RemoteError, remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-type
 import KnowledgeBaseService, { type Config, type KnowledgeState } from '../src/index.ts'
 
 /** Plugin options a test passes. */
-type Options = Pick<Config, 'maxFileBytes'>
+type Options = Pick<Config, 'maxFileBytes' | 'maxFolderFiles' | 'maxNoteChars'>
 import { BaseStore } from '../src/store.ts'
 import { terms } from '../src/terms.ts'
 
@@ -60,7 +60,28 @@ function embeddingState(localStatus: EmbeddingState['local']['status'] = 'instal
   }
 }
 
-async function boot(options: { tenant?: string | null; home?: string; config?: Options; localStatus?: EmbeddingState['local']['status'] } = {}) {
+/** A stand-in for `ctx.web`: pages by URL, each a page, a thrown error, or missing (an error too). */
+function fakeWeb() {
+  const pages = new Map<string, { statusCode?: number; kind?: 'html' | 'text'; content: string } | Error>()
+  return {
+    pages,
+    fetched: [] as string[],
+    async fetch(request: { url: string }) {
+      this.fetched.push(request.url)
+      const page = pages.get(request.url) ?? new Error(`could not reach ${request.url}`)
+      if (page instanceof Error) throw page
+      return { url: request.url, statusCode: page.statusCode ?? 200, truncated: false, body: { kind: page.kind ?? 'html', content: page.content } }
+    },
+  }
+}
+
+async function boot(options: {
+  tenant?: string | null
+  home?: string
+  config?: Options
+  localStatus?: EmbeddingState['local']['status']
+  web?: boolean
+} = {}) {
   const home = options.home ?? await mkdtemp(join(tmpdir(), 'dsh-knowledge-'))
   if (options.home === undefined) cleanups.push(() => rm(home, { recursive: true, force: true }))
   const ctx = new Context()
@@ -92,6 +113,8 @@ async function boot(options: { tenant?: string | null; home?: string; config?: O
   const hub = new Watched({ status: 'signed-in', profile: options.tenant === null ? null : { tenantId: options.tenant ?? 't-a' } })
   ctx.provide('embedding', embedding as never)
   ctx.provide('hubAccount', { getState: () => Promise.resolve(hub.value), watch: (signal: AbortSignal) => hub.watch(signal) } as never)
+  const web = fakeWeb()
+  if (options.web !== false) ctx.provide('web', web as never)
   const fiber = ctx.plugin(KnowledgeBaseService, { dshHome: home, ...options.config })
   await fiber
   const service = ctx.get('knowledgeBases')!
@@ -106,7 +129,7 @@ async function boot(options: { tenant?: string | null; home?: string; config?: O
     }
   }
   const switchTenant = (tenantId: string | null) => { hub.set({ status: 'signed-in', profile: tenantId === null ? null : { tenantId } }) }
-  return { ctx, fiber, service, home, embedding, embeddingWatched, usages, until, switchTenant }
+  return { ctx, fiber, service, home, embedding, embeddingWatched, usages, until, switchTenant, web }
 }
 
 const fixture = (name: string) => join(FIXTURES, name)
@@ -118,24 +141,30 @@ describe('knowledge bases', () => {
     expect(service.typertRemote.namespace).toBe('knowledgeBases')
     expect(remoteMethods(service).map(method => method.method)).toEqual([
       'getState', 'watch', 'createBase', 'renameBase', 'updateSettings', 'reprocessAll', 'recall', 'deleteBase', 'addFiles',
-      'reprocessItem', 'deleteItem',
+      'addFolder', 'addUrl', 'createNote', 'updateNote', 'getNote', 'reprocessItem', 'deleteItem',
     ])
   })
 
   it('shows nothing and refuses to create while signed out', async () => {
     const { service } = await boot({ tenant: null })
-    expect(await service.getState()).toEqual({ tenantId: null, bases: [] })
+    const state = await service.getState()
+    expect(state).toMatchObject({ tenantId: null, bases: [] })
+    // Every change raises the revision.
+    await service.createBase('x', LOCAL).catch(() => undefined)
+    expect((await service.getState()).revision).toBe(state.revision)
     expect(remoteErrorOf(await service.createBase('制度库', LOCAL).catch((error: unknown) => error))).toMatchObject({ code: 'hub-account/signed-out' })
   })
 
   it('creates a knowledge base with a valid, unique name and an offered embedding model', async () => {
     const { service, home } = await boot()
+    const before = (await service.getState()).revision
     const failure = async (name: string, model: string) =>
       remoteErrorOf(await service.createBase(name, model).catch((error: unknown) => error))?.code
     expect(await failure('  ', LOCAL)).toBe('knowledge/invalid-name')
     expect(await failure('名'.repeat(51), LOCAL)).toBe('knowledge/invalid-name')
     expect(await failure('制度库', 'local/other')).toBe('knowledge/embedding-model-unavailable')
     const state = await service.createBase(' 制度库 ', LOCAL)
+    expect(state.revision).toBeGreaterThan(before)
     expect(state.bases).toEqual([expect.objectContaining({ name: '制度库', embeddingModelId: LOCAL, embeddingModelName: 'Qwen3-Embedding-0.6B', status: 'ready', items: [] })])
     expect(await failure('制度库', API)).toBe('knowledge/duplicate-name')
     const created = (await service.createBase('产品资料', API)).bases[1]!
@@ -580,5 +609,188 @@ describe('knowledge bases', () => {
     const ending = other.next()
     await ctx.fiber.dispose()
     expect(await ending).toMatchObject({ done: true })
+  })
+
+  it('adds a folder\'s supported files as its items, lists what it skipped, and finds them', async () => {
+    const { service, until } = await boot({ config: { maxFolderFiles: 3 } })
+    const { id } = (await service.createBase('制度库', LOCAL)).bases[0]!
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-knowledge-folder-'))
+    cleanups.push(() => rm(dir, { recursive: true, force: true }))
+    await mkdir(join(dir, '人事', '假期'), { recursive: true })
+    await mkdir(join(dir, '.git'))
+    await copyFile(fixture('annual-leave.docx'), join(dir, '人事', '假期', 'annual-leave.docx'))
+    await copyFile(fixture('meeting-notes.txt'), join(dir, 'meeting-notes.txt'))
+    await copyFile(fixture('product-manual.md'), join(dir, '人事', 'product-manual.md'))
+    await copyFile(fixture('expense-policy.pdf'), join(dir, '人事', '假期', 'z-expense.pdf'))
+    await writeFile(join(dir, 'logo.png'), 'png')
+    await writeFile(join(dir, '.DS_Store'), 'x')
+    await writeFile(join(dir, '.git', 'HEAD'), 'ref')
+    let state = await service.addFolder(id, dir)
+    const folder = state.bases[0]!.items[0]!
+    expect(folder).toMatchObject({ kind: 'folder', name: dir.split('/').at(-1), source: dir, parentId: null })
+    expect(folder.skipped).toEqual([{ path: 'logo.png', reason: 'unsupported' }, { path: '人事/假期/z-expense.pdf', reason: 'limit' }])
+    expect(folder.skippedCount).toBe(2)
+    state = await until(next => next.bases[0]!.items.length === 4 && settled(next))
+    const [view, ...files] = state.bases[0]!.items
+    expect(files.map(file => [file.kind, file.parentId, file.source, file.status])).toEqual([
+      ['file', folder.id, 'meeting-notes.txt', 'completed'], ['file', folder.id, '人事/product-manual.md', 'completed'],
+      ['file', folder.id, '人事/假期/annual-leave.docx', 'completed'],
+    ])
+    expect(view).toMatchObject({ status: 'completed', chunkCount: 3, size: files.reduce((sum, file) => sum + file.size, 0) })
+    expect((await service.recall(id, '员工每年有几天带薪年假')).hits[0]!.itemName).toBe('annual-leave.docx')
+    // A path that is not a folder is refused.
+    for (const path of [join(dir, 'logo.png'), join(dir, 'missing')]) {
+      expect(remoteErrorOf(await service.addFolder(id, path).catch((error: unknown) => error))).toMatchObject({ code: 'knowledge/not-a-folder' })
+    }
+  })
+
+  it('syncs a folder when it is reprocessed, and fails it, keeping its files, once it is gone', async () => {
+    const { service, until } = await boot()
+    const { id } = (await service.createBase('制度库', LOCAL)).bases[0]!
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-knowledge-folder-'))
+    cleanups.push(() => rm(dir, { recursive: true, force: true }))
+    await writeFile(join(dir, 'a.md'), '# 甲\n\n第一版内容')
+    await writeFile(join(dir, 'b.md'), '# 乙\n\n乙的内容')
+    await writeFile(join(dir, 'c.md'), '# 丙\n\n丙的内容')
+    const folderId = (await service.addFolder(id, dir)).bases[0]!.items[0]!.id
+    await until(next => next.bases[0]!.items.length === 4 && settled(next))
+    const before = new Map((await service.getState()).bases[0]!.items.map(item => [item.source, item]))
+    // Changed, deleted, added, and unchanged files; a failed unchanged file is tried again.
+    await writeFile(join(dir, 'a.md'), '# 甲\n\n第二版内容，增加了很多文字')
+    await rm(join(dir, 'b.md'))
+    await writeFile(join(dir, 'd.txt'), '丁的内容')
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    let state = await service.reprocessItem(id, folderId)
+    expect(state.bases[0]!.items[0]!.status).toBe('processing')
+    state = await until(next => next.bases[0]!.items.length === 4 && settled(next))
+    const after = new Map(state.bases[0]!.items.map(item => [item.source, item]))
+    expect([...after.keys()]).toEqual([dir, 'a.md', 'c.md', 'd.txt'])
+    expect(after.get('a.md')!.id).toBe(before.get('a.md')!.id)
+    expect(after.get('a.md')!.size).toBeGreaterThan(before.get('a.md')!.size)
+    expect(after.get('c.md')!.addedAt).toBe(before.get('c.md')!.addedAt)
+    expect((await service.recall(id, '第二版内容')).hits[0]!.itemName).toBe('a.md')
+    expect((await service.recall(id, '乙的内容')).hits.some(hit => hit.itemName === 'b.md')).toBe(false)
+    // A file that cannot be copied fails as unreadable, and is copied again on the next sync.
+    await writeFile(join(dir, 'c.md'), '# 丙\n\n丙改过的内容')
+    await chmod(join(dir, 'c.md'), 0o000)
+    await writeFile(join(dir, 'e.md'), '戊')
+    await chmod(join(dir, 'e.md'), 0o000)
+    state = await service.reprocessItem(id, folderId)
+    expect(state.bases[0]!.items.filter(item => item.error === 'unreadable').map(item => item.source).sort()).toEqual(['c.md', 'e.md'])
+    // Gone (the unreadable files go with it): the folder fails and keeps its files.
+    await rm(dir, { recursive: true, force: true })
+    state = await service.reprocessItem(id, folderId)
+    expect(state.bases[0]!.items[0]).toMatchObject({ status: 'failed', error: 'folder-missing' })
+    expect(state.bases[0]!.items).toHaveLength(5)
+    // Deleting the folder deletes its files too.
+    expect((await service.deleteItem(id, folderId)).bases[0]!.items).toEqual([])
+  })
+
+  it('fetches a page into Markdown, refetches it on reprocessing, and keeps the last copy when it is unreachable', async () => {
+    const { service, until, web } = await boot()
+    const { id } = (await service.createBase('网页库', LOCAL)).bases[0]!
+    const url = 'https://intra.example.com/hr/leave'
+    web.pages.set(url, { content: '<html><head><title>年假制度</title></head><body><nav>首页</nav><article><h1>员工年假</h1><p>员工每年享有 5 天带薪年假，满十年享有 10 天。年假需提前三个工作日申请。</p></article></body></html>' })
+    let state = await service.addUrl(id, ` ${url} `)
+    expect(state.bases[0]!.items[0]).toMatchObject({ kind: 'url', name: url, source: url })
+    expect(state.bases[0]!.items[0]!.status).toMatch(/pending|processing/u)
+    state = await until(next => next.bases[0]!.items[0]!.status === 'completed')
+    const page = state.bases[0]!.items[0]!
+    expect(page).toMatchObject({ name: '年假制度', chunkCount: 1 })
+    expect(page.size).toBeGreaterThan(0)
+    expect((await service.recall(id, '带薪年假几天')).hits[0]!.text).toContain('5 天带薪年假')
+    // Unreachable: marked failed, and its last copy stays indexed and searchable.
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    web.pages.set(url, new Error('getaddrinfo ENOTFOUND intra.example.com'))
+    await service.reprocessItem(id, page.id)
+    state = await until(next => next.bases[0]!.items[0]!.status === 'failed')
+    expect(state.bases[0]!.items[0]).toMatchObject({ error: 'unreachable', name: '年假制度', chunkCount: 1 })
+    expect((await service.recall(id, '带薪年假几天')).hits[0]!.itemName).toBe('年假制度')
+    expect(web.fetched).toEqual([url, url])
+    // A non-success status, a plain-text page, and a page never fetched.
+    web.pages.set(url, { statusCode: 404, content: 'not found' })
+    await service.reprocessItem(id, page.id)
+    await until(next => next.bases[0]!.items[0]!.status === 'failed' && web.fetched.length === 3)
+    web.pages.set('http://example.com/a.txt', { kind: 'text', content: '纯文本页面的内容' })
+    await service.addUrl(id, 'http://example.com/a.txt')
+    await service.addUrl(id, 'https://never.example.com/')
+    state = await until(next => next.bases[0]!.items.length === 3 && settled(next))
+    expect(state.bases[0]!.items.slice(1).map(item => [item.name, item.status, item.error])).toEqual([
+      ['http://example.com/a.txt', 'completed', null], ['https://never.example.com/', 'failed', 'unreachable'],
+    ])
+    for (const bad of ['ftp://example.com/x', 'not a url']) {
+      expect(remoteErrorOf(await service.addUrl(id, bad).catch((error: unknown) => error))).toMatchObject({ code: 'knowledge/invalid-url' })
+    }
+  })
+
+  it('fails a page as unreachable when this Host cannot fetch the web', async () => {
+    const { service, until } = await boot({ web: false })
+    const { id } = (await service.createBase('网页库', LOCAL)).bases[0]!
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    await service.addUrl(id, 'https://example.com/')
+    expect((await until(next => settled(next) && next.bases[0]!.items.length === 1)).bases[0]!.items[0]!.error).toBe('unreachable')
+  })
+
+  it('writes and edits notes, processing only the edited one, within the length limits', async () => {
+    const { service, until, embedding } = await boot({ config: { maxNoteChars: 40 } })
+    const { id } = (await service.createBase('笔记库', LOCAL)).bases[0]!
+    await service.createNote(id, ' 报销提醒 ', '发票要在十五个工作日内提交。')
+    await service.createNote(id, '会议', '周一十点开会。')
+    let state = await until(next => next.bases[0]!.items.length === 2 && settled(next))
+    const [first, second] = state.bases[0]!.items
+    expect(first).toMatchObject({ kind: 'note', name: '报销提醒', status: 'completed', chunkCount: 1 })
+    expect(await service.getNote(id, first!.id)).toEqual({ title: '报销提醒', content: '发票要在十五个工作日内提交。' })
+    // The title is indexed with the body.
+    expect((await service.recall(id, '报销提醒')).hits[0]!.text).toBe('# 报销提醒\n\n发票要在十五个工作日内提交。')
+    const calls = embedding.calls.length
+    await service.updateNote(id, first!.id, '报销提醒（新）', '发票要在十个工作日内提交。')
+    state = await until(next => next.bases[0]!.items[0]!.status === 'completed' && next.bases[0]!.items[0]!.name === '报销提醒（新）')
+    expect(embedding.calls.slice(calls).map(call => call.texts[0])).toEqual(['# 报销提醒（新）\n\n发票要在十个工作日内提交。'])
+    expect(state.bases[0]!.items[1]!.id).toBe(second!.id)
+    const invalid = async (title: string, content: string) =>
+      remoteErrorOf(await service.createNote(id, title, content).catch((error: unknown) => error))
+    expect(await invalid('  ', '正文')).toMatchObject({ code: 'knowledge/invalid-note', details: { field: 'title', max: 100 } })
+    expect(await invalid('题'.repeat(101), '正文')).toMatchObject({ details: { field: 'title' } })
+    expect(await invalid('标题', '字'.repeat(41))).toMatchObject({ details: { field: 'content', max: 40 } })
+    expect(remoteErrorOf(await service.updateNote(id, first!.id, '标题', '字'.repeat(41)).catch((error: unknown) => error))).toMatchObject({ code: 'knowledge/invalid-note' })
+    // Only notes are read and edited as notes.
+    await service.addUrl(id, 'https://example.com/')
+    const page = (await service.getState()).bases[0]!.items[2]!.id
+    expect(remoteErrorOf(await service.getNote(id, page).catch((error: unknown) => error))).toMatchObject({ code: 'knowledge/not-found' })
+    expect(remoteErrorOf(await service.updateNote(id, 'nope', 't', 'c').catch((error: unknown) => error))).toMatchObject({ code: 'knowledge/not-found' })
+  })
+
+  it('stops a note or a folder\'s file being processed when it is edited or synced', async () => {
+    const { service, until, embedding } = await boot()
+    const { id } = (await service.createBase('制度库', LOCAL)).bases[0]!
+    const gate = Promise.withResolvers<undefined>()
+    let entered = Promise.withResolvers<undefined>()
+    embedding.gate = gate.promise
+    embedding.entered = () => { entered.resolve(undefined) }
+    const noteId = (await service.createNote(id, '草稿', '第一稿')).bases[0]!.items[0]!.id
+    await entered.promise
+    entered = Promise.withResolvers<undefined>()
+    await service.updateNote(id, noteId, '定稿', '第二稿')
+    await entered.promise
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-knowledge-folder-'))
+    cleanups.push(() => rm(dir, { recursive: true, force: true }))
+    await writeFile(join(dir, 'a.md'), '甲')
+    const folderId = (await service.addFolder(id, dir)).bases[0]!.items[1]!.id
+    embedding.gate = undefined
+    gate.resolve(undefined)
+    await until(next => settled(next) && next.bases[0]!.items.length === 3)
+    const again = Promise.withResolvers<undefined>()
+    entered = Promise.withResolvers<undefined>()
+    embedding.gate = again.promise
+    await writeFile(join(dir, 'a.md'), '甲的新内容')
+    await service.reprocessItem(id, folderId)
+    await entered.promise
+    await writeFile(join(dir, 'a.md'), '甲的第三版内容')
+    await service.reprocessItem(id, folderId)
+    embedding.gate = undefined
+    again.resolve(undefined)
+    const state = await until(next => settled(next) && next.bases[0]!.items[2]!.status === 'completed')
+    expect(state.bases[0]!.items.map(item => item.name)).toEqual(['定稿', dir.split('/').at(-1), 'a.md'])
+    expect((await service.recall(id, '第三版')).hits[0]!.text).toBe('甲的第三版内容')
   })
 })

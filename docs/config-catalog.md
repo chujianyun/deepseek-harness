@@ -1691,7 +1691,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-knowledge-base`
 
 - `inject`: `embedding` · `hubAccount`
-- `source`: [`packages/knowledge/knowledge-base/src/index.ts:44`](../packages/knowledge/knowledge-base/src/index.ts)
+- `source`: [`packages/knowledge/knowledge-base/src/index.ts:47`](../packages/knowledge/knowledge-base/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -1708,6 +1708,12 @@ export interface Config {
   embedBatch?: number
   /** Longest knowledge base name, in characters. */
   maxNameLength?: number
+  /** Most files a folder contributes; the rest are skipped. */
+  maxFolderFiles?: number
+  /** Longest note title, in characters. */
+  maxNoteTitleLength?: number
+  /** Longest note body, in characters. */
+  maxNoteChars?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-knowledge-base -->
@@ -4362,7 +4368,10 @@ export interface Config {
 export interface Config {
   /** Maximum response body size in bytes. */
   maxResponseBytes?: number
-  /** Maximum decoded body length in characters. */
+  /**
+   * Maximum decoded body length in characters. Whole pages are kept: knowledge bases extract the
+   * article from all of a page, while `dsh-tool-web` cuts what it shows the model to its own output cap.
+   */
   maxBodyChars?: number
   /** Default fetch timeout in milliseconds, within Node's timer range. */
   timeoutMs?: number

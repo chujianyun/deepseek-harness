@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { chunkText, estimateTokens, unescapeSeparator } from '../src/chunk.ts'
+import { MAX_LISTED_SKIPPED, scanFolder } from '../src/folder.ts'
+import { pageToMarkdown } from '../src/page.ts'
 import { isSupported, readDocument } from '../src/readers.ts'
 import { BaseStore } from '../src/store.ts'
 import { matchExpression, terms } from '../src/terms.ts'
@@ -108,6 +110,32 @@ describe('readers', () => {
   })
 })
 
+describe('folders', () => {
+  it('counts every skipped file but lists only the first ones', async () => {
+    const dir = await temp()
+    await Promise.all(Array.from({ length: MAX_LISTED_SKIPPED + 5 }, (_, index) => writeFile(join(dir, `${String(index).padStart(4, '0')}.png`), '')))
+    await writeFile(join(dir, 'a.md'), '甲')
+    const scan = await scanFolder(dir, 1000)
+    expect(scan.files.map(file => file.path)).toEqual(['a.md'])
+    expect(scan.skipped).toHaveLength(MAX_LISTED_SKIPPED)
+    expect(scan.skippedCount).toBe(MAX_LISTED_SKIPPED + 5)
+  })
+})
+
+describe('web pages', () => {
+  it('extracts the article as Markdown with links made absolute, and falls back to the whole body', () => {
+    const page = pageToMarkdown(`<html><head><title>年假制度 - 内网</title></head><body><nav><a href="/">首页</a></nav>
+      <article><h1>员工年假</h1><p>员工入职满一年后，每年享有 <b>5 天</b>带薪年假；满十年享有 10 天。年假需提前三个工作日申请，经直属主管批准后生效。</p>
+      <p>详情见<a href="/hr/policy">人事制度</a>。</p></article><script>alert(1)</script></body></html>`, 'https://intra.example.com/hr/leave')
+    expect(page.title).toBe('年假制度 - 内网')
+    expect(page.markdown).toContain('每年享有 **5 天**带薪年假')
+    expect(page.markdown).toContain('[人事制度](https://intra.example.com/hr/policy)')
+    expect(page.markdown).not.toContain('首页')
+    expect(pageToMarkdown('<p>short</p>', 'https://a.example/')).toEqual({ title: '', markdown: 'short' })
+    expect(pageToMarkdown('', 'https://a.example/')).toEqual({ title: '', markdown: '' })
+  })
+})
+
 describe('index store', () => {
   const item = (id: string, name: string) => ({ id, name, size: 1, status: 'pending' as const, error: null, chunkCount: 0, addedAt: `2026-10-05T00:00:0${id}.000Z` })
 
@@ -128,10 +156,11 @@ describe('index store', () => {
     expect(store.search([0, 0, 0], '', 5, 0.01)).toEqual([])
     store.setStatus('2', 'failed', 'embedding')
     expect(store.items()[1]).toMatchObject({ status: 'failed', error: 'embedding' })
-    expect(store.search([0, 1, 0], '发票', 5, 0)).toHaveLength(2)
+    // A failed item keeps its last chunks searchable.
+    expect(store.search([0, 1, 0], '发票', 5, 0)).toHaveLength(3)
     store.deleteItem('1')
     expect(store.items().map(row => row.id)).toEqual(['2'])
-    expect(store.search([1, 0, 0], '年假', 5, 0)).toEqual([])
+    expect(store.search([1, 0, 0], '年假', 5, 0.01)).toEqual([])
     store.close()
   })
 

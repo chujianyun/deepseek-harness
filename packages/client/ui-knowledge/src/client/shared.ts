@@ -34,6 +34,7 @@ export function failureText(t: T, failure: KnowledgeFailure): string {
   switch (failure.reason) {
     case 'other': return t('actionFailed', { message: failure.message })
     case 'probe-failed': return t('failure.probe-failed', { message: failure.message })
+    case 'invalid-note': return t(`failure.invalid-note.${failure.field}`, { max: failure.max.toLocaleString('en-US') })
     default: return t(`failure.${failure.reason}`)
   }
 }

@@ -6,7 +6,7 @@ Local knowledge bases let a Desktop user collect company documents and have them
 
 ## Storage and processing
 
-A knowledge base belongs to the tenant of the current [Hub sign-in](../glossary.md#skill-hub) and lives under `<dshHome>/knowledge/<tenantId>/<baseId>`: `base.json` with its name, embedding model and its measured vector length, chunking and retrieval settings, and whether a rebuild is under way; `files/` with a copy of each added file; and `index.sqlite` with its items, their chunks and embedding vectors, and a contentless FTS5 index of the chunks' keyword terms. One worker processes the signed-in tenant's pending items in order: read the text, split it into chunks, embed the chunks, and replace the item's chunks in one transaction. Signing in to another tenant stops the worker; when a tenant becomes the signed-in one again, or at startup, items left unfinished resume for the local embedding model and fail as `interrupted` for API models.
+A knowledge base belongs to the tenant of the current [Hub sign-in](../glossary.md#skill-hub) and lives under `<dshHome>/knowledge/<tenantId>/<baseId>`: `base.json` with its name, embedding model and its measured vector length, chunking and retrieval settings, and whether a rebuild is under way; `files/` with a copy of each added file, a fetched page's Markdown, and each note; and `index.sqlite` with its items, their chunks and embedding vectors, and a contentless FTS5 index of the chunks' keyword terms. A folder's supported files become file items under it, synced when the folder is reprocessed; a web page is fetched on this machine through the `web` service and kept as Markdown; a note is written in DSH. One worker processes the signed-in tenant's pending items in order: read the text (fetching a page first), split it into chunks, embed the chunks, and replace the item's chunks in one transaction. Signing in to another tenant stops the worker; when a tenant becomes the signed-in one again, or at startup, items left unfinished resume for the local embedding model and fail as `interrupted` for API models.
 
 A [rebuild](../glossary.md#rebuild) replaces a knowledge base's embedding model in place: after the new model embeds a trial text, every chunk is dropped and every item queued again, and the knowledge base refuses searches until none is left to process. Chunking changes instead wait for an explicit reprocessing of all items, keeping the old chunks searchable meanwhile.
 
@@ -108,6 +108,56 @@ Host owner of the knowledge bases and of the `knowledgeBases` Remote namespace.
  * @throws RemoteError `knowledge/not-found`.
  */
 @Remote addFiles(id: string, paths: readonly string[]): Promise<KnowledgeAddResult>
+
+/**
+ * Add a folder: each supported file in it and its subfolders, up to `maxFolderFiles`, is copied in
+ * as a file item of the folder; unsupported files and those past the limit are listed as skipped.
+ * The folder is not watched; reprocessing it scans it again.
+ * @param id - knowledge base id.
+ * @param path - absolute path of a folder on this machine.
+ * @returns the state with the folder last.
+ * @throws RemoteError `knowledge/not-found` or `knowledge/not-a-folder`.
+ */
+@Remote addFolder(id: string, path: string): Promise<KnowledgeState>
+
+/**
+ * Add a web page, fetched on this machine when processed; only that page is read.
+ * @param id - knowledge base id.
+ * @param url - an http or https address.
+ * @returns the state with the page last.
+ * @throws RemoteError `knowledge/not-found` or `knowledge/invalid-url`.
+ */
+@Remote addUrl(id: string, url: string): Promise<KnowledgeState>
+
+/**
+ * Write a new note.
+ * @param id - knowledge base id.
+ * @param title - 1 to `maxNoteTitleLength` characters.
+ * @param content - Markdown body of at most `maxNoteChars` characters.
+ * @returns the state with the note last.
+ * @throws RemoteError `knowledge/not-found` or `knowledge/invalid-note`.
+ */
+@Remote createNote(id: string, title: string, content: string): Promise<KnowledgeState>
+
+/**
+ * Change a note; only that note is processed again.
+ * @param id - knowledge base id.
+ * @param itemId - the note.
+ * @param title - 1 to `maxNoteTitleLength` characters.
+ * @param content - Markdown body of at most `maxNoteChars` characters.
+ * @returns the state.
+ * @throws RemoteError `knowledge/not-found` or `knowledge/invalid-note`.
+ */
+@Remote updateNote(id: string, itemId: string, title: string, content: string): Promise<KnowledgeState>
+
+/**
+ * Read a note for editing.
+ * @param id - knowledge base id.
+ * @param itemId - the note.
+ * @returns its title and body.
+ * @throws RemoteError `knowledge/not-found`.
+ */
+@Remote async getNote(id: string, itemId: string): Promise<KnowledgeNote>
 
 /**
  * Process an item again from its stored copy.

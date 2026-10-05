@@ -1561,6 +1561,41 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RemoteError `knowledge/not-found`.'],
       },
       {
+        signature: '@Remote addFolder(id: string, path: string): Promise<KnowledgeState>',
+        description: 'Add a folder: each supported file in it and its subfolders, up to `maxFolderFiles`, is copied in as a file item of the folder; unsupported files and those past the limit are listed as skipped. The folder is not watched; reprocessing it scans it again.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'path', description: 'absolute path of a folder on this machine.' }],
+        returns: 'the state with the folder last.',
+        throws: ['RemoteError `knowledge/not-found` or `knowledge/not-a-folder`.'],
+      },
+      {
+        signature: '@Remote addUrl(id: string, url: string): Promise<KnowledgeState>',
+        description: 'Add a web page, fetched on this machine when processed; only that page is read.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'url', description: 'an http or https address.' }],
+        returns: 'the state with the page last.',
+        throws: ['RemoteError `knowledge/not-found` or `knowledge/invalid-url`.'],
+      },
+      {
+        signature: '@Remote createNote(id: string, title: string, content: string): Promise<KnowledgeState>',
+        description: 'Write a new note.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'title', description: '1 to `maxNoteTitleLength` characters.' }, { name: 'content', description: 'Markdown body of at most `maxNoteChars` characters.' }],
+        returns: 'the state with the note last.',
+        throws: ['RemoteError `knowledge/not-found` or `knowledge/invalid-note`.'],
+      },
+      {
+        signature: '@Remote updateNote(id: string, itemId: string, title: string, content: string): Promise<KnowledgeState>',
+        description: 'Change a note; only that note is processed again.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'the note.' }, { name: 'title', description: '1 to `maxNoteTitleLength` characters.' }, { name: 'content', description: 'Markdown body of at most `maxNoteChars` characters.' }],
+        returns: 'the state.',
+        throws: ['RemoteError `knowledge/not-found` or `knowledge/invalid-note`.'],
+      },
+      {
+        signature: '@Remote async getNote(id: string, itemId: string): Promise<KnowledgeNote>',
+        description: 'Read a note for editing.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'the note.' }],
+        returns: 'its title and body.',
+        throws: ['RemoteError `knowledge/not-found`.'],
+      },
+      {
         signature: '@Remote reprocessItem(id: string, itemId: string): Promise<KnowledgeState>',
         description: 'Process an item again from its stored copy.',
         parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'item id.' }],
@@ -6027,7 +6062,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KnowledgeItemError',
-    declaration: 'export type KnowledgeItemError = \'unreadable\' | \'empty\' | \'embedding\' | \'interrupted\' | \'storage\';',
+    declaration: 'export type KnowledgeItemError = \'unreadable\' | \'empty\' | \'embedding\' | \'interrupted\' | \'storage\' | \'folder-missing\' | \'unreachable\';',
+  },
+  {
+    name: 'KnowledgeItemKind',
+    declaration: 'export type KnowledgeItemKind = \'file\' | \'folder\' | \'url\' | \'note\';',
   },
   {
     name: 'KnowledgeItemStatus',
@@ -6035,7 +6074,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KnowledgeItemView',
-    declaration: 'export interface KnowledgeItemView {\n    readonly id: string;\n    readonly kind: \'file\';\n    readonly name: string;\n    readonly size: number;\n    readonly status: KnowledgeItemStatus;\n    readonly error: KnowledgeItemError | null;\n    readonly chunkCount: number;\n    readonly addedAt: string;\n}',
+    declaration: 'export interface KnowledgeItemView {\n    readonly id: string;\n    readonly kind: KnowledgeItemKind;\n    readonly parentId: string | null;\n    readonly name: string;\n    readonly source: string | null;\n    readonly size: number;\n    readonly skipped: readonly KnowledgeSkippedFile[];\n    readonly skippedCount: number;\n    readonly status: KnowledgeItemStatus;\n    readonly error: KnowledgeItemError | null;\n    readonly chunkCount: number;\n    readonly addedAt: string;\n}',
+  },
+  {
+    name: 'KnowledgeNote',
+    declaration: 'export interface KnowledgeNote {\n    readonly title: string;\n    readonly content: string;\n}',
   },
   {
     name: 'KnowledgeRecallResult',
@@ -6054,8 +6097,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type KnowledgeSettingsPatch = Partial<KnowledgeBaseSettings> & {\n    readonly embeddingModelId?: string;\n};',
   },
   {
+    name: 'KnowledgeSkippedFile',
+    declaration: 'export interface KnowledgeSkippedFile {\n    readonly path: string;\n    readonly reason: \'unsupported\' | \'limit\';\n}',
+  },
+  {
     name: 'KnowledgeState',
-    declaration: 'export interface KnowledgeState {\n    readonly tenantId: string | null;\n    readonly bases: readonly KnowledgeBaseView[];\n}',
+    declaration: 'export interface KnowledgeState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly bases: readonly KnowledgeBaseView[];\n}',
   },
   {
     name: 'KvFacet',

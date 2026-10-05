@@ -16,6 +16,7 @@
 import { randomUUID } from 'node:crypto'
 import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
+import type {} from '@deepseek-ai/dsh-web'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { EmbeddingState } from '@deepseek-ai/dsh-embedding'
 import type {} from '@deepseek-ai/dsh-hub-account'
@@ -24,11 +25,13 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { chunkText } from './chunk.ts'
+import { scanFolder, type FolderFile } from './folder.ts'
+import { pageToMarkdown } from './page.ts'
 import { isSupported, readDocument } from './readers.ts'
-import { BaseStore } from './store.ts'
+import { BaseStore, type ItemRow } from './store.ts'
 import type {
   KnowledgeAddResult, KnowledgeBaseSettings, KnowledgeBaseView, KnowledgeItemError, KnowledgeRecallResult, KnowledgeRejectReason,
-  KnowledgeSearchHit, KnowledgeSettingsPatch, KnowledgeState,
+  KnowledgeItemView, KnowledgeNote, KnowledgeSearchHit, KnowledgeSettingsPatch, KnowledgeState,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -54,6 +57,12 @@ export interface Config {
   embedBatch?: number
   /** Longest knowledge base name, in characters. */
   maxNameLength?: number
+  /** Most files a folder contributes; the rest are skipped. */
+  maxFolderFiles?: number
+  /** Longest note title, in characters. */
+  maxNoteTitleLength?: number
+  /** Longest note body, in characters. */
+  maxNoteChars?: number
 }
 
 /** Validated plugin configuration. */
@@ -64,6 +73,9 @@ export const Config: Schema<Config> = Schema.object({
   chunkOverlap: Schema.natural().default(200),
   embedBatch: Schema.natural().min(1).max(256).default(16),
   maxNameLength: Schema.natural().min(1).default(50),
+  maxFolderFiles: Schema.natural().min(1).default(1000),
+  maxNoteTitleLength: Schema.natural().min(1).default(100),
+  maxNoteChars: Schema.natural().min(1).default(1_000_000),
 })
 
 /** Chunking and retrieval settings with their bounds; defaults follow Cherry Studio's. */
@@ -133,6 +145,8 @@ export class KnowledgeBaseService extends TypertRemoteService {
   /** Set while a stop waits for the worker: it finishes the aborted item and looks no further. */
   private halting = false
   private writes: Promise<unknown> = Promise.resolve()
+  /** Grows with every change, so a reader keeps the newer of two states that arrive out of order. */
+  private revision = Date.now()
   private readonly listeners = new Set<() => void>()
   private readonly lifetime = new AbortController()
 
@@ -175,7 +189,8 @@ export class KnowledgeBaseService extends TypertRemoteService {
    */
   @Remote
   getState(): Promise<KnowledgeState> {
-    return Promise.resolve({ tenantId: this.tenantId, bases: [...this.bases.values()].map(base => this.view(base)) })
+    const bases = [...this.bases.values()].map(base => this.view(base))
+    return Promise.resolve({ revision: this.revision, tenantId: this.tenantId, bases })
   }
 
   /**
@@ -373,7 +388,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
         if (info.size > this.config.maxFileBytes) { rejected.push({ name, reason: 'too-large' }); continue }
         const itemId = randomUUID()
         try {
-          await copyFile(path, this.filePath(base, itemId, name))
+          await copyFile(path, this.copyPath(base, { id: itemId, kind: 'file', name }))
         } catch (_unreadable: unknown) {
           // A file that vanished or is not readable since stat is refused like a missing one.
           rejected.push({ name, reason: 'unreadable' })
@@ -389,6 +404,126 @@ export class KnowledgeBaseService extends TypertRemoteService {
   }
 
   /**
+   * Add a folder: each supported file in it and its subfolders, up to `maxFolderFiles`, is copied in
+   * as a file item of the folder; unsupported files and those past the limit are listed as skipped.
+   * The folder is not watched; reprocessing it scans it again.
+   * @param id - knowledge base id.
+   * @param path - absolute path of a folder on this machine.
+   * @returns the state with the folder last.
+   * @throws RemoteError `knowledge/not-found` or `knowledge/not-a-folder`.
+   */
+  @Remote
+  addFolder(id: string, path: string): Promise<KnowledgeState> {
+    return this.serialized(async () => {
+      const base = this.base(id)
+      const scan = await scanFolder(path, this.config.maxFolderFiles).catch(() => undefined)
+      if (scan === undefined) throw new RemoteError('knowledge/not-a-folder', `${path} is not a folder`, { path })
+      const folderId = randomUUID()
+      const addedAt = new Date().toISOString()
+      base.store.addItem({
+        id: folderId, kind: 'folder', name: basename(path), source: path, skipped: scan.skipped, skippedCount: scan.skippedCount,
+        size: scan.files.reduce((sum, file) => sum + file.size, 0), status: 'completed', error: null, chunkCount: 0, addedAt,
+      })
+      for (const file of scan.files) await this.addFolderFile(base, folderId, path, file, addedAt)
+      this.changed()
+      this.kick()
+      return this.getState()
+    })
+  }
+
+  /**
+   * Add a web page, fetched on this machine when processed; only that page is read.
+   * @param id - knowledge base id.
+   * @param url - an http or https address.
+   * @returns the state with the page last.
+   * @throws RemoteError `knowledge/not-found` or `knowledge/invalid-url`.
+   */
+  @Remote
+  addUrl(id: string, url: string): Promise<KnowledgeState> {
+    return this.serialized(async () => {
+      const base = this.base(id)
+      let parsed: URL
+      try {
+        parsed = new URL(url.trim())
+      } catch (_invalid: unknown) {
+        // An unparsable address is refused like one of another scheme.
+        throw new RemoteError('knowledge/invalid-url', `${url} is not an http or https address`, { url })
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new RemoteError('knowledge/invalid-url', `${url} is not an http or https address`, { url })
+      }
+      base.store.addItem({
+        id: randomUUID(), kind: 'url', name: parsed.href, source: parsed.href, size: 0,
+        status: 'pending', error: null, chunkCount: 0, addedAt: new Date().toISOString(),
+      })
+      this.changed()
+      this.kick()
+      return this.getState()
+    })
+  }
+
+  /**
+   * Write a new note.
+   * @param id - knowledge base id.
+   * @param title - 1 to `maxNoteTitleLength` characters.
+   * @param content - Markdown body of at most `maxNoteChars` characters.
+   * @returns the state with the note last.
+   * @throws RemoteError `knowledge/not-found` or `knowledge/invalid-note`.
+   */
+  @Remote
+  createNote(id: string, title: string, content: string): Promise<KnowledgeState> {
+    return this.serialized(async () => {
+      const base = this.base(id)
+      const name = this.validNote(title, content)
+      const item = { id: randomUUID(), kind: 'note' as const, name }
+      await writeFile(this.copyPath(base, item), content)
+      base.store.addItem({ ...item, size: Buffer.byteLength(content), status: 'pending', error: null, chunkCount: 0, addedAt: new Date().toISOString() })
+      this.changed()
+      this.kick()
+      return this.getState()
+    })
+  }
+
+  /**
+   * Change a note; only that note is processed again.
+   * @param id - knowledge base id.
+   * @param itemId - the note.
+   * @param title - 1 to `maxNoteTitleLength` characters.
+   * @param content - Markdown body of at most `maxNoteChars` characters.
+   * @returns the state.
+   * @throws RemoteError `knowledge/not-found` or `knowledge/invalid-note`.
+   */
+  @Remote
+  updateNote(id: string, itemId: string, title: string, content: string): Promise<KnowledgeState> {
+    return this.serialized(async () => {
+      const base = this.base(id)
+      const item = this.note(base, itemId)
+      const name = this.validNote(title, content)
+      await this.stopJob(job => job.itemId === itemId)
+      await writeFile(this.copyPath(base, item), content)
+      base.store.updateItem(itemId, { name, size: Buffer.byteLength(content) })
+      base.store.setStatus(itemId, 'pending', null)
+      this.changed()
+      this.kick()
+      return this.getState()
+    })
+  }
+
+  /**
+   * Read a note for editing.
+   * @param id - knowledge base id.
+   * @param itemId - the note.
+   * @returns its title and body.
+   * @throws RemoteError `knowledge/not-found`.
+   */
+  @Remote
+  async getNote(id: string, itemId: string): Promise<KnowledgeNote> {
+    const base = this.base(id)
+    const item = this.note(base, itemId)
+    return { title: item.name, content: await readFile(this.copyPath(base, item), 'utf8') }
+  }
+
+  /**
    * Process an item again from its stored copy.
    * @param id - knowledge base id.
    * @param itemId - item id.
@@ -399,9 +534,13 @@ export class KnowledgeBaseService extends TypertRemoteService {
   reprocessItem(id: string, itemId: string): Promise<KnowledgeState> {
     return this.serialized(async () => {
       const base = this.base(id)
-      this.item(base, itemId)
-      await this.stopJob(job => job.itemId === itemId)
-      base.store.setStatus(itemId, 'pending', null)
+      const item = this.item(base, itemId)
+      if (item.kind === 'folder') {
+        await this.syncFolder(base, item)
+      } else {
+        await this.stopJob(job => job.itemId === itemId)
+        base.store.setStatus(itemId, 'pending', null)
+      }
       this.changed()
       this.kick()
       return this.getState()
@@ -420,9 +559,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
     return this.serialized(async () => {
       const base = this.base(id)
       const item = this.item(base, itemId)
-      await this.stopJob(job => job.itemId === itemId)
-      base.store.deleteItem(itemId)
-      await rm(this.filePath(base, itemId, item.name), { force: true })
+      for (const gone of [...base.store.items().filter(entry => entry.parentId === itemId), item]) await this.removeItem(base, gone)
       await this.settle(base)
       this.changed()
       this.kick()
@@ -451,7 +588,11 @@ export class KnowledgeBaseService extends TypertRemoteService {
     return base.store.search(vector, query, options.limit, options.threshold)
   }
 
-  private changed(): void { for (const listener of this.listeners) listener() }
+  private changed(): void {
+    // Clock-based, so a restarted Host still answers with revisions above those a page already holds.
+    this.revision = Math.max(this.revision + 1, Date.now())
+    for (const listener of this.listeners) listener()
+  }
 
   /** Run state changes one at a time, so a tenant switch never interleaves with an edit. */
   private serialized<T>(work: () => Promise<T>): Promise<T> {
@@ -494,8 +635,74 @@ export class KnowledgeBaseService extends TypertRemoteService {
     return trimmed
   }
 
-  private filePath(base: OpenBase, itemId: string, name: string): string {
-    return join(base.dir, 'files', `${itemId}${extname(name).toLowerCase()}`)
+  /** Where an item's own copy lives: a file's copy, a fetched page, or a note, the last two as Markdown. */
+  private copyPath(base: OpenBase, item: Pick<ItemRow, 'id' | 'kind' | 'name'>): string {
+    const extension = item.kind === 'file' ? extname(item.name).toLowerCase() : '.md'
+    return join(base.dir, 'files', `${item.id}${extension}`)
+  }
+
+  private note(base: OpenBase, itemId: string): ItemRow {
+    const item = this.item(base, itemId)
+    if (item.kind !== 'note') throw new RemoteError('knowledge/not-found', `no note ${itemId}`, { id: itemId })
+    return item
+  }
+
+  /** @returns the trimmed title of a valid note. */
+  private validNote(title: string, content: string): string {
+    const trimmed = title.trim()
+    const { maxNoteTitleLength, maxNoteChars } = this.config
+    if (trimmed.length === 0 || trimmed.length > maxNoteTitleLength) {
+      throw new RemoteError('knowledge/invalid-note', `a note needs a title of 1 to ${String(maxNoteTitleLength)} characters`, { field: 'title', max: maxNoteTitleLength })
+    }
+    if (content.length > maxNoteChars) {
+      throw new RemoteError('knowledge/invalid-note', `a note's body holds at most ${String(maxNoteChars)} characters`, { field: 'content', max: maxNoteChars })
+    }
+    return trimmed
+  }
+
+  /** Copy a folder's file in and queue it; a file that cannot be copied fails as unreadable. */
+  private async addFolderFile(base: OpenBase, folderId: string, root: string, file: FolderFile, addedAt: string): Promise<void> {
+    const item = { id: randomUUID(), kind: 'file' as const, name: basename(file.path) }
+    const copied = await copyFile(join(root, file.path), this.copyPath(base, item)).then(() => true, () => false)
+    base.store.addItem({
+      ...item, parentId: folderId, source: file.path, size: file.size, modifiedAt: file.modifiedAt, addedAt,
+      status: copied ? 'pending' : 'failed', error: copied ? null : 'unreadable', chunkCount: 0,
+    })
+  }
+
+  /**
+   * Scan a folder again: files new to it are added, files gone from it removed, and changed or failed
+   * ones copied and queued again. A folder that is gone fails, keeping its files as they were.
+   */
+  private async syncFolder(base: OpenBase, folder: ItemRow): Promise<void> {
+    // A folder item always records its path.
+    const root = folder.source as string
+    const scan = await scanFolder(root, this.config.maxFolderFiles).catch(() => undefined)
+    if (scan === undefined) { base.store.setStatus(folder.id, 'failed', 'folder-missing'); return }
+    const children = new Map(base.store.items().filter(item => item.parentId === folder.id).map(item => [item.source, item]))
+    const addedAt = new Date().toISOString()
+    for (const file of scan.files) {
+      const child = children.get(file.path)
+      children.delete(file.path)
+      if (child === undefined) { await this.addFolderFile(base, folder.id, root, file, addedAt); continue }
+      const changed = child.size !== file.size || child.modifiedAt !== file.modifiedAt
+      if (!changed && child.status !== 'failed') continue
+      await this.stopJob(job => job.itemId === child.id)
+      const copied = await copyFile(join(root, file.path), this.copyPath(base, child)).then(() => true, () => false)
+      base.store.updateItem(child.id, { size: file.size, modifiedAt: file.modifiedAt })
+      base.store.setStatus(child.id, copied ? 'pending' : 'failed', copied ? null : 'unreadable')
+    }
+    for (const gone of children.values()) await this.removeItem(base, gone)
+    const size = scan.files.reduce((sum, file) => sum + file.size, 0)
+    base.store.updateItem(folder.id, { skipped: scan.skipped, skippedCount: scan.skippedCount, size })
+    base.store.setStatus(folder.id, 'completed', null)
+  }
+
+  /** Stop, then delete an item with its copy and chunks; a folder has no copy. */
+  private async removeItem(base: OpenBase, item: ItemRow): Promise<void> {
+    await this.stopJob(job => job.itemId === item.id)
+    base.store.deleteItem(item.id)
+    if (item.kind !== 'folder') await rm(this.copyPath(base, item), { force: true })
   }
 
   private async writeSettings(dir: string, settings: BaseSettings): Promise<void> {
@@ -543,8 +750,22 @@ export class KnowledgeBaseService extends TypertRemoteService {
       id, name, embeddingModelId, embeddingModelName, createdAt, dimensions,
       status: !this.modelReady(embeddingModelId) ? 'unavailable' : rebuilding ? 'rebuilding' : 'ready',
       settings: { chunkStrategy, chunkSeparator, chunkSize, chunkOverlap, documentCount, threshold },
-      items: base.store.items().map(item => ({ ...item, kind: 'file' as const })),
+      items: this.itemViews(base.store.items()),
     }
+  }
+
+  /** Items as shown: a folder takes its progress and chunk count from its files. */
+  private itemViews(items: readonly ItemRow[]): KnowledgeItemView[] {
+    return items.map(({ modifiedAt: _modifiedAt, ...item }) => {
+      if (item.kind !== 'folder') return item
+      const files = items.filter(entry => entry.parentId === item.id)
+      const busy = files.some(file => file.status === 'pending' || file.status === 'processing')
+      return {
+        ...item,
+        status: item.status === 'failed' ? 'failed' : busy ? 'processing' : 'completed',
+        chunkCount: files.reduce((sum, file) => sum + file.chunkCount, 0),
+      }
+    })
   }
 
   /** Names of the knowledge bases, of any tenant on this machine, using an embedding model. */
@@ -633,20 +854,21 @@ export class KnowledgeBaseService extends TypertRemoteService {
     for (;;) {
       const next = this.halting ? undefined : this.nextItem()
       if (next === undefined) return
-      await this.process(next.base, next.itemId, next.name)
+      await this.process(next.base, next.item)
     }
   }
 
-  private nextItem(): { base: OpenBase; itemId: string; name: string } | undefined {
+  private nextItem(): { base: OpenBase; item: ItemRow } | undefined {
     for (const base of this.bases.values()) {
       if (!this.modelReady(base.settings.embeddingModelId)) continue
       const item = base.store.items().find(entry => entry.status === 'pending')
-      if (item !== undefined) return { base, itemId: item.id, name: item.name }
+      if (item !== undefined) return { base, item }
     }
     return undefined
   }
 
-  private async process(base: OpenBase, itemId: string, name: string): Promise<void> {
+  private async process(base: OpenBase, item: ItemRow): Promise<void> {
+    const itemId = item.id
     const controller = new AbortController()
     const job: Job = { baseId: base.settings.id, itemId, controller }
     this.job = job
@@ -658,7 +880,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
       base.store.setStatus(itemId, 'failed', error)
     }
     try {
-      await this.processSteps(base, itemId, name, signal, fail)
+      await this.processSteps(base, item, signal, fail)
     } catch (error) {
       // Anything unexpected, such as the index refusing a write, fails the item and keeps the queue going.
       try {
@@ -689,16 +911,22 @@ export class KnowledgeBaseService extends TypertRemoteService {
 
   /** Read, chunk, embed, and index one item; expected failures are recorded through `fail`. */
   private async processSteps(
-    base: OpenBase, itemId: string, name: string, signal: AbortSignal,
+    base: OpenBase, item: ItemRow, signal: AbortSignal,
     fail: (error: KnowledgeItemError, detail: unknown) => void,
   ): Promise<void> {
+    const itemId = item.id
+    // A page that cannot be fetched again is indexed from its last fetched copy, then marked failed.
+    let unreachable: unknown
+    if (item.kind === 'url') unreachable = await this.fetchPage(base, item, signal)
     let text: string
     try {
-      text = await readDocument(this.filePath(base, itemId, name))
+      text = await readDocument(this.copyPath(base, item))
     } catch (error) {
-      fail('unreadable', error)
+      fail(unreachable === undefined ? 'unreadable' : 'unreachable', unreachable ?? error)
       return
     }
+    // A note's title is part of what it says.
+    if (item.kind === 'note') text = `# ${item.name}\n\n${text}`
     // Read each time: the signal can abort during any await.
     const stopped = (): boolean => signal.aborted
     // Stopped while reading: the item stays as it is for whoever resumes it.
@@ -721,6 +949,28 @@ export class KnowledgeBaseService extends TypertRemoteService {
       return
     }
     base.store.complete(itemId, embedded)
+    if (unreachable !== undefined) fail('unreachable', unreachable)
+  }
+
+  /**
+   * Fetch a page into its copy, renaming the item to the page title.
+   * @returns why it could not be fetched; undefined when it was.
+   */
+  private async fetchPage(base: OpenBase, item: ItemRow, signal: AbortSignal): Promise<unknown> {
+    // A page item always records its address.
+    const url = item.source as string
+    try {
+      const web = this.ctx.get('web')
+      if (web === undefined) throw new Error('web fetching is not available')
+      const page = await web.fetch({ url }, signal)
+      if (page.statusCode < 200 || page.statusCode >= 300) throw new Error(`HTTP ${String(page.statusCode)}`)
+      const { title, markdown } = page.body.kind === 'html' ? pageToMarkdown(page.body.content, page.url) : { title: '', markdown: page.body.content }
+      await writeFile(this.copyPath(base, item), markdown)
+      base.store.updateItem(item.id, { name: title === '' ? url : title, size: Buffer.byteLength(markdown) })
+      return undefined
+    } catch (error) {
+      return error
+    }
   }
 }
 

@@ -123,6 +123,8 @@
     "tests/hub-account.e2e.ts",
     "tests/embedding-settings.e2e.ts",
     "tests/knowledge.e2e.ts",
+    "tests/knowledge-sources.e2e.ts",
+    "tests/knowledge-support.ts",
     "tests/models-custom-provider.e2e.ts",
     "tests/skills-market.e2e.ts",
     "tests/skills-market-lifecycle.e2e.ts",

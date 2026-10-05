@@ -21,6 +21,12 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'knowledge/embedding-probe-failed': { readonly id: string; readonly message: string }
     /** The knowledge base is being rebuilt for a new embedding model and cannot be searched yet. */
     'knowledge/rebuilding': { readonly id: string }
+    /** The path to add as a folder is missing or not a folder. */
+    'knowledge/not-a-folder': { readonly path: string }
+    /** The address to add is not an http or https URL. */
+    'knowledge/invalid-url': { readonly url: string }
+    /** A note needs a title of 1 to `maxNameLength` characters and a body of at most `max` characters. */
+    'knowledge/invalid-note': { readonly field: 'title' | 'content'; readonly max: number }
   }
 }
 
@@ -40,21 +46,46 @@ export type KnowledgeItemStatus = 'pending' | 'processing' | 'completed' | 'fail
  * - `embedding`: the embedding model refused or failed.
  * - `interrupted`: DSH stopped while an API embedding model was processing it; retry by hand.
  * - `storage`: the chunks could not be written to the base's index.
+ * - `folder-missing`: a folder's path is gone or no longer a folder; its files stay as they were.
+ * - `unreachable`: a page could not be fetched; the last fetched content stays.
  */
-export type KnowledgeItemError = 'unreadable' | 'empty' | 'embedding' | 'interrupted' | 'storage'
+export type KnowledgeItemError = 'unreadable' | 'empty' | 'embedding' | 'interrupted' | 'storage' | 'folder-missing' | 'unreachable'
+
+/**
+ * What a knowledge item is.
+ * - `file`: a file added on its own, or found in a folder (`parentId` names the folder).
+ * - `folder`: a folder whose supported files are its `file` items; it is not processed itself.
+ * - `url`: a web page, fetched on this machine.
+ * - `note`: a note written in DSH.
+ */
+export type KnowledgeItemKind = 'file' | 'folder' | 'url' | 'note'
+
+/** A file of a folder left out: an unsupported type, or past the per-folder file limit. */
+export interface KnowledgeSkippedFile {
+  /** Path relative to the folder. */
+  readonly path: string
+  readonly reason: 'unsupported' | 'limit'
+}
 
 /** One source added to a knowledge base. */
 export interface KnowledgeItemView {
   readonly id: string
-  /** The source's kind; files only, for now. */
-  readonly kind: 'file'
-  /** File name. */
+  readonly kind: KnowledgeItemKind
+  /** The folder item a folder's file belongs to; null otherwise. */
+  readonly parentId: string | null
+  /** File name, folder name, page title (the URL until first fetched), or note title. */
   readonly name: string
-  /** Bytes. */
+  /** Folder path, page URL, or a folder file's path relative to its folder; null for files and notes. */
+  readonly source: string | null
+  /** Bytes: of the file, the fetched page text, or the note; a folder's is the sum of its files. */
   readonly size: number
+  /** Files of a folder left out, the first 500 of `skippedCount`; empty for other kinds. */
+  readonly skipped: readonly KnowledgeSkippedFile[]
+  /** How many files of a folder were left out. */
+  readonly skippedCount: number
   readonly status: KnowledgeItemStatus
   readonly error: KnowledgeItemError | null
-  /** Chunks indexed when completed. */
+  /** Chunks indexed; a folder's is the sum of its files'. */
   readonly chunkCount: number
   /** ISO time it was added. */
   readonly addedAt: string
@@ -131,6 +162,11 @@ export interface KnowledgeBaseView {
 
 /** The Knowledge page's state. */
 export interface KnowledgeState {
+  /**
+   * Grows with every change, across Host restarts too: an action's answer can arrive after a newer
+   * streamed state, and the state with the larger revision is the current one.
+   */
+  readonly revision: number
   /** Signed-in tenant; null while signed out, when there are no knowledge bases to show. */
   readonly tenantId: string | null
   /** The tenant's knowledge bases, oldest first. */
@@ -146,4 +182,11 @@ export interface KnowledgeAddResult {
   readonly added: number
   /** Files refused, with why. */
   readonly rejected: readonly { readonly name: string; readonly reason: KnowledgeRejectReason }[]
+}
+
+/** A note's text, for editing. */
+export interface KnowledgeNote {
+  readonly title: string
+  /** Markdown body. */
+  readonly content: string
 }

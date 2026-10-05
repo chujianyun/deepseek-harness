@@ -4,19 +4,42 @@
  * similarity over every vector, blended with BM25 normalized against the best keyword match.
  */
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite'
-import type { KnowledgeItemError, KnowledgeItemStatus, KnowledgeSearchHit } from './types.ts'
+import type { KnowledgeItemError, KnowledgeItemKind, KnowledgeItemStatus, KnowledgeSearchHit, KnowledgeSkippedFile } from './types.ts'
 import { matchExpression, terms } from './terms.ts'
 
 /** One stored item. */
 export interface ItemRow {
   id: string
+  kind: KnowledgeItemKind
+  /** The folder item a file found in a folder belongs to. */
+  parentId: string | null
+  /** Display name: file name, folder name, page title, or note title. */
   name: string
+  /** Folder path, page URL, or a folder file's path relative to its folder; null for files and notes. */
+  source: string | null
   size: number
+  /** Modification time of a folder file when last copied, in milliseconds. */
+  modifiedAt: number | null
+  /** Files of a folder left out, with why: a listed few of `skippedCount`. */
+  skipped: readonly KnowledgeSkippedFile[]
+  skippedCount: number
   status: KnowledgeItemStatus
   error: KnowledgeItemError | null
   chunkCount: number
   addedAt: string
 }
+
+/** A new item: kind, parent, source, modification time, and skipped files default to a plain file. */
+export type NewItem = Pick<ItemRow, 'id' | 'name' | 'size' | 'status' | 'error' | 'chunkCount' | 'addedAt'> & Partial<ItemRow>
+
+/** Item fields a later scan, fetch, or edit changes. */
+export type ItemUpdate = Partial<Pick<ItemRow, 'name' | 'source' | 'size' | 'modifiedAt' | 'skipped' | 'skippedCount'>>
+
+/** Columns added after the first release, with their definitions, for indexes created before them. */
+const ADDED_COLUMNS: readonly [string, string][] = [
+  ['kind', "text not null default 'file'"], ['parent_id', 'text'], ['source', 'text'], ['modified_at', 'real'],
+  ['skipped', "text not null default '[]'"], ['skipped_count', 'integer not null default 0'],
+]
 
 
 /** Weight of vector similarity in the blended score; the rest is the keyword match. */
@@ -64,6 +87,10 @@ export class BaseStore {
   constructor(path: string) {
     this.db = new DatabaseSync(path)
     this.db.exec(SCHEMA)
+    const present = new Set(this.db.prepare('pragma table_info(items)').all().map(row => text(row, 'name')))
+    for (const [column, definition] of ADDED_COLUMNS) {
+      if (!present.has(column)) this.db.exec(`alter table items add column ${column} ${definition}`)
+    }
   }
 
   /**
@@ -73,6 +100,12 @@ export class BaseStore {
   items(): ItemRow[] {
     return this.db.prepare('select * from items order by added_at, rowid').all().map(row => ({
       id: text(row, 'id'), name: text(row, 'name'), size: num(row, 'size'),
+      // Written only by this class, from these unions and JSON.
+      kind: text(row, 'kind') as KnowledgeItemKind,
+      parentId: row.parent_id === null ? null : text(row, 'parent_id'),
+      source: row.source === null ? null : text(row, 'source'),
+      modifiedAt: row.modified_at === null ? null : num(row, 'modified_at'),
+      skipped: JSON.parse(text(row, 'skipped')) as KnowledgeSkippedFile[], skippedCount: num(row, 'skipped_count'),
       // Written only by this class, from these unions.
       status: text(row, 'status') as KnowledgeItemStatus,
       error: row.error === null ? null : text(row, 'error') as KnowledgeItemError,
@@ -84,9 +117,28 @@ export class BaseStore {
    * Record a new item.
    * @param item - the new item.
    */
-  addItem(item: ItemRow): void {
-    this.db.prepare('insert into items (id, name, size, status, error, chunk_count, added_at) values (?, ?, ?, ?, ?, ?, ?)')
-      .run(item.id, item.name, item.size, item.status, item.error, item.chunkCount, item.addedAt)
+  addItem(item: NewItem): void {
+    this.db.prepare(`insert into items
+      (id, kind, parent_id, name, source, size, modified_at, skipped, skipped_count, status, error, chunk_count, added_at)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      item.id, item.kind ?? 'file', item.parentId ?? null, item.name, item.source ?? null, item.size, item.modifiedAt ?? null,
+      JSON.stringify(item.skipped ?? []), item.skippedCount ?? 0, item.status, item.error, item.chunkCount, item.addedAt,
+    )
+  }
+
+  /**
+   * Change an item's name, source, size, modification time, or skipped files.
+   * @param id - item id.
+   * @param update - the fields to change.
+   */
+  updateItem(id: string, update: ItemUpdate): void {
+    const columns: Record<keyof ItemUpdate, string> = {
+      name: 'name', source: 'source', size: 'size', modifiedAt: 'modified_at', skipped: 'skipped', skippedCount: 'skipped_count',
+    }
+    for (const [key, value] of Object.entries(update)) {
+      const column = columns[key as keyof ItemUpdate]
+      this.db.prepare(`update items set ${column} = ? where id = ?`).run(key === 'skipped' ? JSON.stringify(value) : value as string | number | null, id)
+    }
   }
 
   /**
@@ -138,7 +190,8 @@ export class BaseStore {
         this.db.exec('delete from chunk_terms; delete from chunks')
         this.db.exec('update items set chunk_count = 0')
       }
-      this.db.exec("update items set status = 'pending', error = null")
+      // A folder is never processed itself; its files are.
+      this.db.exec("update items set status = 'pending', error = null where kind != 'folder'")
     })
   }
 
@@ -151,8 +204,9 @@ export class BaseStore {
    * @returns hits, best first.
    */
   search(vector: readonly number[], query: string, limit: number, threshold: number): KnowledgeSearchHit[] {
+    // An item's chunks stay searchable until a new processing replaces them, whatever its status.
     const rows = this.db.prepare(`select chunks.id, item_id, items.name, ordinal, text, vector
-      from chunks join items on items.id = chunks.item_id where items.status = 'completed'`).all()
+      from chunks join items on items.id = chunks.item_id`).all()
     const keyword = new Map<number, number>()
     let best = 0
     const match = matchExpression(query)
