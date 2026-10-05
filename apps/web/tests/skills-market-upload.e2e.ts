@@ -9,7 +9,7 @@ import { expect, it } from 'vitest'
 import type {} from '@deepseek-ai/dsh-skill-market'
 import { startMockUserCenter } from '../../../packages/credentials/hub-account/tests/mock-user-center.ts'
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, newEnglishPage, saveFailureShot, signInToSkillHub } from './support.ts'
 
 const OVERLAY = fileURLToPath(new URL('./skills-market.overlay.yml', import.meta.url))
 
@@ -38,12 +38,7 @@ it('uploads a custom Skill for review, shows refusals verbatim, and publishes an
     await page.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl)
-    const popup = page.waitForEvent('popup')
-    await page.getByRole('button', { name: 'Sign in with the user center', exact: true }).click()
-    const opened = await popup
-    await expect.poll(() => opened.textContent('body')).toContain('登录成功')
-    await opened.close()
-    await page.getByRole('dialog', { name: 'Sign in to Skill Hub' }).waitFor({ state: 'detached' })
+    await signInToSkillHub(page)
     await connectFreshWorkspace(page, scaffold.workspaceCwd, 'skills-upload')
     await page.getByRole('button', { name: 'Skills', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Add a skill to the Skill Hub' })

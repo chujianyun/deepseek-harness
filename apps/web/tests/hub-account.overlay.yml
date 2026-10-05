@@ -1,4 +1,4 @@
-# Enables the Desktop-only Hub sign-in rows for the keyless Web e2e (`hub-gate.e2e.ts`)
+# Enables the Desktop-only Hub sign-in rows for the keyless Web e2e (`hub-account.e2e.ts`)
 # against the spec's mock user center. The shipped web-app bundle enables them only for
 # the `desktop` profile with a configured user center.
 - id: hub-account

@@ -1,14 +1,14 @@
-import type { ProductEvent } from '@deepseek-ai/dsh-client-product-analytics/types'
 /** Native welcome operations using the shared Web authentication and RPC APIs. */
-
 import { randomUUID } from 'node:crypto'
+import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
+import type { ProductEvent } from '@deepseek-ai/dsh-client-product-analytics/types'
 import { desktopAccountBackend, type DesktopAccountBackend } from './account-backend.ts'
+import { desktopHubBackend, type DesktopHubBackend } from './hub-backend.ts'
 
 /** Metadata needed before the native entry or workspace becomes visible. */
 export interface WelcomeState {
-  readonly loggedIn: boolean
-  readonly hasApiKey: boolean
-  readonly writable: boolean
+  /** User-center sign-in state; the workspace opens only while signed in. */
+  readonly hub: HubAccountView
   readonly localePreference: string | null
 }
 
@@ -16,18 +16,18 @@ export interface WelcomeState {
 export interface DesktopWelcomeBackend {
   /** @returns the current Host policy; every read observes live configuration. */
   analyticsEnabled(): Promise<boolean>
+  /** DeepSeek account sign-in started from the workspace. */
   readonly account: DesktopAccountBackend
+  /** User-center sign-in; fails when the Host mounts no user center. */
+  readonly hub: DesktopHubBackend
   /** @param event - desktop-owned fields. @returns after local Host intake. */
   report(event: ProductEvent): Promise<void>
-  /** @returns Configured-key presence and the shared language preference, without credential values. */
+  /** @returns the user-center sign-in state and the shared language preference. */
   read(): Promise<WelcomeState>
-  /** @returns The saved UI language without account or provider requests. */
+  /** @returns The saved UI language without sign-in requests. */
   readLocalePreference(): Promise<string | null>
-  /**
-   * @param apiKey - User-entered official provider key.
-   * @returns A safe write outcome without provider diagnostics.
-   */
-  save(apiKey: string): Promise<{ ok: boolean }>
+  /** @returns whether any configurable model provider has a stored API key, without credential values. */
+  hasApiKey(): Promise<boolean>
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -38,7 +38,7 @@ function record(value: unknown): value is Record<string, unknown> {
  * Authenticate the native HTTP client through the Web application's launch URL.
  * @param authenticatedUrl - URL supplied by the running Desktop Host.
  * @param send - Electron session fetch, retaining the Web authentication cookie.
- * @returns metadata reads and write-only credential operations over standard RPC.
+ * @returns sign-in, language, and analytics operations over standard RPC.
  */
 export async function connectDesktopWelcome(
   authenticatedUrl: string,
@@ -69,15 +69,12 @@ export async function connectDesktopWelcome(
     return envelope.result.value
   }
   const account = desktopAccountBackend(origin, invoke, cookies)
-  const settingsAndReference = async () => {
+  const hub = desktopHubBackend(origin, invoke, cookies)
+  const describeSettings = async (): Promise<unknown[]> => {
     const settings = await invoke({ namespace: 'settings', method: 'describe', args: {} })
     if (!record(settings) || !Array.isArray(settings.namespaces)) throw new Error('desktop welcome: missing settings namespaces')
-    const official: unknown = settings.namespaces.find((item: unknown) => record(item) && item.ns === 'llm-deepseek')
-    if (official === undefined) return { settings: { namespaces: settings.namespaces }, ref: undefined }
-    if (!record(official) || !record(official.value) || typeof official.value.apiKeyEnv !== 'string') {
-      throw new Error('desktop welcome: missing official DeepSeek credential reference')
-    }
-    return { settings: { namespaces: settings.namespaces }, ref: official.value.apiKeyEnv }
+    const namespaces: unknown[] = settings.namespaces
+    return namespaces
   }
   const localePreference = (namespaces: unknown[]): string | null => {
     const locale: unknown = namespaces.find((item: unknown) => record(item) && item.ns === 'locale')
@@ -87,11 +84,14 @@ export async function connectDesktopWelcome(
     }
     return locale.value.preference ?? null
   }
-  const read = async (): Promise<WelcomeState> => {
-    const { settings, ref } = await settingsAndReference()
+  const hasApiKey = async (): Promise<boolean> => {
+    const namespaces = await describeSettings()
+    const official: unknown = namespaces.find((item: unknown) => record(item) && item.ns === 'llm-deepseek')
+    if (official !== undefined && (!record(official) || !record(official.value) || typeof official.value.apiKeyEnv !== 'string')) {
+      throw new Error('desktop welcome: missing official DeepSeek credential reference')
+    }
     const providers = await invoke({ namespace: 'llm', method: 'listConfigurableProviders', args: {} })
     if (!Array.isArray(providers)) throw new Error('desktop welcome: invalid provider directory')
-    const namespaces = settings.namespaces
     const refs = providers.flatMap((provider: unknown) => {
       if (!record(provider) || typeof provider.settingsNs !== 'string' || !Array.isArray(provider.settingsPath)) {
         throw new Error('desktop welcome: invalid provider settings address')
@@ -104,7 +104,7 @@ export async function connectDesktopWelcome(
       }
       return record(value) && typeof value.apiKeyEnv === 'string' ? [value.apiKeyEnv] : []
     })
-    const unique = [...new Set([...(ref === undefined ? [] : [ref]), ...refs])]
+    const unique = [...new Set([...(record(official) && record(official.value) ? [String(official.value.apiKeyEnv)] : []), ...refs])]
     const states: Record<string, unknown> = {}
     // credentials.describe accepts at most 64 references per request.
     for (let offset = 0; offset < unique.length; offset += 64) {
@@ -112,16 +112,12 @@ export async function connectDesktopWelcome(
       if (!record(batch)) throw new Error('desktop welcome: invalid credential metadata')
       Object.assign(states, batch)
     }
-    if (ref !== undefined && !record(states[ref])) throw new Error('desktop welcome: missing credential metadata')
-    return {
-      loggedIn: (await account.state()).status === 'credential-stored',
-      hasApiKey: Object.values(states).some(value => record(value) && value.configured === true),
-      writable: ref !== undefined && record(states[ref]) && states[ref].writable === true,
-      localePreference: localePreference(namespaces),
-    }
+    return Object.values(states).some(value => record(value) && value.configured === true)
   }
+  const read = async (): Promise<WelcomeState> => ({ hub: await hub.state(), localePreference: localePreference(await describeSettings()) })
   return {
     account,
+    hub,
     read,
     async analyticsEnabled() {
       const enabled = await invoke({ namespace: 'productAnalytics', method: 'enabled', args: {} }, AbortSignal.timeout(1000))
@@ -129,22 +125,7 @@ export async function connectDesktopWelcome(
       return enabled
     },
     async report(event) { await invoke({ namespace: 'productAnalytics', method: 'report', args: { event } }, AbortSignal.timeout(1000)) },
-    async readLocalePreference() {
-      const settings = await invoke({ namespace: 'settings', method: 'describe', args: {} })
-      if (!record(settings) || !Array.isArray(settings.namespaces)) throw new Error('desktop welcome: missing settings namespaces')
-      return localePreference(settings.namespaces)
-    },
-    async save(apiKey) {
-      if (!/^[\x21-\x7e]+$/.test(apiKey)) return { ok: false }
-      try {
-        const { ref } = await settingsAndReference()
-        if (ref === undefined) return { ok: false }
-        await invoke({ namespace: 'credentials', method: 'set', args: { ref, value: apiKey } })
-        return { ok: true }
-      } catch {
-        // Provider diagnostics may contain credentials; the native form owns failure copy.
-        return { ok: false }
-      }
-    },
+    async readLocalePreference() { return localePreference(await describeSettings()) },
+    hasApiKey,
   }
 }

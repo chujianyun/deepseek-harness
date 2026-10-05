@@ -13,7 +13,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-skill-market'
 import { startMockUserCenter } from '../../../packages/credentials/hub-account/tests/mock-user-center.ts'
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, newEnglishPage, saveFailureShot, signInToSkillHub } from './support.ts'
 
 const OVERLAY = fileURLToPath(new URL('./skills-market.overlay.yml', import.meta.url))
 
@@ -27,14 +27,6 @@ function replay(): ReplayOverrideDoc {
     { type: 'finish', reason: { kind: 'stop' } },
   ]
   return [{ kind: 'chunks', chunks }]
-}
-
-async function signIn(page: Page): Promise<void> {
-  const popup = page.waitForEvent('popup')
-  await page.getByRole('button', { name: 'Sign in with the user center', exact: true }).click()
-  const opened = await popup
-  await expect.poll(() => opened.textContent('body')).toContain('登录成功')
-  await opened.close()
 }
 
 it('browses the market, installs a Skill, lists it from the market, and invokes it with /name', async () => {
@@ -62,8 +54,7 @@ it('browses the market, installs a Skill, lists it from the market, and invokes 
     await page.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl)
-    await signIn(page)
-    await page.getByRole('dialog', { name: 'Sign in to Skill Hub' }).waitFor({ state: 'detached' })
+    await signInToSkillHub(page)
     await connectFreshWorkspace(page, scaffold.workspaceCwd, 'skills-market')
 
     // Browse: cards, search, category.

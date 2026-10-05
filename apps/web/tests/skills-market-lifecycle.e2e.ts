@@ -9,7 +9,7 @@ import { expect, it } from 'vitest'
 import type {} from '@deepseek-ai/dsh-skill-market'
 import { startMockUserCenter, type MockSkill, type MockTenant } from '../../../packages/credentials/hub-account/tests/mock-user-center.ts'
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, openSettings, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, newEnglishPage, openSettings, saveFailureShot, signInToSkillHub } from './support.ts'
 
 const OVERLAY = fileURLToPath(new URL('./skills-market.overlay.yml', import.meta.url))
 const PDF: MockSkill = { id: 's-pdf', name: 'pdf-tools', description: 'Read PDF files', category: null, version: '1.0.0', files: { 'scripts/run.sh': 'echo v1\n' } }
@@ -36,8 +36,7 @@ it('offers updates, protects local edits, keeps withdrawn Skills usable, and fol
     await page.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl)
-    await finishSignIn(page, () => page.getByRole('button', { name: 'Sign in with the user center', exact: true }).click())
-    await page.getByRole('dialog', { name: 'Sign in to Skill Hub' }).waitFor({ state: 'detached' })
+    await signInToSkillHub(page)
     await connectFreshWorkspace(page, scaffold.workspaceCwd, 'skills-lifecycle')
     const openMarket = async () => {
       await page.getByRole('button', { name: 'Skills', exact: true }).click()

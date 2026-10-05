@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在 Desktop profile 中把本包挂载为 Loader 条目，配置用户中心地址和为 DSH 登记的公共客户端的 `client_id`；它注入 `credentials` 与 `authorization`。web-app bundle 只在 `desktop` profile 且设置了 `DSH_HUB_ORIGIN` 时启用这一行（`DSH_HUB_CLIENT_ID` 给出客户端），也可以用私有 patch 重写这一行。与之配套的是渲染这份状态的门禁 [`@deepseek-ai/dsh-client-ui-hub-account`](../../client/ui-hub-account/README.zh.md)。
+在 Desktop profile 中把本包挂载为 Loader 条目，配置用户中心地址和为 DSH 登记的公共客户端的 `client_id`；它注入 `credentials` 与 `authorization`。web-app bundle 只在 `desktop` profile 且设置了 `DSH_HUB_ORIGIN` 时启用这一行（`DSH_HUB_CLIENT_ID` 给出客户端），也可以用私有 patch 重写这一行。与之配套的是渲染这份状态的设置分区 [`@deepseek-ai/dsh-client-ui-hub-account`](../../client/ui-hub-account/README.zh.md)；Desktop [欢迎窗口](../../../apps/desktop/README.zh.md)读取同一份状态，只在已登录时打开工作区。
 
 `signIn()` 发起一次登录尝试，已有尝试在进行时直接返回它：在临时的回环端口上监听，把授权页（带 `response_type=code`、配置的 `scope`、`state` 和 `S256` 的 `code_challenge` 的 `/oauth/authorize`）发布在尝试的 `authorizeUrl` 上，然后等待浏览器。`state` 不对的回调得到 400，尝试继续等待；用户中心返回 `error` 时尝试以 `failed` 结束（`access_denied` 记为 `denied`）。授权码带着 `code_verifier` 和同一个 `redirect_uri` 在 `/oauth/token` 换取令牌，`/oauth/userinfo` 提供昵称、手机号、租户和是否管理员，授权记录通过授权会话提交。浏览器页面在尝试结束后才得到应答。`cancelSignIn(attemptId)` 撤回尝试；`signOut()` 删除本地授权记录，并在后台到 `/oauth/revoke` 吊销 refresh token；`switchTenant()` 先退出再发起新的尝试，让用户中心重新给出租户选择。`watch()` 推送状态流，`getState()` 读取一次；两者都不带任何令牌。
 

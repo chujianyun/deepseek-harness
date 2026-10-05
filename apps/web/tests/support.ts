@@ -331,3 +331,23 @@ export async function openSettings(page: Page, locale: 'en' | 'zh'): Promise<voi
     await page.getByRole('button', { name: label, exact: true }).click()
   }
 }
+
+/**
+ * Sign in to the Skill Hub from the English Settings section of the Desktop renderer and close
+ * Settings again; the mock user center approves the popup on its own.
+ * @param page - English Desktop renderer page.
+ * @param button - the section button that opens the sign-in page.
+ */
+export async function signInToSkillHub(page: Page, button = 'Sign in to Skill Hub'): Promise<void> {
+  await openSettings(page, 'en')
+  const settings = page.getByRole('dialog', { name: 'Settings' })
+  await settings.getByRole('button', { name: 'Skill Hub account' }).click()
+  const section = settings.getByRole('region', { name: 'Skill Hub account' })
+  const popup = page.waitForEvent('popup')
+  await section.getByRole('button', { name: button, exact: true }).click()
+  const opened = await popup
+  await expect.poll(() => opened.textContent('body')).toContain('登录成功')
+  await opened.close()
+  await section.getByText(/^Tenant：/u).waitFor()
+  await settings.getByRole('button', { name: 'Close' }).last().click()
+}

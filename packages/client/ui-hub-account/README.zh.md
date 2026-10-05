@@ -1,5 +1,5 @@
 ---
-description: "dsh Web 客户端里 Desktop 的 Hub 登录门禁：未登录时的全屏登录页，以及设置中可切换租户、退出登录的账号分区。"
+description: "dsh Web 客户端里 Desktop 的 Skill Hub 账号分区：已登录员工及切换租户、退出登录，或未登录时的登录状态和登录入口。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-Host 报告没有 Hub 登录时，门禁用一个全屏登录页盖住整个应用；设置里新增 **Skill Hub 账号** 分区，显示已登录的昵称、租户和手机号，并提供 **切换租户** 和 **退出登录**。它通过 [`hubAccount` Remote](../../credentials/hub-account/README.zh.md) 读取状态和执行操作。
+在设置里新增 **Skill Hub 账号** 分区，显示已登录的昵称、租户和手机号，并提供 **切换租户** 和 **退出登录**；未登录时显示登录状态和 **登录 Skill Hub**。它通过 [`hubAccount` Remote](../../credentials/hub-account/README.zh.md) 读取状态和执行操作。Desktop [欢迎窗口](../../../apps/desktop/README.zh.md)在未登录时不打开工作区，所以渲染器没有自己的登录门禁。
 
 ## 目录
 
@@ -23,16 +23,16 @@ Host 报告没有 Hub 登录时，门禁用一个全屏登录页盖住整个应�
 <a id="use-this-package"></a>
 ## 使用本包
 
-把浏览器行挂在 Host 的 `hub-account` 行旁边，`disabled` 条件与它相同；web-app bundle 只在 `desktop` profile 且配置了用户中心时启用这两行。插件只在 Desktop 渲染器（存在 `dshDesktop`）中生效，同一套插件的浏览器标签页不会被门禁拦住。它注入 `remote.hubAccount`，把门禁以 id `hub-gate` 注册到 `shell.overlay`，把账号分区以 id `hub-account`、顺序 -20 注册到 `settings.section`。
+把浏览器行挂在 Host 的 `hub-account` 行旁边，`disabled` 条件与它相同；web-app bundle 只在 `desktop` profile 且配置了用户中心时启用这两行。插件只在 Desktop 渲染器（存在 `dshDesktop`）中生效，同一套插件的浏览器标签页不显示该分区。它注入 `remote.hubAccount`，把账号分区以 id `hub-account`、顺序 -20 注册到 `settings.section`。
 
-收到第一份状态之前，门禁显示正在检查。未登录时提供 **用用户中心登录**；从本窗口发起的登录在 Host 发布授权页后立即在系统浏览器中打开，其他地方发起的尝试只显示不打开。等待时提供 **重新打开登录页** 和 **取消**。失败的尝试显示原因和 **重新登录**；登录失效时说明正在运行的会话会继续，但新消息要等重新登录。门禁 portal 到 document body，层级高于 Desktop 引导页，因此下面的任何内容都无法使用。切换租户会先退出，所以在新的登录完成之前门禁会重新出现。
+收到第一份状态之前，分区显示正在检查。未登录时显示 **未登录 Skill Hub** 并提供 **登录 Skill Hub**；从本窗口发起的登录或切换租户在 Host 发布授权页后立即在系统浏览器中打开，其他地方发起的尝试只显示不打开。等待时提供 **重新打开登录页** 和 **取消**。失败的尝试显示原因和 **重新登录**；登录失效时说明正在运行的会话会继续，但新消息要等重新登录。已登录但没有租户的账号，租户显示为 **不属于任何公司**。
 
 -----
 
 <a id="model-experience"></a>
 ## 模型体验
 
-无，因为门禁和账号分区只渲染登录状态，是否接受一条消息由 Host 决定。
+无，因为账号分区只渲染登录状态，是否接受一条消息由 Host 决定。
 
 #### KV Cache 影响
 
@@ -42,7 +42,7 @@ Host 报告没有 Hub 登录时，门禁用一个全屏登录页盖住整个应�
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **被盖住的应用仍可用键盘聚焦**——门禁是盖在应用之上的模态对话框，但不把应用设为 inert，因为 inert 状态在 Desktop 引导页存活期间归引导页所有。
+- 无。
 
 <a id="dev-note"></a>
 ### 开发备注

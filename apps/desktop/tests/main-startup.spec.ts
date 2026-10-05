@@ -133,7 +133,7 @@ const harness = await vi.hoisted(async () => {
     readonly updateTasks = vi.fn(async (_action: 'inspect' | 'lock' | 'unlock') => false)
     readonly inspectQuit = vi.fn(async () => ({ activeTasks: false, scheduledTasks: false }))
     url = 'http://127.0.0.1:3080/?token=test'
-    fetch = vi.fn(async () => Response.json({ hasApiKey: true, writable: true, localePreference: null }))
+    fetch = vi.fn(async () => Response.json({ signedIn: true, hasApiKey: true, localePreference: null }))
     readonly ready = deferred()
     readonly exited = deferred()
     readonly stopping = deferred()
@@ -199,13 +199,13 @@ const harness = await vi.hoisted(async () => {
 
     get analyticsEnabled() { return analyticsEnabled },
     set analyticsEnabled(value: boolean) { analyticsEnabled = value; analyticsEnabledListener?.(value) },
-    watchAccount: (
-      listener: (state: AccountView) => void, _failed: () => void, _expired: () => void,
-      onAnalyticsEnabledChanged?: (enabled: boolean) => void,
-    ) => {
-      analyticsEnabledListener = onAnalyticsEnabledChanged
+    watchAccount: (listener: (state: AccountView) => void) => {
       accountListener = listener
-      return () => { accountListener = undefined; analyticsEnabledListener = undefined }
+      return () => { accountListener = undefined }
+    },
+    watchHub: (_listener: unknown, _failed: () => void, onAnalyticsEnabledChanged?: (enabled: boolean) => void) => {
+      analyticsEnabledListener = onAnalyticsEnabledChanged
+      return () => { analyticsEnabledListener = undefined }
     },
     publishAccount(state: AccountView) { accountListener?.(state) },
     ipcOn: vi.fn<(channel: string, listener: (event: { sender: unknown; senderFrame: unknown }, ...args: unknown[]) => void) => void>(),
@@ -365,9 +365,13 @@ vi.mock('../src/welcome-backend.ts', () => ({
     analyticsEnabled: async () => harness.analyticsEnabled,
     report: harness.analytics,
     readLocalePreference: async () => null,
-    read: async (): Promise<unknown> => (await harness.hosts.at(-1)!.fetch()).json() as Promise<unknown>,
-    save: async () => ({ ok: true }),
-    account: { watch: harness.watchAccount, state: async () => ({ status: 'signed-out', attempt: null }) },
+    read: async () => {
+      const value = await (await harness.hosts.at(-1)!.fetch()).json() as { signedIn: boolean; localePreference: string | null }
+      return { hub: { status: value.signedIn ? 'signed-in' : 'signed-out', profile: null, reason: null, attempt: null }, localePreference: value.localePreference }
+    },
+    hasApiKey: async () => ((await (await harness.hosts.at(-1)!.fetch()).json()) as { hasApiKey: boolean }).hasApiKey,
+    account: { watch: harness.watchAccount },
+    hub: { watch: harness.watchHub },
   }),
 }))
 
@@ -2164,7 +2168,7 @@ describe('desktop main startup', () => {
     host.exited.resolve()
     host.onFailure!(new Error('backend exited during startup preferences'))
     await harness.dialogShown.promise
-    preferences.resolve(Response.json({ hasApiKey: true, localePreference: null }))
+    preferences.resolve(Response.json({ signedIn: true, localePreference: null }))
     await startup
     expect(harness.windows[0]!.urls).not.toContain('http://127.0.0.1:3080/?token=test')
     const failureDialog = harness.dialog.showMessageBox.mock.calls[0]![0] as { detail: string }
@@ -2191,24 +2195,6 @@ describe('desktop main startup', () => {
     expect(window.urls).toEqual(['dsh-app://app/'])
     expect(harness.windows).toHaveLength(1)
   })
-})
-
-it.each(['failed', 'expired'] as const)('focuses DSH once when browser authorization becomes %s', async (phase) => {
-  await import('../src/main.ts')
-  await harness.preparing.promise
-  harness.prepared.resolve()
-  await harness.hostStarted.promise
-  harness.hosts[0]!.ready.resolve()
-  await Promise.resolve(invoke(DESKTOP_IPC.boot))
-  const window = harness.windows[0]!
-  window.focus.mockClear()
-  const state: AccountView = {
-    status: 'signed-out', links: { usageUrl: 'https://platform.deepseek.com/usage', topUpUrl: 'https://platform.deepseek.com/top_up' },
-    attempt: { id: 'test-failed-attempt' as NonNullable<AccountView['attempt']>['id'], phase },
-  }
-  harness.publishAccount(state)
-  harness.publishAccount(state)
-  expect(window.focus).toHaveBeenCalledTimes(1)
 })
 
 it.each([['light', false], ['dark', true]] as const)('opens Platform authorization in the effective %s palette', async (theme, shouldUseDarkColors) => {

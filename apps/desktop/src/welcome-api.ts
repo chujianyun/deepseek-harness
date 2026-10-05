@@ -1,15 +1,13 @@
 /** Operations available to the isolated native welcome renderer. */
 
-import type { AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
+import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
 import type { ProductEventMap } from '@deepseek-ai/dsh-client-product-analytics/types'
 import type { DesktopLocale } from './locale.ts'
 
 /** Private native welcome channels, installed only while its window exists. */
 export const WELCOME_IPC = {
-  saveApiKey: 'dsh-welcome:save-api-key',
   analytics: 'dsh-welcome:analytics',
   analyticsEnabled: 'dsh-welcome:analytics-enabled',
-  skip: 'dsh-welcome:skip',
   start: 'dsh-welcome:start',
   cancel: 'dsh-welcome:cancel',
   copyLink: 'dsh-welcome:copy-link',
@@ -17,13 +15,10 @@ export const WELCOME_IPC = {
   takeNotice: 'dsh-welcome:take-notice',
 } as const
 
-/** Credential writes return a safe outcome without exposing Host diagnostics. */
-export type WelcomeSaveResult = { readonly ok: true } | { readonly ok: false }
-
 /** One-time notification retained by the main process until Welcome receives it. */
 export type WelcomeNotice = 'session-expired'
 
-type WelcomeEventName = 'auth_page_view' | 'auth_page_click' | 'api_key_save_click'
+type WelcomeEventName = 'auth_page_view' | 'auth_page_click'
 
 /** Host-owned operations used by the welcome window. */
 export interface WelcomeOperations {
@@ -33,43 +28,26 @@ export interface WelcomeOperations {
   analyticsEnabled(): Promise<boolean>
   /** @returns the pending notification, clearing it before another renderer can receive it. */
   takeNotice(): Promise<WelcomeNotice | undefined>
-  /** @returns account state after starting a login attempt. */
-  startSignIn(): Promise<AccountView>
+  /** @returns the user-center sign-in state after starting, or joining, a sign-in attempt. */
+  startSignIn(): Promise<HubAccountView>
   /** @param id - attempt to cancel. @returns the settled state. */
-  cancelSignIn(id: SignInAttemptId): Promise<AccountView>
-  /** @param id - current waiting attempt whose authorization URL is copied to the system clipboard. */
-  copySignInLink(id: SignInAttemptId): Promise<void>
-
-  /**
-   * Store the official provider's key before entering the workspace.
-   * @param value - validated, trimmed API key.
-   * @returns whether the write completed, without private error details.
-   */
-  saveApiKey(value: string): Promise<WelcomeSaveResult>
-  /**
-   * Enter the workspace without writing an onboarding-completion setting.
-   * @returns completion after the workspace opens.
-   */
-  skip(): Promise<void>
+  cancelSignIn(id: string): Promise<HubAccountView>
+  /** @param id - current waiting attempt whose sign-in page URL is copied to the system clipboard. */
+  copySignInLink(id: string): Promise<void>
 }
 
-/** The renderer receives localized copy, login operations, and safe account snapshots. */
+/** The renderer receives localized copy, sign-in operations, and token-free sign-in snapshots. */
 export type WelcomeApi = DesktopLocale & WelcomeOperations & {
-  /** @param listener - safe account snapshot recipient. @returns subscription disposer. */
-  onAccountState(listener: (state: AccountView) => void): () => void
-}
-
-/** Authentication facts supplied at cold start or after a completed sign-out. */
-export interface WelcomeAuthentication {
-  readonly loggedIn: boolean
-  readonly hasApiKey: boolean
+  /** @param listener - sign-in snapshot recipient. @returns subscription disposer. */
+  onAccountState(listener: (state: HubAccountView) => void): () => void
 }
 
 /**
- * Decide whether a startup or sign-out requires the welcome entry.
- * @param authentication - current account and independently stored API-key facts.
- * @returns true only when neither authentication route is configured.
+ * Decide whether a startup or sign-out requires the welcome entry: the workspace opens only
+ * after a user-center sign-in.
+ * @param state - current user-center sign-in state.
+ * @returns true while signed out.
  */
-export function needsWelcome(authentication: WelcomeAuthentication): boolean {
-  return !authentication.loggedIn && !authentication.hasApiKey
+export function needsWelcome(state: Pick<HubAccountView, 'status'>): boolean {
+  return state.status !== 'signed-in'
 }

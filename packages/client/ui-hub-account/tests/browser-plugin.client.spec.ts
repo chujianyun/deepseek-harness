@@ -10,7 +10,6 @@ import { apply, inject } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
 import type { HubAccountInjected } from '../src/client/hub-source.ts'
 import { HubAccountSection } from '../src/client/HubAccountSection.tsx'
-import { HubGate } from '../src/client/HubGate.tsx'
 
 usePinnedBrowserLanguages('zh-CN')
 
@@ -60,36 +59,34 @@ async function bench() {
   const slots = ctx.get('slots') as SlotRegistry
   const removeRoot = slots.register({
     name: 'root',
-    children: { 'shell.overlay': { kind: 'list', scope: 'root' }, 'settings.section': { kind: 'list', scope: 'root' } },
+    children: { 'settings.section': { kind: 'list', scope: 'root' } },
   } as never, () => null)
   onTestFinished(removeRoot)
   return { ctx, slots, hubAccount, push, accepted, dispose, streamOptions, fail: (error: Error) => fail?.(error) }
 }
 
 /**
- * Read the gate entry's injected face. A stored entry types its callback as returning a plain record,
+ * Read the account section entry's injected face. A stored entry types its callback as returning a plain record,
  * while the plugin's callback returns the face object.
  * @param slots - slot registry the plugin registered into.
  * @returns the injected face object.
  */
 function face(slots: SlotRegistry): object {
-  const injected = slots.entries('shell.overlay')[0]?.inject?.()
-  if (injected === undefined) throw new Error('gate injected no face')
+  const injected = slots.entries('settings.section')[0]?.inject?.()
+  if (injected === undefined) throw new Error('section injected no face')
   return injected
 }
 
 describe('ui-hub-account browser plugin', () => {
-  it('registers the gate and the account section, and withdraws both and the stream with the plugin', async () => {
+  it('registers the account section, and withdraws it and the stream with the plugin', async () => {
     const b = await bench()
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(b.slots.entries('shell.overlay')[0]?.component).toBe(HubGate)
     const [section] = b.slots.entries('settings.section')
     expect(section?.component).toBe(HubAccountSection)
     expect(section!.options).toMatchObject({ id: 'hub-account', order: -20 })
     expect(resolveSlotLabel(section!.options.label)).toMatch(/^Skill Hub/)
     await fiber.dispose()
-    expect(b.slots.entries('shell.overlay')).toEqual([])
     expect(b.slots.entries('settings.section')).toEqual([])
     expect(b.dispose).toHaveBeenCalledOnce()
   })
@@ -114,17 +111,16 @@ describe('ui-hub-account browser plugin', () => {
     expect(b.hubAccount.signOut).toHaveBeenCalledOnce()
   })
 
-  it('opens the Host stream through hubAccount.watch, survives a broken stream, and shares one face', async () => {
+  it('opens the Host stream through hubAccount.watch and survives a broken stream', async () => {
     const b = await bench()
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const signal = new AbortController().signal
     b.streamOptions.open!(signal)
     expect(b.hubAccount.watch).toHaveBeenCalledWith(signal)
     expect(b.streamOptions.ended!().message).toBe('hub account stream ended')
-    expect(b.slots.entries('settings.section')[0]!.inject!()).toBe(face(b.slots))
     b.fail(new Error('carrier gone'))
     await new Promise(resolve => setTimeout(resolve, 0))
-    expect(b.slots.entries('shell.overlay')).toHaveLength(1)
+    expect(b.slots.entries('settings.section')).toHaveLength(1)
   })
 
   it('contributes nothing outside the Desktop renderer', async () => {
@@ -132,7 +128,6 @@ describe('ui-hub-account browser plugin', () => {
     Reflect.deleteProperty(globalThis, 'dshDesktop')
     try {
       await b.ctx.plugin({ inject: [...inject], apply }).await()
-      expect(b.slots.entries('shell.overlay')).toEqual([])
       expect(b.slots.entries('settings.section')).toEqual([])
     } finally {
       Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 }, configurable: true })

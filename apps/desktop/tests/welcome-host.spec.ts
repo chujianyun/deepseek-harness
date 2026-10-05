@@ -17,7 +17,7 @@ function transport(preference?: string) {
       payload: { args: { ref: string; value: string; refs: string[] } }
     }
     let value: unknown
-    if (method === 'account/getState') value = { links: { usageUrl: 'http://localhost/usage', topUpUrl: 'http://localhost/top_up' }, status: 'signed-out', attempt: null }
+    if (method === 'hubAccount/getState') value = { status: 'signed-out', profile: null, reason: null, attempt: null }
     else if (method === 'settings/describe') value = { namespaces }
     else if (method === 'llm/listConfigurableProviders') value = [{ settingsNs: 'llm-pi-ai', settingsPath: ['profiles', 'example'] }]
     else if (method === 'productAnalytics/enabled') value = true
@@ -32,28 +32,29 @@ function transport(preference?: string) {
 const url = 'http://127.0.0.1:19387/?token=fixture'
 
 describe('desktop welcome Web operations', () => {
-  it('authenticates through Web and stores only through the configured credential reference', async () => {
+  it('authenticates through Web and reads the user-center sign-in and language over RPC', async () => {
     const host = transport()
     const backend = await connectDesktopWelcome(url, host.send)
     expect(host.send).toHaveBeenCalledExactlyOnceWith(url, { credentials: 'include' })
     expect(await backend.analyticsEnabled()).toBe(true)
-    expect(await backend.save('sk-example')).toEqual({ ok: true })
-    expect(host.keys.get('CUSTOM_DEEPSEEK_KEY')).toBe('sk-example')
-    expect(await backend.read()).toEqual({ loggedIn: false, hasApiKey: true, writable: true, localePreference: null })
+    expect(await backend.read()).toEqual({ hub: { status: 'signed-out', profile: null, reason: null, attempt: null }, localePreference: null })
     for (const [input, init] of host.send.mock.calls.slice(1)) {
       expect(input).toMatch(/^http:\/\/127\.0\.0\.1:19387\/api\//u)
       expect(init).toMatchObject({ credentials: 'include', redirect: 'error' })
     }
+    expect(host.send.mock.calls.some(([input]) => input.endsWith('/api/hubAccount/getState'))).toBe(true)
   })
 
-  it('reads the explicit language preference and recognizes another provider key', async () => {
+  it('reads the explicit language preference and detects a key of any configurable provider', async () => {
     const host = transport('zh')
-    host.keys.set('EXAMPLE_API_KEY', 'sk-other')
     const backend = await connectDesktopWelcome(url, host.send)
-    expect(await backend.read()).toMatchObject({ localePreference: 'zh', hasApiKey: true })
+    expect(await backend.read()).toMatchObject({ localePreference: 'zh' })
+    expect(await backend.hasApiKey()).toBe(false)
+    host.keys.set('EXAMPLE_API_KEY', 'sk-other')
+    expect(await backend.hasApiKey()).toBe(true)
     host.keys.clear()
-    expect(await backend.read()).toMatchObject({ hasApiKey: false })
-    expect(host.send.mock.calls.every(([, init]) => !(init?.body as string | undefined)?.includes('credentials/set'))).toBe(true)
+    host.keys.set('CUSTOM_DEEPSEEK_KEY', 'sk-official')
+    expect(await backend.hasApiKey()).toBe(true)
   })
 
   it('reads language without querying account or model providers', async () => {
@@ -65,34 +66,25 @@ describe('desktop welcome Web operations', () => {
     expect(host.send.mock.calls[0]![0]).toContain('/api/settings/describe')
   })
 
-  it('allows profiles without the official provider and retains custom key detection', async () => {
+  it('allows profiles without the official provider and rejects invalid provider metadata', async () => {
     const host = transport()
     host.namespaces.splice(0, 1)
     const backend = await connectDesktopWelcome(url, host.send)
-    expect(await backend.read()).toMatchObject({ hasApiKey: false, writable: false })
+    expect(await backend.hasApiKey()).toBe(false)
     host.keys.set('EXAMPLE_API_KEY', 'custom-key')
-    expect(await backend.read()).toMatchObject({ hasApiKey: true, writable: false })
-    expect(await backend.save('official-key')).toEqual({ ok: false })
-    expect(host.keys.has('undefined')).toBe(false)
+    expect(await backend.hasApiKey()).toBe(true)
+    host.namespaces.unshift({ ns: 'llm-deepseek', value: {} as { apiKeyEnv: string } })
+    await expect(backend.hasApiKey()).rejects.toThrow('missing official DeepSeek credential reference')
   })
 
-  it.each(['', 'bad key', 'key\n'])('rejects malformed keys without contacting a provider: %s', async (value) => {
+  it('rejects unmatched RPC envelopes and refused requests', async () => {
     const host = transport()
     const backend = await connectDesktopWelcome(url, host.send)
-    host.send.mockClear()
-    expect(await backend.save(value)).toEqual({ ok: false })
-    expect(host.send).not.toHaveBeenCalled()
-  })
-
-  it('keeps provider diagnostics out of failures and rejects unmatched RPC envelopes', async () => {
-    const host = transport()
-    const backend = await connectDesktopWelcome(url, host.send)
-    host.send.mockRejectedValueOnce(new Error('private credential sk-must-not-leak'))
-    expect(await backend.save('sk-example')).toEqual({ ok: false })
     host.send.mockResolvedValueOnce(Response.json({ type: 'server-response', rpcId: 'other', result: { ok: true } }))
     await expect(backend.read()).rejects.toThrow('Web RPC failed')
+    host.send.mockResolvedValueOnce(new Response(null, { status: 404 }))
+    await expect(backend.read()).rejects.toThrow('Web request failed')
   })
-
 
   it('submits native analytics through authenticated RPC with a bounded request', async () => {
     const host = transport()

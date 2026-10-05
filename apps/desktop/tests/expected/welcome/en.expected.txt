@@ -1,6 +1,5 @@
 DeepSeek Harness
 DeepSeek Harness
 Welcome to DeepSeek Harness
-Build potential. Explore intelligence.
-Sign in
-Add API Key
+Sign in with your company account.
+Sign in with company account

@@ -5,7 +5,7 @@ import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 
-/** State the gate and the account section render. */
+/** State the account section renders. */
 export interface HubSnapshot {
   /** Latest Host state; undefined until the first frame arrives. */
   readonly view: HubAccountView | undefined
@@ -25,7 +25,7 @@ export interface HubDependencies {
   readonly open: (url: string) => void
 }
 
-/** Business face injected into the gate and the account section. */
+/** Business face injected into the account section. */
 export interface HubAccountInjected {
   readonly hooks: { readonly hub: HostObservable<HubSnapshot> }
   readonly onSignIn: () => Promise<void>
@@ -51,8 +51,8 @@ export interface HubSource extends HubAccountInjected {
 export function createHubSource(deps: HubDependencies): HubSource {
   const store = createSnapshotStore<HubSnapshot>({ view: undefined, busy: false, failure: null })
   const patch = (next: Partial<HubSnapshot>): void => { store.set({ ...store.getSnapshot(), ...next }) }
-  /** Attempt whose page this window still has to open: `pending` until the Host names the attempt. */
-  let toOpen: 'pending' | string | undefined
+  /** Attempt whose page this window still has to open: `pending` (never an attempt id) until the Host names the attempt. */
+  let toOpen: string | undefined
   const openIfDue = (view: HubAccountView): void => {
     const attempt = view.attempt
     if (toOpen === undefined || attempt?.authorizeUrl === undefined || attempt.phase !== 'waiting-browser') return
