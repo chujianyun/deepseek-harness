@@ -284,6 +284,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | Package | Config | Description |
 |---|---|---|
 | `@deepseek-ai/dsh-knowledge-base` | yes | Local knowledge bases for Desktop: per-tenant document collections chunked, embedded, and indexed for hybrid search |
+| `@deepseek-ai/dsh-knowledge-selection` | no | Knowledge bases a conversation may search, logged per session, and the knowledge_search tool over them |
 
 ## llm
 

@@ -25,7 +25,9 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'knowledge/not-a-folder': { readonly path: string }
     /** The address to add is not an http or https URL. */
     'knowledge/invalid-url': { readonly url: string }
-    /** A note needs a title of 1 to `maxNameLength` characters and a body of at most `max` characters. */
+    /** The item has no copy to open (a folder, or a page never fetched), or this Host cannot open files. */
+    'knowledge/cannot-open': { readonly id: string }
+    /** A note needs a title of 1 to `maxNoteTitleLength` characters and a body of at most `max` characters. */
     'knowledge/invalid-note': { readonly field: 'title' | 'content'; readonly max: number }
   }
 }
@@ -123,6 +125,10 @@ export type KnowledgeSettingsPatch = Partial<KnowledgeBaseSettings> & {
 export interface KnowledgeSearchHit {
   readonly itemId: string
   readonly itemName: string
+  /** The item's kind: a file (alone or in a folder), a web page, or a note. */
+  readonly itemKind: KnowledgeItemKind
+  /** A page's address, or a folder file's path relative to its folder; null for files and notes. */
+  readonly source: string | null
   /** Position of the chunk within its item. */
   readonly ordinal: number
   readonly text: string

@@ -205,7 +205,7 @@ export class BaseStore {
    */
   search(vector: readonly number[], query: string, limit: number, threshold: number): KnowledgeSearchHit[] {
     // An item's chunks stay searchable until a new processing replaces them, whatever its status.
-    const rows = this.db.prepare(`select chunks.id, item_id, items.name, ordinal, text, vector
+    const rows = this.db.prepare(`select chunks.id, item_id, items.name, items.kind, items.source, ordinal, text, vector
       from chunks join items on items.id = chunks.item_id`).all()
     const keyword = new Map<number, number>()
     let best = 0
@@ -224,6 +224,8 @@ export class BaseStore {
         const keywordScore = best === 0 ? 0 : (keyword.get(num(row, 'id')) ?? 0) / best
         return {
           itemId: text(row, 'item_id'), itemName: text(row, 'name'), ordinal: num(row, 'ordinal'), text: text(row, 'text'),
+          // Written only by this class, from this union.
+          itemKind: text(row, 'kind') as KnowledgeItemKind, source: row.source === null ? null : text(row, 'source'),
           score: VECTOR_WEIGHT * similarity + (1 - VECTOR_WEIGHT) * keywordScore,
         }
       })

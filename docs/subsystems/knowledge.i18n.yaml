@@ -3,11 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/knowledge.md
 /knowledge-bases:
-  en: b890aebf4642c2b9
-  zh: 924cab5b39c46400
+  en: ccb39d6c382bb349
+  zh: 499ff8ae13eb4396
 /knowledge-bases/storage-and-processing:
   en: a155cec567bb630c
   zh: 57babb4ddc001c57
 /knowledge-bases/search:
   en: 73df68ba1f8b45af
   zh: f67aa3743e168482
+/knowledge-bases/use-in-conversations:
+  en: 411b48cf0905ca06
+  zh: 3f192178a16532a8

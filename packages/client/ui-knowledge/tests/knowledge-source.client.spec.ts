@@ -25,7 +25,7 @@ function deps() {
     deleteItem: vi.fn<KnowledgeDependencies['deleteItem']>(() => ok(state(base('a', '甲')))),
     updateSettings: vi.fn<KnowledgeDependencies['updateSettings']>(() => ok(state(base('a', '甲')))),
     reprocessAll: vi.fn<KnowledgeDependencies['reprocessAll']>(() => ok(state(base('a', '甲')))),
-    recall: vi.fn<KnowledgeDependencies['recall']>(() => ok({ hits: [{ itemId: 'i1', itemName: 'a.md', ordinal: 0, text: '年假', score: 0.8 }], durationMs: 12 })),
+    recall: vi.fn<KnowledgeDependencies['recall']>(() => ok({ hits: [{ itemId: 'i1', itemName: 'a.md', itemKind: 'file', source: null, ordinal: 0, text: '年假', score: 0.8 }], durationMs: 12 })),
     addFolder: vi.fn<KnowledgeDependencies['addFolder']>(() => ok(state(base('a', '甲')))),
     addUrl: vi.fn<KnowledgeDependencies['addUrl']>(() => ok(state(base('a', '甲')))),
     createNote: vi.fn<KnowledgeDependencies['createNote']>(() => ok(state(base('a', '甲')))),

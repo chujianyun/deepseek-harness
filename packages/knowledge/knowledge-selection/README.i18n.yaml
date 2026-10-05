@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/knowledge/knowledge-selection/README.md
+/:
+  en: a368fb954e6941a9
+  zh: 74ab815a43942d68
+/knowledge-selection:
+  en: 6afaf402b94956e3
+  zh: 5e600695995f5647
+/knowledge-selection/summary:
+  en: ca24513a2bd68184
+  zh: 4aef82f5a9e59afb
+/knowledge-selection/table-of-contents:
+  en: 4e53164159b5ce41
+  zh: 89582dc0294d0776
+/knowledge-selection/use-this-package:
+  en: ead5332dfe3356b2
+  zh: 0d3d27aabb875b3f
+/knowledge-selection/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/knowledge-selection/model-experience/knowledge-search-tool:
+  en: 4294067318fbdacf
+  zh: 1eecc3e5b4e82972
+/knowledge-selection/model-experience/knowledge-search-tool/what-the-model-sees:
+  en: 495aa866e3ae834b
+  zh: a87cc79bf68ef77f
+/knowledge-selection/model-experience/knowledge-search-tool/what-the-model-sees/result-example:
+  en: d8dae4cc4d6d0275
+  zh: fd09eca8f63c7c58
+/knowledge-selection/model-experience/knowledge-search-tool/token-effect:
+  en: 8319308df4c737ad
+  zh: db807499eb00423b
+/knowledge-selection/model-experience/knowledge-search-tool/kv-cache-effect:
+  en: f85145799d26eb20
+  zh: 5e93918ed8f4e69b
+/knowledge-selection/known-limitations-and-deferred-work:
+  en: 7e9721f45cdc19c6
+  zh: 9ff75fddfd17ab88
+/knowledge-selection/known-limitations-and-deferred-work/dev-note:
+  en: 83a5513a78655735
+  zh: f27d87cdc9013d2d

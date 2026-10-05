@@ -288,6 +288,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Keeps the signed-in tenant\'s knowledge bases, processes added files into embedded chunks, and searches them with hybrid vector and keyword scoring.',
   },
   {
+    key: 'knowledgeSelection',
+    pkg: 'knowledge-selection',
+    title: 'Knowledge selection',
+    mode: 'core',
+    note: 'Logs the knowledge bases each session may search and offers the `knowledge_search` tool over them only while a session has selected any.',
+  },
+  {
     key: 'skillMarket',
     pkg: 'skill-market',
     title: 'Skill Hub market',

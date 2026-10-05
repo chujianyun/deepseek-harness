@@ -10306,6 +10306,96 @@
       }
     },
     {
+      "key": "event:knowledge/selection",
+      "kind": "event",
+      "event": "knowledge/selection",
+      "surface": false,
+      "digest": "3e931d3bb95ac1863f816b3cf3d5d4c6722d433d061e69f937a30f1ceb2b2b92",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 5,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "bases",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 3
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "id",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": 4,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "knowledge/selection"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:llm/retry",
       "kind": "event",
       "event": "llm/retry",
@@ -21795,6 +21885,13 @@
   ],
   "types": [
     {
+      "digest": "000c1c285bf546d38b8d6713d53aad649f6aa8062c03ba23ad9259d7243ee218",
+      "names": [],
+      "sources": [
+        "packages/knowledge/knowledge-selection/src/types.ts:53"
+      ]
+    },
+    {
       "digest": "0116b1f89c05221d56b0ba35c83d302bf4857bc7277d247e9bbaf74b27d2c66e",
       "names": [],
       "sources": []
@@ -21953,6 +22050,11 @@
       "sources": [
         "packages/subagent/tool-subagent/src/model-selection-state.ts:17"
       ]
+    },
+    {
+      "digest": "0d82af9d9795b1133202a64728f1dd7719ed4e9c1ff26bcf7ce19c0dc489b133",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "0e10d7c096b47e61defe372a5fc8bd37d835199410eac44367f95c45082498bd",
@@ -22738,6 +22840,11 @@
       ]
     },
     {
+      "digest": "3e931d3bb95ac1863f816b3cf3d5d4c6722d433d061e69f937a30f1ceb2b2b92",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "3ee93b06f3a125850337602bcdf155d2538c43a5c944ec55b1b3c365152d6796",
       "names": [],
       "sources": []
@@ -23084,6 +23191,11 @@
     },
     {
       "digest": "557e148d30b79ee48645850832b30c717d7c3b64641deb5d6133b8b4e91ee0b8",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "5623f8877326ca315ace5a7698518f812971fc9800fdab134a88a62883a0c04a",
       "names": [],
       "sources": []
     },
@@ -24414,6 +24526,15 @@
       ],
       "sources": [
         "packages/attachment/attachment/src/types.ts:11"
+      ]
+    },
+    {
+      "digest": "b0b7b7f4d127101c49bfd0128e6f37c4627ebbc8baddf5b2e9edff1dac8c84b8",
+      "names": [
+        "packages/knowledge/knowledge-selection/src/types.ts#KnowledgeSelectionBase"
+      ],
+      "sources": [
+        "packages/knowledge/knowledge-selection/src/types.ts:10"
       ]
     },
     {

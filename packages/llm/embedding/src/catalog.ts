@@ -11,7 +11,8 @@ export const QWEN3_EMBEDDING: LocalModelSpec = {
   name: 'Qwen3-Embedding-0.6B',
   repo: 'onnx-community/Qwen3-Embedding-0.6B-ONNX',
   weights: 'onnx/model_quantized.onnx',
-  maxTokens: 2048,
+  // Under the Desktop host's Electron runtime, one run over 1,536 tokens or more crashes the process.
+  maxTokens: 1024,
   files: [
     { path: 'config.json', size: 1576, sha256: '66a10929782f3c9a3cd5dec90e2a95c60e05736134a63cd54479eeae80bed175' },
     { path: 'tokenizer_config.json', size: 9731, sha256: '977648852447cb6587327ff3205b0a84cf2fc9f05621d6c8e88a497caafab2e1' },

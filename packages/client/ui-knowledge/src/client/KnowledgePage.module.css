@@ -75,3 +75,23 @@
 .skippedList { margin: 6px 0 0; padding-left: 18px; color: var(--dsw-alias-label-tertiary); }
 .textarea { min-height: 240px; padding: 8px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: var(--dsw-radius-sm); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; line-height: 1.6; resize: vertical; }
 .dropZone > button { flex-shrink: 0; white-space: nowrap; }
+.picker { position: relative; display: inline-flex; }
+.pickerButton { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px; border: 0; border-radius: var(--dsw-radius-sm); background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 13px; cursor: pointer; }
+.pickerButton:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.pickerButton[data-active='true'] { color: var(--dsw-alias-state-business-primary); }
+.pickerLabel { white-space: nowrap; }
+.pickerPanel { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 20; display: flex; flex-direction: column; gap: 6px; width: 280px; max-height: 320px; overflow-y: auto; padding: 10px 12px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-md); background: var(--dsw-alias-bg-layer-1); box-shadow: 0 6px 24px rgb(0 0 0 / 12%); }
+.pickerHint { margin: 0 0 4px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.pickerRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.pickerStatus { color: var(--dsw-alias-label-tertiary); font-size: 12px; white-space: nowrap; }
+.pickerNote { margin: 4px 0 0; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.citations { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.citationsTitle { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; font-weight: 500; }
+.citationList { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.citation { display: flex; align-items: flex-start; gap: 8px; width: 280px; padding: 8px 10px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-md); background: transparent; color: var(--dsw-alias-label-primary); font: inherit; text-align: left; cursor: pointer; }
+.citation:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.citationIcon { flex-shrink: 0; padding-top: 2px; }
+.citationBody { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.citationName { overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.citationMeta { color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.citationSnippet { display: -webkit-box; overflow: hidden; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

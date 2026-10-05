@@ -1,5 +1,5 @@
 ---
-description: "dsh Desktop 客户端的知识库页面：侧栏入口，以及当前登录租户的知识库和其中的文件。"
+description: "dsh Desktop 客户端的知识库页面、输入框中的知识库选择，以及回答下方的来源。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 Desktop 侧栏的 Skills 下方新增**知识库**入口及其打开的页面：左侧是当前登录租户的[知识库](../../../docs/glossary.zh.md#knowledge-base)，右侧是选中知识库的文件；提供新建、重命名、删除知识库的对话框，用于添加文档的拖放区和**添加文件**按钮，以及知识库设置和召回测试。它通过 [`knowledgeBases` Remote](../../knowledge/knowledge-base/README.zh.md) 读取和操作，并提供 [`embedding` Remote](../../llm/embedding/README.zh.md) 中的模型供选择。
+在 Desktop 侧栏的 Skills 下方新增**知识库**入口及其打开的页面：左侧是当前登录租户的[知识库](../../../docs/glossary.zh.md#knowledge-base)，右侧是选中知识库的数据源；提供新建、重命名、删除知识库的对话框，以及知识库设置和召回测试。它通过 [`knowledgeBases` Remote](../../knowledge/knowledge-base/README.zh.md) 读取和操作，并提供 [`embedding` Remote](../../llm/embedding/README.zh.md) 中的模型供选择。在对话中，它在输入框加入**知识库**按钮，通过 [`knowledgeSelection` Remote](../../knowledge/knowledge-selection/README.zh.md) 选择会话可检索的知识库，并在每条回答下方显示模型检索到的来源。
 
 ## 目录
 
@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-把浏览器行挂在 Host 的 `knowledge-base` 行旁边，`disabled` 条件与它相同；web-app bundle 在 `desktop` profile 且配置了用户中心时启用这两行。插件只在 Desktop 渲染器（存在 `dshDesktop`）中生效。它注入 `remote.knowledgeBases` 与 `remote.embedding`，以 `knowledge` 注册到 `main` keyed slot，并以顺序 6 加入 `sidebar.panellist`。
+把浏览器行挂在 Host 的 `knowledge-base` 行旁边，`disabled` 条件与它相同；web-app bundle 在 `desktop` profile 且配置了用户中心时启用这两行。插件只在 Desktop 渲染器（存在 `dshDesktop`）中生效。Host 的 `knowledge-selection` 行使用相同条件挂载。它注入 `remote.knowledgeBases`、`remote.embedding`、`remote.knowledgeSelection`、`sessions` 与 `uiConversation`，以 `knowledge` 注册到 `main` keyed slot，以顺序 6 加入 `sidebar.panellist`，把知识库按钮加入 `conversation.input.left`，把来源加入 `conversation.chat.turnTail`，并为 `knowledge_search` 结果注册一个 Chat 节点定义。
 
 未登录时页面提示登录。登录后列表显示每个知识库及其文件数，在选择其他知识库前默认选中第一个。**新建知识库**打开对话框，填写名称并选择嵌入模型：本地模型（未安装时标注下载完成后可用），以及每个 API 嵌入模型及其提供商；选择 API 模型时提示文档内容会发送到该提供商，没有可用模型时指向「设置 → 嵌入模型」。创建被拒绝的原因在对话框中说明。
 
@@ -39,12 +39,14 @@ kind: "package-reference"
 
 **召回测试**按已保存的检索设置用一个问题检索，先显示结果数、耗时和最高分，再按得分从高到低列出命中结果的排名、来源文件与分块序号、相关度和正文。新的检索进行中时保留上一次的结果。召回测试不进入任何会话。
 
+输入框的**知识库**按钮在登录后显示，点击打开租户知识库的勾选列表，并标出重建中或不可用的知识库；选中 N 个时显示**知识库 N**，新会话默认一个都不选。勾选或取消立即生效；一轮进行中时列表提示该修改从模型的下一步开始生效，选择被拒绝时显示原因。模型检索过知识库的 Turn 下方，**引用来源**按最佳片段从高到低列出每个被引用的条目一次，显示其知识库、块序号和片段开头。点击文件或笔记会用本机默认应用打开知识库中的副本，副本已不存在时给出提示；点击网页会在浏览器中打开其地址。来源取自日志中的检索结果，因此重新加载后仍然存在。
+
 -----
 
 <a id="model-experience"></a>
 ## 模型体验
 
-无，因为该页面只渲染和编辑知识库。
+无，因为页面只编辑知识库，输入框按钮只选择知识库；面向模型的工具属于 [`knowledge-selection`](../../knowledge/knowledge-selection/README.zh.md#model-experience)。
 
 #### KV Cache 影响
 
@@ -54,7 +56,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **只支持文件** — 文件夹、网页和笔记、知识库设置以及召回测试稍后提供。
+- **来源打开的是副本** — 点击引用的文件打开的是知识库中保存的副本，而不是添加时的原文件。
 
 <a id="dev-note"></a>
 ### 开发备注
@@ -66,4 +68,4 @@ kind: "package-reference"
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。页面渲染 Host 的状态流，只保存选中项和对话框草稿。
+**运行时不变式：** 不发布伴生入口。页面渲染 Host 的状态流，只保存选中的知识库和对话框草稿；输入框按钮渲染会话的 `knowledgeSelection` 投影。

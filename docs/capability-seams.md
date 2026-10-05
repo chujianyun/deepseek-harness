@@ -77,6 +77,8 @@ flowchart LR
   svc_embedding["ctx.embedding<br/>Embedding models"]
   pkg_knowledge_base["knowledge-base"]
   svc_knowledgeBases["ctx.knowledgeBases<br/>Knowledge bases"]
+  pkg_knowledge_selection["knowledge-selection"]
+  svc_knowledgeSelection["ctx.knowledgeSelection<br/>Knowledge selection"]
   pkg_skill_market["skill-market"]
   svc_skillMarket["ctx.skillMarket<br/>Skill Hub market"]
   pkg_skill_controller["skill-controller"]
@@ -357,6 +359,7 @@ flowchart LR
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
   pkg_knowledge_base --> svc_knowledgeBases
+  pkg_knowledge_selection --> svc_knowledgeSelection
   pkg_llm --> svc_llm
   pkg_llm_deepseek --> svc_llm
   pkg_llm_pi_ai --> svc_llm
@@ -615,6 +618,7 @@ flowchart LR
 | `ctx.hubAccount` | `core` | [`hub-account`](../packages/credentials/hub-account) | - | - | - | Signs Desktop in to the Skill Hub user center (OAuth2 + PKCE over a loopback callback), refreshes the token on the Host, and refuses new prompts while signed out. |
 | `ctx.embedding` | `core` | [`embedding`](../packages/llm/embedding) | - | - | - | Downloads and runs the local embedding model, adds API embedding models over configured provider routes, and embeds text for knowledge bases on the Host. |
 | `ctx.knowledgeBases` | `core` | [`knowledge-base`](../packages/knowledge/knowledge-base) | - | - | - | Keeps the signed-in tenant's knowledge bases, processes added files into embedded chunks, and searches them with hybrid vector and keyword scoring. |
+| `ctx.knowledgeSelection` | `core` | [`knowledge-selection`](../packages/knowledge/knowledge-selection) | - | - | - | Logs the knowledge bases each session may search and offers the `knowledge_search` tool over them only while a session has selected any. |
 | `ctx.skillMarket` | `core` | [`skill-market`](../packages/skill/skill-market) | - | - | - | Discovers the signed-in tenant's market Skills as the `market` source, browses the Skill Hub as the signed-in employee, and installs a validated package in one move. |
 | `ctx.skillController` | `core` | [`skill-controller`](../packages/skill/skill-controller) | - | - | - | Lists the user-level skills on this machine and applies the Desktop Skills page actions: switch, reveal, edit, and move to the trash. |
 | `ctx.jobController` | `core` | [`api-job-controller`](../packages/api/job-controller) | - | - | - | Streams one background job's observation record over the generated Remote namespace; the roster stays on the session control stream. |

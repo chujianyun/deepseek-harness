@@ -40,6 +40,21 @@
     },
     {
       "path": "../../knowledge/knowledge-base"
+    },
+    {
+      "path": "../ui-chat/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-conversation/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-session"
+    },
+    {
+      "path": "../../knowledge/knowledge-selection"
+    },
+    {
+      "path": "../../core/session"
     }
   ]
 }

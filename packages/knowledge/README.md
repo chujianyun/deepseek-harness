@@ -25,6 +25,7 @@ The knowledge family keeps company documents on the user's machine, per tenant o
 | Package | Role | ctx key |
 |---|---|---|
 | [`knowledge-base/`](knowledge-base/README.md) | The signed-in tenant's knowledge bases: management, file processing queue, and hybrid search, over the `knowledgeBases` Remote | `ctx.knowledgeBases` |
+| [`knowledge-selection/`](knowledge-selection/README.md) | The knowledge bases each session may search, over the `knowledgeSelection` Remote, and the `knowledge_search` tool over them | `ctx.knowledgeSelection` |
 
 -----
 

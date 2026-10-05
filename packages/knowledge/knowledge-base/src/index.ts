@@ -21,6 +21,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { EmbeddingState } from '@deepseek-ai/dsh-embedding'
 import type {} from '@deepseek-ai/dsh-hub-account'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { canOpenNativePath, openNativeAssociatedPath } from '@deepseek-ai/dsh-native-command'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
@@ -521,6 +522,24 @@ export class KnowledgeBaseService extends TypertRemoteService {
     const base = this.base(id)
     const item = this.note(base, itemId)
     return { title: item.name, content: await readFile(this.copyPath(base, item), 'utf8') }
+  }
+
+  /**
+   * Open an item's own copy with this machine's default application: a file's copy, a page's
+   * fetched Markdown, or a note. A page's address is the caller's to open in a browser.
+   * @param id - knowledge base id.
+   * @param itemId - item id.
+   * @throws RemoteError `knowledge/not-found`, or `knowledge/cannot-open` for a folder, a page never
+   *   fetched, or a Host that cannot open files.
+   */
+  @Remote
+  async openItem(id: string, itemId: string): Promise<void> {
+    const base = this.base(id)
+    const item = this.item(base, itemId)
+    const path = this.copyPath(base, item)
+    const present = item.kind !== 'folder' && await stat(path).then(info => info.isFile(), () => false)
+    if (!present || !canOpenNativePath()) throw new RemoteError('knowledge/cannot-open', `item ${itemId} cannot be opened here`, { id: itemId })
+    await openNativeAssociatedPath(path, this.lifetime.signal)
   }
 
   /**

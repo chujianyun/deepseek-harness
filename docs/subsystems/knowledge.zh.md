@@ -2,7 +2,7 @@
 
 [English](knowledge.md) | 中文
 
-本地知识库让 Desktop 用户收集公司文档并对其检索。知识库、知识库条目、嵌入模型、重建等术语见[术语表](../glossary.zh.md#knowledge-base)。[`@deepseek-ai/dsh-knowledge-base`](../../packages/knowledge/knowledge-base/README.zh.md) 负责当前登录租户的知识库、其处理队列与混合检索；[`@deepseek-ai/dsh-embedding`](../../packages/llm/embedding/README.zh.md) 负责对其向量化的嵌入模型；[`@deepseek-ai/dsh-client-ui-knowledge`](../../packages/client/ui-knowledge/README.zh.md) 渲染知识库页面。
+本地知识库让 Desktop 用户收集公司文档并对其检索。知识库、知识库条目、嵌入模型、重建等术语见[术语表](../glossary.zh.md#knowledge-base)。[`@deepseek-ai/dsh-knowledge-base`](../../packages/knowledge/knowledge-base/README.zh.md) 负责当前登录租户的知识库、其处理队列与混合检索；[`@deepseek-ai/dsh-embedding`](../../packages/llm/embedding/README.zh.md) 负责对其向量化的嵌入模型；[`@deepseek-ai/dsh-knowledge-selection`](../../packages/knowledge/knowledge-selection/README.zh.md) 负责每个会话可检索的知识库以及模型在其上检索的工具；[`@deepseek-ai/dsh-client-ui-knowledge`](../../packages/client/ui-knowledge/README.zh.md) 渲染知识库页面、输入框中的知识库选择以及回答下方的来源。
 
 ## 存储与处理
 
@@ -13,6 +13,10 @@
 ## 检索
 
 检索用知识库的模型对查询向量化，把与每个分块向量的余弦相似度，和该分块按最佳匹配归一化的 BM25 关键词得分加权合并。关键词把汉字文本切分为单字与相邻两字，因为 FTS5 默认分词器会把一整段汉字当成一个词。召回测试按知识库保存的返回数量与阈值执行同样的检索，不进入任何会话。
+
+## 在对话中使用
+
+[知识库选择](../glossary.zh.md#knowledge-selection)按会话记录为完整值的 `knowledge/selection` 事件，由 `knowledgeSelection` 投影折叠；新会话不选择任何知识库。会话的选择不为空时，其智能体会获得 `knowledge_search` 工具：它对每个选中的知识库按该知识库保存的返回数量与阈值执行同样的检索，把片段按得分从高到低合并，并对已删除、重建中、不可用或检索失败的知识库给出说明，而不是让调用失败。每次检索记录为 `tool/call` 和 `tool/result`；结果的展示元数据带有片段来源，客户端据此在重新加载或回放后显示该 Turn 的来源。一轮进行中修改的选择从该轮下一次请求开始生效，并在该请求发出前写入日志。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -160,6 +164,16 @@ Host owner of the knowledge bases and of the `knowledgeBases` Remote namespace.
 @Remote async getNote(id: string, itemId: string): Promise<KnowledgeNote>
 
 /**
+ * Open an item's own copy with this machine's default application: a file's copy, a page's
+ * fetched Markdown, or a note. A page's address is the caller's to open in a browser.
+ * @param id - knowledge base id.
+ * @param itemId - item id.
+ * @throws RemoteError `knowledge/not-found`, or `knowledge/cannot-open` for a folder, a page never
+ *   fetched, or a Host that cannot open files.
+ */
+@Remote async openItem(id: string, itemId: string): Promise<void>
+
+/**
  * Process an item again from its stored copy.
  * @param id - knowledge base id.
  * @param itemId - item id.
@@ -190,4 +204,26 @@ async search( id: string, query: string, options: { limit: number; threshold: nu
 ```
 
 Source: [`packages/knowledge/knowledge-base/src/index.ts`](../../packages/knowledge/knowledge-base/src/index.ts)
+
+<a id="ctxknowledgeselection--knowledgeselectionservice"></a>
+
+### `ctx.knowledgeSelection` — `KnowledgeSelectionService`
+
+Host owner of the knowledge selection and of the `knowledgeSelection` Remote namespace.
+
+```ts cordis-catalog
+/**
+ * Select the knowledge bases a session searches; an empty list selects none. Between turns the
+ * selection is logged at once; during a turn it applies from the turn's next step.
+ * @param sessionId - the session.
+ * @param baseIds - knowledge bases of the signed-in tenant, in the order to show them.
+ * @returns the selection and when it applies.
+ * @throws RemoteError `knowledge-selection/unknown-base`, or the session's resolution failure.
+ */
+@Remote async select(sessionId: SessionId, baseIds: readonly string[]): Promise<KnowledgeSelectionResult>
+```
+
+Types: [SessionId](core.zh.md)
+
+Source: [`packages/knowledge/knowledge-selection/src/index.ts`](../../packages/knowledge/knowledge-selection/src/index.ts)
 <!-- END GENERATED cordis-surface -->

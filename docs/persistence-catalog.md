@@ -42,6 +42,7 @@ The [format references](persistence-changes/historical-formats/README.md) cover 
 | `event:hook/invoked` | event | `8a6e1ec9e8db346b0e02f027db73c07a94f067a26d40c1aef1abd09c47ce7ba0` | [`{ type: "hook/invoked" }`](#persistence-type-sha256-8a6e1ec9e8db346b0e02f027db73c07a94f067a26d40c1aef1abd09c47ce7ba0) |
 | `event:hook/result` | event | `e75916628f3f10c2d50658bd143052a46285fbf1a9a700ba54947614603d26b4` | [`{ type: "hook/result" }`](#persistence-type-sha256-e75916628f3f10c2d50658bd143052a46285fbf1a9a700ba54947614603d26b4) |
 | `event:image/offload` | event | `b222069eea2d768065161c1147b1f2c78c1b54328c84b3586ae5c8f91b8ed35e` | [`{ type: "image/offload" }`](#persistence-type-sha256-b222069eea2d768065161c1147b1f2c78c1b54328c84b3586ae5c8f91b8ed35e) |
+| `event:knowledge/selection` | event | `3e931d3bb95ac1863f816b3cf3d5d4c6722d433d061e69f937a30f1ceb2b2b92` | [`{ type: "knowledge/selection" }`](#persistence-type-sha256-3e931d3bb95ac1863f816b3cf3d5d4c6722d433d061e69f937a30f1ceb2b2b92) |
 | `event:llm/retry` | event | `525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336` | [`{ type: "llm/retry" }`](#persistence-type-sha256-525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336) |
 | `event:llm/retry-started` | event | `48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3` | [`{ type: "llm/retry-started" }`](#persistence-type-sha256-48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3) |
 | `event:model/selection` | event | `35203ba7ad5ef6f97d556b85df20ae98f04f09c65748cecdf8eefdb8b6405ffc` | [`{ type: "model/selection" }`](#persistence-type-sha256-35203ba7ad5ef6f97d556b85df20ae98f04f09c65748cecdf8eefdb8b6405ffc) |
@@ -623,6 +624,22 @@ Source: [`packages/hooks/hook-protocol/src/types.ts:31`](../packages/hooks/hook-
 ```
 
 Source: [`packages/compaction/compaction-image-offload/src/projection.ts:25`](../packages/compaction/compaction-image-offload/src/projection.ts)
+
+### `knowledge/*`
+
+<a id="knowledgeselection--log-only"></a>
+
+#### `knowledge/selection` — log-only
+
+```ts persistence-catalog
+/**
+ * The knowledge bases this session searches from this point on: log-only, whole-value
+ * replace. The last one wins; a log with none selects nothing.
+ */
+'knowledge/selection': { bases: KnowledgeSelectionBase[] }
+```
+
+Source: [`packages/knowledge/knowledge-selection/src/types.ts:53`](../packages/knowledge/knowledge-selection/src/types.ts)
 
 ### `llm/*`
 
@@ -1970,6 +1987,14 @@ SHA-256: `fee1caf8ab6a65c1bc981f5a1730164490f22a2a89ffa3d0b76f1f432c44c8b5`
 SHA-256: `69d238a6e9b08d67f601b1825962963d8d3523cb69ebf6208c697dc5d058c199`
 
 `"interrupted"`
+
+<a id="persistence-type-sha256-5623f8877326ca315ace5a7698518f812971fc9800fdab134a88a62883a0c04a"></a>
+
+### `"knowledge/selection"`
+
+SHA-256: `5623f8877326ca315ace5a7698518f812971fc9800fdab134a88a62883a0c04a`
+
+`"knowledge/selection"`
 
 <a id="persistence-type-sha256-ad3b56aa2fc1ad4250e7399295d34a8eae592e1907e85852e2291b2e498a30bc"></a>
 
@@ -3681,6 +3706,31 @@ One of:
 SHA-256: `72ec79127a9c0d0241b1106a74cc2b24c81ce467170f1c3c93f7b71a9496d227`
 
 Array of [`JsonValue`](#persistence-type-sha256-c592ce75aab73fcab19c1d7845684c72cf402b78d2e1f2833a58ecf9f3598ed6).
+
+<a id="persistence-type-sha256-b0b7b7f4d127101c49bfd0128e6f37c4627ebbc8baddf5b2e9edff1dac8c84b8"></a>
+
+<a id="persistence-type-knowledgeselectionbase"></a>
+
+<a id="persistence-type-packagesknowledgeknowledge-selectionsrctypestsknowledgeselectionbase"></a>
+
+### `KnowledgeSelectionBase`
+
+SHA-256: `b0b7b7f4d127101c49bfd0128e6f37c4627ebbc8baddf5b2e9edff1dac8c84b8`
+
+Sources: [`packages/knowledge/knowledge-selection/src/types.ts:10`](../packages/knowledge/knowledge-selection/src/types.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `id` | required | `string` |
+| `name` | required | `string` |
+
+<a id="persistence-type-sha256-0d82af9d9795b1133202a64728f1dd7719ed4e9c1ff26bcf7ce19c0dc489b133"></a>
+
+### `KnowledgeSelectionBase[]`
+
+SHA-256: `0d82af9d9795b1133202a64728f1dd7719ed4e9c1ff26bcf7ce19c0dc489b133`
+
+Array of [`KnowledgeSelectionBase`](#persistence-type-sha256-b0b7b7f4d127101c49bfd0128e6f37c4627ebbc8baddf5b2e9edff1dac8c84b8).
 
 <a id="persistence-type-sha256-3fdf9582c3b5597df104d32d97dab6c6ee3a93794f3034ec6ada6272404ea27f"></a>
 
@@ -5569,6 +5619,18 @@ Sources: [`packages/core/session/src/types.ts:361`](../packages/core/session/src
 | `name` | required | `string` |
 | `step` | required | `number` |
 | `turn` | required | `number` |
+
+<a id="persistence-type-sha256-000c1c285bf546d38b8d6713d53aad649f6aa8062c03ba23ad9259d7243ee218"></a>
+
+### `{ bases }`
+
+SHA-256: `000c1c285bf546d38b8d6713d53aad649f6aa8062c03ba23ad9259d7243ee218`
+
+Sources: [`packages/knowledge/knowledge-selection/src/types.ts:53`](../packages/knowledge/knowledge-selection/src/types.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `bases` | required | [`KnowledgeSelectionBase[]`](#persistence-type-sha256-0d82af9d9795b1133202a64728f1dd7719ed4e9c1ff26bcf7ce19c0dc489b133) |
 
 <a id="persistence-type-sha256-1528539c63db8b23506f0209a99ce77d8ad138adfbfcee3d4769b7382d93756c"></a>
 
@@ -8037,6 +8099,22 @@ SHA-256: `b222069eea2d768065161c1147b1f2c78c1b54328c84b3586ae5c8f91b8ed35e`
 | `seq` | required | `number` |
 | `time` | required | `number` |
 | `type` | required | `"image/offload"` |
+
+<a id="persistence-type-sha256-3e931d3bb95ac1863f816b3cf3d5d4c6722d433d061e69f937a30f1ceb2b2b92"></a>
+
+<a id="persistence-type-eventknowledgeselection"></a>
+
+### `{ type: "knowledge/selection" }`
+
+SHA-256: `3e931d3bb95ac1863f816b3cf3d5d4c6722d433d061e69f937a30f1ceb2b2b92`
+
+| Property | Presence | Type |
+|---|---|---|
+| `data` | required | [`{ bases }`](#persistence-type-sha256-000c1c285bf546d38b8d6713d53aad649f6aa8062c03ba23ad9259d7243ee218) |
+| `ignorable` | optional | `true` |
+| `seq` | required | `number` |
+| `time` | required | `number` |
+| `type` | required | `"knowledge/selection"` |
 
 <a id="persistence-type-sha256-525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336"></a>
 

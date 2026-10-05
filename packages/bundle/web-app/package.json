@@ -149,6 +149,7 @@
     "@deepseek-ai/dsh-embedding": "workspace:*",
     "@deepseek-ai/dsh-client-ui-settings-embedding": "workspace:*",
     "@deepseek-ai/dsh-knowledge-base": "workspace:*",
+    "@deepseek-ai/dsh-knowledge-selection": "workspace:*",
     "@deepseek-ai/dsh-client-ui-knowledge": "workspace:*",
     "@deepseek-ai/dsh-skill-filesystem": "workspace:*",
     "@deepseek-ai/dsh-subprocess": "workspace:*",

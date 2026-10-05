@@ -100,6 +100,9 @@
       "path": "../../knowledge/knowledge-base"
     },
     {
+      "path": "../../knowledge/knowledge-selection"
+    },
+    {
       "path": "../workspace-controller/tsconfig.client.json"
     },
     {

@@ -58,7 +58,9 @@ kind: "package-reference"
 
 本包通过 `embedding.registerUsage()` 登记使用方：本机任何租户的任何知识库正在使用的嵌入模型都不能删除。
 
-`search(id, query, { limit, threshold })` 用知识库的模型对查询向量化，返回合并得分（0.7 × 余弦相似度 + 0.3 × 按最佳关键词匹配归一化的 BM25）不低于 `threshold` 的最多 `limit` 个分块，按得分从高到低。
+`search(id, query, { limit, threshold })` 用知识库的模型对查询向量化，返回合并得分（0.7 × 余弦相似度 + 0.3 × 按最佳关键词匹配归一化的 BM25）不低于 `threshold` 的最多 `limit` 个分块，按得分从高到低。每个命中结果给出其条目、条目类型和来源（文件夹中文件的相对路径或网页地址）。
+
+`openItem(id, itemId)` 用本机默认应用打开条目自己的副本：文件的副本、网页抓取的 Markdown 或笔记。对文件夹、从未抓取成功的网页，以及无法打开文件的 Host，它以 `knowledge/cannot-open` 拒绝。
 
 -----
 
@@ -82,7 +84,7 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-无，因为知识库在会话之外管理和检索，目前没有模型请求携带它们。
+无，因为本包自身不向模型请求加入任何内容；[`knowledge-selection`](../knowledge-selection/README.zh.md#model-experience) 的 `knowledge_search` 工具携带 `search()` 返回的片段。
 
 #### KV Cache 影响
 

@@ -79,6 +79,8 @@ flowchart LR
   svc_embedding["ctx.embedding<br/>Embedding models"]
   pkg_knowledge_base["knowledge-base"]
   svc_knowledgeBases["ctx.knowledgeBases<br/>Knowledge bases"]
+  pkg_knowledge_selection["knowledge-selection"]
+  svc_knowledgeSelection["ctx.knowledgeSelection<br/>Knowledge selection"]
   pkg_skill_market["skill-market"]
   svc_skillMarket["ctx.skillMarket<br/>Skill Hub market"]
   pkg_skill_controller["skill-controller"]
@@ -359,6 +361,7 @@ flowchart LR
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
   pkg_knowledge_base --> svc_knowledgeBases
+  pkg_knowledge_selection --> svc_knowledgeSelection
   pkg_llm --> svc_llm
   pkg_llm_deepseek --> svc_llm
   pkg_llm_pi_ai --> svc_llm
@@ -617,6 +620,7 @@ flowchart LR
 | `ctx.hubAccount` | `core` | [`hub-account`](../packages/credentials/hub-account) | - | - | - | 让 Desktop 登录 Skill Hub 的用户中心（经本机回环回调的 OAuth2 + PKCE），在 Host 上刷新令牌，未登录时拒绝新消息。 |
 | `ctx.embedding` | `core` | [`embedding`](../packages/llm/embedding) | - | - | - | 下载并运行本地嵌入模型，通过已配置的提供商路由添加 API 嵌入模型，并在 Host 上为知识库向量化文本。 |
 | `ctx.knowledgeBases` | `core` | [`knowledge-base`](../packages/knowledge/knowledge-base) | - | - | - | 保存当前登录租户的知识库，把加入的文件处理成向量化的分块，并以向量与关键词混合打分检索。 |
+| `ctx.knowledgeSelection` | `core` | [`knowledge-selection`](../packages/knowledge/knowledge-selection) | - | - | - | 记录每个会话可检索的知识库，只在会话选择了知识库时提供在其上检索的 `knowledge_search` 工具。 |
 | `ctx.skillMarket` | `core` | [`skill-market`](../packages/skill/skill-market) | - | - | - | 把当前登录租户的市场 Skill 作为 `market` 来源发现，以登录员工身份浏览 Skill Hub，并把校验通过的安装包一次移到位。 |
 | `ctx.skillController` | `core` | [`skill-controller`](../packages/skill/skill-controller) | - | - | - | 列出本机的用户级 skill，并执行 Desktop Skills 页面的操作：启停、显示位置、编辑与移到废纸篓。 |
 | `ctx.jobController` | `core` | [`api-job-controller`](../packages/api/job-controller) | - | - | - | 经生成的 Remote namespace 流式发送一个后台任务的观测 record；名册仍在会话控制流上。 |

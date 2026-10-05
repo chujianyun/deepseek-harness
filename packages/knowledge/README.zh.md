@@ -25,6 +25,7 @@ knowledge 家族把公司文档按 Hub 登录的租户保存在用户本机，�
 | 包 | 职责 | ctx 键 |
 |---|---|---|
 | [`knowledge-base/`](knowledge-base/README.zh.md) | 当前登录租户的知识库：管理、文件处理队列与混合检索，通过 `knowledgeBases` Remote 提供 | `ctx.knowledgeBases` |
+| [`knowledge-selection/`](knowledge-selection/README.zh.md) | 每个会话可检索的知识库（通过 `knowledgeSelection` Remote 提供），以及在其上检索的 `knowledge_search` 工具 | `ctx.knowledgeSelection` |
 
 -----
 

@@ -187,6 +187,12 @@
       name: '@deepseek-ai/dsh-knowledge-base'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
+    # The knowledge bases each session may search and the knowledge_search tool
+    # over them; mounted exactly when the knowledge-base row is.
+    - id: knowledge-selection
+      name: '@deepseek-ai/dsh-knowledge-selection'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'

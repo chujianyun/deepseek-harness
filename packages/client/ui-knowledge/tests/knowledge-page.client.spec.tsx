@@ -318,8 +318,8 @@ describe('knowledge page', () => {
     expect((submit as HTMLButtonElement).disabled).toBe(true)
     act(() => {
       store.set({ ...store.getSnapshot(), recall: { baseId: 'b1', query: '年假有几天', running: false, failure: null, result: { durationMs: 18, hits: [
-        { itemId: 'i1', itemName: '年假制度.docx', ordinal: 0, text: '员工每年享有 5 天带薪年假', score: 0.8123 },
-        { itemId: 'i3', itemName: '会议纪要.txt', ordinal: 2, text: '会议纪要', score: 0.2511 },
+        { itemId: 'i1', itemName: '年假制度.docx', itemKind: 'file', source: null, ordinal: 0, text: '员工每年享有 5 天带薪年假', score: 0.8123 },
+        { itemId: 'i3', itemName: '会议纪要.txt', itemKind: 'file', source: null, ordinal: 2, text: '会议纪要', score: 0.2511 },
       ] } } })
     })
     expect(within(panel).getByRole('status').textContent).toBe('2 个结果 · 用时 18ms · 最高分 0.812')

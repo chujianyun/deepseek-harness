@@ -3,6 +3,12 @@ import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } fro
 import { tmpdir } from 'node:os'
 import { extname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const opened = vi.hoisted(() => ({ paths: [] as string[], canOpen: true }))
+vi.mock('@deepseek-ai/dsh-native-command', () => ({
+  canOpenNativePath: () => opened.canOpen,
+  openNativeAssociatedPath: (path: string) => { opened.paths.push(path); return Promise.resolve() },
+}))
 import { Context } from '@deepseek-ai/cordis'
 import type { EmbeddingState } from '@deepseek-ai/dsh-embedding'
 import { RemoteError, remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
@@ -141,7 +147,7 @@ describe('knowledge bases', () => {
     expect(service.typertRemote.namespace).toBe('knowledgeBases')
     expect(remoteMethods(service).map(method => method.method)).toEqual([
       'getState', 'watch', 'createBase', 'renameBase', 'updateSettings', 'reprocessAll', 'recall', 'deleteBase', 'addFiles',
-      'addFolder', 'addUrl', 'createNote', 'updateNote', 'getNote', 'reprocessItem', 'deleteItem',
+      'addFolder', 'addUrl', 'createNote', 'updateNote', 'getNote', 'openItem', 'reprocessItem', 'deleteItem',
     ])
   })
 
@@ -792,5 +798,36 @@ describe('knowledge bases', () => {
     const state = await until(next => settled(next) && next.bases[0]!.items[2]!.status === 'completed')
     expect(state.bases[0]!.items.map(item => item.name)).toEqual(['定稿', dir.split('/').at(-1), 'a.md'])
     expect((await service.recall(id, '第三版')).hits[0]!.text).toBe('甲的第三版内容')
+  })
+
+  it('opens an item\'s own copy, and tells each hit\'s kind and source', async () => {
+    const { service, until, web } = await boot()
+    const { id } = (await service.createBase('制度库', LOCAL)).bases[0]!
+    web.pages.set('https://intra.example.com/leave', { content: '<html><head><title>年假</title></head><body><article><p>员工每年享有五天带薪年假，满十年享有十天，需提前三天申请。</p></article></body></html>' })
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-knowledge-folder-'))
+    cleanups.push(() => rm(dir, { recursive: true, force: true }))
+    await copyFile(fixture('meeting-notes.txt'), join(dir, 'meeting-notes.txt'))
+    await service.addFiles(id, [fixture('product-manual.md')])
+    await service.addFolder(id, dir)
+    await service.addUrl(id, 'https://intra.example.com/leave')
+    await service.createNote(id, '报销提醒', '发票十五天内提交')
+    await service.addUrl(id, 'https://never.example.com/')
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const state = await until(next => next.bases[0]!.items.length === 6 && next.bases[0]!.items.every(item => item.status === 'completed' || item.status === 'failed'))
+    const items = new Map(state.bases[0]!.items.map(item => [item.name, item]))
+    const hits = new Map((await service.recall(id, '年假 发票 会议 产品')).hits.map(hit => [hit.itemName, [hit.itemKind, hit.source]]))
+    expect(Object.fromEntries(hits)).toMatchObject({
+      'product-manual.md': ['file', null], 'meeting-notes.txt': ['file', 'meeting-notes.txt'],
+      '年假': ['url', 'https://intra.example.com/leave'], '报销提醒': ['note', null],
+    })
+    for (const name of ['product-manual.md', 'meeting-notes.txt', '年假', '报销提醒']) await service.openItem(id, items.get(name)!.id)
+    expect(opened.paths.map(path => extname(path))).toEqual(['.md', '.txt', '.md', '.md'])
+    const refused = async (itemId: string) => remoteErrorOf(await service.openItem(id, itemId).catch((error: unknown) => error))?.code
+    expect(await refused(items.get(dir.split('/').at(-1)!)!.id)).toBe('knowledge/cannot-open')
+    expect(await refused(items.get('https://never.example.com/')!.id)).toBe('knowledge/cannot-open')
+    expect(await refused('nope')).toBe('knowledge/not-found')
+    opened.canOpen = false
+    expect(await refused(items.get('报销提醒')!.id)).toBe('knowledge/cannot-open')
+    opened.canOpen = true
   })
 })

@@ -33,7 +33,7 @@ kind: "package-reference"
 
 `listProviders()` 列出已配置、且通过 `llm.routeEndpoint()` 解析出的端点使用 `openai-completions` 或 `openai-responses` 的路由。`addApiModel(provider, model)` 带着路由的凭据和请求头发送一次 `POST <baseURL>/embeddings` 来测量向量维度，然后把 `{provider, model, dimensions}` 存入 `apiModels` 设置；`removeApiModel(id)` 删除它。路由已不存在的 API 模型仍会列出，并标为不可用。API 模型的 id 为 `<provider>/<model>`，本地模型的 id 为 `local/<name>`。
 
-`embed(id, texts, signal)` 为每段文本返回一个向量。本地模型对每段文本分词，截断到 `maxTokens` 并保留最后一个 token，以空的键值缓存运行，返回最后一个 token 的隐藏状态并做 L2 归一化；多次调用依次执行。API 模型每次请求最多放 `apiBatchSize` 段文本，按顺序逐个请求，并按 index 重新排序每个答复；被拒绝时以 `embedding/request-failed` 携带端点返回的状态码和信息；端点无法访问、请求超过 `requestTimeoutMs`，或响应体中途中断，也以同样方式失败。
+`embed(id, texts, signal)` 为每段文本返回一个向量。本地模型对每段文本分词，截断到 `maxTokens`（默认模型为 1,024，因为在 Desktop Host 的 Electron 运行时中，单次运行达到 1,536 个 token 会使进程崩溃）并保留最后一个 token，以空的键值缓存运行，返回最后一个 token 的隐藏状态并做 L2 归一化；多次调用依次执行。API 模型每次请求最多放 `apiBatchSize` 段文本，按顺序逐个请求，并按 index 重新排序每个答复；被拒绝时以 `embedding/request-failed` 携带端点返回的状态码和信息；端点无法访问、请求超过 `requestTimeoutMs`，或响应体中途中断，也以同样方式失败。
 
 -----
 

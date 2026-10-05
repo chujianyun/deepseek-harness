@@ -1,5 +1,5 @@
 ---
-description: "Knowledge page of the dsh Desktop client: the sidebar entry and the signed-in tenant's knowledge bases with their files."
+description: "Knowledge page of the dsh Desktop client, the composer's knowledge selection, and the sources below answers."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Adds a **Knowledge** entry to the Desktop sidebar, below Skills, and the page it opens: the signed-in tenant's [knowledge bases](../../../docs/glossary.md#knowledge-base) on the left and the selected one's files on the right, with dialogs to create, rename, and delete a knowledge base, a drop zone and **Add files** button for documents, its settings, and a recall test. It reads and acts through the [`knowledgeBases` Remote](../../knowledge/knowledge-base/README.md) and offers the models of the [`embedding` Remote](../../llm/embedding/README.md).
+Adds a **Knowledge** entry to the Desktop sidebar, below Skills, and the page it opens: the signed-in tenant's [knowledge bases](../../../docs/glossary.md#knowledge-base) on the left and the selected one's sources on the right, with dialogs to create, rename, and delete a knowledge base, its settings, and a recall test. It reads and acts through the [`knowledgeBases` Remote](../../knowledge/knowledge-base/README.md) and offers the models of the [`embedding` Remote](../../llm/embedding/README.md). In conversations it adds a **Knowledge** button to the composer that selects the knowledge bases the session may search, through the [`knowledgeSelection` Remote](../../knowledge/knowledge-selection/README.md), and shows the sources the model searched below each answer.
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ Adds a **Knowledge** entry to the Desktop sidebar, below Skills, and the page it
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the browser row beside the Host `knowledge-base` row with the same `disabled` condition; the web-app bundle enables both for the `desktop` profile with a configured user center. The plugin contributes only in the Desktop renderer (`dshDesktop` present). It injects `remote.knowledgeBases` and `remote.embedding`, registers the page into the `main` keyed slot as `knowledge`, and adds the entry to `sidebar.panellist` at order 6.
+Mount the browser row beside the Host `knowledge-base` row with the same `disabled` condition; the web-app bundle enables both for the `desktop` profile with a configured user center. The plugin contributes only in the Desktop renderer (`dshDesktop` present). Mount the Host `knowledge-selection` row with the same condition. It injects `remote.knowledgeBases`, `remote.embedding`, `remote.knowledgeSelection`, `sessions`, and `uiConversation`, registers the page into the `main` keyed slot as `knowledge`, adds the entry to `sidebar.panellist` at order 6, the knowledge button to `conversation.input.left`, the sources to `conversation.chat.turnTail`, and a Chat node definition for `knowledge_search` results.
 
 Signed out, the page asks to sign in. Otherwise the list shows each knowledge base with its file count, and the first is selected until another is chosen. **New knowledge base** opens a dialog for a name and an embedding model: the local model, marked as available once downloaded while it is not installed, and each API embedding model with its provider; choosing an API model shows that document content is sent to its provider, and with no model available the dialog points to Settings → Embedding models. Why a creation was refused is shown in the dialog.
 
@@ -39,12 +39,14 @@ Tabs at the top right switch the detail between **Sources**, **Settings**, and *
 
 **Recall test** searches with a question under the saved retrieval settings and lists the hits, best first, with their rank, source file and chunk number, relevance score, and text, after the result count, the time taken, and the top score. The previous hits stay on screen while a new search runs. A recall test enters no session.
 
+The composer's **Knowledge** button, shown while signed in, opens a checklist of the tenant's knowledge bases, marking those being rebuilt or unavailable; it reads **Knowledge N** while N are selected, and a new session starts with none. Ticking or clearing one selects at once; during a turn the list notes that the change applies from the model's next step, and a refused selection shows why. Below a Turn whose model searched knowledge bases, **Sources** lists each cited item once, best passage first, with its knowledge base, chunk number, and the passage's start. Clicking a file or note opens its copy in the knowledge base with this machine's default application, saying so when the copy is gone; clicking a web page opens its address in the browser. The sources come from the logged search results, so they survive a reload.
+
 -----
 
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as the page only renders and edits knowledge bases.
+None, as the page only edits knowledge bases and the composer button only selects them; the model-facing tool belongs to [`knowledge-selection`](../../knowledge/knowledge-selection/README.md#model-experience).
 
 #### KV Cache effect
 
@@ -54,7 +56,7 @@ No effect.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Files only** — folders, web pages, and notes, the knowledge base settings, and the recall test come later.
+- **Sources open copies** — a cited file opens the copy kept in the knowledge base, not the original file it was added from.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -66,4 +68,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The page renders the Host's state streams; it keeps only the selection and dialog drafts.
+**Runtime invariant:** No companion is published. The page renders the Host's state streams; it keeps only the selected knowledge base and dialog drafts, and the composer button renders the session's `knowledgeSelection` projection.

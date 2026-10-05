@@ -2,7 +2,7 @@
 
 English | [中文](knowledge.zh.md)
 
-Local knowledge bases let a Desktop user collect company documents and have them searched. The vocabulary — knowledge base, knowledge item, embedding model, rebuild — is defined in the [glossary](../glossary.md#knowledge-base). [`@deepseek-ai/dsh-knowledge-base`](../../packages/knowledge/knowledge-base/README.md) owns the knowledge bases of the signed-in tenant, their processing queue, and hybrid search; [`@deepseek-ai/dsh-embedding`](../../packages/llm/embedding/README.md) owns the embedding models that vectorize them; [`@deepseek-ai/dsh-client-ui-knowledge`](../../packages/client/ui-knowledge/README.md) renders the Knowledge page.
+Local knowledge bases let a Desktop user collect company documents and have them searched. The vocabulary — knowledge base, knowledge item, embedding model, rebuild — is defined in the [glossary](../glossary.md#knowledge-base). [`@deepseek-ai/dsh-knowledge-base`](../../packages/knowledge/knowledge-base/README.md) owns the knowledge bases of the signed-in tenant, their processing queue, and hybrid search; [`@deepseek-ai/dsh-embedding`](../../packages/llm/embedding/README.md) owns the embedding models that vectorize them; [`@deepseek-ai/dsh-knowledge-selection`](../../packages/knowledge/knowledge-selection/README.md) owns the knowledge bases each session may search and the model's search tool over them; [`@deepseek-ai/dsh-client-ui-knowledge`](../../packages/client/ui-knowledge/README.md) renders the Knowledge page, the composer's knowledge selection, and the sources below answers.
 
 ## Storage and processing
 
@@ -13,6 +13,10 @@ A [rebuild](../glossary.md#rebuild) replaces a knowledge base's embedding model 
 ## Search
 
 Search embeds the query with the knowledge base's model and blends cosine similarity over every chunk vector with the chunk's BM25 keyword score normalized against the best match. Keyword terms split Han text into characters and adjacent pairs, because the default FTS5 tokenizer keeps a whole Han run as one token. The recall test runs the same search under the knowledge base's saved result count and threshold, outside any Session.
+
+## Use in conversations
+
+A [knowledge selection](../glossary.md#knowledge-selection) is logged per session as the whole-value `knowledge/selection` event and folded by the `knowledgeSelection` projection; a new session selects none. While a session's selection is not empty, its agent is offered the `knowledge_search` tool, which runs the same search on each selected knowledge base under that knowledge base's saved result count and threshold, merges the passages best first, and reports knowledge bases that are deleted, rebuilding, unavailable, or failing instead of failing the call. Each result is recorded as `tool/call` and `tool/result`; the result's presentation metadata carries the passages' sources, from which clients show the Turn's sources after a reload or replay. A selection changed during a turn applies from that turn's next request and is logged before it is sent.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -160,6 +164,16 @@ Host owner of the knowledge bases and of the `knowledgeBases` Remote namespace.
 @Remote async getNote(id: string, itemId: string): Promise<KnowledgeNote>
 
 /**
+ * Open an item's own copy with this machine's default application: a file's copy, a page's
+ * fetched Markdown, or a note. A page's address is the caller's to open in a browser.
+ * @param id - knowledge base id.
+ * @param itemId - item id.
+ * @throws RemoteError `knowledge/not-found`, or `knowledge/cannot-open` for a folder, a page never
+ *   fetched, or a Host that cannot open files.
+ */
+@Remote async openItem(id: string, itemId: string): Promise<void>
+
+/**
  * Process an item again from its stored copy.
  * @param id - knowledge base id.
  * @param itemId - item id.
@@ -190,4 +204,26 @@ async search( id: string, query: string, options: { limit: number; threshold: nu
 ```
 
 Source: [`packages/knowledge/knowledge-base/src/index.ts`](../../packages/knowledge/knowledge-base/src/index.ts)
+
+<a id="ctxknowledgeselection--knowledgeselectionservice"></a>
+
+### `ctx.knowledgeSelection` — `KnowledgeSelectionService`
+
+Host owner of the knowledge selection and of the `knowledgeSelection` Remote namespace.
+
+```ts cordis-catalog
+/**
+ * Select the knowledge bases a session searches; an empty list selects none. Between turns the
+ * selection is logged at once; during a turn it applies from the turn's next step.
+ * @param sessionId - the session.
+ * @param baseIds - knowledge bases of the signed-in tenant, in the order to show them.
+ * @returns the selection and when it applies.
+ * @throws RemoteError `knowledge-selection/unknown-base`, or the session's resolution failure.
+ */
+@Remote async select(sessionId: SessionId, baseIds: readonly string[]): Promise<KnowledgeSelectionResult>
+```
+
+Types: [SessionId](core.md)
+
+Source: [`packages/knowledge/knowledge-selection/src/index.ts`](../../packages/knowledge/knowledge-selection/src/index.ts)
 <!-- END GENERATED cordis-surface -->

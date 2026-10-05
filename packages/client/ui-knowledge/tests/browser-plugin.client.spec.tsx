@@ -8,6 +8,14 @@ import { resolveSlotLabel, type GlobalStandardProps } from '@deepseek-ai/dsh-cli
 import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import type { EmbeddingState } from '@deepseek-ai/dsh-embedding/types'
 import type { KnowledgeState } from '@deepseek-ai/dsh-knowledge-base/types'
+import { ConversationEventRegistry } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { EMPTY_CHAT_SNAPSHOT } from '../../ui-chat/src/client/contract/snapshot.ts'
+import { citationsDefinition } from '../src/client/citations.ts'
+import { KnowledgeCitationsCard, type KnowledgeCitationsInjected } from '../src/client/KnowledgeCitations.tsx'
+import { KnowledgePicker, type KnowledgePickerInjected } from '../src/client/KnowledgePicker.tsx'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
 import type { KnowledgeInjected } from '../src/client/knowledge-source.ts'
@@ -65,10 +73,17 @@ async function bench() {
     reprocessAll: vi.fn(() => ok(knowledgeState)), recall: vi.fn(() => ok({ hits: [], durationMs: 1 })),
     addFolder: vi.fn(() => ok(knowledgeState)), addUrl: vi.fn(() => ok(knowledgeState)), createNote: vi.fn(() => ok(knowledgeState)),
     updateNote: vi.fn(() => ok(knowledgeState)), getNote: vi.fn(() => ok({ title: 't', content: 'c' })),
+    openItem: vi.fn(() => ok(undefined)),
     watch: vi.fn(),
   }
   const embedding = { watch: vi.fn() }
-  const remote = new TestRemote(ctx, { knowledgeBases, embedding })
+  const knowledgeSelection = { select: vi.fn(() => ok({ bases: [], applies: 'now' as const })) }
+  const remote = new TestRemote(ctx, { knowledgeBases, embedding, knowledgeSelection })
+  const events = new ConversationEventRegistry(ctx)
+  const chat = createSnapshotStore<ChatSnapshot | undefined>(EMPTY_CHAT_SNAPSHOT)
+  ctx.provide('uiConversation', { events, binding: () => ({ target: () => chat }) })
+  const binding = vi.fn<() => object | undefined>(() => ({}))
+  ctx.provide('sessions', { binding })
   const streams = { knowledgeBases: feed<KnowledgeState>(), embedding: feed<EmbeddingState>() }
   const accepted = vi.fn()
   Object.assign(remote, {
@@ -79,10 +94,13 @@ async function bench() {
   })
   const slots = ctx.get('slots') as SlotRegistry
   const removeRoot = slots.register({
-    name: 'root', children: { main: { kind: 'keyed', scope: 'root' }, 'sidebar.panellist': { kind: 'list', scope: 'root' } },
+    name: 'root', children: {
+      main: { kind: 'keyed', scope: 'root' }, 'sidebar.panellist': { kind: 'list', scope: 'root' },
+      'conversation.input.left': { kind: 'list', scope: 'session' }, 'conversation.chat.turnTail': { kind: 'list', scope: 'session' },
+    },
   } as never, () => null)
   onTestFinished(removeRoot)
-  return { ctx, slots, knowledgeBases, embedding, streams, accepted }
+  return { ctx, slots, knowledgeBases, embedding, knowledgeSelection, streams, accepted, events, chat, binding }
 }
 
 function face(slots: SlotRegistry): KnowledgeInjected {
@@ -159,6 +177,50 @@ describe('ui-knowledge browser plugin', () => {
     b.streams.embedding.fail(new Error('gone'))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(b.slots.entries('main')).toHaveLength(1)
+  })
+
+  it('adds the composer picker and the Turn citations, bound to the session, and withdraws them with the plugin', async () => {
+    const b = await bench()
+    const register = vi.spyOn(b.events, 'register')
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(register).toHaveBeenCalledWith(citationsDefinition)
+    const sid = 's1' as SessionId
+    const picker = b.slots.entries('conversation.input.left')[0]!
+    expect(picker.component).toBe(KnowledgePicker)
+    const resolvePicker: (sessionId: SessionId) => KnowledgePickerInjected = picker.inject as never
+    const pick = resolvePicker(sid)
+    expect(await pick.select(['b1'])).toBe('now')
+    expect(b.knowledgeSelection.select).toHaveBeenCalledWith(sid, ['b1'])
+    b.knowledgeSelection.select.mockResolvedValueOnce({ ok: false, error: { message: 'no knowledge base b1' } } as never)
+    expect(await pick.select(['b1'])).toEqual({ failure: 'no knowledge base b1' })
+    const card = b.slots.entries('conversation.chat.turnTail')[0]!
+    expect(card.component).toBe(KnowledgeCitationsCard)
+    const resolve: (sessionId: SessionId) => KnowledgeCitationsInjected = card.inject as never
+    const injected = resolve(sid)
+    const turnDataSource = vi.fn<(turn: number, kind: string) => void>()
+    b.chat.set({ ...EMPTY_CHAT_SNAPSHOT, nodes: {
+      ...EMPTY_CHAT_SNAPSHOT.nodes,
+      turnDataSource: (turn, kind) => { turnDataSource(turn, kind); return EMPTY_CHAT_SNAPSHOT.nodes.turnDataSource(turn, kind) },
+    } })
+    expect(injected.keyedHooks.citations('3').getSnapshot()).toEqual([])
+    expect(turnDataSource).toHaveBeenCalledWith(3, 'knowledge-citations')
+    const citation = { knowledgeBaseId: 'b1', knowledgeBase: 'K', itemId: 'f1', item: 'a.md', kind: 'file' as const, chunk: 1, score: 1, snippet: 's' }
+    expect(await injected.openItem(citation)).toBe(true)
+    expect(b.knowledgeBases.openItem).toHaveBeenCalledWith('b1', 'f1')
+    b.knowledgeBases.openItem.mockResolvedValueOnce({ ok: false, error: { message: 'gone' } } as never)
+    expect(await injected.openItem(citation)).toBe(false)
+    const open = vi.spyOn(globalThis, 'open').mockReturnValue(null)
+    injected.openUrl('https://example.com/a')
+    expect(open).toHaveBeenCalledWith('https://example.com/a', '_blank', 'noopener')
+    open.mockRestore()
+    b.chat.set(undefined)
+    expect(() => injected.keyedHooks.citations('3')).toThrow('Chat target is unavailable')
+    b.binding.mockReturnValueOnce(undefined)
+    expect(() => resolve(sid)).toThrow('unknown session')
+    await fiber.dispose()
+    expect(b.slots.entries('conversation.input.left')).toEqual([])
+    expect(b.slots.entries('conversation.chat.turnTail')).toEqual([])
   })
 
   it('contributes nothing outside the Desktop renderer, and has a node half that contributes nothing', async () => {

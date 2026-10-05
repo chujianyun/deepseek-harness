@@ -1,5 +1,5 @@
 # Enables the Desktop knowledge rows for the keyless Web e2e (`knowledge.e2e.ts`) beside the Hub
-# sign-in rows (`hub-account.overlay.yml`): knowledge bases, the embedding models they use, and
+# sign-in rows (`hub-account.overlay.yml`): knowledge bases, their selection per session, the embedding models they use, and
 # an OpenAI-compatible provider route at the spec's mock embeddings endpoint. The spec writes the
 # embedding row's settings into the home profile patch, where Settings can also write.
 - id: embedding
@@ -7,6 +7,8 @@
 - id: ui-settings-embedding
   disabled: false
 - id: knowledge-base
+  disabled: false
+- id: knowledge-selection
   disabled: false
 - id: ui-knowledge
   disabled: false

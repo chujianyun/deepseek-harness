@@ -58,7 +58,9 @@ A new `embeddingModelId` must first embed a trial text, which measures its vecto
 
 The package registers a usage with `embedding.registerUsage()`: an embedding model used by any knowledge base on this machine, of any tenant, cannot be removed.
 
-`search(id, query, { limit, threshold })` embeds the query with the knowledge base's model and returns up to `limit` chunks whose blended score (0.7 × cosine similarity + 0.3 × BM25 normalized against the best keyword match) is at least `threshold`, best first.
+`search(id, query, { limit, threshold })` embeds the query with the knowledge base's model and returns up to `limit` chunks whose blended score (0.7 × cosine similarity + 0.3 × BM25 normalized against the best keyword match) is at least `threshold`, best first. Each hit names its item, the item's kind, and its source — a folder file's relative path or a page's address.
+
+`openItem(id, itemId)` opens an item's own copy with this machine's default application: a file's copy, a page's fetched Markdown, or a note. It refuses a folder, a page never fetched, and a Host that cannot open files with `knowledge/cannot-open`.
 
 -----
 
@@ -82,7 +84,7 @@ The package registers a usage with `embedding.registerUsage()`: an embedding mod
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as knowledge bases are managed and searched outside any Session; no model request carries them yet.
+None, as this package adds nothing to model requests itself; the `knowledge_search` tool of [`knowledge-selection`](../knowledge-selection/README.md#model-experience) carries the passages its `search()` returns.
 
 #### KV Cache effect
 

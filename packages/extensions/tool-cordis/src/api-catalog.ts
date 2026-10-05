@@ -1596,6 +1596,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RemoteError `knowledge/not-found`.'],
       },
       {
+        signature: '@Remote async openItem(id: string, itemId: string): Promise<void>',
+        description: 'Open an item\'s own copy with this machine\'s default application: a file\'s copy, a page\'s fetched Markdown, or a note. A page\'s address is the caller\'s to open in a browser.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'item id.' }],
+        throws: ['RemoteError `knowledge/not-found`, or `knowledge/cannot-open` for a folder, a page never fetched, or a Host that cannot open files.'],
+      },
+      {
         signature: '@Remote reprocessItem(id: string, itemId: string): Promise<KnowledgeState>',
         description: 'Process an item again from its stored copy.',
         parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'item id.' }],
@@ -1615,6 +1621,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'query', description: 'question or keywords.' }, { name: 'options', description: 'most hits, and least blended score (0–1).' }, { name: 'signal', description: 'cancels the query embedding.' }],
         returns: 'hits, best first.',
         throws: ['RemoteError `knowledge/not-found`, `knowledge/rebuilding`, or the embedding model\'s failure.'],
+      },
+    ],
+  },
+  {
+    key: 'knowledgeSelection',
+    summary: 'Host owner of the knowledge selection and of the `knowledgeSelection` Remote namespace.',
+    description: 'Host owner of the knowledge selection and of the `knowledgeSelection` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote async select(sessionId: SessionId, baseIds: readonly string[]): Promise<KnowledgeSelectionResult>',
+        description: 'Select the knowledge bases a session searches; an empty list selects none. Between turns the selection is logged at once; during a turn it applies from the turn\'s next step.',
+        parameters: [{ name: 'sessionId', description: 'the session.' }, { name: 'baseIds', description: 'knowledge bases of the signed-in tenant, in the order to show them.' }],
+        returns: 'the selection and when it applies.',
+        throws: ['RemoteError `knowledge-selection/unknown-base`, or the session\'s resolution failure.'],
       },
     ],
   },
@@ -6090,7 +6110,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KnowledgeSearchHit',
-    declaration: 'export interface KnowledgeSearchHit {\n    readonly itemId: string;\n    readonly itemName: string;\n    readonly ordinal: number;\n    readonly text: string;\n    readonly score: number;\n}',
+    declaration: 'export interface KnowledgeSearchHit {\n    readonly itemId: string;\n    readonly itemName: string;\n    readonly itemKind: KnowledgeItemKind;\n    readonly source: string | null;\n    readonly ordinal: number;\n    readonly text: string;\n    readonly score: number;\n}',
+  },
+  {
+    name: 'KnowledgeSelectionBase',
+    declaration: 'export interface KnowledgeSelectionBase {\n    readonly id: string;\n    readonly name: string;\n}',
+  },
+  {
+    name: 'KnowledgeSelectionResult',
+    declaration: 'export interface KnowledgeSelectionResult {\n    readonly bases: readonly KnowledgeSelectionBase[];\n    readonly applies: \'now\' | \'next-step\';\n}',
   },
   {
     name: 'KnowledgeSettingsPatch',
