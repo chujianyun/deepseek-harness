@@ -25,13 +25,13 @@ import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { chunkText } from './chunk.ts'
 import { isSupported, readDocument } from './readers.ts'
-import { BaseStore, type SearchHit } from './store.ts'
+import { BaseStore } from './store.ts'
 import type {
-  KnowledgeAddResult, KnowledgeBaseView, KnowledgeItemError, KnowledgeRejectReason, KnowledgeState,
+  KnowledgeAddResult, KnowledgeBaseSettings, KnowledgeBaseView, KnowledgeItemError, KnowledgeRecallResult, KnowledgeRejectReason,
+  KnowledgeSearchHit, KnowledgeSettingsPatch, KnowledgeState,
 } from './types.ts'
 
 export type * from './types.ts'
-export type { SearchHit } from './store.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -66,15 +66,42 @@ export const Config: Schema<Config> = Schema.object({
   maxNameLength: Schema.natural().min(1).default(50),
 })
 
+/** Chunking and retrieval settings with their bounds; defaults follow Cherry Studio's. */
+const settingsShape = {
+  chunkStrategy: z.enum(['structured', 'delimiter']),
+  chunkSeparator: z.string(),
+  chunkSize: z.number().int().positive(),
+  chunkOverlap: z.number().int().nonnegative(),
+  documentCount: z.number().int().min(1).max(50),
+  threshold: z.number().min(0).max(1),
+}
+
+/** The cross-field rules: overlap below size, and a separator for delimiter chunking. */
+function crossFieldProblem(settings: KnowledgeBaseSettings): keyof KnowledgeBaseSettings | undefined {
+  if (settings.chunkOverlap >= settings.chunkSize) return 'chunkOverlap'
+  if (settings.chunkStrategy === 'delimiter' && settings.chunkSeparator === '') return 'chunkSeparator'
+  return undefined
+}
+
 const settingsFile = z.object({
   version: z.literal(1),
   id: z.string(),
   name: z.string(),
   embeddingModelId: z.string(),
-  chunkSize: z.number().int().positive(),
-  chunkOverlap: z.number().int().nonnegative(),
+  // Knowledge bases created before these settings existed read with the defaults.
+  dimensions: z.number().int().positive().nullable().default(null),
+  chunkStrategy: settingsShape.chunkStrategy.default('structured'),
+  chunkSeparator: settingsShape.chunkSeparator.default('\\n\\n'),
+  chunkSize: settingsShape.chunkSize,
+  chunkOverlap: settingsShape.chunkOverlap,
+  documentCount: settingsShape.documentCount.default(6),
+  threshold: settingsShape.threshold.default(0),
+  /** Set while items are processed again for a new embedding model. */
+  rebuilding: z.boolean().default(false),
   createdAt: z.string(),
 })
+
+const settingsPatch = z.object({ ...settingsShape, embeddingModelId: z.string() }).partial().strict()
 type BaseSettings = z.infer<typeof settingsFile>
 
 interface OpenBase {
@@ -187,14 +214,13 @@ export class KnowledgeBaseService extends TypertRemoteService {
     return this.serialized(async () => {
       const tenant = this.requireTenant()
       const trimmed = this.validName(name)
-      const embedding = await this.ctx.embedding.getState()
-      const offered = (embedding.local.status !== 'unsupported' && embedding.local.id === embeddingModelId)
-        || embedding.apiModels.some(model => model.id === embeddingModelId)
-      if (!offered) throw new RemoteError('knowledge/embedding-model-unavailable', `embedding model ${embeddingModelId} is not available`, { id: embeddingModelId })
+      const dimensions = await this.offeredDimensions(embeddingModelId)
       const id = randomUUID()
       const settings: BaseSettings = {
-        version: 1, id, name: trimmed, embeddingModelId,
+        version: 1, id, name: trimmed, embeddingModelId, dimensions,
+        chunkStrategy: 'structured', chunkSeparator: '\\n\\n',
         chunkSize: this.config.chunkSize, chunkOverlap: Math.min(this.config.chunkOverlap, this.config.chunkSize - 1),
+        documentCount: 6, threshold: 0, rebuilding: false,
         createdAt: new Date().toISOString(),
       }
       const dir = join(this.root, tenant, id)
@@ -223,6 +249,87 @@ export class KnowledgeBaseService extends TypertRemoteService {
       this.changed()
       return this.getState()
     })
+  }
+
+  /**
+   * Change a knowledge base's embedding model, chunking, or retrieval settings. A new embedding
+   * model must embed a trial text first, which measures its vector length; with items present the
+   * knowledge base is then rebuilt in place: every chunk is dropped and every item processed again,
+   * and it cannot be searched until that ends. Chunking changes apply to items processed afterwards.
+   * @param id - knowledge base id.
+   * @param patch - settings to change.
+   * @returns the state.
+   * @throws RemoteError `knowledge/not-found`, `knowledge/invalid-settings`, `knowledge/embedding-model-unavailable`,
+   *   or `knowledge/embedding-probe-failed`.
+   */
+  @Remote
+  updateSettings(id: string, patch: KnowledgeSettingsPatch): Promise<KnowledgeState> {
+    return this.serialized(async () => {
+      const base = this.base(id)
+      const parsed = settingsPatch.safeParse(patch)
+      if (!parsed.success) {
+        const field = String(parsed.error.issues[0]?.path[0] ?? 'settings')
+        throw new RemoteError('knowledge/invalid-settings', `invalid knowledge base setting ${field}`, { field })
+      }
+      const { embeddingModelId = base.settings.embeddingModelId, ...changes } = parsed.data
+      // The schema admits only these keys; a key passed as undefined changes nothing.
+      const defined = Object.fromEntries(Object.entries(changes).filter(([, value]) => value !== undefined))
+      const next = { ...base.settings, ...(defined as Partial<KnowledgeBaseSettings>) }
+      const problem = crossFieldProblem(next)
+      if (problem !== undefined) throw new RemoteError('knowledge/invalid-settings', `invalid knowledge base setting ${problem}`, { field: problem })
+      let { dimensions, rebuilding } = base.settings
+      let rebuild = false
+      if (embeddingModelId !== base.settings.embeddingModelId) {
+        await this.offeredDimensions(embeddingModelId)
+        dimensions = await this.probe(embeddingModelId)
+        rebuild = base.store.items().length > 0
+        if (rebuild) {
+          await this.stopJob(job => job.baseId === id)
+          rebuilding = true
+        }
+      }
+      const settings = { ...next, embeddingModelId, dimensions, rebuilding }
+      await this.writeSettings(base.dir, settings)
+      if (rebuild) base.store.requeueAll(true)
+      base.settings = settings
+      this.changed()
+      this.kick()
+      return this.getState()
+    })
+  }
+
+  /**
+   * Process every item of a knowledge base again, as after a chunking change. Old chunks stay
+   * searchable until each item's new ones replace them.
+   * @param id - knowledge base id.
+   * @returns the state with every item pending.
+   * @throws RemoteError `knowledge/not-found`.
+   */
+  @Remote
+  reprocessAll(id: string): Promise<KnowledgeState> {
+    return this.serialized(async () => {
+      const base = this.base(id)
+      await this.stopJob(job => job.baseId === id)
+      base.store.requeueAll(false)
+      this.changed()
+      this.kick()
+      return this.getState()
+    })
+  }
+
+  /**
+   * Recall test: search a knowledge base under its own retrieval settings, outside any session.
+   * @param id - knowledge base id.
+   * @param query - question or keywords.
+   * @returns the hits and how long the search took.
+   * @throws RemoteError `knowledge/not-found`, `knowledge/rebuilding`, or the embedding model's failure.
+   */
+  @Remote
+  async recall(id: string, query: string): Promise<KnowledgeRecallResult> {
+    const { documentCount, threshold } = this.base(id).settings
+    const started = performance.now()
+    const hits = await this.search(id, query, { limit: documentCount, threshold })
+    return { hits, durationMs: Math.round(performance.now() - started) }
   }
 
   /**
@@ -316,6 +423,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
       await this.stopJob(job => job.itemId === itemId)
       base.store.deleteItem(itemId)
       await rm(this.filePath(base, itemId, item.name), { force: true })
+      await this.settle(base)
       this.changed()
       this.kick()
       return this.getState()
@@ -329,14 +437,17 @@ export class KnowledgeBaseService extends TypertRemoteService {
    * @param options - most hits, and least blended score (0–1).
    * @param signal - cancels the query embedding.
    * @returns hits, best first.
-   * @throws RemoteError `knowledge/not-found`, or the embedding model's failure.
+   * @throws RemoteError `knowledge/not-found`, `knowledge/rebuilding`, or the embedding model's failure.
    */
-  async search(id: string, query: string, options: { limit: number; threshold: number }, signal?: AbortSignal): Promise<SearchHit[]> {
+  async search(
+    id: string, query: string, options: { limit: number; threshold: number }, signal?: AbortSignal,
+  ): Promise<KnowledgeSearchHit[]> {
     const base = this.base(id)
+    this.ensureSearchable(id, base)
     // One text in, one vector out.
     const [vector] = await this.ctx.embedding.embed(base.settings.embeddingModelId, [query], signal) as [number[]]
-    // The base may have been deleted, or the tenant switched, while the query was embedding.
-    if (this.bases.get(id) !== base) throw new RemoteError('knowledge/not-found', `no knowledge base ${id}`, { id })
+    // The base may have been deleted, the tenant switched, or a rebuild started while the query was embedding.
+    this.ensureSearchable(id, base)
     return base.store.search(vector, query, options.limit, options.threshold)
   }
 
@@ -347,6 +458,12 @@ export class KnowledgeBaseService extends TypertRemoteService {
     const run = this.writes.then(work)
     this.writes = run.catch(() => undefined)
     return run
+  }
+
+  /** Refuse a search of a knowledge base that is gone or being rebuilt. */
+  private ensureSearchable(id: string, base: OpenBase): void {
+    if (this.bases.get(id) !== base) throw new RemoteError('knowledge/not-found', `no knowledge base ${id}`, { id })
+    if (base.settings.rebuilding) throw new RemoteError('knowledge/rebuilding', `knowledge base ${id} is being rebuilt`, { id })
   }
 
   private requireTenant(): string {
@@ -387,19 +504,45 @@ export class KnowledgeBaseService extends TypertRemoteService {
     await rename(`${path}.tmp`, path)
   }
 
+  /**
+   * Check that Settings → Embedding models offers a model.
+   * @returns its vector length as Settings reports it.
+   */
+  private async offeredDimensions(modelId: string): Promise<number | null> {
+    const embedding = await this.ctx.embedding.getState()
+    if (embedding.local.status !== 'unsupported' && embedding.local.id === modelId) return embedding.local.dimensions
+    const api = embedding.apiModels.find(model => model.id === modelId)
+    if (api === undefined) throw new RemoteError('knowledge/embedding-model-unavailable', `embedding model ${modelId} is not available`, { id: modelId })
+    return api.dimensions
+  }
+
+  /** Embed a trial text with a model, measuring its vector length. */
+  private async probe(modelId: string): Promise<number> {
+    try {
+      const [vector] = await this.ctx.embedding.embed(modelId, ['知识库嵌入模型测试 / embedding probe'])
+      if (vector === undefined || vector.length === 0) throw new Error('the model returned no vector')
+      return vector.length
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new RemoteError('knowledge/embedding-probe-failed', `embedding model ${modelId} failed: ${message}`, { id: modelId, message })
+    }
+  }
+
   private modelReady(modelId: string): boolean {
     if (modelId !== this.embedding?.local.id) return true
     return this.embedding.local.status === 'installed'
   }
 
   private view(base: OpenBase): KnowledgeBaseView {
-    const { id, name, embeddingModelId, createdAt } = base.settings
+    const { id, name, embeddingModelId, createdAt, dimensions, rebuilding } = base.settings
+    const { chunkStrategy, chunkSeparator, chunkSize, chunkOverlap, documentCount, threshold } = base.settings
     const local = this.embedding?.local
     const api = this.embedding?.apiModels.find(model => model.id === embeddingModelId)
     const embeddingModelName = local?.id === embeddingModelId ? local.name : api?.model ?? embeddingModelId
     return {
-      id, name, embeddingModelId, embeddingModelName, createdAt,
-      status: this.modelReady(embeddingModelId) ? 'ready' : 'unavailable',
+      id, name, embeddingModelId, embeddingModelName, createdAt, dimensions,
+      status: !this.modelReady(embeddingModelId) ? 'unavailable' : rebuilding ? 'rebuilding' : 'ready',
+      settings: { chunkStrategy, chunkSeparator, chunkSize, chunkOverlap, documentCount, threshold },
       items: base.store.items().map(item => ({ ...item, kind: 'file' as const })),
     }
   }
@@ -460,6 +603,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
           // The local model costs nothing to resume; an API model waits for the user to retry.
           base.store.setStatus(item.id, local ? 'pending' : 'failed', local ? null : 'interrupted')
         }
+        await this.settle(base)
       }
     }
     this.changed()
@@ -526,7 +670,21 @@ export class KnowledgeBaseService extends TypertRemoteService {
     } finally {
       this.job = undefined
       this.changed()
+      void this.serialized(() => this.settle(base)).catch((error: unknown) => {
+        // The rebuild stays on; the next item finished or deleted, or the next activation of this tenant, tries again.
+        console.warn('[knowledge-base] could not end a rebuild', { error: String(error) })
+      })
     }
+  }
+
+  /** End a rebuild once none of the knowledge base's items is left to process. */
+  private async settle(base: OpenBase): Promise<void> {
+    if (!base.settings.rebuilding || this.bases.get(base.settings.id) !== base) return
+    if (base.store.items().some(item => item.status === 'pending' || item.status === 'processing')) return
+    const settings = { ...base.settings, rebuilding: false }
+    await this.writeSettings(base.dir, settings)
+    base.settings = settings
+    this.changed()
   }
 
   /** Read, chunk, embed, and index one item; expected failures are recorded through `fail`. */
@@ -541,7 +699,12 @@ export class KnowledgeBaseService extends TypertRemoteService {
       fail('unreadable', error)
       return
     }
-    const chunks = chunkText(text, base.settings.chunkSize, base.settings.chunkOverlap)
+    // Read each time: the signal can abort during any await.
+    const stopped = (): boolean => signal.aborted
+    // Stopped while reading: the item stays as it is for whoever resumes it.
+    if (stopped()) return
+    const { chunkSize: size, chunkOverlap: overlap, chunkStrategy: strategy, chunkSeparator: separator } = base.settings
+    const chunks = chunkText(text, { size, overlap, strategy, separator })
     if (chunks.length === 0) { fail('empty', 'no text'); return }
     const embedded: { text: string; vector: number[] }[] = []
     try {
@@ -553,7 +716,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
       }
     } catch (error) {
       // Stopped by a switch, a deletion, or shutdown: the item stays as it is for whoever resumes it.
-      if (signal.aborted) return
+      if (stopped()) return
       fail('embedding', error)
       return
     }

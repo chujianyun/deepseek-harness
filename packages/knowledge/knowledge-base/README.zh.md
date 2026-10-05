@@ -27,9 +27,26 @@ kind: "package-reference"
 
 知识库属于当前 Hub 登录所在的租户：未登录时没有知识库，登录另一个租户时看到的是那个租户的。`createBase(name, embeddingModelId)` 要求名称为 1 到 50 个字且在租户内唯一，嵌入模型必须是「设置 → 嵌入模型」提供的（本地模型，除非本平台无法运行；或已添加的 API 模型）。`renameBase()` 与 `deleteBase()` 修改知识库；删除会移除其目录。
 
-`addFiles(id, paths)` 接收本机文件的绝对路径（Desktop 渲染器从拖入或选中的文件读取）。扩展名不受支持、大于 `maxFileBytes` 或无法读取的文件会被拒绝并说明原因；其余文件复制进知识库并作为 `pending` 条目排队。处理器逐个处理当前登录租户的待处理条目：读取文本（Word 用 mammoth，PDF 用 pdf.js 读取文本层，并做 NFKC 规范化），切分为约 `chunkSize` 个估算 token 的分块（每块最多带上前一块末尾 `chunkOverlap` 个 token），按每批 `embedBatch` 个向量化，并在一个事务中替换该条目的分块。文件无法解析时条目以 `unreadable` 失败，没有文字（扫描版 PDF）时以 `empty` 失败，嵌入模型拒绝、出错或返回的向量数量不对时以 `embedding` 失败，索引拒绝写入分块时以 `storage` 失败；之后处理器继续处理下一个条目。`reprocessItem()` 从保存的副本重新排队一个条目，`deleteItem()` 删除条目及其副本与分块；两者都会先停止正在处理的该条目。
+`addFiles(id, paths)` 接收本机文件的绝对路径（Desktop 渲染器从拖入或选中的文件读取）。扩展名不受支持、大于 `maxFileBytes` 或无法读取的文件会被拒绝并说明原因；其余文件复制进知识库并作为 `pending` 条目排队。处理器逐个处理当前登录租户的待处理条目：读取文本（Word 用 mammoth，PDF 用 pdf.js 读取文本层，并做 NFKC 规范化），切分为最多 `chunkSize` 个估算 token 的分块（每块开头最多重复前一块末尾 `chunkOverlap` 个 token），按每批 `embedBatch` 个向量化，并在一个事务中替换该条目的分块。文件无法解析时条目以 `unreadable` 失败，没有文字（扫描版 PDF）时以 `empty` 失败，嵌入模型拒绝、出错或返回的向量数量不对时以 `embedding` 失败，索引拒绝写入分块时以 `storage` 失败；之后处理器继续处理下一个条目。`reprocessItem()` 从保存的副本重新排队一个条目，`deleteItem()` 删除条目及其副本与分块；两者都会先停止正在处理的该条目。
 
 使用本地嵌入模型的知识库在该模型未安装期间为 `unavailable`；其条目保持 `pending`，等模型安装后再处理。某个租户成为当前登录租户时（启动时或登录时），之前运行遗留的 `pending` 或 `processing` 条目中，使用本地模型的继续处理（不产生费用），使用 API 模型的以 `interrupted` 失败，避免在用户不知情时产生费用。登录另一个租户会停止正在处理的条目；回到原租户时按同样规则处理。`index.sqlite` 无法打开的知识库不出现在列表中（日志里有警告），该租户的其他知识库照常打开。
+
+每个知识库在 `base.json` 中保存自己的设置，参照 Cherry Studio 的知识库设置，不含重排模型；这些设置出现之前保存的知识库按默认值读取。`updateSettings(id, patch)` 修改其中任意几项，超出范围的值以 `knowledge/invalid-settings` 拒绝，并指明字段：
+
+| 设置 | 默认值 | 规则 |
+|---|---|---|
+| `chunkStrategy` | `structured` | `structured`（智能分段）在 Markdown 结构处结束分块——标题、代码块边界、分隔线、空行、列表项，其次是换行和句末——从不在标题后紧接着结束，并且只要前面够得到别的切分点，就不在代码块内部切开；分隔符作为一个段落级切分点。`delimiter` 优先在分隔符处结束分块，其次是空行、换行、`。`、`. ` 和空格。 |
+| `chunkSeparator` | `\n\n` | 用 `\n`、`\t`、`\r`、`\\` 转义书写；`delimiter` 必填。 |
+| `chunkSize` | 配置项 `chunkSize` | 正整数。 |
+| `chunkOverlap` | 配置项 `chunkOverlap` | 小于 `chunkSize` 的非负整数。 |
+| `documentCount` | `6` | 一次检索最多返回的分块数，1–50。 |
+| `threshold` | `0` | 检索保留的最低合并得分，0–1。 |
+
+两种策略都在分块剩余空间的最后四分之一里选得分最高的切分点，越靠近上限得分越高；找不到切分点时硬切。分块设置的修改只对之后处理的条目生效；`reprocessAll(id)` 把所有条目重新排队，每个条目的旧分块在新分块替换前仍可检索。
+
+更换 `embeddingModelId` 时，新模型必须先对一段试用文本向量化，同时测出向量维度（视图中的 `dimensions`；创建时取「设置」报告的维度）；失败则以 `knowledge/embedding-probe-failed` 拒绝更换并带上模型的报错。已有条目时随后原地重建：删除全部分块、所有条目重新排队，知识库状态为 `rebuilding`，期间以 `knowledge/rebuilding` 拒绝检索，直到没有待处理或处理中的条目。使用 API 模型重建时若 DSH 重启，未完成的条目以 `interrupted` 失败，重建随之结束。
+
+`recall(id, query)` 是召回测试：按知识库自己的 `documentCount` 与 `threshold` 检索，返回命中结果和耗时。它不修改任何内容，也不进入任何会话。
 
 本包通过 `embedding.registerUsage()` 登记使用方：本机任何租户的任何知识库正在使用的嵌入模型都不能删除。
 
@@ -64,6 +81,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **只有内置解析** — 设置中的文档处理只有一个选项；OCR 与 MinerU 处理服务延后提供。
 - **只支持文件** — 文件夹、网页和笔记稍后提供；条目类型目前总是 `file`。
 - **估算 token** — 分块大小为估算值（每个汉字算一个 token，其他字符每四个算一个），不使用嵌入模型的分词器计数。
 - **只读取文本层** — 扫描版 PDF 没有文本层，会以 `empty` 失败；OCR 延后提供。

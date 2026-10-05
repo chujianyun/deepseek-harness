@@ -61,7 +61,8 @@ async function bench() {
   const knowledgeBases = {
     createBase: vi.fn(() => ok(knowledgeState)), renameBase: vi.fn(() => ok(knowledgeState)), deleteBase: vi.fn(() => ok(knowledgeState)),
     addFiles: vi.fn(() => ok({ added: 0, rejected: [] })), reprocessItem: vi.fn(() => ok(knowledgeState)),
-    deleteItem: vi.fn(() => ok(knowledgeState)),
+    deleteItem: vi.fn(() => ok(knowledgeState)), updateSettings: vi.fn(() => ok(knowledgeState)),
+    reprocessAll: vi.fn(() => ok(knowledgeState)), recall: vi.fn(() => ok({ hits: [], durationMs: 1 })),
     watch: vi.fn(),
   }
   const embedding = { watch: vi.fn() }
@@ -117,7 +118,13 @@ describe('ui-knowledge browser plugin', () => {
     await injected.onAddFiles('b', ['/a.txt'])
     await injected.onReprocess('b', 'i')
     await injected.onDeleteItem('b', 'i')
+    await injected.onSaveSettings('b', { documentCount: 3 })
+    await injected.onReprocessAll('b')
+    await injected.onRecall('b', '年假')
     await injected.onDelete('b')
+    expect(b.knowledgeBases.updateSettings).toHaveBeenCalledWith('b', { documentCount: 3 })
+    expect(b.knowledgeBases.reprocessAll).toHaveBeenCalledWith('b')
+    expect(b.knowledgeBases.recall).toHaveBeenCalledWith('b', '年假')
     expect(b.knowledgeBases.createBase).toHaveBeenCalledWith('甲', 'local/q')
     expect(b.knowledgeBases.renameBase).toHaveBeenCalledWith('b', '乙')
     expect(b.knowledgeBases.addFiles).toHaveBeenCalledWith('b', ['/a.txt'])

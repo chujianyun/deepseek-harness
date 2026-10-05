@@ -2,7 +2,9 @@
 // rows: signed in to a mock user center, the employee creates a knowledge base on an API
 // embedding model served by a mock OpenAI-compatible endpoint, adds Word, PDF, Markdown, and text
 // files from the sidebar page, watches them get processed, finds them by search, renames the
-// knowledge base, deletes a file, and sees another tenant's sign-in show none of it.
+// knowledge base, deletes a file, runs recall tests under changed retrieval settings, reprocesses
+// every document with smaller chunks, rebuilds on a new embedding model, and sees another tenant's
+// sign-in show none of it.
 import { once } from 'node:events'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -50,7 +52,7 @@ async function startEmbeddingsEndpoint() {
   }
 }
 
-it('creates a knowledge base, processes the four document kinds, and keeps it to its tenant', async () => {
+it('creates a knowledge base, processes the four document kinds, tunes and tests its retrieval, and keeps it to its tenant', async () => {
   const api = await startEmbeddingsEndpoint()
   const center = await startMockUserCenter()
   Object.assign(process.env, { DSH_E2E_HUB_ORIGIN: center.origin, DSH_E2E_EMBEDDING_API: api.baseURL })
@@ -107,6 +109,52 @@ it('creates a knowledge base, processes the four document kinds, and keeps it to
     const renamed = page.getByRole('region', { name: '甲公司制度' })
     await renamed.getByRole('cell', { name: 'meeting-notes.txt 的操作' }).getByRole('button', { name: '删除' }).click()
     await expect.poll(async () => (await renamed.getByRole('row').count())).toBe(4)
+
+    // Recall test under the retrieval settings: every remaining document by default, then only the best one.
+    const recall = async (question: string) => {
+      await renamed.getByRole('tab', { name: '召回测试' }).click()
+      await renamed.getByRole('textbox', { name: '输入要测试的问题' }).fill(question)
+      await renamed.getByRole('button', { name: '检索', exact: true }).click()
+      return renamed.getByRole('list', { name: '召回结果' }).getByRole('listitem')
+    }
+    let found = await recall('员工每年有几天年假')
+    await expect.poll(() => found.count()).toBe(3)
+    expect(await found.first().textContent()).toContain('annual-leave.docx')
+    await renamed.getByRole('tab', { name: '设置' }).click()
+    await renamed.getByRole('slider', { name: '返回文档数' }).fill('1')
+    await renamed.getByRole('button', { name: '保存', exact: true }).click()
+    await renamed.getByRole('status').getByText('已保存').waitFor()
+    found = await recall('员工每年有几天年假')
+    await expect.poll(async () => (await renamed.getByRole('status').allTextContents()).join()).toContain('1 个结果')
+    expect(await found.count()).toBe(1)
+
+    // Smaller chunks reach existing documents once they are all processed again.
+    await renamed.getByRole('tab', { name: '设置' }).click()
+    const settings = renamed.getByRole('tabpanel')
+    await settings.getByRole('region', { name: '分块' }).getByRole('textbox').nth(2).fill('0')
+    await settings.getByRole('region', { name: '分块' }).getByRole('textbox').nth(1).fill('20')
+    await settings.getByRole('button', { name: '保存', exact: true }).click()
+    await settings.getByRole('status').getByText('已保存').waitFor()
+    await settings.getByRole('button', { name: '重新处理全部文档' }).click()
+    await expect.poll(async () => {
+      const { items } = (await scaffold.ctx.knowledgeBases.getState()).bases[0]!
+      return items.every(item => item.status === 'completed') && items.some(item => item.chunkCount > 1)
+    }, { timeout: 20_000 }).toBe(true)
+
+    // A new embedding model, after confirming, rebuilds the knowledge base in place.
+    await scaffold.ctx.embedding.addApiModel('acme-gateway', 'bge-small')
+    await settings.getByRole('combobox', { name: '嵌入模型' }).selectOption('acme-gateway/bge-small')
+    await settings.getByRole('button', { name: '保存', exact: true }).click()
+    await page.getByRole('dialog', { name: '更换嵌入模型' }).getByRole('button', { name: '更换并重建' }).click()
+    await expect.poll(async () => {
+      const rebuilt = (await scaffold.ctx.knowledgeBases.getState()).bases[0]!
+      return `${rebuilt.embeddingModelId} ${rebuilt.status}`
+    }, { timeout: 20_000 }).toBe('acme-gateway/bge-small ready')
+    await renamed.getByText('嵌入模型：bge-small').waitFor()
+    found = await recall('差旅费报销需要多久')
+    // The previous hits stay on screen until the new search ends.
+    await expect.poll(() => found.first().textContent()).toContain('expense-policy.pdf')
+    expect(await found.count()).toBe(1)
 
     // Another tenant sees none of it; the first tenant's knowledge base is back after signing in again.
     center.tenant = { tenantId: 't-b', tenantName: '乙公司' }

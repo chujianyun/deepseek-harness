@@ -15,6 +15,12 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'knowledge/invalid-name': { readonly name: string }
     /** The chosen embedding model is not one Settings → Embedding models offers. */
     'knowledge/embedding-model-unavailable': { readonly id: string }
+    /** A knowledge base setting is out of range; `field` names it. */
+    'knowledge/invalid-settings': { readonly field: string }
+    /** The new embedding model failed its trial embedding, so the knowledge base keeps its model. */
+    'knowledge/embedding-probe-failed': { readonly id: string; readonly message: string }
+    /** The knowledge base is being rebuilt for a new embedding model and cannot be searched yet. */
+    'knowledge/rebuilding': { readonly id: string }
   }
 }
 
@@ -54,6 +60,53 @@ export interface KnowledgeItemView {
   readonly addedAt: string
 }
 
+/**
+ * How chunk ends are chosen.
+ * - `structured`: smart chunking, at Markdown structure (headings, code fences, paragraphs), with the separator as one more break.
+ * - `delimiter`: at the separator first, then at lines, sentences, and spaces.
+ */
+export type KnowledgeChunkStrategy = 'structured' | 'delimiter'
+
+/** A knowledge base's chunking and retrieval settings. */
+export interface KnowledgeBaseSettings {
+  readonly chunkStrategy: KnowledgeChunkStrategy
+  /** Separator as typed, with `\n`, `\t`, `\r`, and `\\` escapes; required by `delimiter`. */
+  readonly chunkSeparator: string
+  /** Most estimated tokens per chunk; at least 1. */
+  readonly chunkSize: number
+  /** Estimated tokens repeated from the previous chunk; less than `chunkSize`. */
+  readonly chunkOverlap: number
+  /** Most chunks a search returns, 1–50. */
+  readonly documentCount: number
+  /** Least relevance score a search keeps, 0–1. */
+  readonly threshold: number
+}
+
+/** Settings to change; omitted ones stay. */
+export type KnowledgeSettingsPatch = Partial<KnowledgeBaseSettings> & {
+  /** A new embedding model; with items present, the knowledge base is rebuilt in place. */
+  readonly embeddingModelId?: string
+}
+
+/** One chunk a search found. */
+export interface KnowledgeSearchHit {
+  readonly itemId: string
+  readonly itemName: string
+  /** Position of the chunk within its item. */
+  readonly ordinal: number
+  readonly text: string
+  /** Blended relevance, 0–1. */
+  readonly score: number
+}
+
+/** Outcome of a recall test. */
+export interface KnowledgeRecallResult {
+  /** Hits under the knowledge base's retrieval settings, best first. */
+  readonly hits: readonly KnowledgeSearchHit[]
+  /** Time the search took, in milliseconds. */
+  readonly durationMs: number
+}
+
 /** One knowledge base of the signed-in tenant. */
 export interface KnowledgeBaseView {
   readonly id: string
@@ -62,11 +115,15 @@ export interface KnowledgeBaseView {
   readonly embeddingModelId: string
   /** Embedding model display name. */
   readonly embeddingModelName: string
+  /** Vector length of the embedding model, as measured when it was chosen; null when not measured. */
+  readonly dimensions: number | null
   /**
-   * `ready`, or `unavailable` while its embedding model cannot run (the local model missing,
-   * damaged, or downloading); pending items wait for it.
+   * `ready`; `rebuilding` while items are processed again for a new embedding model, when it cannot
+   * be searched; or `unavailable` while its embedding model cannot run (the local model missing,
+   * damaged, or downloading), when pending items wait for it.
    */
-  readonly status: 'ready' | 'unavailable'
+  readonly status: 'ready' | 'rebuilding' | 'unavailable'
+  readonly settings: KnowledgeBaseSettings
   readonly items: readonly KnowledgeItemView[]
   /** ISO creation time. */
   readonly createdAt: string

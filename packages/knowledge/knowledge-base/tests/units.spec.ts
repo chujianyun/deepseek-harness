@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { chunkText, estimateTokens } from '../src/chunk.ts'
+import { chunkText, estimateTokens, unescapeSeparator } from '../src/chunk.ts'
 import { isSupported, readDocument } from '../src/readers.ts'
 import { BaseStore } from '../src/store.ts'
 import { matchExpression, terms } from '../src/terms.ts'
@@ -26,29 +26,65 @@ describe('terms', () => {
 })
 
 describe('chunking', () => {
+  const smart = (size: number, overlap: number, separator = '\\n\\n') => ({ size, overlap, strategy: 'structured' as const, separator })
+  const delimited = (size: number, overlap: number, separator: string) => ({ size, overlap, strategy: 'delimiter' as const, separator })
+
   it('estimates one token per Han character and one per four other characters', () => {
     expect(estimateTokens('年假')).toBe(2)
     expect(estimateTokens('annual leave')).toBe(3)
     expect(estimateTokens('  ')).toBe(0)
+    expect(unescapeSeparator('\\n\\t\\r\\\\|')).toBe('\n\t\r\\|')
   })
 
-  it('packs paragraphs into chunks and carries the last ones over as overlap', () => {
-    const paragraphs = Array.from({ length: 6 }, (_, index) => `第${String(index)}段内容。`.repeat(3))
-    const chunks = chunkText(paragraphs.join('\n\n'), 40, 15)
-    expect(chunks.length).toBeGreaterThan(1)
-    for (const chunk of chunks) expect(estimateTokens(chunk)).toBeLessThanOrEqual(40)
-    // The second chunk starts with the first chunk's last paragraph.
-    expect(chunks[1]!.startsWith(chunks[0]!.split('\n').at(-1)!)).toBe(true)
-    expect(chunks.join('\n')).toContain('第5段内容。')
+  it('keeps every chunk within the size and repeats the overlap at the start of the next', () => {
+    const text = Array.from({ length: 12 }, (_, index) => `第${String(index)}条规定的内容。`).join('')
+    const chunks = chunkText(text, smart(30, 10))
+    expect(chunks.length).toBeGreaterThan(2)
+    for (const chunk of chunks) expect(estimateTokens(chunk)).toBeLessThanOrEqual(30)
+    // Each chunk ends at a sentence and the next one starts with text from its end.
+    expect(chunks[0]!.endsWith('。')).toBe(true)
+    expect(chunks[1]!.startsWith('第3条')).toBe(true)
+    expect(chunks[0]!.endsWith('第3条规定的内容。')).toBe(true)
+    expect(chunks.join('')).toContain('第11条规定的内容。')
+    expect(chunkText(text, smart(30, 0)).join('')).toBe(text)
   })
 
-  it('splits an oversized paragraph by sentences, and an oversized sentence by characters', () => {
-    const sentences = '第一句话很长很长。第二句话也很长很长。'
-    expect(chunkText(sentences, 10, 0)).toEqual(['第一句话很长很长。', '第二句话也很长很长。'])
-    expect(chunkText('一二三四五六七八九十甲乙丙', 5, 0)).toEqual(['一二三四五', '六七八九十', '甲乙丙'])
-    expect(chunkText('\n\n  \n\n', 10, 0)).toEqual([])
-    // A line break inside a long paragraph ends a sentence; the break alone is dropped.
-    expect(chunkText('第一行很长很长。\n第二行也很长很长', 9, 0)).toEqual(['第一行很长很长。', '第二行也很长很长'])
+  it('ends smart chunks at Markdown structure, before code fences, and never after a heading', () => {
+    const doc = ['# 第一章', '一'.repeat(50) + '。', '## 第二章', '二'.repeat(50) + '。', '### 第三章', '三'.repeat(50) + '。'].join('\n')
+    expect(chunkText(doc, smart(62, 0)).map(chunk => chunk.split('\n')[0])).toEqual(['# 第一章', '## 第二章', '### 第三章'])
+    const spaced = ['# 第一章', '', '一'.repeat(50) + '。', '', '## 第二章', '', '二'.repeat(50) + '。'].join('\n')
+    expect(chunkText(spaced, smart(60, 0)).every(chunk => !/#.*$/u.test(chunk.split('\n').filter(line => line !== '').at(-1)!))).toBe(true)
+    const code = '前'.repeat(30) + '。\n```\n' + Array.from({ length: 30 }, (_, index) => `line${String(index)}`).join('\n') + '\n```\n尾'
+    const chunks = chunkText(code, smart(35, 0))
+    expect(chunks[0]).toBe('前'.repeat(30) + '。')
+    expect(chunks[1]!.startsWith('```')).toBe(true)
+    // A rule, a list item, a blank line, and a plain line end chunks too; text with no break is cut hard.
+    expect(chunkText('甲'.repeat(10) + '\n---\n' + '乙'.repeat(10), smart(13, 0))).toEqual(['甲'.repeat(10) + '\n---', '乙'.repeat(10)])
+    expect(chunkText('甲'.repeat(10) + '\n\n' + '乙'.repeat(10), smart(13, 0))).toEqual(['甲'.repeat(10), '乙'.repeat(10)])
+    expect(chunkText('甲'.repeat(10) + '\n- 项目一\n' + '乙'.repeat(10), smart(13, 0))[0]).toBe('甲'.repeat(10) + '\n- 项目')
+    expect(chunkText('一二三四五六七八九十甲乙丙', smart(5, 0))).toEqual(['一二三四五', '六七八九十', '甲乙丙'])
+    // The separator is one more paragraph-level break.
+    expect(chunkText('甲'.repeat(10) + '|' + '乙'.repeat(10), smart(13, 0, '|'))).toEqual(['甲'.repeat(10) + '|', '乙'.repeat(10)])
+    expect(chunkText('\n\n  \n\n', smart(10, 0))).toEqual([])
+    // A blank line beats a nearer sentence end; an unclosed fence runs to the end of the text.
+    expect(chunkText('甲'.repeat(30) + '\n\n乙乙。' + '丙'.repeat(20), smart(40, 0))[0]).toBe('甲'.repeat(30))
+    expect(chunkText('前言。\n```\n' + 'code '.repeat(20), smart(8, 0)).length).toBeGreaterThan(1)
+  })
+
+  it('ends delimiter chunks at the separator first, then at lines, sentences, and spaces', () => {
+    const text = '第一节内容很短|第二节内容也很短|第三节'
+    expect(chunkText(text, delimited(10, 0, '|'))).toEqual(['第一节内容很短|', '第二节内容也很短|', '第三节'])
+    expect(chunkText('alpha beta gamma delta epsilon zeta', delimited(4, 0, '\\n'))).toEqual(['alpha beta gamma', 'delta epsilon zeta'])
+    // Without the separator in the text, the fallback chain still finds sentences.
+    expect(chunkText('第一句话很长很长。第二句话也很长很长。', delimited(10, 0, '###'))).toEqual(['第一句话很长很长。', '第二句话也很长很长。'])
+    expect(chunkText('第一行的内容\n第二行的内容。', delimited(7, 0, '\\n'))).toEqual(['第一行的内容', '第二行的内容。'])
+    // Characters outside the Basic Multilingual Plane are never split in half.
+    const astral = '𠀀'.repeat(7)
+    expect(chunkText(astral, delimited(3, 0, '|'))).toEqual(['𠀀𠀀𠀀', '𠀀𠀀𠀀', '𠀀'])
+    expect(chunkText('𠀀𠀀', delimited(1, 0, '|'))).toEqual(['𠀀', '𠀀'])
+    expect(chunkText(astral, delimited(3, 1, '|')).every(chunk => chunk.isWellFormed())).toBe(true)
+    // An empty separator is never matched.
+    expect(chunkText('abc', delimited(10, 0, ''))).toEqual(['abc'])
   })
 })
 

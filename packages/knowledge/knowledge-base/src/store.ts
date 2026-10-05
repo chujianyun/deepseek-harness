@@ -4,7 +4,7 @@
  * similarity over every vector, blended with BM25 normalized against the best keyword match.
  */
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite'
-import type { KnowledgeItemError, KnowledgeItemStatus } from './types.ts'
+import type { KnowledgeItemError, KnowledgeItemStatus, KnowledgeSearchHit } from './types.ts'
 import { matchExpression, terms } from './terms.ts'
 
 /** One stored item. */
@@ -18,16 +18,6 @@ export interface ItemRow {
   addedAt: string
 }
 
-/** One search hit. */
-export interface SearchHit {
-  itemId: string
-  itemName: string
-  /** Position of the chunk within its item. */
-  ordinal: number
-  text: string
-  /** Blended relevance, 0–1. */
-  score: number
-}
 
 /** Weight of vector similarity in the blended score; the rest is the keyword match. */
 const VECTOR_WEIGHT = 0.7
@@ -139,6 +129,20 @@ export class BaseStore {
   }
 
   /**
+   * Queue every item again.
+   * @param dropChunks - also delete every chunk, as when the embedding model changes and old vectors no longer compare.
+   */
+  requeueAll(dropChunks: boolean): void {
+    this.transaction(() => {
+      if (dropChunks) {
+        this.db.exec('delete from chunk_terms; delete from chunks')
+        this.db.exec('update items set chunk_count = 0')
+      }
+      this.db.exec("update items set status = 'pending', error = null")
+    })
+  }
+
+  /**
    * Hybrid search.
    * @param vector - the query's embedding.
    * @param query - the query text, for keyword matching.
@@ -146,7 +150,7 @@ export class BaseStore {
    * @param threshold - least blended score kept.
    * @returns hits, best first.
    */
-  search(vector: readonly number[], query: string, limit: number, threshold: number): SearchHit[] {
+  search(vector: readonly number[], query: string, limit: number, threshold: number): KnowledgeSearchHit[] {
     const rows = this.db.prepare(`select chunks.id, item_id, items.name, ordinal, text, vector
       from chunks join items on items.id = chunks.item_id where items.status = 'completed'`).all()
     const keyword = new Map<number, number>()

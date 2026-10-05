@@ -1526,6 +1526,27 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RemoteError `knowledge/not-found`, `knowledge/invalid-name`, or `knowledge/duplicate-name`.'],
       },
       {
+        signature: '@Remote updateSettings(id: string, patch: KnowledgeSettingsPatch): Promise<KnowledgeState>',
+        description: 'Change a knowledge base\'s embedding model, chunking, or retrieval settings. A new embedding model must embed a trial text first, which measures its vector length; with items present the knowledge base is then rebuilt in place: every chunk is dropped and every item processed again, and it cannot be searched until that ends. Chunking changes apply to items processed afterwards.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'patch', description: 'settings to change.' }],
+        returns: 'the state.',
+        throws: ['RemoteError `knowledge/not-found`, `knowledge/invalid-settings`, `knowledge/embedding-model-unavailable`, or `knowledge/embedding-probe-failed`.'],
+      },
+      {
+        signature: '@Remote reprocessAll(id: string): Promise<KnowledgeState>',
+        description: 'Process every item of a knowledge base again, as after a chunking change. Old chunks stay searchable until each item\'s new ones replace them.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }],
+        returns: 'the state with every item pending.',
+        throws: ['RemoteError `knowledge/not-found`.'],
+      },
+      {
+        signature: '@Remote async recall(id: string, query: string): Promise<KnowledgeRecallResult>',
+        description: 'Recall test: search a knowledge base under its own retrieval settings, outside any session.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'query', description: 'question or keywords.' }],
+        returns: 'the hits and how long the search took.',
+        throws: ['RemoteError `knowledge/not-found`, `knowledge/rebuilding`, or the embedding model\'s failure.'],
+      },
+      {
         signature: '@Remote deleteBase(id: string): Promise<KnowledgeState>',
         description: 'Delete a knowledge base with its files and index.',
         parameters: [{ name: 'id', description: 'knowledge base id.' }],
@@ -1554,11 +1575,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RemoteError `knowledge/not-found`.'],
       },
       {
-        signature: 'async search(id: string, query: string, options: { limit: number; threshold: number }, signal?: AbortSignal): Promise<SearchHit[]>',
+        signature: 'async search( id: string, query: string, options: { limit: number; threshold: number }, signal?: AbortSignal, ): Promise<KnowledgeSearchHit[]>',
         description: 'Search one of the signed-in tenant\'s knowledge bases. Host only.',
         parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'query', description: 'question or keywords.' }, { name: 'options', description: 'most hits, and least blended score (0–1).' }, { name: 'signal', description: 'cancels the query embedding.' }],
         returns: 'hits, best first.',
-        throws: ['RemoteError `knowledge/not-found`, or the embedding model\'s failure.'],
+        throws: ['RemoteError `knowledge/not-found`, `knowledge/rebuilding`, or the embedding model\'s failure.'],
       },
     ],
   },
@@ -5993,8 +6014,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface KnowledgeAddResult {\n    readonly added: number;\n    readonly rejected: readonly {\n        readonly name: string;\n        readonly reason: KnowledgeRejectReason;\n    }[];\n}',
   },
   {
+    name: 'KnowledgeBaseSettings',
+    declaration: 'export interface KnowledgeBaseSettings {\n    readonly chunkStrategy: KnowledgeChunkStrategy;\n    readonly chunkSeparator: string;\n    readonly chunkSize: number;\n    readonly chunkOverlap: number;\n    readonly documentCount: number;\n    readonly threshold: number;\n}',
+  },
+  {
     name: 'KnowledgeBaseView',
-    declaration: 'export interface KnowledgeBaseView {\n    readonly id: string;\n    readonly name: string;\n    readonly embeddingModelId: string;\n    readonly embeddingModelName: string;\n    readonly status: \'ready\' | \'unavailable\';\n    readonly items: readonly KnowledgeItemView[];\n    readonly createdAt: string;\n}',
+    declaration: 'export interface KnowledgeBaseView {\n    readonly id: string;\n    readonly name: string;\n    readonly embeddingModelId: string;\n    readonly embeddingModelName: string;\n    readonly dimensions: number | null;\n    readonly status: \'ready\' | \'rebuilding\' | \'unavailable\';\n    readonly settings: KnowledgeBaseSettings;\n    readonly items: readonly KnowledgeItemView[];\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'KnowledgeChunkStrategy',
+    declaration: 'export type KnowledgeChunkStrategy = \'structured\' | \'delimiter\';',
   },
   {
     name: 'KnowledgeItemError',
@@ -6009,8 +6038,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface KnowledgeItemView {\n    readonly id: string;\n    readonly kind: \'file\';\n    readonly name: string;\n    readonly size: number;\n    readonly status: KnowledgeItemStatus;\n    readonly error: KnowledgeItemError | null;\n    readonly chunkCount: number;\n    readonly addedAt: string;\n}',
   },
   {
+    name: 'KnowledgeRecallResult',
+    declaration: 'export interface KnowledgeRecallResult {\n    readonly hits: readonly KnowledgeSearchHit[];\n    readonly durationMs: number;\n}',
+  },
+  {
     name: 'KnowledgeRejectReason',
     declaration: 'export type KnowledgeRejectReason = \'unsupported\' | \'too-large\' | \'unreadable\';',
+  },
+  {
+    name: 'KnowledgeSearchHit',
+    declaration: 'export interface KnowledgeSearchHit {\n    readonly itemId: string;\n    readonly itemName: string;\n    readonly ordinal: number;\n    readonly text: string;\n    readonly score: number;\n}',
+  },
+  {
+    name: 'KnowledgeSettingsPatch',
+    declaration: 'export type KnowledgeSettingsPatch = Partial<KnowledgeBaseSettings> & {\n    readonly embeddingModelId?: string;\n};',
   },
   {
     name: 'KnowledgeState',
@@ -6935,10 +6976,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SearchFileMatches',
     declaration: 'export interface SearchFileMatches {\n    path: string;\n    matches: SearchLineMatch[];\n}',
-  },
-  {
-    name: 'SearchHit',
-    declaration: 'export interface SearchHit {\n    itemId: string;\n    itemName: string;\n    ordinal: number;\n    text: string;\n    score: number;\n}',
   },
   {
     name: 'SearchLineMatch',
@@ -7951,6 +7988,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SystemPromptUpdate',
     declaration: 'export type SystemPromptUpdate = \'in-history\';',
+  },
+  {
+    name: 'T',
+    declaration: 'export type T = TranslateNS<\'knowledge\'>;',
   },
   {
     name: 'TableKeyOf',

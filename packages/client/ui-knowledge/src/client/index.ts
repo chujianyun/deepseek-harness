@@ -17,7 +17,7 @@ import { KnowledgePage } from './KnowledgePage.tsx'
 import { KnowledgePanelIcon } from './KnowledgePanelIcon.tsx'
 import { en, zh, type KnowledgeLocaleKey } from './locales.ts'
 
-export type { KnowledgeDependencies, KnowledgeFailure, KnowledgeInjected, KnowledgeSnapshot } from './knowledge-source.ts'
+export type { KnowledgeDependencies, KnowledgeFailure, KnowledgeInjected, KnowledgeRecall, KnowledgeSnapshot } from './knowledge-source.ts'
 export type { KnowledgeLocaleKey } from './locales.ts'
 export type { KnowledgePageProps } from './KnowledgePage.tsx'
 
@@ -51,6 +51,9 @@ export function apply(ctx: ClientContext): void {
     addFiles: (id, paths) => remote.addFiles(id, paths),
     reprocessItem: (id, itemId) => remote.reprocessItem(id, itemId),
     deleteItem: (id, itemId) => remote.deleteItem(id, itemId),
+    updateSettings: (id, patch) => remote.updateSettings(id, patch),
+    reprocessAll: id => remote.reprocessAll(id),
+    recall: (id, query) => remote.recall(id, query),
   })
   const knowledge = ctx.remote.$stream<KnowledgeState>({
     name: 'knowledgeBases', open: signal => remote.watch(signal), ended: () => new Error('knowledge stream ended'),

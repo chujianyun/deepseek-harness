@@ -77,9 +77,13 @@ async function boot(options: { tenant?: string | null; home?: string; config?: O
     registerUsage: (usage: (id: string) => Promise<readonly string[]>) => { usages.push(usage) },
     async embed(id: string, texts: readonly string[], signal?: AbortSignal): Promise<number[][]> {
       embedding.calls.push({ id, texts })
-      if (embedding.gate !== undefined) {
+      // The trial embedding of a model change is never held.
+      if (embedding.gate !== undefined && texts[0]?.includes('probe') !== true) {
         embedding.entered?.()
-        await Promise.race([embedding.gate, new Promise((_, reject) => { signal?.addEventListener('abort', () => { reject(signal.reason as Error) }, { once: true }) })])
+        await Promise.race([embedding.gate, new Promise((_, reject) => {
+          if (signal?.aborted === true) reject(signal.reason as Error)
+          signal?.addEventListener('abort', () => { reject(signal.reason as Error) }, { once: true })
+        })])
       }
       if (embedding.failure !== undefined) throw embedding.failure
       return texts.map(vectorize)
@@ -113,7 +117,8 @@ describe('knowledge bases', () => {
     const { service } = await boot()
     expect(service.typertRemote.namespace).toBe('knowledgeBases')
     expect(remoteMethods(service).map(method => method.method)).toEqual([
-      'getState', 'watch', 'createBase', 'renameBase', 'deleteBase', 'addFiles', 'reprocessItem', 'deleteItem',
+      'getState', 'watch', 'createBase', 'renameBase', 'updateSettings', 'reprocessAll', 'recall', 'deleteBase', 'addFiles',
+      'reprocessItem', 'deleteItem',
     ])
   })
 
@@ -137,6 +142,170 @@ describe('knowledge bases', () => {
     expect(created.embeddingModelName).toBe('bge-m3')
     const settings = JSON.parse(await readFile(join(home, 'knowledge', 't-a', created.id, 'base.json'), 'utf8')) as Record<string, unknown>
     expect(settings).toMatchObject({ version: 1, name: '产品资料', embeddingModelId: API, chunkSize: 1024, chunkOverlap: 200 })
+    // Cherry Studio's defaults, and the vector length Settings reports for the model.
+    expect(created).toMatchObject({
+      dimensions: 64,
+      settings: { chunkStrategy: 'structured', chunkSeparator: '\\n\\n', chunkSize: 1024, chunkOverlap: 200, documentCount: 6, threshold: 0 },
+    })
+  })
+
+  it('validates settings, and the recall test follows the retrieval settings', async () => {
+    const { service, until, home } = await boot()
+    const { id } = (await service.createBase('制度库', LOCAL)).bases[0]!
+    await service.addFiles(id, [fixture('annual-leave.docx'), fixture('meeting-notes.txt'), fixture('product-manual.md'), fixture('expense-policy.pdf')])
+    await until(next => next.bases[0]!.items.length === 4 && settled(next))
+    const invalid = async (patch: Record<string, unknown>) =>
+      remoteErrorOf(await service.updateSettings(id, patch as never).catch((error: unknown) => error))
+    expect(await invalid({ documentCount: 0 })).toMatchObject({ code: 'knowledge/invalid-settings', details: { field: 'documentCount' } })
+    expect(await invalid({ documentCount: 51 })).toMatchObject({ details: { field: 'documentCount' } })
+    expect(await invalid({ threshold: 1.5 })).toMatchObject({ details: { field: 'threshold' } })
+    expect(await invalid({ chunkSize: 0 })).toMatchObject({ details: { field: 'chunkSize' } })
+    expect(await invalid({ chunkSize: 100, chunkOverlap: 100 })).toMatchObject({ details: { field: 'chunkOverlap' } })
+    expect(await invalid({ chunkStrategy: 'delimiter', chunkSeparator: '' })).toMatchObject({ details: { field: 'chunkSeparator' } })
+    expect(await invalid({ rerankModelId: 'x' })).toMatchObject({ details: { field: 'settings' } })
+    expect(await invalid({ chunkStrategy: 'words' })).toMatchObject({ details: { field: 'chunkStrategy' } })
+    expect(remoteErrorOf(await service.updateSettings('nope', {}).catch((error: unknown) => error))).toMatchObject({ code: 'knowledge/not-found' })
+
+    const all = await service.recall(id, '年假有几天')
+    expect(all.hits).toHaveLength(4)
+    expect(all.hits[0]!.itemName).toBe('annual-leave.docx')
+    expect(all.durationMs).toBeGreaterThanOrEqual(0)
+    let state = await service.updateSettings(id, { documentCount: 2 })
+    expect(state.bases[0]!.settings).toMatchObject({ documentCount: 2, chunkSize: 1024 })
+    expect((await service.recall(id, '年假有几天')).hits).toHaveLength(2)
+    state = await service.updateSettings(id, { threshold: all.hits[0]!.score - 0.01 })
+    expect(state.bases[0]!.settings.threshold).toBeCloseTo(all.hits[0]!.score - 0.01)
+    expect((await service.recall(id, '年假有几天')).hits.map(hit => hit.itemName)).toEqual(['annual-leave.docx'])
+    // Settings are saved with the knowledge base.
+    const saved = JSON.parse(await readFile(join(home, 'knowledge', 't-a', id, 'base.json'), 'utf8')) as Record<string, unknown>
+    expect(saved).toMatchObject({ documentCount: 2, chunkStrategy: 'structured', rebuilding: false })
+  })
+
+  it('applies chunking changes to items processed afterwards, and to every item when reprocessing all', async () => {
+    const { service, until } = await boot()
+    const { id } = (await service.createBase('产品库', LOCAL)).bases[0]!
+    await service.addFiles(id, [fixture('product-manual.md')])
+    await until(next => next.bases[0]!.items[0]?.status === 'completed')
+    expect((await service.getState()).bases[0]!.items[0]!.chunkCount).toBe(1)
+    let state = await service.updateSettings(id, { chunkSize: 20, chunkOverlap: 0, chunkStrategy: 'delimiter', chunkSeparator: '\\n' })
+    // Nothing is processed again on its own.
+    expect(state.bases[0]!.items[0]).toMatchObject({ status: 'completed', chunkCount: 1 })
+    expect(state.bases[0]!.status).toBe('ready')
+    state = await service.reprocessAll(id)
+    expect(state.bases[0]!.items[0]!.status).toMatch(/pending|processing/u)
+    state = await until(next => next.bases[0]!.items[0]!.status === 'completed')
+    expect(state.bases[0]!.items[0]!.chunkCount).toBeGreaterThan(1)
+    const { hits } = await service.recall(id, '无法登录')
+    expect(hits[0]!.text.length).toBeLessThan(60)
+    expect(remoteErrorOf(await service.reprocessAll('nope').catch((error: unknown) => error))).toMatchObject({ code: 'knowledge/not-found' })
+  })
+
+  it('rebuilds in place on a new embedding model after a trial embedding, and cannot be searched meanwhile', async () => {
+    const { service, until, embedding } = await boot()
+    const { id } = (await service.createBase('制度库', LOCAL)).bases[0]!
+    // With no items, the model just changes.
+    const empty = (await service.createBase('空库', LOCAL)).bases[1]!.id
+    expect((await service.updateSettings(empty, { embeddingModelId: API })).bases[1]).toMatchObject({ embeddingModelId: API, status: 'ready', dimensions: 64 })
+    await service.addFiles(id, [fixture('meeting-notes.txt'), fixture('product-manual.md')])
+    await until(next => settled(next) && next.bases[0]!.items.length === 2)
+    const failure = async (patch: Record<string, unknown>) =>
+      remoteErrorOf(await service.updateSettings(id, patch as never).catch((error: unknown) => error))
+    expect(await failure({ embeddingModelId: 'acme/none' })).toMatchObject({ code: 'knowledge/embedding-model-unavailable' })
+    embedding.failure = new Error('HTTP 401: invalid key')
+    expect(await failure({ embeddingModelId: API })).toMatchObject({ code: 'knowledge/embedding-probe-failed', details: { id: API, message: 'HTTP 401: invalid key' } })
+    embedding.failure = undefined
+    vi.spyOn(embedding, 'embed').mockResolvedValueOnce([[]])
+    expect(await failure({ embeddingModelId: API })).toMatchObject({ details: { message: 'the model returned no vector' } })
+    vi.spyOn(embedding, 'embed').mockRejectedValueOnce('offline')
+    expect(await failure({ embeddingModelId: API })).toMatchObject({ details: { message: 'offline' } })
+    expect((await service.getState()).bases[0]).toMatchObject({ embeddingModelId: LOCAL, status: 'ready' })
+
+    const gate = Promise.withResolvers<undefined>()
+    embedding.gate = gate.promise
+    const state = await service.updateSettings(id, { embeddingModelId: API })
+    expect(state.bases[0]).toMatchObject({ embeddingModelId: API, embeddingModelName: 'bge-m3', status: 'rebuilding', dimensions: 64 })
+    expect(state.bases[0]!.items.every(item => item.chunkCount === 0 && item.status !== 'completed')).toBe(true)
+    expect(remoteErrorOf(await service.recall(id, '会议').catch((error: unknown) => error))).toMatchObject({ code: 'knowledge/rebuilding' })
+    embedding.gate = undefined
+    gate.resolve(undefined)
+    const rebuilt = await until(next => next.bases[0]!.status === 'ready')
+    expect(rebuilt.bases[0]!.items.map(item => item.status)).toEqual(['completed', 'completed'])
+    expect(embedding.calls.filter(call => !call.texts[0]!.includes('probe')).at(-1)!.id).toBe(API)
+    expect((await service.recall(id, '会议纪要')).hits[0]!.itemName).toBe('meeting-notes.txt')
+  })
+
+  it('refuses a search a rebuild overtakes, and keeps the rebuild flag when it cannot be cleared on disk', async () => {
+    const { service, until, embedding, home } = await boot()
+    const { id } = (await service.createBase('制度库', LOCAL)).bases[0]!
+    await service.addFiles(id, [fixture('meeting-notes.txt')])
+    await until(next => next.bases[0]!.items[0]?.status === 'completed')
+    const gate = Promise.withResolvers<undefined>()
+    const entered = Promise.withResolvers<undefined>()
+    embedding.gate = gate.promise
+    embedding.entered = () => { entered.resolve(undefined) }
+    const search = service.recall(id, '会议').catch((error: unknown) => error)
+    await entered.promise
+    await service.updateSettings(id, { embeddingModelId: API })
+    const dir = join(home, 'knowledge', 't-a', id)
+    // A directory where the settings' temporary file goes refuses the write that would end the rebuild.
+    await mkdir(join(dir, 'base.json.tmp'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    embedding.gate = undefined
+    gate.resolve(undefined)
+    expect(remoteErrorOf(await search)).toMatchObject({ code: 'knowledge/rebuilding' })
+    await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith('[knowledge-base] could not end a rebuild', expect.anything()) })
+    expect((await service.getState()).bases[0]).toMatchObject({ status: 'rebuilding', items: [expect.objectContaining({ status: 'completed' })] })
+  })
+
+  it('ends a rebuild when its last pending item is deleted, or when a restart interrupts its API model', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-knowledge-'))
+    cleanups.push(() => rm(home, { recursive: true, force: true }))
+    const first = await boot({ home })
+    const { id } = (await first.service.createBase('制度库', LOCAL)).bases[0]!
+    await first.service.addFiles(id, [fixture('meeting-notes.txt'), fixture('product-manual.md')])
+    await first.until(next => settled(next) && next.bases[0]!.items.length === 2)
+    const gate = Promise.withResolvers<undefined>()
+    const entered = Promise.withResolvers<undefined>()
+    first.embedding.gate = gate.promise
+    first.embedding.entered = () => { entered.resolve(undefined) }
+    await first.service.updateSettings(id, { embeddingModelId: API })
+    await entered.promise
+    await first.ctx.fiber.dispose()
+    gate.resolve(undefined)
+    // Restarted, the API model's unfinished items fail as interrupted, and the rebuild is over.
+    const second = await boot({ home })
+    const state = await second.until(next => next.bases.length === 1 && settled(next))
+    expect(state.bases[0]).toMatchObject({ status: 'ready', items: [expect.objectContaining({ error: 'interrupted' }), expect.objectContaining({ error: 'interrupted' })] })
+    // Rebuilding again, then deleting every item, ends the rebuild too.
+    const again = Promise.withResolvers<undefined>()
+    let busy = Promise.withResolvers<undefined>()
+    second.embedding.gate = again.promise
+    second.embedding.entered = () => { busy.resolve(undefined) }
+    await second.service.updateSettings(id, { embeddingModelId: LOCAL })
+    // Both stop the item being processed first.
+    await busy.promise
+    busy = Promise.withResolvers<undefined>()
+    await second.service.reprocessAll(id)
+    await busy.promise
+    expect((await second.service.updateSettings(id, { embeddingModelId: API })).bases[0]!.status).toBe('rebuilding')
+    for (const item of (await second.service.getState()).bases[0]!.items) await second.service.deleteItem(id, item.id)
+    expect((await second.service.getState()).bases[0]).toMatchObject({ status: 'ready', items: [] })
+    again.resolve(undefined)
+  })
+
+  it('reads a knowledge base saved before these settings existed with the defaults', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-knowledge-'))
+    cleanups.push(() => rm(home, { recursive: true, force: true }))
+    const dir = join(home, 'knowledge', 't-a', 'old')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'base.json'), JSON.stringify({
+      version: 1, id: 'old', name: '旧库', embeddingModelId: LOCAL, chunkSize: 512, chunkOverlap: 50, createdAt: '2026-10-01T00:00:00.000Z',
+    }))
+    const { service } = await boot({ home })
+    expect((await service.getState()).bases[0]).toMatchObject({
+      name: '旧库', status: 'ready', dimensions: null,
+      settings: { chunkStrategy: 'structured', chunkSeparator: '\\n\\n', chunkSize: 512, chunkOverlap: 50, documentCount: 6, threshold: 0 },
+    })
   })
 
   it('adds the four document kinds, refuses what it cannot take, and makes them searchable', async () => {

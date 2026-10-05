@@ -6,11 +6,13 @@ Local knowledge bases let a Desktop user collect company documents and have them
 
 ## Storage and processing
 
-A knowledge base belongs to the tenant of the current [Hub sign-in](../glossary.md#skill-hub) and lives under `<dshHome>/knowledge/<tenantId>/<baseId>`: `base.json` with its name, embedding model, and chunking settings; `files/` with a copy of each added file; and `index.sqlite` with its items, their chunks and embedding vectors, and a contentless FTS5 index of the chunks' keyword terms. One worker processes the signed-in tenant's pending items in order: read the text, split it into chunks, embed the chunks, and replace the item's chunks in one transaction. Signing in to another tenant stops the worker; when a tenant becomes the signed-in one again, or at startup, items left unfinished resume for the local embedding model and fail as `interrupted` for API models.
+A knowledge base belongs to the tenant of the current [Hub sign-in](../glossary.md#skill-hub) and lives under `<dshHome>/knowledge/<tenantId>/<baseId>`: `base.json` with its name, embedding model and its measured vector length, chunking and retrieval settings, and whether a rebuild is under way; `files/` with a copy of each added file; and `index.sqlite` with its items, their chunks and embedding vectors, and a contentless FTS5 index of the chunks' keyword terms. One worker processes the signed-in tenant's pending items in order: read the text, split it into chunks, embed the chunks, and replace the item's chunks in one transaction. Signing in to another tenant stops the worker; when a tenant becomes the signed-in one again, or at startup, items left unfinished resume for the local embedding model and fail as `interrupted` for API models.
+
+A [rebuild](../glossary.md#rebuild) replaces a knowledge base's embedding model in place: after the new model embeds a trial text, every chunk is dropped and every item queued again, and the knowledge base refuses searches until none is left to process. Chunking changes instead wait for an explicit reprocessing of all items, keeping the old chunks searchable meanwhile.
 
 ## Search
 
-Search embeds the query with the knowledge base's model and blends cosine similarity over every chunk vector with the chunk's BM25 keyword score normalized against the best match. Keyword terms split Han text into characters and adjacent pairs, because the default FTS5 tokenizer keeps a whole Han run as one token.
+Search embeds the query with the knowledge base's model and blends cosine similarity over every chunk vector with the chunk's BM25 keyword score normalized against the best match. Keyword terms split Han text into characters and adjacent pairs, because the default FTS5 tokenizer keeps a whole Han run as one token. The recall test runs the same search under the knowledge base's saved result count and threshold, outside any Session.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -60,6 +62,37 @@ Host owner of the knowledge bases and of the `knowledgeBases` Remote namespace.
 @Remote renameBase(id: string, name: string): Promise<KnowledgeState>
 
 /**
+ * Change a knowledge base's embedding model, chunking, or retrieval settings. A new embedding
+ * model must embed a trial text first, which measures its vector length; with items present the
+ * knowledge base is then rebuilt in place: every chunk is dropped and every item processed again,
+ * and it cannot be searched until that ends. Chunking changes apply to items processed afterwards.
+ * @param id - knowledge base id.
+ * @param patch - settings to change.
+ * @returns the state.
+ * @throws RemoteError `knowledge/not-found`, `knowledge/invalid-settings`, `knowledge/embedding-model-unavailable`,
+ *   or `knowledge/embedding-probe-failed`.
+ */
+@Remote updateSettings(id: string, patch: KnowledgeSettingsPatch): Promise<KnowledgeState>
+
+/**
+ * Process every item of a knowledge base again, as after a chunking change. Old chunks stay
+ * searchable until each item's new ones replace them.
+ * @param id - knowledge base id.
+ * @returns the state with every item pending.
+ * @throws RemoteError `knowledge/not-found`.
+ */
+@Remote reprocessAll(id: string): Promise<KnowledgeState>
+
+/**
+ * Recall test: search a knowledge base under its own retrieval settings, outside any session.
+ * @param id - knowledge base id.
+ * @param query - question or keywords.
+ * @returns the hits and how long the search took.
+ * @throws RemoteError `knowledge/not-found`, `knowledge/rebuilding`, or the embedding model's failure.
+ */
+@Remote async recall(id: string, query: string): Promise<KnowledgeRecallResult>
+
+/**
  * Delete a knowledge base with its files and index.
  * @param id - knowledge base id.
  * @returns the state without it.
@@ -101,9 +134,9 @@ Host owner of the knowledge bases and of the `knowledgeBases` Remote namespace.
  * @param options - most hits, and least blended score (0–1).
  * @param signal - cancels the query embedding.
  * @returns hits, best first.
- * @throws RemoteError `knowledge/not-found`, or the embedding model's failure.
+ * @throws RemoteError `knowledge/not-found`, `knowledge/rebuilding`, or the embedding model's failure.
  */
-async search(id: string, query: string, options: { limit: number; threshold: number }, signal?: AbortSignal): Promise<SearchHit[]>
+async search( id: string, query: string, options: { limit: number; threshold: number }, signal?: AbortSignal, ): Promise<KnowledgeSearchHit[]>
 ```
 
 Source: [`packages/knowledge/knowledge-base/src/index.ts`](../../packages/knowledge/knowledge-base/src/index.ts)

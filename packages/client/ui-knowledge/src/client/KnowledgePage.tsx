@@ -1,17 +1,14 @@
 /** The Knowledge page: knowledge bases on the left, the selected one's files on the right. */
 
 import { useRef, useState, type DragEvent } from 'react'
-import type { EmbeddingState } from '@deepseek-ai/dsh-embedding/types'
 import type { KnowledgeBaseView, KnowledgeItemView } from '@deepseek-ai/dsh-knowledge-base/types'
-import { Button, fileSizeText, Input, Modal, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { KnowledgeFailure, KnowledgeInjected } from './knowledge-source.ts'
+import { Button, fileSizeText, Input, Modal, SegmentedTabs, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { KnowledgeRecallPanel } from './KnowledgeRecall.tsx'
+import { KnowledgeSettingsPanel } from './KnowledgeSettings.tsx'
+import { failureText, modelOptions, type KnowledgePageProps, type T } from './shared.ts'
 import css from './KnowledgePage.module.css'
 
-/** Props the page reads from its `main` registration: the translator and the knowledge face. */
-export type KnowledgePageProps = PropsLocale<'knowledge'> & InjectFace<KnowledgeInjected>
-
-type T = TranslateNS<'knowledge'>
+export type { KnowledgePageProps } from './shared.ts'
 
 /** The Desktop preload bridge: the real path of a dropped or picked file, '' when it has none. */
 interface HostPathBridge {
@@ -24,15 +21,6 @@ const STATUS_TONE = { pending: 'neutral', processing: 'info', completed: 'succes
 function pathsOf(files: FileList | null): string[] {
   const bridge = (globalThis as { __DSH_HOST_PATHS__?: HostPathBridge }).__DSH_HOST_PATHS__
   return [...files ?? []].map(file => bridge?.pathFor(file) ?? '').filter(path => path !== '')
-}
-
-/** Embedding models a new knowledge base can use, with the label the select shows. */
-function modelOptions(t: T, embedding: EmbeddingState | undefined): { id: string; label: string }[] {
-  if (embedding === undefined) return []
-  const { local } = embedding
-  const options = local.status === 'unsupported' ? []
-    : [{ id: local.id, label: t(local.status === 'installed' ? 'modelLocal' : 'modelLocalPending', { name: local.name }) }]
-  return [...options, ...embedding.apiModels.map(model => ({ id: model.id, label: `${model.model} · ${model.providerName}` }))]
 }
 
 /**
@@ -68,7 +56,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
         </nav>
         {selected === undefined
           ? <div className={css.detail}><p className={css.muted}>{t('detailEmpty')}</p></div>
-          : <Detail {...props} base={selected} openRename={() => { setDialog('rename') }} openDelete={() => { setDialog('delete') }} />}
+          : <Detail key={selected.id} {...props} base={selected} openRename={() => { setDialog('rename') }} openDelete={() => { setDialog('delete') }} />}
       </div>
       <CreateDialog {...props} open={dialog === 'create'} onClose={() => { setDialog(null) }} />
       {selected !== undefined && <RenameDialog {...props} base={selected} open={dialog === 'rename'} onClose={() => { setDialog(null) }} />}
@@ -84,10 +72,6 @@ function Header({ t }: { t: T }) {
       <p className={css.muted}>{t('intro')}</p>
     </header>
   )
-}
-
-function failureText(t: T, failure: KnowledgeFailure): string {
-  return failure.reason === 'other' ? t('actionFailed', { message: failure.message }) : t(`failure.${failure.reason}`)
 }
 
 /** The failure or addition outcome of the last action. */
@@ -116,8 +100,51 @@ function Notice({ t, useKnowledge, onDismiss }: KnowledgePageProps) {
   )
 }
 
+/** What the detail column shows. */
+type View = 'files' | 'settings' | 'recall'
+
 function Detail(props: KnowledgePageProps & { base: KnowledgeBaseView; openRename: () => void; openDelete: () => void }) {
-  const { t, base, useKnowledge, onAddFiles, openRename, openDelete } = props
+  const { t, base, useKnowledge, openRename, openDelete } = props
+  const busy = useKnowledge(snapshot => snapshot.busy)
+  const [view, setView] = useState<View>('files')
+  const tab = (value: View) => ({ value, label: t(`tab.${value}`), id: `knowledge-tab-${value}`, panelId: `knowledge-panel-${value}` })
+  return (
+    <section className={css.detail} aria-label={base.name}>
+      <div className={css.detailHead}>
+        <div className={css.identity}>
+          <h2 className={css.baseName}>{base.name}</h2>
+          <span className={css.muted}>{t('modelLabel', { name: base.embeddingModelName })}</span>
+        </div>
+        <div className={css.actions}>
+          <SegmentedTabs className={css.tabs} label={t('views')} items={[tab('files'), tab('settings'), tab('recall')]} value={view} onChange={setView} />
+          <Button variant="ghost" disabled={busy} onClick={openRename}>{t('rename')}</Button>
+          <Button variant="ghost" disabled={busy} onClick={openDelete}>{t('deleteBase')}</Button>
+        </div>
+      </div>
+      {base.status === 'unavailable' && <p className={css.warning}>{t('unavailable')}</p>}
+      {base.status === 'rebuilding' && <Rebuilding t={t} base={base} />}
+      <div id={`knowledge-panel-${view}`} role="tabpanel" aria-labelledby={`knowledge-tab-${view}`} className={css.panel}>
+        {view === 'files' && <Files {...props} />}
+        {view === 'settings' && <KnowledgeSettingsPanel {...props} />}
+        {view === 'recall' && <KnowledgeRecallPanel {...props} />}
+      </div>
+    </section>
+  )
+}
+
+/** Progress of a rebuild for a new embedding model. */
+function Rebuilding({ t, base }: { t: T; base: KnowledgeBaseView }) {
+  const done = base.items.filter(item => item.status === 'completed' || item.status === 'failed').length
+  return (
+    <div className={css.rebuild} role="status">
+      <span>{t('rebuilding', { done: String(done), total: String(base.items.length) })}</span>
+      <progress className={css.progress} max={base.items.length} value={done} aria-label={t('rebuildProgress')} />
+    </div>
+  )
+}
+
+function Files(props: KnowledgePageProps & { base: KnowledgeBaseView }) {
+  const { t, base, useKnowledge, onAddFiles } = props
   const busy = useKnowledge(snapshot => snapshot.busy)
   const input = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
@@ -133,18 +160,7 @@ function Detail(props: KnowledgePageProps & { base: KnowledgeBaseView; openRenam
     add(event.dataTransfer.files)
   }
   return (
-    <section className={css.detail} aria-label={base.name}>
-      <div className={css.detailHead}>
-        <div className={css.identity}>
-          <h2 className={css.baseName}>{base.name}</h2>
-          <span className={css.muted}>{t('modelLabel', { name: base.embeddingModelName })}</span>
-        </div>
-        <div className={css.actions}>
-          <Button variant="ghost" disabled={busy} onClick={openRename}>{t('rename')}</Button>
-          <Button variant="ghost" disabled={busy} onClick={openDelete}>{t('deleteBase')}</Button>
-        </div>
-      </div>
-      {base.status === 'unavailable' && <p className={css.warning}>{t('unavailable')}</p>}
+    <>
       {noPath && <p className={css.alert} role="alert">{t('noPath')}</p>}
       <div className={css.dropZone} data-dragging={dragging} onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
         onDragLeave={() => { setDragging(false) }} onDrop={drop}>
@@ -155,7 +171,7 @@ function Detail(props: KnowledgePageProps & { base: KnowledgeBaseView; openRenam
       </div>
       <h3 className={css.sectionTitle}>{t('files')}</h3>
       {base.items.length === 0 ? <p className={css.muted}>{t('itemsEmpty')}</p> : <Items {...props} />}
-    </section>
+    </>
   )
 }
 
