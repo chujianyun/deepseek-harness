@@ -985,6 +985,71 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'embedding',
+    summary: 'Host owner of the embedding models and of the `embedding` Remote namespace.',
+    description: 'Host owner of the embedding models and of the `embedding` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote getState(): Promise<EmbeddingState>',
+        description: 'Read the local model\'s install state and the API embedding models.',
+        parameters: [],
+        returns: 'the state Settings → Embedding models shows.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<EmbeddingState>',
+        description: 'Stream the state.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change; download progress at most four times a second.',
+      },
+      {
+        signature: '@Remote async pauseDownload(): Promise<EmbeddingState>',
+        description: 'Pause the local model download; partial files are kept.',
+        parameters: [],
+        returns: 'the state once the transfer has stopped.',
+      },
+      {
+        signature: '@Remote async startDownload(): Promise<EmbeddingState>',
+        description: 'Start, resume, retry, or repair the local model download. Repairing first checks every installed file\'s sha256 and downloads again the ones that do not match.',
+        parameters: [],
+        returns: 'the state with the download running.',
+        throws: ['RemoteError `embedding/local-model-unavailable` on a platform the runtime does not support.'],
+      },
+      {
+        signature: '@Remote async removeLocalModel(): Promise<EmbeddingState>',
+        description: 'Delete the local model\'s files; the next startup downloads them again. The runtime stays: once loaded, its native library cannot be deleted on Windows.',
+        parameters: [],
+        returns: 'the state.',
+      },
+      {
+        signature: '@Remote listProviders(): Promise<EmbeddingProviderView[]>',
+        description: 'Configured provider routes that can serve API embedding models: those with an OpenAI-protocol endpoint.',
+        parameters: [],
+        returns: 'the routes, in directory order.',
+      },
+      {
+        signature: '@Remote async addApiModel(provider: string, model: string): Promise<EmbeddingState>',
+        description: 'Add an API embedding model after measuring its vector size with one request.',
+        parameters: [{ name: 'provider', description: 'configured provider route.' }, { name: 'model', description: 'model id on the provider.' }],
+        returns: 'the state with the model added.',
+        throws: ['RemoteError `embedding/duplicate-model`, `embedding/provider-unavailable`, or `embedding/request-failed`.'],
+      },
+      {
+        signature: '@Remote async removeApiModel(id: string): Promise<EmbeddingState>',
+        description: 'Remove an API embedding model.',
+        parameters: [{ name: 'id', description: '`<provider>/<model>`.' }],
+        returns: 'the state without it.',
+        throws: ['RemoteError `embedding/model-not-found` when no API model has this id.'],
+      },
+      {
+        signature: 'async embed(id: string, texts: readonly string[], signal?: AbortSignal): Promise<number[][]>',
+        description: 'Embed texts with one embedding model. Host only.',
+        parameters: [{ name: 'id', description: 'the local model\'s id, or an API model\'s `<provider>/<model>`.' }, { name: 'texts', description: 'inputs, in order.' }, { name: 'signal', description: 'cancels the work.' }],
+        returns: 'one vector per text, in input order.',
+        throws: ['RemoteError `embedding/model-not-found`, `embedding/local-model-unavailable`, `embedding/provider-unavailable`, or `embedding/request-failed`.'],
+      },
+    ],
+  },
+  {
     key: 'fileReferences',
     summary: 'Host capability for cancellable file-reference discovery.',
     description: 'Host capability for cancellable file-reference discovery.',
@@ -1458,6 +1523,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Offer to interrogate provider endpoints on behalf of the settings namespace this plugin owns. The namespace is the key because that is what a configuration surface already holds from the configurable-provider directory, and because a provider being *added* has no route to name yet. Disposed with the fiber.',
         parameters: [{ name: 'settingsNs', description: 'the namespace whose profiles this discovery serves.' }, { name: 'discover', description: 'interrogates one endpoint and must honor the supplied signal.' }],
         returns: 'the disposer that withdraws the offer.',
+      },
+      {
+        signature: 'registerEndpointResolver(settingsNs: string, resolve: (provider: string) => LlmRouteEndpoint | undefined): () => void',
+        description: 'Offer the endpoints of the configured routes behind one settings namespace, for Host consumers that call them for something other than chat. Disposed with the fiber.',
+        parameters: [{ name: 'settingsNs', description: 'the namespace whose routes this resolver describes.' }, { name: 'resolve', description: 'the configured endpoint of one route, or undefined when the route is not configured or has no endpoint to describe.' }],
+        returns: 'the disposer that withdraws the offer.',
+      },
+      {
+        signature: 'routeEndpoint(provider: string): LlmRouteEndpoint | undefined',
+        description: 'The configured endpoint of one route, through the resolver of the namespace that declares the route in the configurable-provider directory. Host only.',
+        parameters: [{ name: 'provider', description: 'provider route key.' }],
+        returns: 'the endpoint, or undefined when no declared and configured route has one.',
       },
       {
         signature: 'async discoverModels( settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal, ): Promise<LlmDiscoveredModel[]>',
@@ -4743,6 +4820,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AgentStatus = \'idle\' | \'running\';',
   },
   {
+    name: 'ApiEmbeddingModelView',
+    declaration: 'export interface ApiEmbeddingModelView {\n    readonly id: string;\n    readonly provider: string;\n    readonly providerName: string;\n    readonly model: string;\n    readonly dimensions: number;\n    readonly available: boolean;\n}',
+  },
+  {
     name: 'ApiKeyRecord',
     declaration: 'export interface ApiKeyRecord {\n    readonly kind: \'api-key\';\n    readonly key?: string;\n    readonly env?: Readonly<Record<string, string>>;\n}',
   },
@@ -5367,6 +5448,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EditGoalRequest {\n    readonly objective?: string;\n    readonly maxGoalRounds?: number;\n}',
   },
   {
+    name: 'EmbeddingProviderView',
+    declaration: 'export interface EmbeddingProviderView {\n    readonly provider: string;\n    readonly displayName: string;\n}',
+  },
+  {
+    name: 'EmbeddingState',
+    declaration: 'export interface EmbeddingState {\n    readonly local: LocalModelView;\n    readonly apiModels: readonly ApiEmbeddingModelView[];\n}',
+  },
+  {
     name: 'EncodedFileAttachment',
     declaration: 'export interface EncodedFileAttachment {\n    data: string;\n    name?: string;\n}',
   },
@@ -5907,8 +5996,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface LlmResolvedModelInfo extends LlmModelInfo {\n    context?: LlmModelContext;\n    defaultMaxTokens?: number;\n    reasoning?: LlmModelReasoningInfo;\n    systemPromptUpdate?: SystemPromptUpdate;\n    toolUpdate?: ToolUpdate;\n}',
   },
   {
+    name: 'LlmRouteEndpoint',
+    declaration: 'export interface LlmRouteEndpoint {\n    baseURL: string;\n    api: string;\n    headers: Readonly<Record<string, string>> | undefined;\n    resolveApiKey: () => Promise<string | undefined>;\n}',
+  },
+  {
     name: 'LlmRuntime',
-    declaration: 'export class LlmRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    @Remote\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    @Remote\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    @Remote(\'discoverModels\')\n    async remoteDiscoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;\n    fileRequestText(ref: FileAttachmentRef): string;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions) /* …truncated — full shape in source */',
+    declaration: 'export class LlmRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    @Remote\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    @Remote\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    registerEndpointResolver(settingsNs: string, resolve: (provider: string) => LlmRouteEndpoint | undefined): () => void;\n    routeEndpoint(provider: string): LlmRouteEndpoint | undefined;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    @Remote(\'discoverModels\')\n    async remoteDiscoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;\n    fileRequestText(ref: FileAttachmentRef): string;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: Ll /* …truncated — full shape in source */',
   },
   {
     name: 'LocalAtInput',
@@ -5917,6 +6010,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LocalizedText',
     declaration: 'export type LocalizedText = string | {\n    readonly en: string;\n    readonly [locale: string]: string;\n};',
+  },
+  {
+    name: 'LocalModelError',
+    declaration: 'export type LocalModelError = \'network\' | \'verification\' | \'storage\';',
+  },
+  {
+    name: 'LocalModelStatus',
+    declaration: 'export type LocalModelStatus = \'unsupported\' | \'missing\' | \'downloading\' | \'paused\' | \'installed\' | \'failed\' | \'damaged\';',
+  },
+  {
+    name: 'LocalModelView',
+    declaration: 'export interface LocalModelView {\n    readonly id: string;\n    readonly name: string;\n    readonly status: LocalModelStatus;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly dimensions: number | null;\n    readonly error: LocalModelError | null;\n}',
   },
   {
     name: 'LspHover',

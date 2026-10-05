@@ -274,6 +274,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Signs Desktop in to the Skill Hub user center (OAuth2 + PKCE over a loopback callback), refreshes the token on the Host, and refuses new prompts while signed out.',
   },
   {
+    key: 'embedding',
+    pkg: 'embedding',
+    title: 'Embedding models',
+    mode: 'core',
+    note: 'Downloads and runs the local embedding model, adds API embedding models over configured provider routes, and embeds text for knowledge bases on the Host.',
+  },
+  {
     key: 'skillMarket',
     pkg: 'skill-market',
     title: 'Skill Hub market',

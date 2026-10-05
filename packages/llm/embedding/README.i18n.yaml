@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/llm/embedding/README.md
+/:
+  en: 4b0a577575e8338e
+  zh: 620b20f1f0ad5c9e
+/embedding:
+  en: f111ec9e043af34e
+  zh: c74ad743fe57c025
+/embedding/summary:
+  en: 7fdca6632032602a
+  zh: d8e63e97072b9ca4
+/embedding/table-of-contents:
+  en: 3a654e12f423946b
+  zh: 4e3a19aaee58f8a7
+/embedding/use-this-package:
+  en: 712f6d6e0c699d8d
+  zh: f11fae3586908835
+/embedding/configuration:
+  en: 3620539f62c665e0
+  zh: 1ddc8a3c959fd7bc
+/embedding/model-experience:
+  en: e66c898f05842409
+  zh: 11911336fb1c69f3
+/embedding/model-experience/kv-cache-effect:
+  en: e277b74f9b721f5e
+  zh: 014c91db5c8570d0
+/embedding/known-limitations-and-deferred-work:
+  en: 361438d335648f3e
+  zh: 1ea70b4dfa48dc95
+/embedding/known-limitations-and-deferred-work/dev-note:
+  en: 9a59b01f90048fc0
+  zh: 803aa4f8a1847a3a

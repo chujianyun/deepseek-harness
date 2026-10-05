@@ -73,6 +73,8 @@ flowchart LR
   svc_sessionSkillCatalog["ctx.sessionSkillCatalog<br/>Session-addressed skill Remote adapter"]
   pkg_hub_account["hub-account"]
   svc_hubAccount["ctx.hubAccount<br/>Hub sign-in Remote controller"]
+  pkg_embedding["embedding"]
+  svc_embedding["ctx.embedding<br/>Embedding models"]
   pkg_skill_market["skill-market"]
   svc_skillMarket["ctx.skillMarket<br/>Skill Hub market"]
   pkg_skill_controller["skill-controller"]
@@ -323,6 +325,7 @@ flowchart LR
   pkg_deepseek_account --> svc_deepseekAccount
   pkg_deepseek_account_platform --> svc_deepseekAccount
   pkg_deepseek_llm_api_extensions --> svc_deepseekLlmApiExtensions
+  pkg_embedding --> svc_embedding
   pkg_experimental_agent_team --> svc_agentTeams
   pkg_experimental_api_speech_to_text --> svc_speechController
   pkg_experimental_browser_use_chrome_devtools_mcp --> svc_browserUse
@@ -607,6 +610,7 @@ flowchart LR
 | `ctx.sessionFileReferences` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | Delegates file-reference discovery through the Session Controller's established Agent lookup policy. |
 | `ctx.sessionSkillCatalog` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | Lists the Session composition's user-invocable skills without activating a cold Agent. |
 | `ctx.hubAccount` | `core` | [`hub-account`](../packages/credentials/hub-account) | - | - | - | Signs Desktop in to the Skill Hub user center (OAuth2 + PKCE over a loopback callback), refreshes the token on the Host, and refuses new prompts while signed out. |
+| `ctx.embedding` | `core` | [`embedding`](../packages/llm/embedding) | - | - | - | Downloads and runs the local embedding model, adds API embedding models over configured provider routes, and embeds text for knowledge bases on the Host. |
 | `ctx.skillMarket` | `core` | [`skill-market`](../packages/skill/skill-market) | - | - | - | Discovers the signed-in tenant's market Skills as the `market` source, browses the Skill Hub as the signed-in employee, and installs a validated package in one move. |
 | `ctx.skillController` | `core` | [`skill-controller`](../packages/skill/skill-controller) | - | - | - | Lists the user-level skills on this machine and applies the Desktop Skills page actions: switch, reveal, edit, and move to the trash. |
 | `ctx.jobController` | `core` | [`api-job-controller`](../packages/api/job-controller) | - | - | - | Streams one background job's observation record over the generated Remote namespace; the roster stays on the session control stream. |

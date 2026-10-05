@@ -175,6 +175,12 @@
       name: '@deepseek-ai/dsh-skill-market'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
+    # Embedding models for Desktop knowledge bases: the local model downloaded at
+    # startup and API embedding models over configured provider routes.
+    - id: embedding
+      name: '@deepseek-ai/dsh-embedding'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
+
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'
@@ -344,6 +350,12 @@
     - id: ui-hub-account
       name: '@deepseek-ai/dsh-client-ui-hub-account'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # Settings → Embedding models over the `embedding` Remote; mounted exactly
+    # when the embedding row is.
+    - id: ui-settings-embedding
+      name: '@deepseek-ai/dsh-client-ui-settings-embedding'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
 
     # Read-only Plugin list tab in the Settings Plugins section; the built-in
     # bundles the sidebar page leaves out are inspected here.

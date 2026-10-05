@@ -206,6 +206,29 @@ describe('configurable-provider directory', () => {
   })
 })
 
+describe('route endpoint resolvers', () => {
+  const endpoint = { baseURL: 'https://gateway.example/v1', api: 'openai-completions', headers: undefined, resolveApiKey: () => Promise.resolve('sk-x') }
+
+  it('answers through the resolver of the namespace that declares the route, and withdraws with it', async () => {
+    const ctx = await setup()
+    ctx.llm.registerConfigurableProviders([entry()])
+    const resolve = vi.fn((provider: string) => provider === entry().provider ? endpoint : undefined)
+    const dispose = ctx.llm.registerEndpointResolver(entry().settingsNs, resolve)
+    expect(ctx.llm.routeEndpoint(entry().provider)).toBe(endpoint)
+    expect(ctx.llm.routeEndpoint('undeclared')).toBeUndefined()
+    expect(resolve).toHaveBeenCalledOnce()
+    dispose()
+    expect(ctx.llm.routeEndpoint(entry().provider)).toBeUndefined()
+  })
+
+  it('rejects an unnamed namespace and a second registration of the same one', async () => {
+    const ctx = await setup()
+    expect(() => ctx.llm.registerEndpointResolver('', () => undefined)).toThrow(/non-empty settings namespace/)
+    ctx.llm.registerEndpointResolver('llm-example', () => endpoint)
+    expect(() => ctx.llm.registerEndpointResolver('llm-example', () => undefined)).toThrow(/already registered/)
+  })
+})
+
 describe('model discovery registry', () => {
   it('offers one interrogation per settings namespace and disposes with its fiber', async () => {
     const ctx = await setup()

@@ -121,6 +121,7 @@
     "tests/composer-draft-scroll.e2e.ts",
     "tests/composer-placeholder.e2e.ts",
     "tests/hub-account.e2e.ts",
+    "tests/embedding-settings.e2e.ts",
     "tests/models-custom-provider.e2e.ts",
     "tests/skills-market.e2e.ts",
     "tests/skills-market-lifecycle.e2e.ts",

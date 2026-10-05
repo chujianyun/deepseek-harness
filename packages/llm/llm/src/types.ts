@@ -292,6 +292,22 @@ export interface LlmModelDiscoveryRequest {
   apiKey?: string
 }
 
+/**
+ * A configured route's endpoint, for calls other than chat (such as embeddings),
+ * resolved inside the Host from the route's stored profile. The credential stays
+ * behind a resolver so listing endpoints never reads a key.
+ */
+export interface LlmRouteEndpoint {
+  /** Endpoint base the route's models are served from, e.g. `https://gateway.example/v1`. */
+  baseURL: string
+  /** Wire protocol the route's models speak. */
+  api: string
+  /** Deployment headers configured on the route. */
+  headers: Readonly<Record<string, string>> | undefined
+  /** Resolve the route's credential; the value never leaves the Host. */
+  resolveApiKey: () => Promise<string | undefined>
+}
+
 /** Provider-side discovery request with operation-local cancellation attached. */
 export interface LlmModelDiscoveryOperation extends LlmModelDiscoveryRequest {
   /** Caller cancellation; implementations must settle promptly after it aborts. */

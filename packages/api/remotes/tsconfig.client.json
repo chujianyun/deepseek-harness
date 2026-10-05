@@ -94,6 +94,9 @@
       "path": "../../credentials/hub-account"
     },
     {
+      "path": "../../llm/embedding"
+    },
+    {
       "path": "../workspace-controller/tsconfig.client.json"
     },
     {

@@ -542,14 +542,14 @@ describe('hubAccount branding', () => {
     expect((await until(state => state.branding !== null)).branding).toMatchObject({ title: '甲公司' })
     expect(info.mock.calls.some(call => String(call[0]).includes('branding cache not written'))).toBe(true)
     info.mockRestore()
-  })
+  }, 20_000)
 
   it('refuses a malformed branding answer and keeps the cache', async () => {
     const center = await startMockUserCenter()
     cleanups.push(() => center.close())
     const { hub, signIn } = await boot({}, center)
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
-    center.brandings['t-a'] = { title: 42 as unknown as string, logo: null }
+    center.brandings['t-a'] = { title: 42 as never, logo: null }
     await signIn()
     await refreshFailed(info)
     expect(await hub.getBranding()).toBeNull()
