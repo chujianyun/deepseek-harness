@@ -611,7 +611,7 @@ export type OnboardingProcess = 'compact' | 'standard' | 'detailed'
 ```ts config-catalog
 /** Onboarding options after schema defaults are applied. */
 export interface Config {
-  /** Offer the browser API-key step when no native shell owns credential onboarding. */
+  /** Offer the first-run API-key step automatically (Web and Desktop); a native shell that owns credential onboarding sets false. */
   credentialOnboarding: boolean
 }
 ```

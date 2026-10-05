@@ -9,6 +9,29 @@
   margin-top: 24px;
 }
 
+.otherProvider {
+  align-self: flex-start;
+  margin-top: 16px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.otherProvider:hover { color: var(--dsw-alias-label-primary); }
+
+.otherProvider:focus-visible {
+  outline: none;
+  border-radius: var(--dsw-radius-sm);
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+
 @media (max-width: 560px) {
   .editor {
     margin-top: 20px;

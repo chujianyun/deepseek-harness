@@ -3,7 +3,8 @@
  * provider/settings/credential join as the Models page: any provider the user
  * can already talk to ends the step, and only a user with none is offered the
  * official DeepSeek route. The step reuses that page's credential editor in
- * the onboarding plugin's shared modal, so the key is entered once.
+ * the onboarding plugin's shared modal, so the key is entered once; a link
+ * leaves for the Models page to set up any other provider instead.
  */
 import type { TrackProductEvent } from '@deepseek-ai/dsh-client-product-analytics/client'
 import { useEffect, useState } from 'react'
@@ -56,7 +57,7 @@ function assertNever(_value: never): never {
  * @returns the onboarding modal or null when onboarding needs no intervention.
  */
 export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): ReactNode {
-  const { complete, controller, useModels, operations, schema, t, renderSlot, automatic, explicit = false } = props
+  const { complete, openSection, controller, useModels, operations, schema, t, renderSlot, automatic, explicit = false } = props
   const [apiKey, setApiKey] = useState(explicit)
   const state = useModels(snapshot => snapshot)
   const readiness = onboardingReadiness(state)
@@ -131,6 +132,9 @@ export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): 
           onClose={finishCredential}
         />
       </div>
+      <button type="button" className={styles.otherProvider} onClick={() => { complete(); openSection('models') }}>
+        {t('onboardingOtherProvider')}
+      </button>
     </OnboardingModal>
   )
   return apiKey ? editor : renderSlot('settings.models.sign-in', { complete, useApiKey: () => { setApiKey(true) } }, { fallback: editor })

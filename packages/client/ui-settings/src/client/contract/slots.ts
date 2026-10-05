@@ -11,6 +11,19 @@
 
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * Ask the settings shell to open its panel on one registered section, for features outside
+     * Settings that point the user at a page (a missing model key points at `models`). Without a
+     * mounted shell nothing opens.
+     * @param id - `settings.section` id to show.
+     * @mode emit
+     */
+    'settings/open-section'(id: string): void
+  }
+}
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** Optional sidebar account launcher; opens the shell-owned settings panel. */

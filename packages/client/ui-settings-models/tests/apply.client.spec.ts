@@ -96,6 +96,22 @@ describe('ui-settings-models apply', () => {
     }
   })
 
+  it('shows first-run credential onboarding automatically in Desktop too, without the preview notice', async () => {
+    const { ctx, slots } = await bench()
+    declare(slots)
+    vi.stubGlobal('dshDesktop', { protocolVersion: 1 })
+    try {
+      const plugin = ctx.plugin({ inject: [...inject], apply })
+      await plugin.await()
+      expect(slots.entries('settings.onboarding').map(entry => entry.options.id)).toEqual(['deepseek-official'])
+      const onboarding = slots.entries('settings.onboarding')[0]!
+      expect((onboarding.inject as () => { automatic: boolean })().automatic).toBe(true)
+    } finally {
+      vi.unstubAllGlobals()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('defaults to browser onboarding and rejects malformed bootstrap options', async () => {
     expect(hostPlugin.Config({})).toEqual({ credentialOnboarding: true })
     expect(hostPlugin.Config['~standard'].validate({ credentialOnboarding: 'false' })).toHaveProperty('issues')

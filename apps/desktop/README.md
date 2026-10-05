@@ -165,7 +165,7 @@ The [native/renderer keyboard tests](tests/keyboard.spec.ts) compile as part of 
 
 Repeated launches and `dsh://open` keep the workspace hidden until the startup sign-in check or a welcome sign-in permits entry. Entering from Welcome places keyboard focus on the document without selecting a sidebar control; Tab navigation remains available.
 
-Desktop reads the user-center sign-in after the Host starts and before opening the workspace. Signed out, the welcome window offers one action, Sign in with company account; it has no API-key page and no way to skip. The Desktop preload marker suppresses the Web credential dialog, while retaining the Models settings page and the welcome notice.
+Desktop reads the user-center sign-in after the Host starts and before opening the workspace. Signed out, the welcome window offers one action, Sign in with company account; it has no API-key page and no way to skip. Model setup happens in the workspace: with no usable provider, a new session shows the [Models first-run step](../../packages/client/ui-settings-models/README.md) (the official DeepSeek key, or **Use another model provider** to open Settings → Models), and a send without a key explains where to configure one.
 
 The welcome window reads the shared `locale.preference` before it appears. An explicit English or Chinese choice wins; otherwise Desktop picks the first supported OS language and falls back to English. The main UI reads the same preference and OS language order through its isolated preload before mounting. Language changes in Settings update the shell’s current dictionary and menu; automatic selection writes no preference. The welcome window has no language selector.
 
