@@ -985,9 +985,16 @@ Host owner of the embedding models and of the `embedding` Remote namespace.
  * Remove an API embedding model.
  * @param id - `<provider>/<model>`.
  * @returns the state without it.
- * @throws RemoteError `embedding/model-not-found` when no API model has this id.
+ * @throws RemoteError `embedding/model-not-found` when no API model has this id, `embedding/model-in-use` while something uses it.
  */
 @Remote async removeApiModel(id: string): Promise<EmbeddingState>
+
+/**
+ * Declare a user of embedding models: while it names users of a model, that model cannot be removed. Host only;
+ * withdrawn with the caller's fiber.
+ * @param usage - names of what uses an embedding model id, empty when nothing does.
+ */
+registerUsage(usage: (id: string) => Promise<readonly string[]>): void
 
 /**
  * Embed texts with one embedding model. Host only.

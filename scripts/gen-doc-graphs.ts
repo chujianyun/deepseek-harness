@@ -281,6 +281,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Downloads and runs the local embedding model, adds API embedding models over configured provider routes, and embeds text for knowledge bases on the Host.',
   },
   {
+    key: 'knowledgeBases',
+    pkg: 'knowledge-base',
+    title: 'Knowledge bases',
+    mode: 'core',
+    note: 'Keeps the signed-in tenant\'s knowledge bases, processes added files into embedded chunks, and searches them with hybrid vector and keyword scoring.',
+  },
+  {
     key: 'skillMarket',
     pkg: 'skill-market',
     title: 'Skill Hub market',

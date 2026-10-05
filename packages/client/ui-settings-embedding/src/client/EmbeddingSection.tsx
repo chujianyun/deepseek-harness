@@ -27,7 +27,13 @@ export function EmbeddingSection(props: EmbeddingSectionProps) {
   return (
     <section className={css.section} aria-label={t('nav')}>
       <p className={css.intro}>{t('intro')}</p>
-      {failure !== null && <p className={css.error} role="alert">{t('actionFailed', { message: failure })}</p>}
+      {failure !== null && (
+        <p className={css.error} role="alert">
+          {failure.users === null
+            ? t('actionFailed', { message: failure.message })
+            : t('inUse', { count: String(failure.users.length), names: failure.users.join('、') })}
+        </p>
+      )}
       {local !== null && <LocalCard {...props} local={local} />}
       <ApiModels {...props} />
     </section>

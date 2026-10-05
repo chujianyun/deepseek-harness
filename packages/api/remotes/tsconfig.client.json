@@ -97,6 +97,9 @@
       "path": "../../llm/embedding"
     },
     {
+      "path": "../../knowledge/knowledge-base"
+    },
+    {
       "path": "../workspace-controller/tsconfig.client.json"
     },
     {

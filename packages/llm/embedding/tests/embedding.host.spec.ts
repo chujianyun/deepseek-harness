@@ -485,6 +485,24 @@ describe('API embedding models', () => {
     await expect(service.embed('acme/bge-m3', ['x'], controller.signal)).rejects.toBe('cancelled')
   })
 
+  it('refuses to remove a model something uses, naming the users, and allows it once they let go', async () => {
+    const { ctx, service, until } = await bootApi()
+    await service.addApiModel('acme', 'bge-m3')
+    const users = new Map<string, string[]>([['acme/bge-m3', ['产品手册']], ['local/tiny', ['制度库', '合同库']]])
+    const consumer = ctx.plugin({ inject: ['embedding'], apply: (inner: Context) => { inner.embedding.registerUsage(id => Promise.resolve(users.get(id) ?? [])) } })
+    await consumer
+    expect(remoteErrorOf(await service.removeApiModel('acme/bge-m3').catch((error: unknown) => error)))
+      .toMatchObject({ code: 'embedding/model-in-use', details: { id: 'acme/bge-m3', users: ['产品手册'] } })
+    await service.startDownload()
+    await until(installed)
+    expect(remoteErrorOf(await service.removeLocalModel().catch((error: unknown) => error)))
+      .toMatchObject({ code: 'embedding/model-in-use', details: { users: ['制度库', '合同库'] } })
+    // Withdrawn with its fiber.
+    await consumer.dispose()
+    expect((await service.removeApiModel('acme/bge-m3')).apiModels).toEqual([])
+    expect((await service.removeLocalModel()).local.status).toBe('missing')
+  })
+
   it('needs the settings service to edit the list', async () => {
     const f = await fixtures()
     const ctx = new Context()

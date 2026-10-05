@@ -173,6 +173,7 @@ export class EmbeddingService extends TypertRemoteService {
   private embedder: Promise<LocalEmbedder> | undefined
   private progressTimer: ReturnType<typeof setTimeout> | undefined
   private apiWrites: Promise<void> = Promise.resolve()
+  private readonly usages = new Set<(id: string) => Promise<readonly string[]>>()
   private readonly listeners = new Set<() => void>()
   private readonly lifetime = new AbortController()
 
@@ -279,6 +280,7 @@ export class EmbeddingService extends TypertRemoteService {
   @Remote
   async removeLocalModel(): Promise<EmbeddingState> {
     if (this.status === 'unsupported') return this.getState()
+    await this.assertUnused(this.config.localModel.id)
     this.download?.abort('removed')
     await this.running
     this.embedder = undefined
@@ -335,15 +337,28 @@ export class EmbeddingService extends TypertRemoteService {
    * Remove an API embedding model.
    * @param id - `<provider>/<model>`.
    * @returns the state without it.
-   * @throws RemoteError `embedding/model-not-found` when no API model has this id.
+   * @throws RemoteError `embedding/model-not-found` when no API model has this id, `embedding/model-in-use` while something uses it.
    */
   @Remote
   async removeApiModel(id: string): Promise<EmbeddingState> {
     if (!this.storedApiModels().some(entry => `${entry.provider}/${entry.model}` === id)) {
       throw new RemoteError('embedding/model-not-found', `no embedding model ${id}`, { id })
     }
+    await this.assertUnused(id)
     await this.writeApiModels(current => current.filter(entry => `${entry.provider}/${entry.model}` !== id))
     return this.getState()
+  }
+
+  /**
+   * Declare a user of embedding models: while it names users of a model, that model cannot be removed. Host only;
+   * withdrawn with the caller's fiber.
+   * @param usage - names of what uses an embedding model id, empty when nothing does.
+   */
+  registerUsage(usage: (id: string) => Promise<readonly string[]>): void {
+    this.ctx.effect(() => {
+      this.usages.add(usage)
+      return () => { this.usages.delete(usage) }
+    }, 'embedding.registerUsage()')
   }
 
   /**
@@ -370,6 +385,13 @@ export class EmbeddingService extends TypertRemoteService {
   }
 
   private changed(): void { for (const listener of this.listeners) listener() }
+
+  private async assertUnused(id: string): Promise<void> {
+    const users = (await Promise.all([...this.usages].map(usage => usage(id)))).flat()
+    if (users.length > 0) {
+      throw new RemoteError('embedding/model-in-use', `the embedding model ${id} is used by ${String(users.length)} knowledge base(s)`, { id, users })
+    }
+  }
 
   private setLocal(status: LocalModelStatus, error: LocalModelError | null): void {
     this.status = status

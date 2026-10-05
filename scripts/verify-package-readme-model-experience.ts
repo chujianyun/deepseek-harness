@@ -220,6 +220,8 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-hub-account': { kind: 'none', reason: 'Sign-in gate and account section render Host state only; the Host decides whether a prompt is admitted.' },
   'packages/llm/embedding': { kind: 'none', reason: 'Embeddings are computed for knowledge bases outside any Session; no model request carries them.' },
   'packages/client/ui-settings-embedding': { kind: 'none', reason: 'The section renders embedding model state only.' },
+  'packages/knowledge/knowledge-base': { kind: 'none', reason: 'Knowledge bases are managed and searched outside any Session; no model request carries them yet.' },
+  'packages/client/ui-knowledge': { kind: 'none', reason: 'The page only renders and edits knowledge bases.' },
   'packages/api/workspace-controller': { kind: 'none', reason: 'Workspace API and state projection owner; it registers no prompt, tool, or session event.' },
   'packages/api/workspace-files': { kind: 'none', reason: 'Workspace file read API and its Client resource provider; it registers no prompt, tool, or session event.' },
   'packages/typert/protocol': { kind: 'none', reason: 'Compiler-independent Remote protocol declarations; registers nothing model-facing.' },

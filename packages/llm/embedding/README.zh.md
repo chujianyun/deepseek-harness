@@ -29,7 +29,7 @@ kind: "package-reference"
 
 下载先取运行时：按 `npmRegistries` 的顺序下载 npm tarball，只把当前平台的原生文件解压到 `<dshHome>/models/runtime/onnxruntime-<version>/node_modules`，包自身对原生绑定的相对 `require` 因此可以解析，无需打补丁。接着按 `modelMirrors` 的顺序（先 ModelScope，后 HuggingFace）下载模型文件。每个文件先写入 `<file>.part`，之后的尝试用 HTTP Range 请求续传；不支持 Range 的镜像会从头重传该文件。完成的文件必须与预期大小和 sha256 一致才会改名就位；不一致则删除并改试下一个镜像。所有镜像都无法提供该文件时，若有镜像提供过错误内容则以 `verification` 失败，否则以 `network` 失败；磁盘拒绝写入的文件立即以 `storage` 失败。进度帧每秒最多推送四次。
 
-`pauseDownload()` 停止传输并保留部分文件（`paused`）。`startDownload()` 用于开始、继续、重试或修复：修复会先校验每个已安装文件的 sha256，并重新下载不一致的文件。`removeLocalModel()` 会先停止正在进行的下载，再删除模型文件；下次启动会重新下载。运行时保留，因为在 Windows 上其原生库一经加载就会被锁定。
+`pauseDownload()` 停止传输并保留部分文件（`paused`）。`startDownload()` 用于开始、继续、重试或修复：修复会先校验每个已安装文件的 sha256，并重新下载不一致的文件。若通过 `registerUsage()` 登记的使用方（知识库）报告某个模型正在被使用，删除该模型会以 `embedding/model-in-use` 拒绝，并列出使用方。`removeLocalModel()` 会先停止正在进行的下载，再删除模型文件；下次启动会重新下载。运行时保留，因为在 Windows 上其原生库一经加载就会被锁定。
 
 `listProviders()` 列出已配置、且通过 `llm.routeEndpoint()` 解析出的端点使用 `openai-completions` 或 `openai-responses` 的路由。`addApiModel(provider, model)` 带着路由的凭据和请求头发送一次 `POST <baseURL>/embeddings` 来测量向量维度，然后把 `{provider, model, dimensions}` 存入 `apiModels` 设置；`removeApiModel(id)` 删除它。路由已不存在的 API 模型仍会列出，并标为不可用。API 模型的 id 为 `<provider>/<model>`，本地模型的 id 为 `local/<name>`。
 

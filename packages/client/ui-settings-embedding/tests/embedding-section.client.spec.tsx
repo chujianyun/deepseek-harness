@@ -71,9 +71,12 @@ describe('embedding section, local model', () => {
     expect(screen.getByText(zh['local.unsupported'])).toBeTruthy()
     expect(screen.queryAllByRole('button').filter(button => button.textContent !== '添加')).toHaveLength(0)
     cleanup()
-    mount({ local: local({ status: 'failed', receivedBytes: 0, error: 'storage' }), apiModels: [] }, { failure: 'boom' })
+    mount({ local: local({ status: 'failed', receivedBytes: 0, error: 'storage' }), apiModels: [] }, { failure: { message: 'boom', users: null } })
     expect(screen.queryByRole('progressbar')).toBeNull()
     expect(screen.getAllByRole('alert').map(node => node.textContent)).toEqual(['操作失败：boom', zh['error.storage']])
+    cleanup()
+    mount({ local: local(), apiModels: [] }, { failure: { message: 'used', users: ['制度库', '合同库'] } })
+    expect(screen.getByRole('alert').textContent).toBe('该模型正被 2 个知识库使用（制度库、合同库），不能删除。')
   })
 
   it('waits for the first frame before showing the model', () => {

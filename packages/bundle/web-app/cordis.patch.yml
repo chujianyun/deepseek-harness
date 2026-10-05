@@ -181,6 +181,12 @@
       name: '@deepseek-ai/dsh-embedding'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
 
+    # Local knowledge bases for Desktop, per tenant of the Hub sign-in: files are
+    # chunked and embedded with the embedding row's models and indexed for search.
+    - id: knowledge-base
+      name: '@deepseek-ai/dsh-knowledge-base'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'
@@ -349,6 +355,13 @@
     # exactly when the hub-account row is.
     - id: ui-hub-account
       name: '@deepseek-ai/dsh-client-ui-hub-account'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # Knowledge page: the sidebar entry below Skills and the knowledge bases with
+    # their files over the `knowledgeBases` Remote; mounted exactly when the
+    # knowledge-base row is.
+    - id: ui-knowledge
+      name: '@deepseek-ai/dsh-client-ui-knowledge'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
     # Settings → Embedding models over the `embedding` Remote; mounted exactly

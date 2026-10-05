@@ -13,8 +13,15 @@ export interface EmbeddingSnapshot {
   readonly providers: readonly EmbeddingProviderView[]
   /** An action is in flight; its controls stay disabled. */
   readonly busy: boolean
-  /** Message of the last refused action until the next one starts. */
-  readonly failure: string | null
+  /** The last refused action until the next one starts. */
+  readonly failure: EmbeddingFailure | null
+}
+
+/** A refused action: the Host's message, and the users that keep a model from being removed. */
+export interface EmbeddingFailure {
+  readonly message: string
+  /** Knowledge bases using the model, when that is why it could not be removed. */
+  readonly users: readonly string[] | null
 }
 
 /** Remote calls and Settings navigation the source drives. */
@@ -60,7 +67,10 @@ export function createEmbeddingSource(deps: EmbeddingDependencies): EmbeddingSou
     patch({ busy: true, failure: null })
     const result = await action()
     if (result.ok) patch({ busy: false, state: result.value })
-    else patch({ busy: false, failure: result.error.message })
+    else {
+      const { error } = result
+      patch({ busy: false, failure: { message: error.message, users: error.code === 'embedding/model-in-use' ? error.details.users : null } })
+    }
     return result.ok
   }
   return {

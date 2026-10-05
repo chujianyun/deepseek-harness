@@ -1685,6 +1685,33 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-jobs-local -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-knowledge-base -->
+<a id="deepseek-aidsh-knowledge-base"></a>
+
+## `@deepseek-ai/dsh-knowledge-base`
+
+- `inject`: `embedding` · `hubAccount`
+- `source`: [`packages/knowledge/knowledge-base/src/index.ts:44`](../packages/knowledge/knowledge-base/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** DeepSeek Harness home; knowledge bases live under `<dshHome>/knowledge`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** Largest file accepted, in bytes. */
+  maxFileBytes?: number
+  /** Chunk size of a new knowledge base, in estimated tokens. */
+  chunkSize?: number
+  /** Tokens a new knowledge base's chunks carry over from the previous chunk. */
+  chunkOverlap?: number
+  /** Chunks embedded per embedding call. */
+  embedBatch?: number
+  /** Longest knowledge base name, in characters. */
+  maxNameLength?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-knowledge-base -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-llm-deepseek-account -->
 <a id="deepseek-aidsh-llm-deepseek-account"></a>
 
@@ -4535,6 +4562,7 @@ export interface Config {
 | `@deepseek-ai/dsh-client-ui-hub-account` | — | [`packages/client/ui-hub-account/src/index.ts`](../packages/client/ui-hub-account/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-input-trigger` | — | [`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-jobs` | — | [`packages/client/ui-jobs/src/index.ts`](../packages/client/ui-jobs/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-knowledge` | — | [`packages/client/ui-knowledge/src/index.ts`](../packages/client/ui-knowledge/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-layout` | — | [`packages/client/ui-layout/src/index.ts`](../packages/client/ui-layout/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-message-feedback` | — | [`packages/client/ui-message-feedback/src/index.ts`](../packages/client/ui-message-feedback/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-model-selection` | — | [`packages/client/ui-model-selection/src/index.ts`](../packages/client/ui-model-selection/src/index.ts) |

@@ -79,6 +79,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-client-ui-hub-account` | no | Skill Hub account for the dsh Desktop client: the sidebar account launcher and the Settings section with sign-in, tenant switch, and sign-out |
 | `@deepseek-ai/dsh-client-ui-input-trigger` | no | Input trigger pipeline: '/' and '@' detection, candidate menu, pick routing to registered sources |
 | `@deepseek-ai/dsh-client-ui-jobs` | no | Session-header background-job list with on-demand streaming record panels |
+| `@deepseek-ai/dsh-client-ui-knowledge` | no | Knowledge page of the dsh Desktop client: the sidebar entry and the knowledge bases with their files, over the knowledgeBases Remote |
 | `@deepseek-ai/dsh-client-ui-layout` | no | Shell plugin: three-column AppFrame with drag handles, ctx.layout viewing-state service (navigation + panels) |
 | `@deepseek-ai/dsh-client-ui-message-feedback` | no | The Web feedback surface: per-message Like/Dislike in the assistant-message action strip and the feedback dialog behind both ratings and /feedback, backed by the messageFeedback and sessionFeedback Host Remotes |
 | `@deepseek-ai/dsh-client-ui-model-selection` | no | Model selection over the shared model catalog, Session projection, and session.selectModel |
@@ -277,6 +278,12 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 |---|---|---|
 | `@deepseek-ai/dsh-jobs-local` | yes | Process-local implementation of the DeepSeek Harness background job registry seam |
 | `@deepseek-ai/dsh-tool-jobs` | yes | Model-facing background job control tools (job_output, job_list, job_kill) over the ctx.jobs registry |
+
+## knowledge
+
+| Package | Config | Description |
+|---|---|---|
+| `@deepseek-ai/dsh-knowledge-base` | yes | Local knowledge bases for Desktop: per-tenant document collections chunked, embedded, and indexed for hybrid search |
 
 ## llm
 

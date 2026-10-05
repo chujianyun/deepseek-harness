@@ -31,6 +31,7 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   fs/                   filesystem access
   lsp/                  language servers
   skill/                skill loading
+  knowledge/            local knowledge bases
   web/                  search/fetch tools
   computer-use/         computer interaction
   browser-use/          browser interaction

@@ -17,6 +17,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'embedding/model-not-found': { readonly id: string }
     /** The local embedding model is not installed, or this platform cannot run it. */
     'embedding/local-model-unavailable': Record<string, never>
+    /** The embedding model is used, so it cannot be removed; `users` names its users (knowledge bases). */
+    'embedding/model-in-use': { readonly id: string; readonly users: readonly string[] }
   }
 }
 

@@ -43,6 +43,7 @@ export const zh = {
   'api.privacy': '使用 API 嵌入模型时，文档内容会发送到对应的提供商。',
   'api.removeLabel': '删除 {name}',
   actionFailed: '操作失败：{message}',
+  inUse: '该模型正被 {count} 个知识库使用（{names}），不能删除。',
 }
 
 /** Locale keys of the `settings-embedding` namespace. */
@@ -91,4 +92,5 @@ export const en = {
   'api.privacy': 'With an API embedding model, document content is sent to its provider.',
   'api.removeLabel': 'Delete {name}',
   actionFailed: 'Action failed: {message}',
+  inUse: 'This model is used by {count} knowledge base(s) ({names}) and cannot be deleted.',
 } satisfies Record<EmbeddingLocaleKey, string>

@@ -1038,7 +1038,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Remove an API embedding model.',
         parameters: [{ name: 'id', description: '`<provider>/<model>`.' }],
         returns: 'the state without it.',
-        throws: ['RemoteError `embedding/model-not-found` when no API model has this id.'],
+        throws: ['RemoteError `embedding/model-not-found` when no API model has this id, `embedding/model-in-use` while something uses it.'],
+      },
+      {
+        signature: 'registerUsage(usage: (id: string) => Promise<readonly string[]>): void',
+        description: 'Declare a user of embedding models: while it names users of a model, that model cannot be removed. Host only; withdrawn with the caller\'s fiber.',
+        parameters: [{ name: 'usage', description: 'names of what uses an embedding model id, empty when nothing does.' }],
       },
       {
         signature: 'async embed(id: string, texts: readonly string[], signal?: AbortSignal): Promise<number[][]>',
@@ -1486,6 +1491,74 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Attach an effect-scoped controller that can read and stop jobs. It serves the owners its registering context\'s scope covers, and start refuses an owner no attached controller serves.',
         parameters: [{ name: 'name', description: 'diagnostic label; duplicate names remain independent.' }],
         returns: 'disposer that detaches this controller.',
+      },
+    ],
+  },
+  {
+    key: 'knowledgeBases',
+    summary: 'Host owner of the knowledge bases and of the `knowledgeBases` Remote namespace.',
+    description: 'Host owner of the knowledge bases and of the `knowledgeBases` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote getState(): Promise<KnowledgeState>',
+        description: 'Read the signed-in tenant\'s knowledge bases with their items.',
+        parameters: [],
+        returns: 'the state the Knowledge page shows.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<KnowledgeState>',
+        description: 'Stream the state.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change.',
+      },
+      {
+        signature: '@Remote createBase(name: string, embeddingModelId: string): Promise<KnowledgeState>',
+        description: 'Create a knowledge base for the signed-in tenant.',
+        parameters: [{ name: 'name', description: 'display name, unique within the tenant.' }, { name: 'embeddingModelId', description: 'an embedding model Settings → Embedding models offers.' }],
+        returns: 'the state with the new knowledge base last.',
+        throws: ['RemoteError `hub-account/signed-out`, `knowledge/invalid-name`, `knowledge/duplicate-name`, or `knowledge/embedding-model-unavailable`.'],
+      },
+      {
+        signature: '@Remote renameBase(id: string, name: string): Promise<KnowledgeState>',
+        description: 'Rename a knowledge base.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'name', description: 'new name, unique within the tenant.' }],
+        returns: 'the state.',
+        throws: ['RemoteError `knowledge/not-found`, `knowledge/invalid-name`, or `knowledge/duplicate-name`.'],
+      },
+      {
+        signature: '@Remote deleteBase(id: string): Promise<KnowledgeState>',
+        description: 'Delete a knowledge base with its files and index.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }],
+        returns: 'the state without it.',
+        throws: ['RemoteError `knowledge/not-found`.'],
+      },
+      {
+        signature: '@Remote addFiles(id: string, paths: readonly string[]): Promise<KnowledgeAddResult>',
+        description: 'Add files to a knowledge base: each supported file within the size limit is copied in and queued.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'paths', description: 'absolute paths of files on this machine.' }],
+        returns: 'how many were added and which were refused.',
+        throws: ['RemoteError `knowledge/not-found`.'],
+      },
+      {
+        signature: '@Remote reprocessItem(id: string, itemId: string): Promise<KnowledgeState>',
+        description: 'Process an item again from its stored copy.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'item id.' }],
+        returns: 'the state with the item pending.',
+        throws: ['RemoteError `knowledge/not-found`.'],
+      },
+      {
+        signature: '@Remote deleteItem(id: string, itemId: string): Promise<KnowledgeState>',
+        description: 'Delete an item with its copy and chunks.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'item id.' }],
+        returns: 'the state without it.',
+        throws: ['RemoteError `knowledge/not-found`.'],
+      },
+      {
+        signature: 'async search(id: string, query: string, options: { limit: number; threshold: number }, signal?: AbortSignal): Promise<SearchHit[]>',
+        description: 'Search one of the signed-in tenant\'s knowledge bases. Host only.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'query', description: 'question or keywords.' }, { name: 'options', description: 'most hits, and least blended score (0–1).' }, { name: 'signal', description: 'cancels the query embedding.' }],
+        returns: 'hits, best first.',
+        throws: ['RemoteError `knowledge/not-found`, or the embedding model\'s failure.'],
       },
     ],
   },
@@ -5916,6 +5989,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type JsonValue = null | boolean | number | string | JsonValue[] | {\n    [key: string]: JsonValue;\n};',
   },
   {
+    name: 'KnowledgeAddResult',
+    declaration: 'export interface KnowledgeAddResult {\n    readonly added: number;\n    readonly rejected: readonly {\n        readonly name: string;\n        readonly reason: KnowledgeRejectReason;\n    }[];\n}',
+  },
+  {
+    name: 'KnowledgeBaseView',
+    declaration: 'export interface KnowledgeBaseView {\n    readonly id: string;\n    readonly name: string;\n    readonly embeddingModelId: string;\n    readonly embeddingModelName: string;\n    readonly status: \'ready\' | \'unavailable\';\n    readonly items: readonly KnowledgeItemView[];\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'KnowledgeItemError',
+    declaration: 'export type KnowledgeItemError = \'unreadable\' | \'empty\' | \'embedding\' | \'interrupted\' | \'storage\';',
+  },
+  {
+    name: 'KnowledgeItemStatus',
+    declaration: 'export type KnowledgeItemStatus = \'pending\' | \'processing\' | \'completed\' | \'failed\';',
+  },
+  {
+    name: 'KnowledgeItemView',
+    declaration: 'export interface KnowledgeItemView {\n    readonly id: string;\n    readonly kind: \'file\';\n    readonly name: string;\n    readonly size: number;\n    readonly status: KnowledgeItemStatus;\n    readonly error: KnowledgeItemError | null;\n    readonly chunkCount: number;\n    readonly addedAt: string;\n}',
+  },
+  {
+    name: 'KnowledgeRejectReason',
+    declaration: 'export type KnowledgeRejectReason = \'unsupported\' | \'too-large\' | \'unreadable\';',
+  },
+  {
+    name: 'KnowledgeState',
+    declaration: 'export interface KnowledgeState {\n    readonly tenantId: string | null;\n    readonly bases: readonly KnowledgeBaseView[];\n}',
+  },
+  {
     name: 'KvFacet',
     declaration: 'export interface KvFacet {\n    open(descriptor: KvUnitDescriptor): Promise<KvUnit>;\n}',
   },
@@ -6834,6 +6935,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SearchFileMatches',
     declaration: 'export interface SearchFileMatches {\n    path: string;\n    matches: SearchLineMatch[];\n}',
+  },
+  {
+    name: 'SearchHit',
+    declaration: 'export interface SearchHit {\n    itemId: string;\n    itemName: string;\n    ordinal: number;\n    text: string;\n    score: number;\n}',
   },
   {
     name: 'SearchLineMatch',
