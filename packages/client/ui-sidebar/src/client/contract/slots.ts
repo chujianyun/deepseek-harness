@@ -58,12 +58,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export interface SidebarBrandMarkOwnerProps {
   /** Requested square edge in pixels. */
   size: number
+  /** `rail`: the collapsed rail's only brand; `row`: beside the brand name in the expanded row. */
+  placement: 'rail' | 'row'
 }
 
-/** Empty owner share for the sidebar brand-name occupant. */
+/** Build metadata supplied to the sidebar brand-name occupant, which owns its own content and width. */
 export interface SidebarBrandNameOwnerProps {
-  /** Marker field: the occupant owns its own content and width. */
-  children?: never
+  /** Complete-build badge text, `version[-commit][-dirty]`; undefined when the build carries no version. */
+  version: string | undefined
 }
 
 /** Icon presentation supplied by the global panel row. */

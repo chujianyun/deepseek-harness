@@ -26,7 +26,7 @@ function mount(view: HubAccountView | undefined, { wide = true, copy = zh, busy 
 }
 
 it.each([zh, en])('shows the employee and company, opens Settings, and signs out from its menu', (copy) => {
-  const props = mount({ status: 'signed-in', profile, reason: null, attempt: null }, { copy })
+  const props = mount({ status: 'signed-in', profile, reason: null, attempt: null, branding: null }, { copy })
   const trigger = screen.getByRole('button', { name: copy.menu })
   expect(trigger.textContent).toBe('韩韩梅梅甲公司')
   fireEvent.click(trigger)
@@ -40,10 +40,10 @@ it.each([zh, en])('shows the employee and company, opens Settings, and signs out
 })
 
 it('names an account without a company and keeps only the initial in the collapsed rail', () => {
-  mount({ status: 'signed-in', profile: { ...profile, tenantName: null }, reason: null, attempt: null })
+  mount({ status: 'signed-in', profile: { ...profile, tenantName: null }, reason: null, attempt: null, branding: null })
   expect(screen.getByRole('button', { name: zh.menu }).textContent).toBe('韩韩梅梅不属于任何公司')
   cleanup()
-  mount({ status: 'signed-in', profile, reason: null, attempt: null }, { wide: false })
+  mount({ status: 'signed-in', profile, reason: null, attempt: null, branding: null }, { wide: false })
   expect(screen.getByRole('button', { name: zh.menu }).textContent).toBe('韩')
 })
 
@@ -54,13 +54,13 @@ it('offers only Settings while signed out and disables sign-out while busy', () 
   fireEvent.click(trigger)
   expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([zh.settings])
   cleanup()
-  mount({ status: 'signed-in', profile, reason: null, attempt: null }, { busy: true })
+  mount({ status: 'signed-in', profile, reason: null, attempt: null, branding: null }, { busy: true })
   fireEvent.click(screen.getByRole('button', { name: zh.menu }))
   expect(screen.getByRole('menuitem', { name: zh.signOut }).hasAttribute('disabled')).toBe(true)
 })
 
 it('shows the Settings shortcut when the shell binds one', () => {
-  const store = createSnapshotStore<HubSnapshot>({ view: { status: 'signed-in', profile, reason: null, attempt: null }, busy: false, failure: null })
+  const store = createSnapshotStore<HubSnapshot>({ view: { status: 'signed-in', profile, reason: null, attempt: null, branding: null }, busy: false, failure: null })
   render(<HubLauncher {...({} as GlobalStandardProps)} t={makeTranslate(zh)} useHub={bindSnapshotSelector(store)} wide settingsOpen={false}
     settingsShortcut={{ keys: ['⌘', ','], aria: 'Meta+Comma' }} openSettings={vi.fn()} openOnboarding={vi.fn()}
     onSignIn={vi.fn(async () => {})} onCancel={vi.fn(async () => {})} onSignOut={vi.fn(async () => {})}

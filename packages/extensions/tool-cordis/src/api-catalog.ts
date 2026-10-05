@@ -1253,6 +1253,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'status, profile, and the current attempt.',
       },
       {
+        signature: '@Remote async getBranding(): Promise<HubBrandingView | null>',
+        description: 'Read the cached login-page branding to show: signed in, the signed-in tenant\'s; signed out, the last-signed-in tenant\'s.',
+        parameters: [],
+        returns: 'the branding, or null when there is none to show.',
+      },
+      {
         signature: '@Remote async signIn(): Promise<HubAccountView>',
         description: 'Start a browser sign-in, or join the one already running. The state stream carries the authorization page to open.',
         parameters: [],
@@ -2792,6 +2798,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Visibility and category choices for an upload, from the signed-in tenant.',
         parameters: [{ name: 'signal', description: 'caller lifetime.' }],
         returns: 'categories, departments, and active employees.',
+        throws: ['RemoteError `skill-market/upload-rejected` carrying the Hub\'s reason when the account cannot upload at all (403), `skill-market/unavailable` for any other failure.'],
       },
       {
         signature: '@Remote async uploadSkill(request: MarketUploadRequest, signal: AbortSignal): Promise<MarketUploadResult>',
@@ -5545,7 +5552,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'HubAccountView',
-    declaration: 'export interface HubAccountView {\n    readonly status: \'signed-out\' | \'signed-in\';\n    readonly profile: HubProfile | null;\n    readonly reason: \'expired\' | null;\n    readonly attempt: HubSignInAttemptView | null;\n}',
+    declaration: 'export interface HubAccountView {\n    readonly status: \'signed-out\' | \'signed-in\';\n    readonly profile: HubProfile | null;\n    readonly reason: \'expired\' | null;\n    readonly attempt: HubSignInAttemptView | null;\n    readonly branding: HubBrandingStamp | null;\n}',
+  },
+  {
+    name: 'HubBrandingStamp',
+    declaration: 'export interface HubBrandingStamp {\n    readonly tenantId: string;\n    readonly title: string | null;\n    readonly logoSha256: string | null;\n}',
+  },
+  {
+    name: 'HubBrandingView',
+    declaration: 'export interface HubBrandingView {\n    readonly tenantId: string;\n    readonly title: string | null;\n    readonly logo: string | null;\n}',
   },
   {
     name: 'HubProfile',

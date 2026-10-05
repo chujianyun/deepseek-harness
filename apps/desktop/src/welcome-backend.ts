@@ -1,6 +1,6 @@
 /** Native welcome operations using the shared Web authentication and RPC APIs. */
 import { randomUUID } from 'node:crypto'
-import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
+import type { HubAccountView, HubBrandingView } from '@deepseek-ai/dsh-hub-account/types'
 import type { ProductEvent } from '@deepseek-ai/dsh-client-product-analytics/types'
 import { desktopHubBackend, type DesktopHubBackend } from './hub-backend.ts'
 
@@ -25,6 +25,25 @@ export interface DesktopWelcomeBackend {
   readLocalePreference(): Promise<string | null>
   /** @returns whether any configurable model provider has a stored API key, without credential values. */
   hasApiKey(): Promise<boolean>
+  /** @returns the cached login-page branding of the last-signed-in tenant, or null when there is none. */
+  branding(): Promise<HubBrandingView | null>
+}
+
+/** Logos reach the sandboxed welcome renderer only as base64 image data URLs of the formats the user center accepts. */
+const LOGO_DATA_URL = /^data:image\/(png|jpeg|svg\+xml);base64,[A-Za-z0-9+/]+={0,2}$/
+
+/**
+ * Decode the cached branding received over RPC.
+ * @param value - wire value.
+ * @returns the validated branding, or null.
+ */
+export function brandingView(value: unknown): HubBrandingView | null {
+  if (value === null) return null
+  if (!record(value) || typeof value.tenantId !== 'string' || !(value.title === null || typeof value.title === 'string')
+    || !(value.logo === null || (typeof value.logo === 'string' && LOGO_DATA_URL.test(value.logo)))) {
+    throw new Error('desktop welcome: invalid branding')
+  }
+  return { tenantId: value.tenantId, title: value.title, logo: value.logo }
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -122,5 +141,6 @@ export async function connectDesktopWelcome(
     async report(event) { await invoke({ namespace: 'productAnalytics', method: 'report', args: { event } }, AbortSignal.timeout(1000)) },
     async readLocalePreference() { return localePreference(await describeSettings()) },
     hasApiKey,
+    async branding() { return brandingView(await invoke({ namespace: 'hubAccount', method: 'getBranding', args: {} }, AbortSignal.timeout(1000))) },
   }
 }

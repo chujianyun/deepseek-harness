@@ -1,3 +1,5 @@
 Sign in
+[logo: Company logo]
+欢迎使用 甲公司 AI 助手
 Sign in with your company account.
 Sign in with company account

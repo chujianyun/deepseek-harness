@@ -1160,6 +1160,8 @@ async function main(): Promise<void> {
           }
           await clipboard.writeText(state.attempt.authorizeUrl)
         },
+        // Branding only decorates the page: an unreachable Host or a refused value shows none.
+        branding: async () => welcomeBackend === undefined ? null : welcomeBackend.branding().catch(() => null),
       })
       const window = welcomeWindow
       window.once('closed', () => {

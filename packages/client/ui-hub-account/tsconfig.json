@@ -36,6 +36,9 @@
       "path": "../ui-settings/tsconfig.client.json"
     },
     {
+      "path": "../ui-sidebar"
+    },
+    {
       "path": "../../credentials/hub-account"
     }
   ]

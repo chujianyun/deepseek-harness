@@ -2,8 +2,9 @@
 // user center, composed like the Desktop product without the DeepSeek account: signed out, the
 // section says so and new prompts are refused; browser sign-in from Settings lets
 // the user in; a refused refresh signs out while a running turn keeps streaming; signing in
-// again restores prompts; Settings switches tenant, signs out, and signs in again. The Desktop
-// welcome window that keeps the workspace closed while signed out is covered by the Desktop specs.
+// again restores prompts; Settings switches tenant, signs out, and signs in again. The sidebar brand
+// row shows the signed-in tenant's logo, or its name when it set none. The Desktop welcome window
+// that keeps the workspace closed while signed out is covered by the Desktop specs.
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -55,6 +56,10 @@ it('signs in from Settings, survives a refused refresh without stopping a runnin
   process.env.DSH_E2E_HUB_ORIGIN = center.origin
   // Short-lived access tokens: the Host refreshes about every second.
   center.expiresIn = 3
+  center.brandings['t-a'] = {
+    title: '欢迎使用 甲公司 AI 助手',
+    logo: { contentType: 'image/svg+xml', data: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 20"><rect width="80" height="20" fill="#1e6fff"/></svg>') },
+  }
   const scaffold = await launchWebScaffold({
     extraOverlayPath: OVERLAY, replayFixture: join(replayDir, 'override-only.jsonl'), replayOverride: override, paceMs: 150,
   })
@@ -90,6 +95,10 @@ it('signs in from Settings, survives a refused refresh without stopping a runnin
     // No DeepSeek account section; the sidebar launcher shows the employee and company with Settings and Sign out.
     expect(await settings.getByRole('button', { name: 'Account', exact: true }).count()).toBe(0)
     await settings.getByRole('button', { name: 'Close' }).last().click()
+    // The sidebar brand row shows the tenant's logo in place of the DeepSeek Harness brand.
+    const brandName = page.locator('[data-slot="sidebar.brand.name"]')
+    await expect.poll(() => brandName.locator('img').getAttribute('src'), { timeout: 10_000 }).toMatch(/^data:image\/svg\+xml;base64,/u)
+    expect(await brandName.locator('img').getAttribute('alt')).toBe('甲公司')
     const launcher = page.getByRole('button', { name: 'Account menu', exact: true })
     await expect.poll(() => launcher.textContent()).toBe('李李雷甲公司')
     await launcher.click()
@@ -128,6 +137,9 @@ it('signs in from Settings, survives a refused refresh without stopping a runnin
     await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).profile?.tenantName).toBe('乙公司')
     expect(center.revoked.length).toBeGreaterThan(0)
     await expect.poll(() => section.textContent()).toContain('Tenant：乙公司')
+    // 乙公司 set no branding: its name replaces the logo.
+    await expect.poll(() => brandName.textContent()).toContain('乙公司')
+    expect(await brandName.locator('img').count()).toBe(0)
     await section.getByRole('button', { name: 'Sign out' }).click()
     await section.getByText('Not signed in to Skill Hub').waitFor({ timeout: 10_000 })
     expect((await scaffold.ctx.hubAccount.getState()).status).toBe('signed-out')

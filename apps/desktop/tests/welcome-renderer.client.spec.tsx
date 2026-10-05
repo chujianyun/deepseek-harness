@@ -5,16 +5,21 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Welcome } from '../src/client/WelcomePage.tsx'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveDesktopLocale } from '../src/locale.ts'
-import type { HubAccountView, HubSignInAttemptView } from '@deepseek-ai/dsh-hub-account/types'
+import type { HubAccountView, HubBrandingView, HubSignInAttemptView } from '@deepseek-ai/dsh-hub-account/types'
 import type { WelcomeNotice } from '../src/welcome-api.ts'
 
 const html = readFileSync(join(import.meta.dirname, '../renderer/welcome.html'), 'utf8')
 afterEach(cleanup)
 
-const signedOut: HubAccountView = { status: 'signed-out', profile: null, reason: null, attempt: null }
+const signedOut: HubAccountView = { status: 'signed-out', profile: null, reason: null, attempt: null, branding: null }
+const LOGO = 'data:image/svg+xml;base64,PHN2Zy8+'
 const withAttempt = (attempt: HubSignInAttemptView): HubAccountView => ({ ...signedOut, attempt })
 
-function mount(language = 'zh-CN', takeNotice = vi.fn<() => Promise<WelcomeNotice | undefined>>().mockResolvedValue(undefined)) {
+function mount(
+  language = 'zh-CN',
+  takeNotice = vi.fn<() => Promise<WelcomeNotice | undefined>>().mockResolvedValue(undefined),
+  branding = vi.fn<() => Promise<HubBrandingView | null>>().mockResolvedValue(null),
+) {
   cleanup()
   const stopAccount = vi.fn()
   const api = {
@@ -25,6 +30,7 @@ function mount(language = 'zh-CN', takeNotice = vi.fn<() => Promise<WelcomeNotic
     startSignIn: vi.fn(async (): Promise<HubAccountView> => signedOut),
     cancelSignIn: vi.fn(async (): Promise<HubAccountView> => signedOut),
     copySignInLink: vi.fn(async () => undefined),
+    branding,
     ...resolveDesktopLocale(language),
   }
   const mounted = render(<Welcome api={api} />)
@@ -33,7 +39,7 @@ function mount(language = 'zh-CN', takeNotice = vi.fn<() => Promise<WelcomeNotic
   const copy = () => {
     const heading = document.querySelector('main')!.getAttribute('aria-labelledby')!
     return [
-      document.title, document.querySelector('img')!.alt, document.getElementById(heading)!.textContent,
+      document.title, ...[...document.querySelectorAll('img')].map(img => `[logo: ${img.alt}]`), document.getElementById(heading)!.textContent,
       ...heading === 'welcome-heading' ? [document.querySelector('#welcome-description')!.textContent] : [],
       ...[...document.querySelectorAll('button')].filter(item => item.closest('[hidden]') === null)
         .map(item => `${item.textContent || item.getAttribute('aria-label')}${item.disabled ? ' [disabled]' : ''}`),
@@ -44,12 +50,51 @@ function mount(language = 'zh-CN', takeNotice = vi.fn<() => Promise<WelcomeNotic
 }
 
 describe('desktop welcome presentation', () => {
-  it.each(['zh-CN', 'en'])('renders the %s entry with the company sign-in as its only action', async (language) => {
+  it.each(['zh-CN', 'en'])('renders the %s entry without branding, the company sign-in as its only action', async (language) => {
     const view = mount(language)
+    expect(view.document.querySelector('main')!.classList.contains('pending')).toBe(true)
+    await act(async () => { await view.api.branding.mock.results[0]!.value })
+    expect(view.document.querySelector('main')!.classList.contains('pending')).toBe(false)
     expect(view.document.documentElement.lang).toBe(language)
-    expect(view.document.querySelector('img')!.getAttribute('src')).toBe('assets/welcome-brand.svg')
+    expect(view.document.querySelector('img')).toBeNull()
+    expect(view.document.querySelector('h1#welcome-heading')).toBeNull()
     expect(view.document.querySelector('input')).toBeNull()
     await expect(view.copy()).toMatchFileSnapshot(`./expected/welcome/${language}.expected.txt`)
+  })
+
+  it.each([
+    ['logo and title', { tenantId: 't-a', title: '欢迎使用 甲公司 AI 助手', logo: LOGO }],
+    ['title only', { tenantId: 't-a', title: 'Acme Copilot', logo: null }],
+    ['logo only', { tenantId: 't-a', title: null, logo: LOGO }],
+  ] as const)('shows the cached tenant branding: %s', async (name, cached) => {
+    const view = mount('en', undefined, vi.fn<() => Promise<HubBrandingView | null>>().mockResolvedValue(cached))
+    await act(async () => { await view.api.branding.mock.results[0]!.value })
+    expect(view.document.querySelector('img')?.getAttribute('src') ?? null).toBe(cached.logo)
+    // The title is shown as written whatever the UI language.
+    expect(view.document.querySelector('#welcome-heading')?.textContent ?? null).toBe(cached.title)
+    await expect(view.copy()).toMatchFileSnapshot(`./expected/welcome/branding-${name.replaceAll(' ', '-')}.expected.txt`)
+  })
+
+  it('shows the unbranded page when the branding cannot be read', async () => {
+    const refused = Promise.reject(new Error('closed'))
+    const view = mount('zh-CN', undefined, vi.fn<() => Promise<HubBrandingView | null>>().mockReturnValue(refused))
+    await act(async () => { await refused.catch((_closed: unknown) => undefined) })
+    expect(view.document.querySelector('main')!.classList.contains('pending')).toBe(false)
+    expect(view.document.querySelector('img')).toBeNull()
+  })
+
+  it('reads the branding again when the Host reports a sign-out', async () => {
+    const branding = vi.fn<() => Promise<HubBrandingView | null>>().mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ tenantId: 't-b', title: '乙公司', logo: null })
+    const view = mount('zh-CN', undefined, branding)
+    await act(async () => { await branding.mock.results[0]!.value })
+    expect(view.document.querySelector('#welcome-heading')).toBeNull()
+    view.receive({ ...signedOut, status: 'signed-in' })
+    expect(branding).toHaveBeenCalledTimes(1)
+    view.receive(signedOut)
+    await act(async () => { await branding.mock.results[1]!.value })
+    expect(view.document.querySelector('#welcome-heading')!.textContent).toBe('乙公司')
+    view.unmount()
   })
 
   it('starts a sign-in and shows the attempt the Host returns', async () => {

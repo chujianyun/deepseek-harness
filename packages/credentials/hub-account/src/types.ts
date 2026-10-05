@@ -55,6 +55,26 @@ export interface HubSignInAttemptView {
   readonly error?: HubSignInError
 }
 
+/**
+ * Which login-page branding (T30: logo and welcome title the super admin set for a tenant) is
+ * cached on this machine: changes whenever the cached branding does.
+ */
+export interface HubBrandingStamp {
+  readonly tenantId: string
+  readonly title: string | null
+  /** sha256 of the cached logo, null when the tenant has none. */
+  readonly logoSha256: string | null
+}
+
+/** Cached login-page branding of a tenant, ready to render. Items the tenant has not set are null. */
+export interface HubBrandingView {
+  readonly tenantId: string
+  /** Welcome title, shown as written whatever the UI language. */
+  readonly title: string | null
+  /** Logo as a `data:image/(png|jpeg|svg+xml);base64,` URL, for an `<img>` only. */
+  readonly logo: string | null
+}
+
 /** Hub sign-in state. */
 export interface HubAccountView {
   readonly status: 'signed-out' | 'signed-in'
@@ -64,4 +84,9 @@ export interface HubAccountView {
   readonly reason: 'expired' | null
   /** The current or last-settled sign-in attempt. */
   readonly attempt: HubSignInAttemptView | null
+  /**
+   * Cached branding: signed in, only the signed-in tenant's; signed out, the last-signed-in
+   * tenant's. Null when there is none to show.
+   */
+  readonly branding: HubBrandingStamp | null
 }

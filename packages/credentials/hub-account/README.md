@@ -31,6 +31,8 @@ The access token is refreshed `refreshMarginMs` before it expires, rotating the 
 
 While signed out, the package answers the session controller's `api-session/prompt-admission` with `hub-account/signed-out`, so the Host refuses new prompts. Turns that are already running, and work already queued, continue.
 
+After each sign-in, and once per startup while signed in, the package reads the tenant's login-page branding from `GET /api/client/branding` and downloads its logo from the fixed path `/api/client/branding/logo` (never from a URL in the response, so the access token stays on the user center). A logo whose type differs from the declared one or is not PNG, JPEG, or SVG, that exceeds 512 KB, or whose sha256 differs from the declared one is left out; a logo whose sha256 matches the cached one is not downloaded again. The result replaces the cache under `<dshHome>/cache/hub-branding` (a record with the user-center origin and tenant id, and the logo file named by its sha256); a tenant that set neither item clears it. A failed or malformed answer keeps the cache. `getBranding()` returns the cached `{tenantId, title, logo}` with the logo as a `data:` URL for an `<img>`, and every state carries a `branding` stamp (`tenantId`, `title`, `logoSha256`) that changes with the cache. Signed in, both show only the signed-in tenant's branding; signed out, the last-signed-in tenant's. A cache written for another user center is ignored.
+
 -----
 
 <a id="configuration"></a>
@@ -46,6 +48,7 @@ While signed out, the package answers the session controller's `api-session/prom
 | `attemptTimeoutMs` | `600000` | Upper bound of one browser sign-in attempt. |
 | `refreshMarginMs` | `300000` | Refresh the access token this long before it expires. |
 | `refreshRetryMs` | `60000` | Retry delay after a refresh that failed without a verdict. |
+| `dshHome` | `$DSH_HOME` or `~/.dsh` | Harness home; the branding cache lives under `<dshHome>/cache/hub-branding`. |
 
 -----
 

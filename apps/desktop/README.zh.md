@@ -169,13 +169,15 @@ Web 侧的对应命令是 `pnpm run dev:web` 与 `pnpm run start:web`，见[开�
 
 Desktop 在 Host 启动后、打开工作区前读取用户中心登录状态。未登录时，欢迎窗口只提供一个操作“用公司账号登录”；没有 API Key 页面，也不能跳过。模型在工作区中配置：没有可用提供商时，新会话会显示[模型首次引导](../../packages/client/ui-settings-models/README.zh.md)（填写 DeepSeek 官方 Key，或「使用其他模型提供商」打开设置 → 模型），没有 Key 时发送消息会说明到哪里配置。
 
+欢迎页显示用户中心超级管理员为本机上次登录的租户设置的登录页品牌：Logo 按比例缩放在品牌行内，欢迎标题按管理员填写的原样显示，中英文界面相同。[Hub 账号](../../packages/credentials/hub-account/README.zh.md)在每次登录后、以及已登录时每次启动时缓存这两项，因此离线和登录前也能显示。租户没有设置的项不显示。没有缓存时（首次启动，或租户恢复默认后）欢迎页不显示 Logo 和标题，只显示「使用公司账号登录后开始使用」和登录按钮。工作区中，侧栏品牌行由 [Hub 账号界面](../../packages/client/ui-hub-account/README.zh.md)负责：显示当前租户的 Logo，下方是构建版本号；租户没有设置 Logo 时显示公司名称。
+
 欢迎窗口在显示前读取共享的 `locale.preference`。用户明确选择的英文或中文优先；否则 Desktop 按系统语言顺序匹配支持的语言，并以英文兜底。主界面在挂载前通过隔离 preload 读取同一偏好和系统语言顺序。在设置中切换语言会更新桌面壳的当前词典和菜单；自动选择不会写入偏好。欢迎窗口不提供语言切换入口。
 
-等待浏览器登录时，欢迎页提供当前待授权请求的链接复制入口、加载指示和取消操作；剪贴板写入失败后可以重试复制，复制结果提示在两秒后恢复；已复制状态下链接禁用，恢复后可再次点击。Welcome 文字使用 Montserrat Light 并回退到系统字体，底部大按钮保留系统字体，文字按钮使用 Montserrat Light。英文欢迎正文及产品名均为 24px，中文欢迎正文为 24px、产品名为 26px。登录操作按钮宽 240px，文字为 14px。授权状态标题使用 20px Montserrat Regular 字重。
+等待浏览器登录时，欢迎页提供当前待授权请求的链接复制入口、加载指示和取消操作；剪贴板写入失败后可以重试复制，复制结果提示在两秒后恢复；已复制状态下链接禁用，恢复后可再次点击。Welcome 文字使用 Montserrat Light 并回退到系统字体，底部大按钮保留系统字体，文字按钮使用 Montserrat Light。欢迎正文为 24px；其上方的租户欢迎标题为 26px，过长时换行。登录操作按钮宽 240px，文字为 14px。授权状态标题使用 20px Montserrat Regular 字重。
 
 ### 欢迎窗口外观
 
-欢迎窗口使用设计稿的 Platform light/dark 颜色跟随系统外观，展示 600 × 700 的入口布局，包含原生窗口控件、可拖动标题区域、本地品牌 SVG、系统无衬线字体回退，以及非按钮文字使用的本地 Montserrat Light 字体。窗口使用 macOS menu vibrancy 或 Windows acrylic，叠加 onboarding 的窗口背景色：浅色模式为 40% 白色，深色模式为 50% rgb(24 25 28)。本地 React 欢迎入口将 React、公共 `StateDot` 加载指示器及其 CSS 一起打包；它通过隔离 preload 工作，不加载主 Web 应用。入口和登录状态页面共用固定的底部操作行。按钮共用平台的过渡时序，开启“减少动态效果”会禁用过渡。操作系统控制模糊强度和外部圆角。macOS 的“降低透明度”会抑制半透明效果，“增强对比度”会强制开启该设置。登录后用户中心授权保存在开发环境的凭证存储中。生成的开发项目同时链接已声明的 workspace 依赖闭包和 pnpm 提升的包，因此未提升的配置插件仍能解析。[窗口记录](../../.agents/notes/implemented/architecture/2026-09-08-desktop-welcome-window-material.zh.md)负责材质与引导决策。
+欢迎窗口使用设计稿的 Platform light/dark 颜色跟随系统外观，展示 600 × 700 的入口布局，包含原生窗口控件、可拖动标题区域、以 data URL 显示的缓存租户 Logo（页面唯一的图片来源）、系统无衬线字体回退，以及非按钮文字使用的本地 Montserrat Light 字体。窗口使用 macOS menu vibrancy 或 Windows acrylic，叠加 onboarding 的窗口背景色：浅色模式为 40% 白色，深色模式为 50% rgb(24 25 28)。本地 React 欢迎入口将 React、公共 `StateDot` 加载指示器及其 CSS 一起打包；它通过隔离 preload 工作，不加载主 Web 应用。入口和登录状态页面共用固定的底部操作行。按钮共用平台的过渡时序，开启“减少动态效果”会禁用过渡。操作系统控制模糊强度和外部圆角。macOS 的“降低透明度”会抑制半透明效果，“增强对比度”会强制开启该设置。登录后用户中心授权保存在开发环境的凭证存储中。生成的开发项目同时链接已声明的 workspace 依赖闭包和 pnpm 提升的包，因此未提升的配置插件仍能解析。[窗口记录](../../.agents/notes/implemented/architecture/2026-09-08-desktop-welcome-window-material.zh.md)负责材质与引导决策。
 
 ## 打包
 

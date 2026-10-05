@@ -3,7 +3,9 @@
  * client, received on a loopback callback (`http://127.0.0.1:<random port>/callback`) after the
  * human signs in in the system browser. The grant lives in the credential store and never leaves
  * the Host; the access token is refreshed before it expires. While signed out, new prompts are
- * refused; running turns continue.
+ * refused; running turns continue. After each sign-in, and at startup while signed in, the tenant's
+ * login-page branding is fetched and cached under `<dshHome>/cache/hub-branding` for the Desktop
+ * welcome window and sidebar.
  *
  * @module @deepseek-ai/dsh-hub-account
  */
@@ -15,9 +17,11 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/types'
 import type { AuthorizationSession } from '@deepseek-ai/dsh-authorization'
 import { credentialKey, type CredentialRecord } from '@deepseek-ai/dsh-credentials'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { dshCachePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
-import type { HubAccountView, HubProfile, HubSignInAttemptView, HubSignInError } from './types.ts'
+import { checkedLogo, clearBrandingCache, logoDataUrl, readBrandingCache, writeBrandingCache, type CachedBranding } from './branding.ts'
+import type { HubAccountView, HubBrandingStamp, HubBrandingView, HubProfile, HubSignInAttemptView, HubSignInError } from './types.ts'
 
 export type * from './types.ts'
 
@@ -49,6 +53,8 @@ export interface Config {
   refreshMarginMs?: number
   /** Retry delay after a refresh that failed without a verdict (network, server error). */
   refreshRetryMs?: number
+  /** DeepSeek Harness home; the branding cache lives under `<dshHome>/cache/hub-branding`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
 }
 
 /** Validated deployment configuration. */
@@ -61,6 +67,7 @@ export const Config: Schema<Config> = Schema.object({
   attemptTimeoutMs: Schema.number().min(1).max(3_600_000).default(600_000),
   refreshMarginMs: Schema.number().min(0).max(86_400_000).default(300_000),
   refreshRetryMs: Schema.number().min(1).max(3_600_000).default(60_000),
+  dshHome: Schema.string(),
 })
 
 const tokenResponse = z.object({
@@ -74,6 +81,11 @@ const userinfo = z.object({
   tenantId: z.string().nullable(),
   tenantName: z.string().nullable(),
   isTenantAdmin: z.boolean().nullable(),
+})
+const clientBranding = z.object({
+  tenantId: z.string(),
+  title: z.string().nullable(),
+  logo: z.object({ contentType: z.string(), sha256: z.string() }).nullable(),
 })
 const grant = z.object({
   version: z.literal(1),
@@ -136,7 +148,13 @@ export class HubAccount extends TypertRemoteService {
   static Config = Config
 
   private readonly origin: string
-  private readonly config: Required<Omit<Config, 'origin'>>
+  private readonly config: Required<Omit<Config, 'origin' | 'dshHome'>>
+  private readonly brandingDir: string
+  private branding: CachedBranding | undefined
+  /** Tenant whose branding was fetched since it signed in; undefined until then and after sign-out. */
+  private brandedTenant: string | null | undefined
+  /** Latest branding fetch; an older one does not commit. */
+  private brandingFetch = 0
   private attempt: Attempt | undefined
   private signedIn = false
   private reason: 'expired' | null = null
@@ -148,9 +166,10 @@ export class HubAccount extends TypertRemoteService {
   /** @param ctx - Host with credentials and authorization. @param config - user center and client. */
   constructor(ctx: Context, config: Config) {
     super(ctx, 'hubAccount', { namespace: 'hubAccount' })
-    const resolved = Config(config) as Required<Config>
+    const resolved = Config(config) as Required<Omit<Config, 'dshHome'>> & Pick<Config, 'dshHome'>
     this.origin = hubOrigin(resolved.origin, resolved.allowLoopbackHttp)
     this.config = resolved
+    this.brandingDir = dshCachePath({ dshHome: resolveDshHome(resolved.dshHome) }, 'hub-branding')
     ctx.authorization.registerFlow({
       key: KEY, label: 'Skill Hub', methods: [{ id: 'browser', label: 'Skill Hub' }],
       run: session => this.run(session),
@@ -171,6 +190,7 @@ export class HubAccount extends TypertRemoteService {
   }
 
   async [Service.init](): Promise<void> {
+    this.branding = await readBrandingCache(this.brandingDir, this.origin)
     await this.reload()
   }
 
@@ -186,7 +206,21 @@ export class HubAccount extends TypertRemoteService {
       profile: stored?.profile ?? null,
       reason: stored === undefined ? this.reason : null,
       attempt: this.attempt?.view ?? null,
+      branding: this.shownBranding(stored)?.stamp ?? null,
     }
+  }
+
+  /**
+   * Read the cached login-page branding to show: signed in, the signed-in tenant's; signed out,
+   * the last-signed-in tenant's.
+   * @returns the branding, or null when there is none to show.
+   */
+  @Remote
+  async getBranding(): Promise<HubBrandingView | null> {
+    const shown = this.shownBranding(await this.read())
+    if (shown === undefined) return null
+    const { tenantId, title, logo } = shown.branding
+    return { tenantId, title, logo: logo === null ? null : logoDataUrl(logo) }
   }
 
   /**
@@ -315,6 +349,78 @@ export class HubAccount extends TypertRemoteService {
 
   private changed(): void { for (const listener of this.listeners) listener() }
 
+  private shownBranding(stored: Grant | undefined): { branding: CachedBranding; stamp: HubBrandingStamp } | undefined {
+    const branding = this.branding
+    if (branding === undefined || (stored !== undefined && stored.profile.tenantId !== branding.tenantId)) return undefined
+    return { branding, stamp: { tenantId: branding.tenantId, title: branding.title, logoSha256: branding.logo?.sha256 ?? null } }
+  }
+
+  /**
+   * Fetch the signed-in tenant's branding and replace the cache; a tenant that set nothing clears
+   * it, and a logo that fails its checks is left out. A failed fetch keeps the cache when it is
+   * this tenant's and clears another tenant's, which must not stand in for it after sign-out.
+   * @param tenant - the signed-in tenant.
+   */
+  private async refreshBranding(tenant: string | null): Promise<void> {
+    const run = ++this.brandingFetch
+    let next: CachedBranding | undefined
+    try {
+      next = await this.fetchBranding()
+    } catch (error) {
+      if (this.lifetime.signal.aborted) return
+      console.info('[hub-account] branding refresh failed', { error: String(error) })
+      if (this.branding === undefined || this.branding.tenantId === tenant) return
+      next = undefined
+    }
+    if (run !== this.brandingFetch) return
+    try {
+      if (next === undefined) await clearBrandingCache(this.brandingDir)
+      else await writeBrandingCache(this.brandingDir, this.origin, next)
+    } catch (error) {
+      // The branding still shows for this run; the next start reads what the disk holds.
+      console.info('[hub-account] branding cache not written', { error: String(error) })
+    }
+    this.branding = next
+    this.changed()
+  }
+
+  /** The signed-in tenant's branding, or undefined when it set nothing; throws when the user center does not answer it. */
+  private async fetchBranding(): Promise<CachedBranding | undefined> {
+    const res = await this.request('/api/client/branding', { signal: AbortSignal.timeout(this.config.requestTimeoutMs) })
+    if (!res.ok) {
+      await res.body?.cancel()
+      throw new Error(`branding answered ${String(res.status)}`)
+    }
+    const fetched = clientBranding.parse(await res.json())
+    let logo: CachedBranding['logo'] = null
+    if (fetched.logo !== null) {
+      logo = this.branding?.logo?.sha256 === fetched.logo.sha256 ? this.branding.logo : await this.downloadLogo(fetched.logo)
+    }
+    return fetched.title === null && logo === null ? undefined : { tenantId: fetched.tenantId, title: fetched.title, logo }
+  }
+
+  /**
+   * The logo the branding names, or null when it does not match its declared type, size and hash.
+   * @throws when the user center does not answer the download.
+   */
+  private async downloadLogo(declared: { contentType: string; sha256: string }): Promise<CachedBranding['logo']> {
+    // A fixed path on the user center: the access token never follows a URL from the response.
+    const res = await this.request('/api/client/branding/logo', { signal: AbortSignal.timeout(this.config.requestTimeoutMs) })
+    if (!res.ok) {
+      await res.body?.cancel()
+      throw new Error(`branding logo answered ${String(res.status)}`)
+    }
+    const contentType = (res.headers.get('content-type') ?? '').replace(/;.*$/su, '').trim()
+    if (contentType !== declared.contentType) {
+      await res.body?.cancel()
+      console.info('[hub-account] branding logo refused', { contentType })
+      return null
+    }
+    const logo = checkedLogo(contentType, declared.sha256, Buffer.from(await res.arrayBuffer()))
+    if (logo === undefined) console.info('[hub-account] branding logo refused: size or sha256 mismatch')
+    return logo ?? null
+  }
+
   private settle(attempt: Attempt, view: Partial<HubSignInAttemptView>): void {
     const { authorizeUrl: _url, ...rest } = attempt.view
     attempt.view = { ...rest, ...view }
@@ -335,9 +441,15 @@ export class HubAccount extends TypertRemoteService {
     const stored = await this.read()
     this.signedIn = stored !== undefined
     clearTimeout(this.refreshTimer)
+    if (stored === undefined) this.brandedTenant = undefined
     if (stored !== undefined && !this.lifetime.signal.aborted) {
       this.reason = null
       this.schedule(stored.expiresAt - this.config.refreshMarginMs - Date.now())
+      // Once per sign-in (token refreshes rewrite the record too); a new sign-in fetches again.
+      if (this.brandedTenant !== stored.profile.tenantId) {
+        this.brandedTenant = stored.profile.tenantId
+        void this.refreshBranding(stored.profile.tenantId)
+      }
     }
     this.changed()
   }

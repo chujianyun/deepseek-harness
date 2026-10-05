@@ -1,4 +1,4 @@
-import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
+import type { HubAccountView, HubBrandingView } from '@deepseek-ai/dsh-hub-account/types'
 /** Localized welcome copy and user-center sign-in actions. */
 
 import { contextBridge, ipcRenderer } from 'electron'
@@ -18,6 +18,7 @@ const api: WelcomeApi = {
   startSignIn: () => ipcRenderer.invoke(WELCOME_IPC.start) as Promise<HubAccountView>,
   cancelSignIn: (id: string) => ipcRenderer.invoke(WELCOME_IPC.cancel, id) as Promise<HubAccountView>,
   copySignInLink: (id: string) => ipcRenderer.invoke(WELCOME_IPC.copyLink, id) as Promise<void>,
+  branding: () => ipcRenderer.invoke(WELCOME_IPC.branding) as Promise<HubBrandingView | null>,
   onAccountState: (listener) => {
     const receive = (_event: Electron.IpcRendererEvent, state: HubAccountView): void => { listener(state) }
     ipcRenderer.on(WELCOME_IPC.state, receive)

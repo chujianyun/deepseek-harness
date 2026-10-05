@@ -11,13 +11,15 @@ import { apply as applyNode } from '../src/index.ts'
 import type { HubAccountInjected } from '../src/client/hub-source.ts'
 import { HubAccountSection } from '../src/client/HubAccountSection.tsx'
 import { HubLauncher } from '../src/client/HubLauncher.tsx'
+import { HubBrandMark, HubBrandName } from '../src/client/HubBrand.tsx'
+import type { HubBrandInjected } from '../src/client/brand-source.ts'
 
 usePinnedBrowserLanguages('zh-CN')
 
 beforeAll(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 }, configurable: true }) })
 afterAll(() => { Reflect.deleteProperty(globalThis, 'dshDesktop') })
 
-const signedOut: HubAccountView = { status: 'signed-out', profile: null, reason: null, attempt: null }
+const signedOut: HubAccountView = { status: 'signed-out', profile: null, reason: null, attempt: null, branding: null }
 
 async function bench() {
   const ctx = new Context()
@@ -34,6 +36,7 @@ async function bench() {
     cancelSignIn: vi.fn(() => ok(signedOut)),
     signOut: vi.fn(() => ok(signedOut)),
     switchTenant: vi.fn(() => ok(signedOut)),
+    getBranding: vi.fn(() => Promise.resolve({ ok: true as const, value: { tenantId: 't-a', title: '甲公司', logo: null } })),
     watch: vi.fn(),
   }
   const remote = new TestRemote(ctx, { hubAccount })
@@ -60,7 +63,10 @@ async function bench() {
   const slots = ctx.get('slots') as SlotRegistry
   const removeRoot = slots.register({
     name: 'root',
-    children: { 'settings.section': { kind: 'list', scope: 'root' }, 'settings.launcher': { kind: 'single', scope: 'root' } },
+    children: {
+      'settings.section': { kind: 'list', scope: 'root' }, 'settings.launcher': { kind: 'single', scope: 'root' },
+      'sidebar.brand.mark': { kind: 'single', scope: 'root' }, 'sidebar.brand.name': { kind: 'single', scope: 'root' },
+    },
   } as never, () => null)
   onTestFinished(removeRoot)
   return { ctx, slots, hubAccount, push, accepted, dispose, streamOptions, fail: (error: Error) => fail?.(error) }
@@ -90,9 +96,13 @@ describe('ui-hub-account browser plugin', () => {
     expect(section?.component).toBe(HubAccountSection)
     expect(section!.options).toMatchObject({ id: 'hub-account', order: -20 })
     expect(resolveSlotLabel(section!.options.label)).toMatch(/^Skill Hub/)
+    expect(b.slots.entries('sidebar.brand.mark')[0]?.component).toBe(HubBrandMark)
+    expect(b.slots.entries('sidebar.brand.name')[0]?.component).toBe(HubBrandName)
     await fiber.dispose()
     expect(b.slots.entries('settings.section')).toEqual([])
     expect(b.slots.entries('settings.launcher')).toEqual([])
+    expect(b.slots.entries('sidebar.brand.mark')).toEqual([])
+    expect(b.slots.entries('sidebar.brand.name')).toEqual([])
     expect(b.dispose).toHaveBeenCalledOnce()
   })
 
@@ -114,6 +124,19 @@ describe('ui-hub-account browser plugin', () => {
     expect(b.hubAccount.cancelSignIn).toHaveBeenCalledWith('a1')
     expect(b.hubAccount.switchTenant).toHaveBeenCalledOnce()
     expect(b.hubAccount.signOut).toHaveBeenCalledOnce()
+  })
+
+  it('reads the signed-in tenant\'s branding when a frame names it', async () => {
+    const b = await bench()
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const brand: object = b.slots.entries('sidebar.brand.name')[0]!.inject!()
+    if (!('hooks' in brand)) throw new Error('brand name injected no face')
+    const { hooks } = brand as HubBrandInjected
+    expect(hooks.hub).toBe((face(b.slots) as HubAccountInjected).hooks.hub)
+    expect(b.slots.entries('sidebar.brand.mark')[0]!.inject!()).toBe(brand)
+    b.push({ ...signedOut, status: 'signed-in', branding: { tenantId: 't-a', title: '甲公司', logoSha256: null } })
+    await vi.waitFor(() => { expect(hooks.brand.getSnapshot()).toEqual({ tenantId: 't-a', title: '甲公司', logo: null }) })
+    expect(b.hubAccount.getBranding).toHaveBeenCalledOnce()
   })
 
   it('opens the Host stream through hubAccount.watch and survives a broken stream', async () => {

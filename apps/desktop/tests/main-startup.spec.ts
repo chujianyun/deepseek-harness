@@ -359,7 +359,7 @@ vi.mock('../src/welcome-backend.ts', () => ({
     readLocalePreference: async () => null,
     read: async () => {
       const value = await (await harness.hosts.at(-1)!.fetch()).json() as { signedIn: boolean; localePreference: string | null }
-      return { hub: { status: value.signedIn ? 'signed-in' : 'signed-out', profile: null, reason: null, attempt: null }, localePreference: value.localePreference }
+      return { hub: { status: value.signedIn ? 'signed-in' : 'signed-out', profile: null, reason: null, attempt: null, branding: null }, localePreference: value.localePreference }
     },
     hasApiKey: async () => ((await (await harness.hosts.at(-1)!.fetch()).json()) as { hasApiKey: boolean }).hasApiKey,
     hub: { watch: harness.watchHub },

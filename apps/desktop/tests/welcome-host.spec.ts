@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { connectDesktopWelcome } from '../src/welcome-backend.ts'
 
-function transport(preference?: string) {
+function transport(preference?: string, branding: unknown = null) {
   const keys = new Map<string, string>()
   const namespaces = [
     { ns: 'llm-deepseek', value: { apiKeyEnv: 'CUSTOM_DEEPSEEK_KEY' } },
@@ -17,7 +17,8 @@ function transport(preference?: string) {
       payload: { args: { ref: string; value: string; refs: string[] } }
     }
     let value: unknown
-    if (method === 'hubAccount/getState') value = { status: 'signed-out', profile: null, reason: null, attempt: null }
+    if (method === 'hubAccount/getState') value = { status: 'signed-out', profile: null, reason: null, attempt: null, branding: null }
+    else if (method === 'hubAccount/getBranding') value = branding
     else if (method === 'settings/describe') value = { namespaces }
     else if (method === 'llm/listConfigurableProviders') value = [{ settingsNs: 'llm-pi-ai', settingsPath: ['profiles', 'example'] }]
     else if (method === 'productAnalytics/enabled') value = true
@@ -37,7 +38,7 @@ describe('desktop welcome Web operations', () => {
     const backend = await connectDesktopWelcome(url, host.send)
     expect(host.send).toHaveBeenCalledExactlyOnceWith(url, { credentials: 'include' })
     expect(await backend.analyticsEnabled()).toBe(true)
-    expect(await backend.read()).toEqual({ hub: { status: 'signed-out', profile: null, reason: null, attempt: null }, localePreference: null })
+    expect(await backend.read()).toEqual({ hub: { status: 'signed-out', profile: null, reason: null, attempt: null, branding: null }, localePreference: null })
     for (const [input, init] of host.send.mock.calls.slice(1)) {
       expect(input).toMatch(/^http:\/\/127\.0\.0\.1:19387\/api\//u)
       expect(init).toMatchObject({ credentials: 'include', redirect: 'error' })
@@ -75,6 +76,17 @@ describe('desktop welcome Web operations', () => {
     expect(await backend.hasApiKey()).toBe(true)
     host.namespaces.unshift({ ns: 'llm-deepseek', value: {} as { apiKeyEnv: string } })
     await expect(backend.hasApiKey()).rejects.toThrow('missing official DeepSeek credential reference')
+  })
+
+  it('reads the cached branding and admits only image data URLs as its logo', async () => {
+    const logo = 'data:image/png;base64,iVBORw0KGgo='
+    expect(await (await connectDesktopWelcome(url, transport(undefined, null).send)).branding()).toBeNull()
+    const cached = { tenantId: 't-a', title: '甲公司', logo, extra: 1 }
+    expect(await (await connectDesktopWelcome(url, transport(undefined, cached).send)).branding()).toEqual({ tenantId: 't-a', title: '甲公司', logo })
+    for (const invalid of [
+      { tenantId: 't-a', title: null, logo: 'https://hub.example/logo.png' }, { tenantId: 't-a', title: null, logo: 'data:text/html;base64,PGI+' },
+      { tenantId: 't-a', title: 1, logo: null }, { title: null, logo: null }, 'logo',
+    ]) await expect((await connectDesktopWelcome(url, transport(undefined, invalid).send)).branding()).rejects.toThrow('invalid branding')
   })
 
   it('rejects unmatched RPC envelopes and refused requests', async () => {

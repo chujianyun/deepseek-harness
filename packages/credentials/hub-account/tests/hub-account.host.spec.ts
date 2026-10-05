@@ -1,5 +1,6 @@
 /** Hub sign-in against a mock user center over a real credential store and authorization seam. */
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -27,7 +28,9 @@ async function boot(options: Partial<Config> = {}, mock?: MockUserCenter) {
   await credentials
   const authorization = ctx.plugin(AuthorizationService)
   await authorization
-  const fiber = ctx.plugin(HubAccount, { origin: center.origin, clientId: center.clientId, allowLoopbackHttp: true, ...options })
+  const fiber = ctx.plugin(HubAccount, {
+    origin: center.origin, clientId: center.clientId, allowLoopbackHttp: true, dshHome: home, ...options,
+  })
   await fiber
   cleanups.push(async () => { await fiber.dispose(); await authorization.dispose(); await credentials.dispose() })
   const hub = ctx.get('hubAccount')!
@@ -57,12 +60,12 @@ describe('hubAccount', () => {
   it('publishes the namespace and its methods', async () => {
     const { hub } = await boot()
     expect(hub.typertRemote.namespace).toBe('hubAccount')
-    expect(remoteMethods(hub).map(method => method.method)).toEqual(['getState', 'signIn', 'cancelSignIn', 'signOut', 'switchTenant', 'watch'])
+    expect(remoteMethods(hub).map(method => method.method)).toEqual(['getState', 'getBranding', 'signIn', 'cancelSignIn', 'signOut', 'switchTenant', 'watch'])
   })
 
   it('starts signed out and refuses new prompts', async () => {
     const { ctx, hub } = await boot()
-    expect(await hub.getState()).toEqual({ status: 'signed-out', profile: null, reason: null, attempt: null })
+    expect(await hub.getState()).toEqual({ status: 'signed-out', profile: null, reason: null, attempt: null, branding: null })
     expect(remoteErrorOf(ctx.bail('api-session/prompt-admission', 'session-1' as never))).toMatchObject({ code: 'hub-account/signed-out' })
   })
 
@@ -80,7 +83,7 @@ describe('hubAccount', () => {
     expect(exchange.get('code_verifier')).toMatch(/^[\w-]{43}$/)
     expect(page.text).toContain('登录成功')
     expect(settled).toEqual({
-      status: 'signed-in', reason: null, attempt: { id: settled.attempt!.id, phase: 'succeeded' },
+      status: 'signed-in', reason: null, attempt: { id: settled.attempt!.id, phase: 'succeeded' }, branding: null,
       profile: { nickname: '李雷', phone: '138****0001', tenantId: 't-a', tenantName: '甲公司', isTenantAdmin: false },
     })
     expect(JSON.stringify(settled)).not.toMatch(/at-|rt-/)
@@ -232,12 +235,12 @@ describe('hubAccount', () => {
     const credentials = ctx.plugin(LocalCredentialProvider, { path: join(home, 'credentials.yaml'), watch: false })
     await credentials
     await ctx.plugin(AuthorizationService)
-    const fiber = ctx.plugin(HubAccount, { origin: other.origin, clientId: other.clientId, allowLoopbackHttp: true })
+    const fiber = ctx.plugin(HubAccount, { origin: other.origin, clientId: other.clientId, allowLoopbackHttp: true, dshHome: home })
     await fiber
     cleanups.push(async () => { await credentials.dispose() })
     expect((await ctx.get('hubAccount')!.getState()).status).toBe('signed-out')
     await fiber.dispose()
-    const again = ctx.plugin(HubAccount, { origin: center.origin, clientId: center.clientId, allowLoopbackHttp: true })
+    const again = ctx.plugin(HubAccount, { origin: center.origin, clientId: center.clientId, allowLoopbackHttp: true, dshHome: home })
     await again
     cleanups.push(async () => { await again.dispose() })
     expect((await ctx.get('hubAccount')!.getState()).profile).toMatchObject({ tenantName: '甲公司' })
@@ -365,5 +368,212 @@ describe('hubAccount', () => {
     await ctx.plugin(AuthorizationService)
     const fiber = ctx.plugin(HubAccount, { origin: 'http://hub.example.com', clientId: 'x', allowLoopbackHttp: true })
     await expect(fiber).rejects.toThrow(/HTTPS/)
+  })
+})
+
+describe('hubAccount branding', () => {
+  const PNG = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000', 'hex')
+  const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>')
+  const sha = (data: Buffer) => createHash('sha256').update(data).digest('hex')
+  const cacheDir = (home: string) => join(home, 'cache', 'hub-branding')
+  const logoDownloads = (center: MockUserCenter) => center.clientRequests.filter(path => path === '/api/client/branding/logo').length
+  /** Wait for a branding refresh that changes nothing visible to end. */
+  const refreshFailed = (spy: { mock: { calls: unknown[][] } }) => vi.waitFor(() => {
+    expect(spy.mock.calls.some(call => String(call[0]).includes('branding refresh failed'))).toBe(true)
+  })
+
+  it('caches the signed-in tenant\'s logo and title and serves them as an image data URL', async () => {
+    const center = await startMockUserCenter()
+    cleanups.push(() => center.close())
+    center.brandings['t-a'] = { title: '欢迎使用 甲公司 AI 助手', logo: { contentType: 'image/png', data: PNG } }
+    const { hub, home, signIn, until } = await boot({}, center)
+    expect(await hub.getBranding()).toBeNull()
+    await signIn()
+    const view = await until(state => state.branding !== null)
+    expect(view.branding).toEqual({ tenantId: 't-a', title: '欢迎使用 甲公司 AI 助手', logoSha256: sha(PNG) })
+    expect(await hub.getBranding()).toEqual({ tenantId: 't-a', title: '欢迎使用 甲公司 AI 助手', logo: `data:image/png;base64,${PNG.toString('base64')}` })
+    expect(await readFile(join(cacheDir(home), `logo-${sha(PNG)}`))).toEqual(PNG)
+    // Signed out, the last tenant's branding stays for the welcome window.
+    await hub.signOut()
+    expect((await hub.getState()).branding).toMatchObject({ tenantId: 't-a' })
+  })
+
+  it('shows the cache after a restart without reaching the user center, and fetches once per sign-in', async () => {
+    const center = await startMockUserCenter()
+    cleanups.push(() => center.close())
+    center.brandings['t-a'] = { title: '甲公司', logo: { contentType: 'image/svg+xml', data: SVG } }
+    center.expiresIn = 2
+    const first = await boot({ refreshMarginMs: 1_900 }, center)
+    await first.signIn()
+    await first.until(state => state.branding !== null)
+    // A token refresh rewrites the grant without fetching the branding again.
+    await vi.waitFor(() => { expect(center.tokenRequests.filter(form => form.get('grant_type') === 'refresh_token').length).toBeGreaterThan(0) })
+    expect(center.clientRequests.filter(path => path === '/api/client/branding')).toHaveLength(1)
+    await first.hub.signOut()
+    await first.fiber.dispose()
+    await center.close()
+    const ctx = new Context()
+    const credentials = ctx.plugin(LocalCredentialProvider, { path: join(first.home, 'credentials.yaml'), watch: false })
+    await credentials
+    await ctx.plugin(AuthorizationService)
+    const again = ctx.plugin(HubAccount, { origin: center.origin, clientId: center.clientId, allowLoopbackHttp: true, dshHome: first.home })
+    await again
+    cleanups.push(async () => { await again.dispose(); await credentials.dispose() })
+    const cached = await ctx.get('hubAccount')!.getBranding()
+    expect(cached?.title).toBe('甲公司')
+    expect(cached?.logo).toMatch(/^data:image\/svg\+xml;base64,/u)
+  })
+
+  it('follows a tenant switch, reuses an unchanged logo, and clears when the tenant restores defaults', async () => {
+    const center = await startMockUserCenter()
+    cleanups.push(() => center.close())
+    center.brandings['t-a'] = { title: '甲公司', logo: { contentType: 'image/png', data: PNG } }
+    center.brandings['t-b'] = { title: null, logo: { contentType: 'image/png', data: PNG } }
+    const { hub, home, signIn, until } = await boot({}, center)
+    await signIn()
+    await until(state => state.branding?.tenantId === 't-a')
+    center.tenant = { tenantId: 't-b', tenantName: '乙公司' }
+    await hub.switchTenant()
+    const waiting = await until(state => state.attempt?.authorizeUrl !== undefined)
+    await browse(waiting.attempt!.authorizeUrl!)
+    expect((await until(state => state.branding?.tenantId === 't-b')).branding).toEqual({ tenantId: 't-b', title: null, logoSha256: sha(PNG) })
+    expect(logoDownloads(center)).toBe(1)
+    delete center.brandings['t-b']
+    await hub.signOut()
+    await signIn()
+    await until(state => state.status === 'signed-in' && state.branding === null)
+    await vi.waitFor(async () => { expect(await readdir(cacheDir(home))).toEqual([]) })
+    expect(await hub.getBranding()).toBeNull()
+  }, 20_000)
+
+  it('keeps the tenant\'s cache when the user center cannot answer, and clears another tenant\'s', async () => {
+    const center = await startMockUserCenter()
+    cleanups.push(() => center.close())
+    center.brandings['t-a'] = { title: '甲公司', logo: { contentType: 'image/png', data: PNG } }
+    const { hub, home, signIn, until } = await boot({}, center)
+    await signIn()
+    await until(state => state.branding !== null)
+    await hub.signOut()
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    // The logo changed, but its download fails: the cached logo stays.
+    center.brandings['t-a'] = { title: '甲公司', logo: { contentType: 'image/svg+xml', data: SVG } }
+    center.logoReply = { status: 503, contentType: 'application/json', body: Buffer.from('{}') }
+    await signIn()
+    await refreshFailed(info)
+    expect((await hub.getState()).branding).toMatchObject({ logoSha256: sha(PNG) })
+    await hub.signOut()
+    info.mockClear()
+    center.clientStatus = 503
+    await signIn()
+    await refreshFailed(info)
+    expect((await hub.getState()).branding).toMatchObject({ tenantId: 't-a', title: '甲公司', logoSha256: sha(PNG) })
+    await hub.signOut()
+    info.mockClear()
+    center.tenant = { tenantId: 't-b', tenantName: '乙公司' }
+    await signIn()
+    await refreshFailed(info)
+    await vi.waitFor(async () => { expect(await readdir(cacheDir(home))).toEqual([]) })
+    await hub.signOut()
+    // Signed out after 乙公司, the welcome window must not show 甲公司.
+    expect(await hub.getBranding()).toBeNull()
+    info.mockRestore()
+  }, 20_000)
+
+  it('leaves out a logo that does not match its declared type, size or hash', async () => {
+    const center = await startMockUserCenter()
+    cleanups.push(() => center.close())
+    center.brandings['t-a'] = { title: '甲公司', logo: { contentType: 'image/png', data: PNG } }
+    const { hub, signIn, until } = await boot({}, center)
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const attempt = async (reply: MockUserCenter['logoReply']) => {
+      center.logoReply = reply
+      await signIn()
+      const view = await until(state => state.status === 'signed-in' && state.branding !== null)
+      await hub.signOut()
+      return view.branding
+    }
+    expect(await attempt({ status: 200, contentType: 'text/html', body: PNG })).toEqual({ tenantId: 't-a', title: '甲公司', logoSha256: null })
+    expect(await attempt({ status: 200, contentType: 'image/png', body: SVG })).toMatchObject({ logoSha256: null })
+    expect(await attempt({ status: 200, body: PNG })).toMatchObject({ logoSha256: null })
+    expect(await attempt({ status: 200, contentType: 'image/png', body: Buffer.alloc(512 * 1024 + 1) })).toMatchObject({ logoSha256: null })
+    // A logo the server declares in a format DSH does not show.
+    center.brandings['t-a'] = { title: '甲公司', logo: { contentType: 'image/gif', data: PNG } }
+    expect(await attempt(undefined)).toMatchObject({ logoSha256: null })
+    // Nothing usable left at all clears the cache.
+    center.brandings['t-a'] = { title: null, logo: { contentType: 'image/png', data: PNG } }
+    center.logoReply = { status: 200, contentType: 'text/html', body: PNG }
+    await signIn()
+    await until(state => state.status === 'signed-in' && state.branding === null)
+    expect(await hub.getBranding()).toBeNull()
+    expect(info.mock.calls.some(call => String(call[0]).includes('branding logo refused'))).toBe(true)
+    info.mockRestore()
+  }, 20_000)
+
+  it('lets the latest sign-in\'s branding win over an earlier fetch that answers late', async () => {
+    const center = await startMockUserCenter()
+    cleanups.push(() => center.close())
+    center.brandings['t-a'] = { title: '甲公司', logo: null }
+    center.brandings['t-b'] = { title: '乙公司', logo: null }
+    const { hub, signIn, until } = await boot({}, center)
+    const late = Promise.withResolvers<undefined>()
+    center.brandingGate = late.promise
+    await signIn()
+    await hub.signOut()
+    center.tenant = { tenantId: 't-b', tenantName: '乙公司' }
+    await signIn()
+    await until(state => state.branding?.title === '乙公司')
+    late.resolve(undefined)
+    await vi.waitFor(() => { expect(center.clientRequests.filter(path => path === '/api/client/branding')).toHaveLength(2) })
+    await hub.signOut()
+    expect(await hub.getBranding()).toMatchObject({ tenantId: 't-b', title: '乙公司' })
+  })
+
+  it('shows the fetched branding when the cache cannot be written', async () => {
+    const center = await startMockUserCenter()
+    cleanups.push(() => center.close())
+    center.brandings['t-a'] = { title: '甲公司', logo: null }
+    const home = await mkdtemp(join(tmpdir(), 'dsh-hub-branding-home-'))
+    cleanups.push(() => rm(home, { recursive: true, force: true }))
+    await mkdir(join(home, 'cache'))
+    await writeFile(cacheDir(home), 'not a directory')
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const { signIn, until } = await boot({ dshHome: home }, center)
+    await signIn()
+    expect((await until(state => state.branding !== null)).branding).toMatchObject({ title: '甲公司' })
+    expect(info.mock.calls.some(call => String(call[0]).includes('branding cache not written'))).toBe(true)
+    info.mockRestore()
+  })
+
+  it('refuses a malformed branding answer and keeps the cache', async () => {
+    const center = await startMockUserCenter()
+    cleanups.push(() => center.close())
+    const { hub, signIn } = await boot({}, center)
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    center.brandings['t-a'] = { title: 42 as unknown as string, logo: null }
+    await signIn()
+    await refreshFailed(info)
+    expect(await hub.getBranding()).toBeNull()
+    info.mockRestore()
+  })
+
+  it('ignores a cache that is unreadable, from another user center, or whose logo was altered', async () => {
+    const { readBrandingCache, writeBrandingCache } = await import('../src/branding.ts')
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-hub-branding-'))
+    cleanups.push(() => rm(dir, { recursive: true, force: true }))
+    expect(await readBrandingCache(dir, 'https://hub.example.com')).toBeUndefined()
+    await writeFile(join(dir, 'branding.json'), '{')
+    expect(await readBrandingCache(dir, 'https://hub.example.com')).toBeUndefined()
+    await writeBrandingCache(dir, 'https://hub.example.com', { tenantId: 't-a', title: null, logo: { contentType: 'image/png', sha256: sha(PNG), data: PNG } })
+    expect(await readBrandingCache(dir, 'https://other.example.com')).toBeUndefined()
+    expect((await readBrandingCache(dir, 'https://hub.example.com'))?.logo?.data).toEqual(PNG)
+    await writeFile(join(dir, `logo-${sha(PNG)}`), SVG)
+    expect(await readBrandingCache(dir, 'https://hub.example.com')).toBeUndefined()
+    await writeBrandingCache(dir, 'https://hub.example.com', { tenantId: 't-a', title: '甲公司', logo: { contentType: 'image/png', sha256: sha(PNG), data: SVG } })
+    expect(await readBrandingCache(dir, 'https://hub.example.com')).toEqual({ tenantId: 't-a', title: '甲公司', logo: null })
+    await writeBrandingCache(dir, 'https://hub.example.com', { tenantId: 't-a', title: '甲公司', logo: null })
+    expect(await readBrandingCache(dir, 'https://hub.example.com')).toEqual({ tenantId: 't-a', title: '甲公司', logo: null })
+    await writeBrandingCache(dir, 'https://hub.example.com', { tenantId: 't-a', title: null, logo: { contentType: 'image/png', sha256: sha(PNG), data: PNG } })
+    await rm(join(dir, `logo-${sha(PNG)}`))
+    expect(await readBrandingCache(dir, 'https://hub.example.com')).toBeUndefined()
   })
 })

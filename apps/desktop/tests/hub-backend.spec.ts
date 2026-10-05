@@ -4,13 +4,15 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import { desktopHubBackend, hubView } from '../src/hub-backend.ts'
 
 const profile = { nickname: '李雷', phone: '138****0001', tenantId: 't-a', tenantName: '甲公司', isTenantAdmin: false }
-const signedOut = { status: 'signed-out', profile: null, reason: null, attempt: null }
+const signedOut = { status: 'signed-out', profile: null, reason: null, attempt: null, branding: null }
+const branding = { tenantId: 't-a', title: '甲公司', logoSha256: null }
 
 it('projects only the sign-in fields and refuses non-browser authorization pages', () => {
   const state = { ...signedOut, token: 'not-for-the-renderer',
     attempt: { id: 'a1', phase: 'waiting-browser', authorizeUrl: 'https://hub.example/oauth/authorize?x', verifier: 'private' } }
   expect(hubView(state)).toEqual({ ...signedOut, attempt: { id: 'a1', phase: 'waiting-browser', authorizeUrl: 'https://hub.example/oauth/authorize?x' } })
   expect(hubView({ ...signedOut, status: 'signed-in', profile: { ...profile, extra: 1 } })).toEqual({ ...signedOut, status: 'signed-in', profile })
+  expect(hubView({ ...signedOut, branding: { ...branding, logo: 'data:' } })).toEqual({ ...signedOut, branding })
   expect(hubView({ ...signedOut, reason: 'expired', attempt: { id: 'a1', phase: 'failed', error: 'denied' } }))
     .toEqual({ ...signedOut, reason: 'expired', attempt: { id: 'a1', phase: 'failed', error: 'denied' } })
   expect(hubView({ ...signedOut, attempt: { id: 'a1', phase: 'waiting-browser', authorizeUrl: 'http://localhost:8080/oauth/authorize' } }).attempt?.authorizeUrl)
@@ -22,6 +24,7 @@ it('projects only the sign-in fields and refuses non-browser authorization pages
     null, { ...signedOut, status: 'unknown' }, { ...signedOut, reason: 'revoked' }, { ...signedOut, profile: { ...profile, nickname: 1 } },
     { ...signedOut, profile: { ...profile, isTenantAdmin: 'no' } }, { ...signedOut, attempt: { id: 'a1', phase: 'later' } },
     { ...signedOut, attempt: { id: 'a1', phase: 'failed', error: 'raw-server-message' } }, { ...signedOut, attempt: { id: 'a1', phase: 'waiting-browser', authorizeUrl: 1 } },
+    { ...signedOut, branding: { ...branding, title: 1 } }, { ...signedOut, branding: 'acme' },
   ]) expect(() => hubView(invalid)).toThrow()
 })
 

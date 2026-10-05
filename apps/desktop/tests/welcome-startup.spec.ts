@@ -16,7 +16,7 @@ const state = vi.hoisted(() => ({
   copy: vi.fn(),
   openExternal: vi.fn(async () => {}),
   hubListener: undefined as ((value: HubAccountView) => void) | undefined,
-  hubState: vi.fn<() => Promise<HubAccountView>>().mockResolvedValue({ status: 'signed-out', profile: null, reason: null, attempt: null }),
+  hubState: vi.fn<() => Promise<HubAccountView>>().mockResolvedValue({ status: 'signed-out', profile: null, reason: null, attempt: null, branding: null }),
   hubStart: vi.fn<() => Promise<HubAccountView>>(),
   hubCancel: vi.fn<(id: string) => Promise<HubAccountView>>(),
   quit: vi.fn(),
@@ -178,7 +178,7 @@ it.each([false, true])('opens the workspace only after a user-center sign-in and
   state.preference = 'zh'
   state.hasApiKey = false
   state.operations = undefined
-  state.hubState.mockResolvedValue({ status: 'signed-out', profile: null, reason: null, attempt: null })
+  state.hubState.mockResolvedValue({ status: 'signed-out', profile: null, reason: null, attempt: null, branding: null })
   if (updated) vi.stubGlobal('process', { ...process, platform: 'win32', argv: ['desktop', '--updated'] })
   vi.useFakeTimers()
   vi.stubEnv('DSH_CLIENT_VERSION', '1.2.3')
@@ -220,9 +220,9 @@ it.each([false, true])('opens the workspace only after a user-center sign-in and
   expect(state.welcomeLocale).toMatchObject({ id: 'zh-CN' })
   expect(await state.operations!.takeNotice()).toBeUndefined()
   expect(state.dialogLocale!().id).toBe('zh-CN')
-  const signedOut: HubAccountView = { status: 'signed-out', profile: null, reason: null, attempt: null }
+  const signedOut: HubAccountView = { status: 'signed-out', profile: null, reason: null, attempt: null, branding: null }
   const profile = { nickname: '李雷', phone: '138****0001', tenantId: 't-a', tenantName: '甲公司', isTenantAdmin: false }
-  const signedIn: HubAccountView = { status: 'signed-in', profile, reason: null, attempt: null }
+  const signedIn: HubAccountView = { status: 'signed-in', profile, reason: null, attempt: null, branding: null }
   const waiting: HubAccountView = { ...signedOut, attempt: { id: 'login', phase: 'waiting-browser', authorizeUrl: 'https://hub.example/oauth/authorize?x' } }
 
   // The welcome window's own attempt opens in the system browser once, whichever of the reply and the stream comes first.

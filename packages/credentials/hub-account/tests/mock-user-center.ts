@@ -2,7 +2,8 @@
  * A loopback stand-in for the user center's OAuth2 endpoints, enough for Hub sign-in: authorize
  * (redirecting straight back with a code, as a browser with a signed-in session and a recorded
  * consent would), token (authorization_code with PKCE S256, refresh_token with rotation), userinfo,
- * and revoke. Shared by the package specs and the Desktop web e2e.
+ * and revoke; the client Skill and login-page branding APIs. Shared by the package specs and the
+ * Desktop web e2e.
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { strToU8, unzipSync, zipSync } from 'fflate'
@@ -40,6 +41,12 @@ export interface MockOwnedSkill {
   readonly id: string
   readonly name: string
   readonly versions: { readonly version: string; readonly status: 'published' | 'pending' }[]
+}
+
+/** Login-page branding a tenant set (T30); unset items are null. */
+export interface MockBranding {
+  readonly title: string | null
+  readonly logo: { readonly contentType: string; readonly data: Buffer } | null
 }
 
 /** Control and observation surface of the mock user center. */
@@ -88,6 +95,12 @@ export interface MockUserCenter {
   uploadHook: (() => Promise<void> | void) | undefined
   /** When set, the upload form's visibility options are answered with this raw reply. */
   optionsReply: { status: number; body: string } | undefined
+  /** Branding per tenant id; a tenant without an entry has set nothing. */
+  brandings: Record<string, MockBranding>
+  /** When set, the next branding request waits for this promise first; later ones do not. */
+  brandingGate: Promise<unknown> | undefined
+  /** When set, the logo download answers with this raw reply instead. */
+  logoReply: { status: number; contentType?: string; body: Buffer } | undefined
   close(): Promise<void>
 }
 
@@ -159,7 +172,14 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
         mock.clientRequests.push(`${url.pathname}${url.search}`)
         if (access.get((req.headers.authorization ?? '').replace(/^Bearer /, '')) === undefined) { json(401, { message: 'invalid_token' }); return }
         if (mock.clientStatus !== undefined) { json(mock.clientStatus, { message: 'unavailable' }); return }
-        await clientApi(url, req, res, json)
+        const bound = access.get((req.headers.authorization ?? '').replace(/^Bearer /, ''))!
+        if (url.pathname === '/api/client/branding') {
+          const gate = mock.brandingGate
+          mock.brandingGate = undefined
+          await gate
+        }
+        if (url.pathname.startsWith('/api/client/branding')) brandingApi(url, res, json, bound)
+        else await clientApi(url, req, res, json)
       } else if (url.pathname === '/oauth/userinfo' && mock.userinfoReply !== undefined) {
         res.writeHead(mock.userinfoReply.status, { 'content-type': 'application/json' }).end(mock.userinfoReply.body)
       } else if (url.pathname === '/oauth/userinfo') {
@@ -287,6 +307,19 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
       })),
     })
   }
+  const brandingApi = (url: URL, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void, bound: MockTenant): void => {
+    const branding = mock.brandings[bound.tenantId]
+    const logo = branding?.logo ?? null
+    if (url.pathname === '/api/client/branding') {
+      json(200, {
+        tenantId: bound.tenantId, title: branding?.title ?? null, updatedAt: branding === undefined ? null : '2026-10-05T00:00:00.000Z',
+        logo: logo === null ? null : { url: `${mock.origin}/api/client/branding/logo`, contentType: logo.contentType, sha256: createHash('sha256').update(logo.data).digest('hex') },
+      })
+    } else if (mock.logoReply !== undefined) {
+      res.writeHead(mock.logoReply.status, mock.logoReply.contentType === undefined ? {} : { 'content-type': mock.logoReply.contentType }).end(mock.logoReply.body)
+    } else if (logo === null) json(404, { message: '未设置 Logo' })
+    else res.writeHead(200, { 'content-type': logo.contentType }).end(logo.data)
+  }
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const mock: MockUserCenter = {
     origin: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
@@ -295,6 +328,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     exchangeStatus: undefined, tokenBody: undefined, tokenGate: undefined, userinfoReply: undefined,
     skills: [], downloadBody: undefined, clientStatus: undefined, clientRequests: [],
     tenantAdmin: false, owned: [], uploads: [], uploadReply: undefined, uploadHook: undefined, optionsReply: undefined,
+    brandings: {}, brandingGate: undefined, logoReply: undefined,
     authorizeRequests: [], tokenRequests: [], revoked: [],
     close: () => new Promise((resolve) => { server.closeAllConnections(); server.close(() => { resolve() }) }),
   }

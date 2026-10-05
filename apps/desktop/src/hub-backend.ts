@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
 import { parseRemoteStreamServerMessage, REMOTE_STREAM_MUX_PATH } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
-import type { HubAccountView, HubProfile, HubSignInAttemptView, HubSignInError, HubSignInPhase } from '@deepseek-ai/dsh-hub-account/types'
+import type { HubAccountView, HubBrandingStamp, HubProfile, HubSignInAttemptView, HubSignInError, HubSignInPhase } from '@deepseek-ai/dsh-hub-account/types'
 
 /** Authenticated unary caller shared with native onboarding. */
 export type HubInvoke = (request: { namespace: string; method: string; args: Record<string, unknown> }) => Promise<unknown>
@@ -55,6 +55,14 @@ function attemptView(value: unknown): HubSignInAttemptView | null {
   }
 }
 
+function brandingStamp(value: unknown): HubBrandingStamp | null {
+  if (value === null) return null
+  if (!record(value) || typeof value.tenantId !== 'string' || !nullableString(value.title) || !nullableString(value.logoSha256)) {
+    throw new Error('desktop hub: invalid branding')
+  }
+  return { tenantId: value.tenantId, title: value.title, logoSha256: value.logoSha256 }
+}
+
 /**
  * Decode the sign-in state received across HTTP or WebSocket.
  * @param value - wire value.
@@ -65,7 +73,10 @@ export function hubView(value: unknown): HubAccountView {
     || (value.reason !== null && value.reason !== 'expired')) {
     throw new Error('desktop hub: invalid state')
   }
-  return { status: value.status, profile: profileView(value.profile), reason: value.reason, attempt: attemptView(value.attempt) }
+  return {
+    status: value.status, profile: profileView(value.profile), reason: value.reason, attempt: attemptView(value.attempt),
+    branding: brandingStamp(value.branding),
+  }
 }
 
 /** Native sign-in operations and explicitly owned stream lifetime. */

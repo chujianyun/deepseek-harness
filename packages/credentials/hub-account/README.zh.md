@@ -31,6 +31,8 @@ access token 在到期前 `refreshMarginMs` 刷新，同时轮换 refresh token�
 
 未登录时，本包对会话控制器的 `api-session/prompt-admission` 返回 `hub-account/signed-out`，Host 因此拒绝新消息。已经在运行的轮次和已排队的工作照常继续。
 
+每次登录后、以及已登录时每次启动时，本包从 `GET /api/client/branding` 读取租户的登录页品牌，并从固定路径 `/api/client/branding/logo` 下载 Logo（不使用响应中的地址，访问令牌只发往用户中心）。Logo 类型与声明不符或不是 PNG、JPEG、SVG、超过 512 KB、或 sha256 与声明不符时不予采用；sha256 与缓存相同的 Logo 不重复下载。结果替换 `<dshHome>/cache/hub-branding` 下的缓存（一条记录含用户中心地址与租户 ID，Logo 文件以 sha256 命名）；租户两项都没设置时清空缓存。读取失败或响应格式不对时保留缓存。`getBranding()` 返回缓存的 `{tenantId, title, logo}`，Logo 为可用于 `<img>` 的 `data:` URL；每个状态都带随缓存变化的 `branding` 标记（`tenantId`、`title`、`logoSha256`）。已登录时两者只给出当前租户的品牌；未登录时给出上次登录租户的品牌。为其他用户中心写入的缓存会被忽略。
+
 -----
 
 <a id="configuration"></a>
@@ -46,6 +48,7 @@ access token 在到期前 `refreshMarginMs` 刷新，同时轮换 refresh token�
 | `attemptTimeoutMs` | `600000` | 一次浏览器登录尝试的上限。 |
 | `refreshMarginMs` | `300000` | access token 到期前多久刷新。 |
 | `refreshRetryMs` | `60000` | 刷新没有得到明确结论而失败后的重试间隔。 |
+| `dshHome` | `$DSH_HOME` 或 `~/.dsh` | Harness 主目录；品牌缓存位于 `<dshHome>/cache/hub-branding`。 |
 
 -----
 

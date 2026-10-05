@@ -23,7 +23,7 @@ function props(view: HubAccountView | undefined, extra: Partial<HubSnapshot> = {
 
 describe('Hub account section, signed in', () => {
   it('shows nickname and tenant with switch tenant and sign out', () => {
-    const p = props({ status: 'signed-in', profile, reason: null, attempt: null })
+    const p = props({ status: 'signed-in', profile, reason: null, attempt: null, branding: null })
     render(<HubAccountSection {...p} />)
     expect(screen.getByRole('region', { name: 'Skill Hub 账号' }).textContent).toContain('李雷')
     expect(screen.getByText('租户：甲公司')).toBeTruthy()
@@ -34,7 +34,7 @@ describe('Hub account section, signed in', () => {
   })
 
   it('names an account without a company and shows a refused action', () => {
-    const p = props({ status: 'signed-in', profile: { ...profile, tenantId: null, tenantName: null }, reason: null, attempt: null }, { failure: 'offline' })
+    const p = props({ status: 'signed-in', profile: { ...profile, tenantId: null, tenantName: null }, reason: null, attempt: null, branding: null }, { failure: 'offline' })
     render(<HubAccountSection {...p} />)
     expect(screen.getByText('租户：不属于任何公司')).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toBe('操作失败：offline')
@@ -48,7 +48,7 @@ describe('Hub account section, signed out', () => {
   })
 
   it('says it is signed out and starts a sign-in', () => {
-    const p = props({ status: 'signed-out', profile: null, reason: null, attempt: null })
+    const p = props({ status: 'signed-out', profile: null, reason: null, attempt: null, branding: null })
     render(<HubAccountSection {...p} />)
     expect(screen.getByRole('region', { name: 'Skill Hub 账号' }).textContent).toContain(zh.signedOut)
     fireEvent.click(screen.getByRole('button', { name: '登录 Skill Hub' }))
@@ -56,7 +56,7 @@ describe('Hub account section, signed out', () => {
   })
 
   it('shows the waiting state with reopen and cancel', () => {
-    const p = props({ status: 'signed-out', profile: null, reason: null, attempt: { id: 'a', phase: 'waiting-browser', authorizeUrl: 'https://hub/x' } })
+    const p = props({ status: 'signed-out', profile: null, reason: null, attempt: { id: 'a', phase: 'waiting-browser', authorizeUrl: 'https://hub/x' }, branding: null })
     render(<HubAccountSection {...p} />)
     expect(screen.getByRole('status').textContent).toBe(zh.waiting)
     fireEvent.click(screen.getByRole('button', { name: '重新打开登录页' }))
@@ -67,7 +67,7 @@ describe('Hub account section, signed out', () => {
   })
 
   it('explains an expired sign-in and a failed attempt, and offers a retry', () => {
-    const p = props({ status: 'signed-out', profile: null, reason: 'expired', attempt: { id: 'a', phase: 'failed', error: 'denied' } })
+    const p = props({ status: 'signed-out', profile: null, reason: 'expired', attempt: { id: 'a', phase: 'failed', error: 'denied' }, branding: null })
     render(<HubAccountSection {...p} />)
     expect(screen.getAllByRole('alert').map(node => node.textContent)).toEqual([zh.expired, zh['error.denied']])
     fireEvent.click(screen.getByRole('button', { name: '重新登录' }))
@@ -75,7 +75,7 @@ describe('Hub account section, signed out', () => {
   })
 
   it('shows the exchange in progress and a refused action', () => {
-    const p = props({ status: 'signed-out', profile: null, reason: null, attempt: { id: 'a', phase: 'exchanging' } }, { failure: 'offline' })
+    const p = props({ status: 'signed-out', profile: null, reason: null, attempt: { id: 'a', phase: 'exchanging' }, branding: null }, { failure: 'offline' })
     render(<HubAccountSection {...p} />)
     expect(screen.getByRole('status').textContent).toBe(zh.exchanging)
     expect(screen.getByRole('alert').textContent).toBe('操作失败：offline')

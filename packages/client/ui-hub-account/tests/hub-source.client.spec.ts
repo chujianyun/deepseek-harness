@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
 import { createHubSource, type HubDependencies } from '../src/client/hub-source.ts'
 
-const signedOut: HubAccountView = { status: 'signed-out', profile: null, reason: null, attempt: null }
+const signedOut: HubAccountView = { status: 'signed-out', profile: null, reason: null, attempt: null, branding: null }
 const waiting = (id: string, url?: string): HubAccountView => ({
   ...signedOut, attempt: { id, phase: 'waiting-browser', ...url === undefined ? {} : { authorizeUrl: url } },
 })

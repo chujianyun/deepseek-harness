@@ -1,7 +1,8 @@
 /**
- * Hub sign-in, browser half: the sidebar account launcher (employee, company, Settings, sign-out)
- * and the Settings section showing the signed-in employee and tenant with tenant switching and
- * sign-out, or the sign-in state and a way to sign in. State streams from the `hubAccount` Remote.
+ * Hub sign-in, browser half: the sidebar account launcher (employee, company, Settings, sign-out),
+ * the sidebar brand row (the signed-in tenant's logo or name above the build version), and the
+ * Settings section showing the signed-in employee and tenant with tenant switching and sign-out, or
+ * the sign-in state and a way to sign in. State streams from the `hubAccount` Remote.
  * The Desktop welcome window keeps the workspace closed while signed out.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -10,13 +11,18 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
+import { createBrandSource } from './brand-source.ts'
 import { createHubSource } from './hub-source.ts'
+import { HubBrandMark, HubBrandName } from './HubBrand.tsx'
 import { HubAccountSection } from './HubAccountSection.tsx'
 import { HubLauncher } from './HubLauncher.tsx'
 import { en, zh, type HubAccountLocaleKey } from './locales.ts'
 
+export type { HubBrandInjected } from './brand-source.ts'
 export type { HubAccountInjected, HubSnapshot } from './hub-source.ts'
+export type { HubBrandMarkProps, HubBrandNameProps } from './HubBrand.tsx'
 export type { HubAccountLocaleKey } from './locales.ts'
 export type { HubAccountSectionProps } from './HubAccountSection.tsx'
 export type { HubLauncherProps } from './HubLauncher.tsx'
@@ -50,6 +56,7 @@ export function apply(ctx: ClientContext): void {
     switchTenant: () => remote.switchTenant(),
     open: (url) => { window.open(url, '_blank', 'noopener,noreferrer') },
   })
+  const brand = createBrandSource(() => remote.getBranding())
   const stream = ctx.remote.$stream<HubAccountView>({
     name: 'hubAccount', open: signal => remote.watch(signal), ended: () => new Error('hub account stream ended'),
   })
@@ -57,6 +64,7 @@ export function apply(ctx: ClientContext): void {
   void (async () => {
     for await (const frame of stream) {
       source.publish(frame.value)
+      brand.publish(frame.value)
       frame.accept()
     }
   })().catch(() => {
@@ -65,6 +73,11 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('settings.launcher', () => ctx.slots.register({
     name: 'settings.launcher', locale: NS, inject: () => source,
   }, HubLauncher))
+  const brandFace = { hooks: { hub: source.hooks.hub, brand: brand.brand } }
+  ctx.slots.inject('sidebar.brand.mark', () => ctx.slots.inject('sidebar.brand.name', function* () {
+    yield ctx.slots.register({ name: 'sidebar.brand.mark', inject: () => brandFace }, HubBrandMark)
+    yield ctx.slots.register({ name: 'sidebar.brand.name', locale: NS, inject: () => brandFace }, HubBrandName)
+  }))
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section', id: 'hub-account', order: -20, label: () => t('section'), locale: NS, inject: () => source,
   }, HubAccountSection))

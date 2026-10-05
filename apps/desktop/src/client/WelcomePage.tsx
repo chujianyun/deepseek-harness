@@ -2,20 +2,24 @@
 import { useEffect, useRef, useState } from 'react'
 import { Toast } from '@deepseek-ai/dsh-client-ui-primitives/src/Toast.tsx'
 import { StateDot } from '@deepseek-ai/dsh-client-ui-primitives/src/StateDot.tsx'
-import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
+import type { HubAccountView, HubBrandingView } from '@deepseek-ai/dsh-hub-account/types'
 import type { WelcomeApi } from '../welcome-api.ts'
 
 type Page = 'entry' | 'account'
 
 /**
  * Render the standalone welcome flow: the workspace opens only after a user-center sign-in.
- * Clearing or cancelling the attempt returns the sign-in status page to the entry page.
+ * Clearing or cancelling the attempt returns the sign-in status page to the entry page. The logo
+ * and welcome title are the last-signed-in tenant's cached branding; without it the page shows
+ * neither, only the sign-in prompt.
  * @param props.api - isolated preload API; no tokens reach the renderer.
  * @returns welcome pages with fixed bottom actions.
  */
 export function Welcome({ api }: { api: WelcomeApi }) {
   const { messages: m } = api
   const [expiryNotice, setExpiryNotice] = useState(false)
+  /** Undefined until the first read, so the page never flashes a layout without the branding. */
+  const [branding, setBranding] = useState<HubBrandingView | null | undefined>(undefined)
   const [page, setPage] = useState<Page>('entry')
   const pageRef = useRef<Page>('entry')
   const visiblePage = useRef<Page>('entry')
@@ -55,9 +59,15 @@ export function Welcome({ api }: { api: WelcomeApi }) {
       })
     }
     takeNotice()
+    // Signing in elsewhere can replace the cache. A failed read shows no branding rather than no page.
+    const readBranding = (): void => {
+      void api.branding().catch((_closedChannel: unknown) => null).then((value) => { if (mounted.current) setBranding(value) })
+    }
+    readBranding()
     const stop = api.onAccountState((state) => {
       revision.current++
       takeNotice()
+      if (state.status === 'signed-out') readBranding()
       showAccount(state)
     })
     return () => { mounted.current = false; stop() }
@@ -128,13 +138,16 @@ export function Welcome({ api }: { api: WelcomeApi }) {
             : attempt?.error === 'network' ? m.welcomeAuthNetwork
               : attempt?.error === 'storage' ? m.welcomeAuthStorage : m.welcomeAuthFailed
 
+  const heading = branding?.title ?? null
+  const logo = branding?.logo ?? null
   return <>
     {expiryNotice && <Toast text={m.welcomeSessionExpired} onDone={() => { setExpiryNotice(false) }} />}
     <div className="titlebar" aria-hidden="true" />
-    <main className="welcome" aria-labelledby={page === 'entry' ? 'welcome-heading' : 'auth-status'}>
-      <img className="brand" src="assets/welcome-brand.svg" alt={m.welcomeBrand} width="472" height="40" />
+    <main className={branding === undefined ? 'welcome pending' : 'welcome'}
+      aria-labelledby={page !== 'entry' ? 'auth-status' : heading === null ? 'welcome-description' : 'welcome-heading'}>
+      {logo !== null && <img className="brand" src={logo} alt={m.welcomeLogo} draggable={false} />}
       <div id="tagline" className="tagline" hidden={page !== 'entry'}>
-        <h1 id="welcome-heading"><span>{m.welcomeTaglineBefore}</span><em>{m.welcomeTaglineBrand}</em><span>{m.welcomeTaglineAfter}</span></h1>
+        {heading !== null && <h1 id="welcome-heading">{heading}</h1>}
         <p id="welcome-description">{m.welcomeDescription}</p>
       </div>
       <section id="auth-page" className={`key-heading ${waiting ? 'auth-waiting' : expired ? 'auth-expired' : ''}`}

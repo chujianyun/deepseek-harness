@@ -273,7 +273,6 @@ class MarketProvider implements SkillProvider {
   }
 }
 
-/** Host owner of the market source and of the `skillMarket` Remote namespace. */
 /**
  * A refusal the Hub states in its own words (Nest's `message`, possibly a list).
  * @param res - the refused response.
@@ -286,6 +285,7 @@ function uploadRejected(res: Response, body: unknown): RemoteError {
   return new RemoteError('skill-market/upload-rejected', reason, { status: res.status })
 }
 
+/** Host owner of the market source and of the `skillMarket` Remote namespace. */
 export class SkillMarket extends TypertRemoteService {
   static inject = ['skills', 'hubAccount']
   static Config = Config

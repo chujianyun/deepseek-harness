@@ -338,8 +338,9 @@
       name: '@deepseek-ai/dsh-client-ui-skills'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
 
-    # Desktop Hub sign-in gate and the Settings account section over the
-    # `hubAccount` Remote; mounted exactly when the hub-account row is.
+    # Desktop Hub sign-in gate, the sidebar brand row (tenant logo or name),
+    # and the Settings account section over the `hubAccount` Remote; mounted
+    # exactly when the hub-account row is.
     - id: ui-hub-account
       name: '@deepseek-ai/dsh-client-ui-hub-account'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
@@ -358,9 +359,11 @@
     - id: ui-chat
       name: '@deepseek-ai/dsh-client-ui-chat'
 
-    # Official occupants for the generic sidebar and conversation brand slots.
+    # Official occupants for the generic sidebar and conversation brand slots. Desktop signed in to
+    # a user center shows the tenant's brand there instead (ui-hub-account).
     - id: ui-brand-official
       name: '@deepseek-ai/dsh-client-ui-brand-official'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     - id: ui-attachment
       name: '@deepseek-ai/dsh-client-ui-attachment'

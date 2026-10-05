@@ -744,6 +744,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   AuthorizationOutcome: 'credentials.md',
   AccountView: 'credentials.md',
   HubAccountView: 'credentials.md',
+  HubBrandingView: 'credentials.md',
   HubProfile: 'credentials.md',
   HubSignInAttemptView: 'credentials.md',
   AccountDetails: 'credentials.md',

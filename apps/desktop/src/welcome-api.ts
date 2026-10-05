@@ -1,6 +1,6 @@
 /** Operations available to the isolated native welcome renderer. */
 
-import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
+import type { HubAccountView, HubBrandingView } from '@deepseek-ai/dsh-hub-account/types'
 import type { ProductEventMap } from '@deepseek-ai/dsh-client-product-analytics/types'
 import type { DesktopLocale } from './locale.ts'
 
@@ -8,6 +8,7 @@ import type { DesktopLocale } from './locale.ts'
 export const WELCOME_IPC = {
   analytics: 'dsh-welcome:analytics',
   analyticsEnabled: 'dsh-welcome:analytics-enabled',
+  branding: 'dsh-welcome:branding',
   start: 'dsh-welcome:start',
   cancel: 'dsh-welcome:cancel',
   copyLink: 'dsh-welcome:copy-link',
@@ -34,6 +35,8 @@ export interface WelcomeOperations {
   cancelSignIn(id: string): Promise<HubAccountView>
   /** @param id - current waiting attempt whose sign-in page URL is copied to the system clipboard. */
   copySignInLink(id: string): Promise<void>
+  /** @returns the last-signed-in tenant's cached logo and title; null shows no branding. */
+  branding(): Promise<HubBrandingView | null>
 }
 
 /** The renderer receives localized copy, sign-in operations, and token-free sign-in snapshots. */

@@ -415,6 +415,8 @@ setDisabled(name: string, disabled: boolean): Promise<void>
  * Visibility and category choices for an upload, from the signed-in tenant.
  * @param signal - caller lifetime.
  * @returns categories, departments, and active employees.
+ * @throws RemoteError `skill-market/upload-rejected` carrying the Hub's reason when the account
+ *   cannot upload at all (403), `skill-market/unavailable` for any other failure.
  */
 @Remote async uploadOptions(signal: AbortSignal): Promise<MarketUploadOptions>
 

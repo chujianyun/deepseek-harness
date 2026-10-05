@@ -39,13 +39,14 @@ function createWindow() {
 
 beforeEach(() => { electron.create.mockReset(); electron.handlers.clear() })
 
-const signedOut = { status: 'signed-out' as const, profile: null, reason: null, attempt: null }
+const signedOut = { status: 'signed-out' as const, profile: null, reason: null, attempt: null, branding: null }
 const operations = {
   analyticsEnabled: async () => true,
   takeNotice: async () => undefined,
   startSignIn: async () => signedOut,
   cancelSignIn: async () => signedOut,
   copySignInLink: async () => undefined,
+  branding: async () => null,
 }
 
 describe('desktop welcome window', () => {
@@ -133,6 +134,9 @@ describe('desktop welcome window', () => {
     await expect(copy(own, 42)).rejects.toThrow('invalid attempt')
     await copy(own, 'attempt')
     expect(copySignInLink).toHaveBeenCalledExactlyOnceWith('attempt')
+    const branding = electron.handlers.get(WELCOME_IPC.branding)!
+    await expect(branding({ ...own, senderFrame: {} })).rejects.toThrow('unowned frame')
+    expect(await branding(own)).toBeNull()
     window.once.mock.calls[0]![1]()
     expect(electron.handlers.size).toBe(0)
   })
