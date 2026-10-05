@@ -33,7 +33,7 @@ The download fetches the runtime first, as npm tarballs from `npmRegistries` in 
 
 `listProviders()` lists the configured routes whose endpoint, resolved through `llm.routeEndpoint()`, speaks `openai-completions` or `openai-responses`. `addApiModel(provider, model)` sends one `POST <baseURL>/embeddings` with the route's credential and headers to measure the vector size, then stores `{provider, model, dimensions}` in the `apiModels` setting; `removeApiModel(id)` drops it. An API model whose route is gone stays listed as unavailable. Its id is `<provider>/<model>`; the local model's is `local/<name>`.
 
-`embed(id, texts, signal)` returns one vector per text. The local model tokenizes each text, cuts it to `maxTokens` keeping its final token, runs it with an empty key/value cache, and returns the last token's hidden state L2-normalized; runs are serialized. API models are called with all texts in one request and answers are reordered by index; refusals carry the endpoint's status and message as `embedding/request-failed`, and an unreachable endpoint, a request past `requestTimeoutMs`, or a body cut midway fails the same way.
+`embed(id, texts, signal)` returns one vector per text. The local model tokenizes each text, cuts it to `maxTokens` keeping its final token, runs it with an empty key/value cache, and returns the last token's hidden state L2-normalized; runs are serialized. API models are called with up to `apiBatchSize` texts per request, one request after another, and each answer is reordered by index; refusals carry the endpoint's status and message as `embedding/request-failed`, and an unreachable endpoint, a request past `requestTimeoutMs`, or a body cut midway fails the same way.
 
 -----
 
@@ -50,6 +50,7 @@ The download fetches the runtime first, as npm tarballs from `npmRegistries` in 
 | `runtime` | onnxruntime-node 1.25.1 | Runtime version, supported `<platform>-<arch>` keys, and each tarball's size and sha256. |
 | `apiModels` | `[]` | API embedding models added in Settings; edited live. |
 | `requestTimeoutMs` | `30000` | Deadline of each embedding API request. |
+| `apiBatchSize` | `10` | Most texts in one embedding API request; Alibaba Cloud Model Studio refuses more than 10. |
 
 -----
 

@@ -415,6 +415,11 @@ describe('API embedding models', () => {
     expect(state.apiModels).toEqual([{ id: 'acme/bge-m3', provider: 'acme', providerName: 'Acme 网关', model: 'bge-m3', dimensions: 3, available: true }])
     expect(api.requests[0]).toMatchObject({ body: { model: 'bge-m3', input: ['dimension probe'] }, headers: { authorization: 'Bearer sk-acme', 'x-company-code': 'acme' } })
     expect(await service.embed('acme/bge-m3', ['ab', 'abcd'])).toEqual([[2, 0, 1], [4, 1, 1]])
+    // More texts than one request may carry go in consecutive requests of at most ten, in order.
+    const texts = Array.from({ length: 23 }, (_, index) => 'x'.repeat(index + 1))
+    const before = api.requests.length
+    expect((await service.embed('acme/bge-m3', texts)).map(vector => vector[0])).toEqual(texts.map(text => text.length))
+    expect(api.requests.slice(before).map(request => (request.body as { input: string[] }).input.length)).toEqual([10, 10, 3])
     expect(remoteErrorOf(await service.addApiModel('acme', 'bge-m3').catch((error: unknown) => error))).toMatchObject({ code: 'embedding/duplicate-model' })
     expect((await service.removeApiModel('acme/bge-m3')).apiModels).toEqual([])
     expect(remoteErrorOf(await service.removeApiModel('acme/bge-m3').catch((error: unknown) => error))).toMatchObject({ code: 'embedding/model-not-found' })

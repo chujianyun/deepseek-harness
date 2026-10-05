@@ -851,6 +851,8 @@ export interface Config {
   apiModels?: Volatile<readonly StoredApiModel[]>
   /** Deadline of each embedding API request. */
   requestTimeoutMs?: number
+  /** Most texts in one embedding API request; Alibaba Cloud Model Studio refuses more than 10. */
+  apiBatchSize?: number
 }
 
 /** The local embedding model: a decoder-only ONNX export with a Hugging Face tokenizer. */

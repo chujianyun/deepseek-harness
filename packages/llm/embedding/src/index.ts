@@ -116,6 +116,8 @@ export interface Config {
   apiModels?: Volatile<readonly StoredApiModel[]>
   /** Deadline of each embedding API request. */
   requestTimeoutMs?: number
+  /** Most texts in one embedding API request; Alibaba Cloud Model Studio refuses more than 10. */
+  apiBatchSize?: number
 }
 
 const sha256 = Schema.string().pattern(/^[0-9a-f]{64}$/u).required()
@@ -149,6 +151,7 @@ export const Config = Schema.object({
     .default([]).volatile()
     .description('API embedding models added under Settings → Embedding models, each served by a configured provider route.'),
   requestTimeoutMs: Schema.number().min(1).max(600_000).default(30_000),
+  apiBatchSize: Schema.natural().min(1).default(10),
 }) as Schema<Config>
 
 /** Progress frames are published at most this often while bytes stream in. */
@@ -381,7 +384,13 @@ export class EmbeddingService extends TypertRemoteService {
     if (endpoint === undefined) {
       throw new RemoteError('embedding/provider-unavailable', `provider ${stored.provider} has no configured OpenAI-compatible endpoint`, { provider: stored.provider })
     }
-    return requestEmbeddings(endpoint, stored.model, texts, this.requestSignal(signal))
+    // One request per batch, in order, each with its own deadline.
+    const vectors: number[][] = []
+    for (let start = 0; start < texts.length; start += this.config.apiBatchSize) {
+      const batch = texts.slice(start, start + this.config.apiBatchSize)
+      vectors.push(...await requestEmbeddings(endpoint, stored.model, batch, this.requestSignal(signal)))
+    }
+    return vectors
   }
 
   private changed(): void { for (const listener of this.listeners) listener() }
