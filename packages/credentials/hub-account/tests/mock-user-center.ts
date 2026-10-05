@@ -86,6 +86,8 @@ export interface MockUserCenter {
   uploadReply: { status: number; body: string } | 'drop' | undefined
   /** Called when an upload arrives, before it is answered. */
   uploadHook: (() => Promise<void> | void) | undefined
+  /** When set, the upload form's visibility options are answered with this raw reply. */
+  optionsReply: { status: number; body: string } | undefined
   close(): Promise<void>
 }
 
@@ -248,6 +250,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
       return
     }
     if (parts[0] === 'visibility-options') {
+      if (mock.optionsReply !== undefined) { res.writeHead(mock.optionsReply.status, { 'content-type': 'application/json' }).end(mock.optionsReply.body); return }
       json(200, {
         departments: [{ id: 'd-root', parentId: null, name: '甲公司' }, { id: 'd-rd', parentId: 'd-root', name: '研发部' }],
         employees: [{ id: 'e-li', name: '李雷', departmentName: '研发部' }, { id: 'e-han', name: '韩梅梅', departmentName: '甲公司' }],
@@ -291,7 +294,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     tenant, denyWith: undefined, refreshStatus: undefined, expiresIn: 7200,
     exchangeStatus: undefined, tokenBody: undefined, tokenGate: undefined, userinfoReply: undefined,
     skills: [], downloadBody: undefined, clientStatus: undefined, clientRequests: [],
-    tenantAdmin: false, owned: [], uploads: [], uploadReply: undefined, uploadHook: undefined,
+    tenantAdmin: false, owned: [], uploads: [], uploadReply: undefined, uploadHook: undefined, optionsReply: undefined,
     authorizeRequests: [], tokenRequests: [], revoked: [],
     close: () => new Promise((resolve) => { server.closeAllConnections(); server.close(() => { resolve() }) }),
   }

@@ -480,6 +480,19 @@ describe('skillMarket', () => {
       })
     })
 
+    it('carries the Hub reason when the account cannot upload at all, and any other failure as unavailable', async () => {
+      const { market, center } = await boot()
+      center.optionsReply = { status: 403, body: JSON.stringify({ statusCode: 403, message: '超级管理员不能上传 Skill，请使用员工账号' }) }
+      expect(remoteErrorOf(await market.uploadOptions(signal()).catch((error: unknown) => error)))
+        .toMatchObject({ code: 'skill-market/upload-rejected', message: '超级管理员不能上传 Skill，请使用员工账号', details: { status: 403 } })
+      center.optionsReply = { status: 403, body: 'not json' }
+      expect(remoteErrorOf(await market.uploadOptions(signal()).catch((error: unknown) => error)))
+        .toMatchObject({ code: 'skill-market/upload-rejected', message: 'the Skill Hub answered 403' })
+      center.optionsReply = { status: 503, body: '{}' }
+      expect(remoteErrorOf(await market.uploadOptions(signal()).catch((error: unknown) => error)))
+        .toMatchObject({ code: 'skill-market/unavailable', details: { status: 503 } })
+    })
+
     it('suggests the next patch version', () => {
       expect(nextPatch('1.2.3')).toBe('1.2.4')
       expect(nextPatch('0.9.9')).toBe('0.9.10')

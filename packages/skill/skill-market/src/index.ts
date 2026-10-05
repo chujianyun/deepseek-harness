@@ -274,6 +274,18 @@ class MarketProvider implements SkillProvider {
 }
 
 /** Host owner of the market source and of the `skillMarket` Remote namespace. */
+/**
+ * A refusal the Hub states in its own words (Nest's `message`, possibly a list).
+ * @param res - the refused response.
+ * @param body - its parsed body, or an empty object.
+ * @returns `skill-market/upload-rejected` carrying that reason.
+ */
+function uploadRejected(res: Response, body: unknown): RemoteError {
+  const message = (body as { message?: unknown }).message
+  const reason = Array.isArray(message) ? message.join('；') : typeof message === 'string' ? message : `the Skill Hub answered ${res.status}`
+  return new RemoteError('skill-market/upload-rejected', reason, { status: res.status })
+}
+
 export class SkillMarket extends TypertRemoteService {
   static inject = ['skills', 'hubAccount']
   static Config = Config
@@ -495,13 +507,12 @@ export class SkillMarket extends TypertRemoteService {
    * Visibility and category choices for an upload, from the signed-in tenant.
    * @param signal - caller lifetime.
    * @returns categories, departments, and active employees.
+   * @throws RemoteError `skill-market/upload-rejected` carrying the Hub's reason when the account
+   *   cannot upload at all (403), `skill-market/unavailable` for any other failure.
    */
   @Remote
   async uploadOptions(signal: AbortSignal): Promise<MarketUploadOptions> {
-    const [categories, visibility] = await Promise.all([
-      this.categories(signal),
-      this.hubJson('/api/client/skills/visibility-options', signal),
-    ])
+    const [categories, visibility] = await Promise.all([this.categories(signal), this.visibilityOptions(signal)])
     const people = z.object({
       departments: z.array(z.object({ id: z.string(), parentId: z.string().nullable(), name: z.string() })),
       employees: z.array(z.object({ id: z.string(), name: z.string(), departmentName: z.string() })),
@@ -538,19 +549,9 @@ export class SkillMarket extends TypertRemoteService {
       if (request.categoryId !== undefined) form.set('categoryId', request.categoryId)
     }
     const path = existing === null ? '/api/client/skills' : `/api/client/skills/${encodeURIComponent(existing.skillId)}/versions`
-    let res: Response
-    try {
-      res = await this.ctx.hubAccount.request(path, { method: 'POST', body: form, signal })
-    } catch (error: unknown) {
-      if (error instanceof RemoteError || signal.aborted) throw error
-      throw new RemoteError('skill-market/unavailable', 'the Skill Hub cannot be reached', { status: null }, { cause: error })
-    }
+    const res = await this.hubFetch(path, { method: 'POST', body: form, signal })
     const body: unknown = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      const message = (body as { message?: unknown }).message
-      const reason = Array.isArray(message) ? message.join('；') : typeof message === 'string' ? message : `the Skill Hub answered ${res.status}`
-      throw new RemoteError('skill-market/upload-rejected', reason, { status: res.status })
-    }
+    if (!res.ok) throw uploadRejected(res, body)
     const result = z.object({
       skillId: z.string(), name: z.string(), version: z.object({ version: z.string() }),
       status: z.enum(['pending', 'published']), reviewUrl: z.string().nullable(),
@@ -608,18 +609,33 @@ export class SkillMarket extends TypertRemoteService {
     return detail.parse(await this.hubJson(`/api/client/skills/${encodeURIComponent(id)}`, signal, id))
   }
 
+  /**
+   * The upload form's visibility choices. The Hub refuses them to an account that cannot upload at
+   * all (a super administrator acting for a tenant); that refusal carries its own reason.
+   */
+  private async visibilityOptions(signal: AbortSignal): Promise<unknown> {
+    const res = await this.hubFetch('/api/client/skills/visibility-options', { signal })
+    if (res.status === 403) throw uploadRejected(res, await res.json().catch(() => ({})))
+    if (!res.ok) throw new RemoteError('skill-market/unavailable', `the Skill Hub answered ${res.status}`, { status: res.status })
+    return res.json()
+  }
+
   private async hubJson(path: string, signal: AbortSignal, id?: string): Promise<unknown> {
     return (await this.hubRequest(path, signal, id)).json()
   }
 
-  private async hubRequest(path: string, signal: AbortSignal, id?: string): Promise<Response> {
-    let res: Response
+  /** A Hub call whose transport failure (not an HTTP answer) reads as `skill-market/unavailable`. */
+  private async hubFetch(path: string, init: RequestInit & { signal: AbortSignal }): Promise<Response> {
     try {
-      res = await this.ctx.hubAccount.request(path, { signal })
+      return await this.ctx.hubAccount.request(path, init)
     } catch (error: unknown) {
-      if (error instanceof RemoteError || signal.aborted) throw error
+      if (error instanceof RemoteError || init.signal.aborted) throw error
       throw new RemoteError('skill-market/unavailable', 'the Skill Hub cannot be reached', { status: null }, { cause: error })
     }
+  }
+
+  private async hubRequest(path: string, signal: AbortSignal, id?: string): Promise<Response> {
+    const res = await this.hubFetch(path, { signal })
     if (res.status === 404 && id !== undefined) throw new RemoteError('skill-market/not-found', `Skill ${id} is not available`, { id })
     if (!res.ok) throw new RemoteError('skill-market/unavailable', `the Skill Hub answered ${res.status}`, { status: res.status })
     return res
