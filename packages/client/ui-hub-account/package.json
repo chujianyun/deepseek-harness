@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-hub-account",
-  "description": "Hub sign-in gate for the dsh Desktop client: the full-screen sign-in page and the account section with tenant switch and sign-out",
+  "description": "Skill Hub account for the dsh Desktop client: the sidebar account launcher and the Settings section with sign-in, tenant switch, and sign-out",
   "version": "0.2.0-rc.2",
   "type": "module",
   "main": "lib/index.js",

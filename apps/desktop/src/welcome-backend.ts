@@ -2,7 +2,6 @@
 import { randomUUID } from 'node:crypto'
 import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
 import type { ProductEvent } from '@deepseek-ai/dsh-client-product-analytics/types'
-import { desktopAccountBackend, type DesktopAccountBackend } from './account-backend.ts'
 import { desktopHubBackend, type DesktopHubBackend } from './hub-backend.ts'
 
 /** Metadata needed before the native entry or workspace becomes visible. */
@@ -16,8 +15,6 @@ export interface WelcomeState {
 export interface DesktopWelcomeBackend {
   /** @returns the current Host policy; every read observes live configuration. */
   analyticsEnabled(): Promise<boolean>
-  /** DeepSeek account sign-in started from the workspace. */
-  readonly account: DesktopAccountBackend
   /** User-center sign-in; fails when the Host mounts no user center. */
   readonly hub: DesktopHubBackend
   /** @param event - desktop-owned fields. @returns after local Host intake. */
@@ -68,7 +65,6 @@ export async function connectDesktopWelcome(
     }
     return envelope.result.value
   }
-  const account = desktopAccountBackend(origin, invoke, cookies)
   const hub = desktopHubBackend(origin, invoke, cookies)
   const describeSettings = async (): Promise<unknown[]> => {
     const settings = await invoke({ namespace: 'settings', method: 'describe', args: {} })
@@ -116,7 +112,6 @@ export async function connectDesktopWelcome(
   }
   const read = async (): Promise<WelcomeState> => ({ hub: await hub.state(), localePreference: localePreference(await describeSettings()) })
   return {
-    account,
     hub,
     read,
     async analyticsEnabled() {

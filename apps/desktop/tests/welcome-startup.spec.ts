@@ -4,7 +4,6 @@ vi.mock('../src/web-document.ts', () => ({ authenticateWebHost: async () => 'tes
 import { afterEach, expect, it, vi } from 'vitest'
 import type { BrowserWindowConstructorOptions } from 'electron'
 import type { DesktopLocale } from '../src/locale.ts'
-import type { AccountView } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
 import type { WelcomeOperations } from '../src/welcome-api.ts'
 import { DESKTOP_IPC } from '../src/ipc.ts'
@@ -16,7 +15,6 @@ const state = vi.hoisted(() => ({
   beforeWelcome: vi.fn(async () => {}),
   copy: vi.fn(),
   openExternal: vi.fn(async () => {}),
-  accountListener: undefined as ((value: AccountView) => void) | undefined,
   hubListener: undefined as ((value: HubAccountView) => void) | undefined,
   hubState: vi.fn<() => Promise<HubAccountView>>().mockResolvedValue({ status: 'signed-out', profile: null, reason: null, attempt: null }),
   hubStart: vi.fn<() => Promise<HubAccountView>>(),
@@ -132,12 +130,6 @@ vi.mock('../src/welcome-backend.ts', () => ({
       return { hub: await state.hubState(), localePreference: state.preference }
     },
     hasApiKey: async () => state.hasApiKey,
-    account: {
-      watch: (listener: (value: AccountView) => void) => {
-        state.accountListener = listener
-        return () => {}
-      },
-    },
     hub: {
       watch: (listener: (value: HubAccountView) => void) => {
         state.hubListener = listener
@@ -309,14 +301,6 @@ it.each([false, true])('opens the workspace only after a user-center sign-in and
   await vi.waitFor(() => { expect(state.beforeWelcome).toHaveBeenCalledTimes(welcomeCount + 2) })
   expect(await state.operations!.takeNotice()).toBe('session-expired')
   expect(await state.operations!.takeNotice()).toBeUndefined()
-
-  // The DeepSeek account sign-in started from the workspace still opens its themed page once.
-  const accountAttempt = { id: 'deepseek', phase: 'waiting-browser', authorizeUrl: 'https://platform.example/login' } as NonNullable<AccountView['attempt']>
-  const account: AccountView = { status: 'signed-out', links: { usageUrl: '', topUpUrl: '' }, attempt: accountAttempt }
-  state.accountListener!(account)
-  state.accountListener!(account)
-  expect(state.openExternal).toHaveBeenLastCalledWith('https://platform.example/login?theme=light')
-  expect(state.openExternal).toHaveBeenCalledTimes(2)
 
   state.showWorkspace.mockClear()
   state.focusWorkspace.mockClear()

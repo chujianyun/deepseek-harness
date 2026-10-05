@@ -2425,6 +2425,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'sidebar.settings\' (client-ui-settings-general), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-hub-account HubLauncher',
       'client-ui-settings-account AccountMenu',
     ],
     replaceRisk: 'shadows-shipped-ui',

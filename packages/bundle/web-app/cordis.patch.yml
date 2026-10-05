@@ -56,7 +56,8 @@
 
     - id: product-analytics
       name: '@deepseek-ai/dsh-client-product-analytics'
-      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
+      # Its device identity comes from the DeepSeek account, which the Desktop product no longer mounts.
+      disabled: true
       config:
         enabled: true
         appVersion: !!js process.env.DSH_CLIENT_VERSION
@@ -136,9 +137,15 @@
     # reports an actionable error when its settings-domain provider is absent.
     - id: ui-settings-account
       name: '@deepseek-ai/dsh-client-ui-settings-account'
+      # The Desktop product signs in with the company user center only (new-dsh-ms #34): the
+      # DeepSeek account and the rows built on it stay in source but are not mounted there.
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop'"
 
     - id: account-controller
       name: '@deepseek-ai/dsh-api-account-controller'
+      # The Desktop product signs in with the company user center only (new-dsh-ms #34): the
+      # DeepSeek account and the rows built on it stay in source but are not mounted there.
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop'"
 
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'

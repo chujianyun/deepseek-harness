@@ -111,6 +111,9 @@
 
     - id: deepseek-account
       name: '@deepseek-ai/dsh-deepseek-account-platform'
+      # The Desktop product signs in with the company user center only (new-dsh-ms #34): the
+      # DeepSeek account and the rows built on it stay in source but are not mounted there.
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop'"
       config:
         desktopPlatform: !!js "ctx.get('profileContext')?.name === 'desktop' && ['darwin', 'win32'].includes(process.platform) ? process.platform : null"
 
@@ -527,3 +530,6 @@
 
     - id: llm-deepseek-account
       name: '@deepseek-ai/dsh-llm-deepseek-account'
+      # The Desktop product signs in with the company user center only (new-dsh-ms #34): the
+      # DeepSeek account and the rows built on it stay in source but are not mounted there.
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop'"

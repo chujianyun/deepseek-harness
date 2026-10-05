@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-桌面埋点遵循[产品采集策略](../../packages/client/product-analytics/README.zh.md)及其动态应用配置，不包含 Web 使用情况。安装更新会等待该操作的本地埋点接收请求结束，再锁定 API 准入并停止 Host。接收请求的时限为一秒，失败不会阻止安装，也不等待收集端完成发送。
+Desktop 组合目前不挂载产品埋点，因为它的登录身份来自产品已不再挂载的 DeepSeek 账号（[升级指南](../../docs/upgrade-guide/v0.2.0-rc.2/desktop-user-center-sign-in/guide.zh.md)）。部署重新启用后，桌面埋点遵循[产品采集策略](../../packages/client/product-analytics/README.zh.md)及其动态应用配置，不包含 Web 使用情况。安装更新会等待该操作的本地埋点接收请求结束，再锁定 API 准入并停止 Host。接收请求的时限为一秒，失败不会阻止安装，也不等待收集端完成发送。
 
 桌面应用是完整 dsh Web 应用外的一层 Electron 壳。Electron RunAsNode 子进程启动共享 profile runner，Electron 立即从 `dsh-app://app/` 加载打包内的 Web 入口。共享加载页等待 Host 启动注入，然后在同一文档中启动客户端。Electron 将应用 HTTP 请求转发给已认证的 Web Host，转发时丢弃描述 Node fetch 连接而非资源本身的响应头（`transfer-encoding`、`connection`、`keep-alive`），并把插件 bundle 响应标记为 `no-store`，因为其每次启动都变化的 revision 只会在 Chromium 磁盘缓存中累积；WebSocket 流连接到该 Host，仅为归属的应用窗口附加凭据。Node IPC 承载启动注入、就绪与关闭。Desktop 默认使用端口 `19387`，与 Web 的 `3080` 分开；可通过 `webserver.config.port` patch 覆盖。
 
@@ -469,9 +469,9 @@ node apps/desktop/node_modules/pnpm/bin/pnpm.mjs --dir apps/desktop run test:upd
 - 桌面壳与 CLI dsh 共享 `$DSH_HOME` 下的会话、设置、凭据、工作区和存储，但可执行包、插件激活和锁文件彼此隔离。
 - 在 Electron win32-arm64 宿主上，未打包启动现在可以成功，但载荷仍为 x64：`packages/skill/tool-workspace-dependencies/src/index.ts` 的架构校验会把载荷记录的架构与宿主 `process.arch` 比较，因此 `load_workspace_dependencies` 工具仍可能拒绝 primary runtime。
 
-仅向应用提供的 `dshOnboarding.hasApiKey()` preload 方法返回是否有任一可配置模型提供方已保存 API Key；只有受管理的应用主 frame 可以调用。
+仅向应用提供的 `dshOnboarding.hasApiKey()` preload 方法返回是否有任一可配置模型提供方已保存 API Key；只有受管理的应用主 frame 可以调用。它的使用方 `ui-settings-account` 引导在 Desktop 组合中未挂载。
 
-登录会在系统浏览器中打开用户中心的授权页；欢迎窗口只打开自己发起的尝试，工作区发起的尝试（切换租户、在设置中登录）由工作区打开。[Hub 账号](../../packages/credentials/hub-account/README.zh.md)负责 PKCE 和临时本机回调，在 Welcome 切换到工作区前保存授权。取消，以及在尝试期间关闭 Welcome，都会撤销本地尝试，即使用户中心随后批准。尝试失败时欢迎窗口回到前台一次。浏览器登录成功后，Welcome 切换到工作区但不激活应用。在 DeepSeek 账号移出产品之前，从工作区发起的 DeepSeek 账号登录仍会打开 Platform 页面，并通过 `theme=light` 或 `theme=dark` 携带当前生效的 Desktop 主题。打包应用注册 dsh://open，只显示窗口而不传递凭证。macOS 开发启动器在 `.desktop-build/development` 下准备经临时签名的 `Harness Dev.app`，在 Info.plist 中声明 `dsh` 并注册到 Launch Services。它加载当前工作区，并记录选定的开发 home、浏览器数据路径和调试设置，以供冷启动使用。启动此应用会将其设为 `dsh://` 默认处理程序；启动打包应用会重新注册打包版处理程序。生成的应用包不包含账号 token，依赖工作区和已准备的运行环境继续存在。
+登录会在系统浏览器中打开用户中心的授权页；欢迎窗口只打开自己发起的尝试，工作区发起的尝试（切换租户、在设置中登录）由工作区打开。[Hub 账号](../../packages/credentials/hub-account/README.zh.md)负责 PKCE 和临时本机回调，在 Welcome 切换到工作区前保存授权。取消，以及在尝试期间关闭 Welcome，都会撤销本地尝试，即使用户中心随后批准。尝试失败时欢迎窗口回到前台一次。浏览器登录成功后，Welcome 切换到工作区但不激活应用。Desktop 组合不挂载 DeepSeek 账号（`deepseek-account`、`llm-deepseek-account`、`account-controller`、`ui-settings-account`，以及依赖账号身份的 `product-analytics`），因此工作区没有 DeepSeek 登录、余额、充值、赠金提醒和内嵌 Platform 页面；这些源码保留在仓库中，Platform 视图不会收到会话。侧栏账号入口由 [Hub 账号](../../packages/client/ui-hub-account/README.zh.md)提供。打包应用注册 dsh://open，只显示窗口而不传递凭证。macOS 开发启动器在 `.desktop-build/development` 下准备经临时签名的 `Harness Dev.app`，在 Info.plist 中声明 `dsh` 并注册到 Launch Services。它加载当前工作区，并记录选定的开发 home、浏览器数据路径和调试设置，以供冷启动使用。启动此应用会将其设为 `dsh://` 默认处理程序；启动打包应用会重新注册打包版处理程序。生成的应用包不包含账号 token，依赖工作区和已准备的运行环境继续存在。
 
 用户中心拒绝续期并返回 Welcome 时，主进程保留一次性通知，直到渲染器通过所属窗口的 IPC 领取。重新加载 Welcome 不会重复提示；主动退登、切换租户和冷启动不会生成该通知。
 

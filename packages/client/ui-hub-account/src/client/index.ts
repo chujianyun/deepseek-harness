@@ -1,7 +1,8 @@
 /**
- * Hub sign-in, browser half: the Settings section showing the signed-in employee and tenant with
- * tenant switching and sign-out, or the sign-in state and a way to sign in. State streams from the
- * `hubAccount` Remote. The Desktop welcome window keeps the workspace closed while signed out.
+ * Hub sign-in, browser half: the sidebar account launcher (employee, company, Settings, sign-out)
+ * and the Settings section showing the signed-in employee and tenant with tenant switching and
+ * sign-out, or the sign-in state and a way to sign in. State streams from the `hubAccount` Remote.
+ * The Desktop welcome window keeps the workspace closed while signed out.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -12,26 +13,28 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
 import { createHubSource } from './hub-source.ts'
 import { HubAccountSection } from './HubAccountSection.tsx'
+import { HubLauncher } from './HubLauncher.tsx'
 import { en, zh, type HubAccountLocaleKey } from './locales.ts'
 
 export type { HubAccountInjected, HubSnapshot } from './hub-source.ts'
 export type { HubAccountLocaleKey } from './locales.ts'
 export type { HubAccountSectionProps } from './HubAccountSection.tsx'
+export type { HubLauncherProps } from './HubLauncher.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Hub account section copy. */
+    /** Hub account launcher and section copy. */
     'hub-account': HubAccountLocaleKey
   }
 }
 
 const NS = 'hub-account'
 
-/** Services the section reads: the `hubAccount` Remote and the Settings slot. */
+/** Services the launcher and section read: the `hubAccount` Remote and the Settings slots. */
 export const inject = ['slots', 'locale', 'remote', 'remote.hubAccount']
 
 /**
- * Contribute the account section in the Desktop renderer.
+ * Contribute the sidebar account launcher and the account section in the Desktop renderer.
  * @param ctx - the browser plugin context.
  */
 export function apply(ctx: ClientContext): void {
@@ -59,6 +62,9 @@ export function apply(ctx: ClientContext): void {
   })().catch(() => {
     // The stream reconnects on its own; a disposed plugin simply stops listening.
   })
+  ctx.slots.inject('settings.launcher', () => ctx.slots.register({
+    name: 'settings.launcher', locale: NS, inject: () => source,
+  }, HubLauncher))
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section', id: 'hub-account', order: -20, label: () => t('section'), locale: NS, inject: () => source,
   }, HubAccountSection))

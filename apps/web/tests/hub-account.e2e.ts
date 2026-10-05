@@ -1,5 +1,6 @@
-// The assembled Skill Hub account section over the real `hubAccount` Remote and a mock user
-// center: signed out, it says so and new prompts are refused; browser sign-in from Settings lets
+// The assembled Skill Hub account launcher and section over the real `hubAccount` Remote and a mock
+// user center, composed like the Desktop product without the DeepSeek account: signed out, the
+// section says so and new prompts are refused; browser sign-in from Settings lets
 // the user in; a refused refresh signs out while a running turn keeps streaming; signing in
 // again restores prompts; Settings switches tenant, signs out, and signs in again. The Desktop
 // welcome window that keeps the workspace closed while signed out is covered by the Desktop specs.
@@ -86,7 +87,14 @@ it('signs in from Settings, survives a refused refresh without stopping a runnin
     expect(Object.fromEntries(center.authorizeRequests[0]!)).toMatchObject({ client_id: 'dsh-desktop', code_challenge_method: 'S256', scope: 'profile skills:read skills:write' })
     await expect.poll(() => section.textContent()).toContain('Tenant：甲公司')
     expect((await scaffold.ctx.hubAccount.getState()).profile).toMatchObject({ nickname: '李雷', tenantName: '甲公司' })
+    // No DeepSeek account section; the sidebar launcher shows the employee and company with Settings and Sign out.
+    expect(await settings.getByRole('button', { name: 'Account', exact: true }).count()).toBe(0)
     await settings.getByRole('button', { name: 'Close' }).last().click()
+    const launcher = page.getByRole('button', { name: 'Account menu', exact: true })
+    await expect.poll(() => launcher.textContent()).toBe('李李雷甲公司')
+    await launcher.click()
+    expect((await page.getByRole('menuitem').allTextContents()).map(text => text.replace(/[^A-Za-z ].*$/u, ''))).toEqual(['Settings', 'Sign out'])
+    await page.keyboard.press('Escape')
 
     // A turn starts streaming.
     const input = page.locator('[data-composer-input][contenteditable="true"]').first()

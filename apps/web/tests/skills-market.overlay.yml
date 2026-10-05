@@ -15,3 +15,8 @@
   disabled: false
 - id: ui-skills
   disabled: false
+# Like the Desktop product, no DeepSeek account: the Hub launcher owns the sidebar account slot.
+- id: ui-settings-account
+  disabled: true
+- id: account-controller
+  disabled: true

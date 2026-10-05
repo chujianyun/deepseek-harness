@@ -66,6 +66,7 @@ describe.skipIf(!existsSync(builtHost))('built Desktop welcome flow', () => {
       writeFileSync(join(paths.profile, 'cordis.patch.yml'), '- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n')
       let backend: DesktopWelcomeBackend
       let hostOrigin = ''
+      let rpc: (method: string) => Promise<{ ok: boolean; status: number; result?: { ok: boolean; value?: unknown } }> = () => Promise.reject(new Error('not started'))
       const restart = async (): Promise<void> => {
         await host?.stop()
         host = new DesktopHostProcess(process.execPath, project, paths.profile)
@@ -82,6 +83,14 @@ describe.skipIf(!existsSync(builtHost))('built Desktop welcome flow', () => {
           return fetch(new URL(response.headers.get('location')!, url), { headers: { cookie } })
         }
         backend = await connectDesktopWelcome(url, send, () => Promise.resolve(cookie))
+        rpc = async (method) => {
+          const response = await send(new URL(`/api/${method}`, url).href, {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ type: 'client-request', rpcId: 'probe', method, payload: { args: {} } }),
+          })
+          if (!response.ok) { await response.body?.cancel(); return { ok: false, status: response.status } }
+          return { ok: true, status: response.status, ...(await response.json() as { result: { ok: boolean; value?: unknown } }) }
+        }
       }
       const status = async () => backend.read()
       const signedOut = { status: 'signed-out', profile: null, reason: null }
@@ -112,6 +121,14 @@ describe.skipIf(!existsSync(builtHost))('built Desktop welcome flow', () => {
       expect(hostOrigin).not.toBe('')
       await restart()
       expect(await status()).toMatchObject({ hub: { status: 'signed-in', profile: { tenantName: '甲公司' } } })
+
+      // The Desktop product mounts no DeepSeek account: no account Remote and no account model route.
+      // An unmounted Remote namespace has no route at all; a mounted one answers this probe.
+      expect(await rpc('account/getState')).toEqual({ ok: false, status: 404 })
+      expect(await rpc('hubAccount/getState')).toMatchObject({ ok: true, result: { ok: true } })
+      const catalog = await rpc('session/modelCatalog')
+      expect(catalog.result?.ok).toBe(true)
+      expect(JSON.stringify(catalog.result?.value)).not.toContain('deepseek-account')
     } finally {
       await host?.stop()
       await center.close()

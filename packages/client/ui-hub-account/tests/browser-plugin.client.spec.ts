@@ -10,6 +10,7 @@ import { apply, inject } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
 import type { HubAccountInjected } from '../src/client/hub-source.ts'
 import { HubAccountSection } from '../src/client/HubAccountSection.tsx'
+import { HubLauncher } from '../src/client/HubLauncher.tsx'
 
 usePinnedBrowserLanguages('zh-CN')
 
@@ -59,7 +60,7 @@ async function bench() {
   const slots = ctx.get('slots') as SlotRegistry
   const removeRoot = slots.register({
     name: 'root',
-    children: { 'settings.section': { kind: 'list', scope: 'root' } },
+    children: { 'settings.section': { kind: 'list', scope: 'root' }, 'settings.launcher': { kind: 'single', scope: 'root' } },
   } as never, () => null)
   onTestFinished(removeRoot)
   return { ctx, slots, hubAccount, push, accepted, dispose, streamOptions, fail: (error: Error) => fail?.(error) }
@@ -78,16 +79,20 @@ function face(slots: SlotRegistry): object {
 }
 
 describe('ui-hub-account browser plugin', () => {
-  it('registers the account section, and withdraws it and the stream with the plugin', async () => {
+  it('registers the launcher and the account section, and withdraws both and the stream with the plugin', async () => {
     const b = await bench()
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
+    const [launcher] = b.slots.entries('settings.launcher')
+    expect(launcher?.component).toBe(HubLauncher)
+    expect(launcher!.inject!()).toBe(face(b.slots))
     const [section] = b.slots.entries('settings.section')
     expect(section?.component).toBe(HubAccountSection)
     expect(section!.options).toMatchObject({ id: 'hub-account', order: -20 })
     expect(resolveSlotLabel(section!.options.label)).toMatch(/^Skill Hub/)
     await fiber.dispose()
     expect(b.slots.entries('settings.section')).toEqual([])
+    expect(b.slots.entries('settings.launcher')).toEqual([])
     expect(b.dispose).toHaveBeenCalledOnce()
   })
 
@@ -129,6 +134,7 @@ describe('ui-hub-account browser plugin', () => {
     try {
       await b.ctx.plugin({ inject: [...inject], apply }).await()
       expect(b.slots.entries('settings.section')).toEqual([])
+      expect(b.slots.entries('settings.launcher')).toEqual([])
     } finally {
       Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 }, configurable: true })
     }

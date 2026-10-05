@@ -1,7 +1,9 @@
-/** Hub account section copy. */
+/** Hub account launcher and section copy. */
 
 /** Simplified Chinese dictionary and key source of truth. */
 export const zh = {
+  menu: '账号菜单',
+  settings: '设置',
   signedOut: '未登录 Skill Hub',
   signedOutIntro: '使用公司账号登录后，才能浏览、安装和上传 Skill。登录会在系统浏览器中完成。',
   checking: '正在检查登录状态…',
@@ -31,6 +33,8 @@ export type HubAccountLocaleKey = keyof typeof zh
 
 /** English dictionary. */
 export const en = {
+  menu: 'Account menu',
+  settings: 'Settings',
   signedOut: 'Not signed in to Skill Hub',
   signedOutIntro: 'Sign in with your company account to browse, install, and upload Skills. Sign-in happens in your system browser.',
   checking: 'Checking sign-in…',

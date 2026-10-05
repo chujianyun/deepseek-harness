@@ -190,20 +190,6 @@ function chromeFallbackFill(): string {
   return nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb'
 }
 
-/**
- * Add the effective Desktop palette to a Platform authorization URL so the
- * login page opens in the application's theme. `system` resolves through
- * `nativeTheme.shouldUseDarkColors`, which follows the theme source the
- * application preload publishes.
- * @param authorizeUrl - validated Platform authorization URL.
- * @returns the authorization URL carrying `theme=light` or `theme=dark`.
- */
-function platformLoginUrl(authorizeUrl: string): string {
-  const url = new URL(authorizeUrl)
-  url.searchParams.set('theme', nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
-  return url.href
-}
-
 function createWindow(preload: string, show = false, primary = false): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
@@ -411,8 +397,6 @@ async function main(): Promise<void> {
       if (analyticsEnabled) await welcomeBackend?.report(event)
     } catch (_error) { /* Analytics cannot interrupt native actions. */ }
   }
-  let stopAccount: (() => void) | undefined
-  let openedAccountAttempt: string | undefined
   let stopHub: (() => void) | undefined
   /** The welcome window started a sign-in whose attempt the Host has not named yet. */
   let welcomeStarting = false
@@ -471,17 +455,7 @@ async function main(): Promise<void> {
         welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
         analyticsEnabled = await welcomeBackend.analyticsEnabled().catch(() => false)
         if (!reportedLaunch) { reportedLaunch = true; void track('desktop_app_launch', {}) }
-        stopAccount?.()
         stopHub?.()
-        // Until the DeepSeek account leaves the product, its sign-in started from the workspace still opens the browser.
-        stopAccount = welcomeBackend.account.watch((state) => {
-          const attempt = state.attempt
-          if (quitting || attempt?.phase !== 'waiting-browser' || attempt.authorizeUrl === undefined || openedAccountAttempt === attempt.id) return
-          openedAccountAttempt = attempt.id
-          void shell.openExternal(platformLoginUrl(attempt.authorizeUrl)).catch(() => undefined)
-        }, () => {
-          // The stream reconnects; a transport failure does not change account state.
-        }, () => undefined)
         stopHub = welcomeBackend.hub.watch((state) => {
           if (quitting) return
           if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
@@ -507,7 +481,6 @@ async function main(): Promise<void> {
       },
       stop: async () => {
         analyticsEnabled = false
-        stopAccount?.()
         stopHub?.()
         try { await host.stop(requireCleanStop) }
         catch (error) {
@@ -1260,7 +1233,6 @@ async function main(): Promise<void> {
     quitConfirmation.dispose()
     backgroundNotice?.dispose()
     tray?.dispose()
-    stopAccount?.()
     stopHub?.()
     if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.hide()
     if (mainWindow !== undefined && !mainWindow.isDestroyed()) mainWindow.hide()
