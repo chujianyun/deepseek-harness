@@ -52,6 +52,23 @@ export function apply(ctx: Context): void {
 
 Contributors must declare every key they return; returning an undeclared or non-string value fails the call. Registration is disposed with the registering plugin, so hot-reloading a plugin removes its facts.
 
+### Putting your executables first on PATH
+
+A plugin that ships its own executable under a common name registers a `PATH` contributor; the shell tool puts each resolved directory ahead of the Host's `PATH` for that call, so the command name runs the plugin's executable rather than one the user installed:
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-shell-env'
+
+export const inject = ['shellEnv']
+
+export function apply(ctx: Context, config: { toolDir?: string }): void {
+  ctx.shellEnv.registerPath({ name: 'my-tools', resolve: () => config.toolDir })
+}
+```
+
+`collectPath(execution)` returns the resolved directories in contributor-name order, leaving out a contributor that resolves `undefined`; a relative directory fails the call. Names are unique, and the registration is disposed with the registering plugin. `dsh-tool-bash` applies the directories; `dsh-tool-pwsh` does not.
+
 ### Choosing the Harness home
 
 The single config field picks the home directory exposed as `DSH_HOME`; the default resolution order is the `dshHome` config, then ambient `$DSH_HOME`, then `~/.dsh`.

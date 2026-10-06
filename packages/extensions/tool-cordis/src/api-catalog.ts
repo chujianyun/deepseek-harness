@@ -777,7 +777,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async installConnector(id: string): Promise<ConnectorsState>',
-        description: 'Install a connector\'s CLI in the background; installing an installed or installing connector changes nothing.',
+        description: 'Install a connector\'s CLI in the background; installing an installed, installing, or uninstalling connector changes nothing.',
         parameters: [{ name: 'id', description: 'the connector.' }],
         returns: 'the state with the install running.',
         throws: ['RemoteError `connectors/not-found` for an unknown id, `connectors/unavailable` when it cannot be installed here.'],
@@ -815,6 +815,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Check every installed connector\'s connection now, as opening the Connectors page does.',
         parameters: [],
         returns: 'the state once the checks have finished.',
+      },
+      {
+        signature: '@Remote async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState>',
+        description: 'Switch a connector on or off for the current tenant, persisting the profile\'s list. A switched-off connector stays signed in, but the model gets neither its Skills nor its CLI.',
+        parameters: [{ name: 'id', description: 'the connector.' }, { name: 'enabled', description: 'whether the model may use it.' }],
+        returns: 'the state once the setting is saved.',
+        throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
       },
     ],
   },
@@ -2958,6 +2965,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Build the trusted `DSH_*` snapshot for one shell tool execution.',
         parameters: [{ name: 'execution', description: 'the current tool execution.' }],
         returns: 'an immutable environment overlay containing built-ins and current contributions.',
+      },
+      {
+        signature: 'registerPath(contributor: ShellPathContributor): () => void',
+        description: 'Register one `PATH` contributor; names are unique. Registration is disposed with the calling plugin fiber.',
+        parameters: [{ name: 'contributor', description: 'the named per-execution directory resolver.' }],
+        returns: 'the disposer that unregisters the contribution.',
+      },
+      {
+        signature: 'collectPath(execution: ToolExecution): string[]',
+        description: 'Resolve the directories to put ahead of `PATH` for one shell tool execution.',
+        parameters: [{ name: 'execution', description: 'the current tool execution.' }],
+        returns: 'absolute directories in contributor-name order, empty when none applies.',
+        throws: ['Error when a contributor resolves a relative directory.'],
       },
       {
         signature: 'list(): BashEnvVariableInfo[]',
@@ -5389,6 +5409,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ConnectorLoginView {\n    readonly step: ConnectorLoginStep;\n    readonly url: string | null;\n    readonly qrCode: string | null;\n}',
   },
   {
+    name: 'ConnectorSkillView',
+    declaration: 'export interface ConnectorSkillView {\n    readonly name: string;\n    readonly description: string;\n}',
+  },
+  {
     name: 'ConnectorsState',
     declaration: 'export interface ConnectorsState {\n    readonly connectors: readonly ConnectorView[];\n}',
   },
@@ -5398,7 +5422,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectorView',
-    declaration: 'export interface ConnectorView {\n    readonly id: ConnectorId;\n    readonly status: ConnectorStatus;\n    readonly cli: string | null;\n    readonly version: string | null;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly error: ConnectorInstallError | null;\n    readonly login: ConnectorLoginView | null;\n    readonly loginError: ConnectorLoginError | null;\n    readonly account: string | null;\n    readonly problem: string | null;\n}',
+    declaration: 'export interface ConnectorView {\n    readonly id: ConnectorId;\n    readonly status: ConnectorStatus;\n    readonly cli: string | null;\n    readonly version: string | null;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly error: ConnectorInstallError | null;\n    readonly login: ConnectorLoginView | null;\n    readonly loginError: ConnectorLoginError | null;\n    readonly account: string | null;\n    readonly problem: string | null;\n    readonly enabled: boolean;\n    readonly skills: readonly ConnectorSkillView[];\n}',
   },
   {
     name: 'ContentBlockMap',
@@ -7761,6 +7785,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ShellObservedStreams {\n    stdout: SubprocessOutputReader;\n    stderr: SubprocessOutputReader;\n}',
   },
   {
+    name: 'ShellPathContributor',
+    declaration: 'export interface ShellPathContributor {\n    name: string;\n    resolve(execution: ToolExecution): string | undefined;\n}',
+  },
+  {
     name: 'ShellProcess',
     declaration: 'export interface ShellProcess {\n    status: ShellProcessStatus;\n    exitCode: number | null;\n    signal: NodeJS.Signals | null;\n    readonly done: Promise<void>;\n    sandbox?: ShellSandboxInfo;\n    readOutput(): ShellProcessRead;\n    observed: ShellObservedStreams;\n    kill(): boolean;\n}',
   },
@@ -7843,10 +7871,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SkillResourceBase',
     declaration: 'export type SkillResourceBase = {\n    readonly kind: \'directory\';\n    readonly path: string;\n} | {\n    readonly kind: \'url\';\n    readonly url: string;\n} | {\n    readonly kind: \'opaque\';\n    readonly description: string;\n};',
-  },
-  {
-    name: 'SkillSource',
-    declaration: 'export type SkillSource = \'project-dsh\' | \'project-agents\' | \'runtime\' | \'user-dsh\' | \'user-agents\' | \'custom\' | \'bundled\' | (string & {});',
   },
   {
     name: 'SkillSummary',

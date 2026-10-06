@@ -5,7 +5,7 @@
  * and app secret lark-cli keeps in the system keychain, keyed by app, never mix either.
  */
 import { execFile, spawn } from 'node:child_process'
-import { mkdir, readFile, rm } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /** One tenant's lark-cli: the executable and the tenant's directory under the connector. */
@@ -49,11 +49,15 @@ const FOREIGN = /^(?:LARKSUITE_CLI_|OPENCLAW_HOME$|HERMES_HOME$)/u
  */
 export function cliEnv(cli: TenantCli): NodeJS.ProcessEnv {
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !FOREIGN.test(name)))
+  return { ...env, ...tenantVariables(cli, join(cli.dir, 'logs')) }
+}
+
+/** The lark-cli variables of one tenant's runs. */
+function tenantVariables(cli: TenantCli, logs: string): Record<string, string> {
   return {
-    ...env,
     LARKSUITE_CLI_CONFIG_DIR: join(cli.dir, 'config'),
     LARKSUITE_CLI_DATA_DIR: join(cli.dir, 'data'),
-    LARKSUITE_CLI_LOG_DIR: join(cli.dir, 'logs'),
+    LARKSUITE_CLI_LOG_DIR: logs,
     LARKSUITE_CLI_NO_UPDATE_NOTIFIER: '1',
     LARKSUITE_CLI_NO_SKILLS_NOTIFIER: '1',
   }
@@ -226,4 +230,106 @@ export async function removeTenant(cli: TenantCli): Promise<void> {
   // A tenant that never finished creating its app has nothing for config remove to clear.
   await run(cli, ['config', 'remove'], AbortSignal.timeout(CHECK_TIMEOUT_MS)).catch(() => undefined)
   await rm(cli.dir, { recursive: true, force: true })
+}
+
+/** Longest wait for `skills list` or `skills read`, which read the binary's embedded files. */
+const SKILL_TIMEOUT_MS = 15_000
+
+/** Kebab-case Skill name, as the skill registry requires. */
+const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
+
+/**
+ * List the Skills the CLI embeds with `skills list`.
+ * @param cli - the tenant's lark-cli.
+ * @param signal - stops it.
+ * @returns each Skill's name and description; none when the CLI cannot list them.
+ */
+export async function listSkills(cli: TenantCli, signal: AbortSignal): Promise<{ name: string; description: string }[]> {
+  try {
+    const result = await run(cli, ['skills', 'list'], AbortSignal.any([signal, AbortSignal.timeout(SKILL_TIMEOUT_MS)]))
+    const skills = json(result.stdout)?.skills
+    if (!Array.isArray(skills)) return []
+    return skills.flatMap((skill: unknown) => {
+      const { name, description } = skill as { name?: unknown; description?: unknown }
+      return typeof name === 'string' && SKILL_NAME.test(name) && typeof description === 'string' && description.trim() !== ''
+        ? [{ name, description: description.trim() }] : []
+    })
+  } catch {
+    // A CLI that cannot run lists nothing; the next lookup asks again.
+    return []
+  }
+}
+
+/**
+ * Read one Skill's instructions with `skills read`, without its frontmatter.
+ * @param cli - the tenant's lark-cli.
+ * @param name - the Skill.
+ * @param signal - stops it.
+ * @returns the Markdown, or undefined when the CLI cannot read it.
+ */
+export async function readSkill(cli: TenantCli, name: string, signal: AbortSignal): Promise<string | undefined> {
+  try {
+    const result = await run(cli, ['skills', 'read', name], AbortSignal.any([signal, AbortSignal.timeout(SKILL_TIMEOUT_MS)]))
+    if (result.code !== 0 || result.stdout.trim() === '') return undefined
+    // The CLI prints a tip line, then the SKILL.md frontmatter, then the body.
+    return result.stdout.replace(/^((?:>[^\n]*\n)?)---\n[\s\S]*?\n---\n/u, '$1')
+  } catch {
+    // As above.
+    return undefined
+  }
+}
+
+/** What the `lark-cli` on the model shell's PATH does for one tenant. */
+export type WrapperMode = 'run' | 'not-connected'
+
+/** Quote a value for a POSIX shell. */
+function quote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`
+}
+
+/**
+ * The `lark-cli` script a tenant's model shell calls. `run` runs the installed CLI with the tenant's
+ * configuration and data directories and none of the caller's lark-cli variables, writing its logs
+ * under the system temporary directory, which a sandboxed model shell may write; after a failed
+ * command it points the model to the Connectors page. `not-connected` refuses, pointing the model
+ * to the Connectors page.
+ * @param cli - the tenant's lark-cli.
+ * @param mode - what the script does.
+ * @param logs - the log directory of runs through the script.
+ * @returns the script.
+ */
+export function wrapperScript(cli: TenantCli, mode: WrapperMode, logs: string): string {
+  const lines = ['#!/bin/sh', '# Written by DSH for one company\'s Feishu connector; DSH rewrites it when the connection changes.']
+  if (mode === 'not-connected') {
+    lines.push(
+      'echo "DSH: the Feishu connector is not connected for this company. Ask the user to connect Feishu on the DSH Connectors page (连接器), then try again." >&2',
+      'exit 1',
+    )
+    return `${lines.join('\n')}\n`
+  }
+  lines.push(
+    'for name in $(env | sed -n \'s/^\\(LARKSUITE_CLI_[A-Za-z0-9_]*\\)=.*/\\1/p\'); do unset "$name"; done',
+    'unset OPENCLAW_HOME HERMES_HOME',
+    ...Object.entries(tenantVariables(cli, logs)).map(([name, value]) => `export ${name}=${quote(value)}`),
+    `${quote(cli.bin)} "$@"`,
+    'status=$?',
+    'if [ "$status" -ne 0 ]; then',
+    '  echo "DSH: lark-cli exited with status $status. If signing in to Feishu or a missing permission is the cause, ask the user to check the Feishu connector on the DSH Connectors page (连接器)." >&2',
+    'fi',
+    'exit $status',
+  )
+  return `${lines.join('\n')}\n`
+}
+
+/**
+ * Write the tenant's `lark-cli` script into `dir`, replacing it in one rename.
+ * @param dir - the directory put on the model shell's PATH.
+ * @param script - the script.
+ */
+export async function writeWrapper(dir: string, script: string): Promise<void> {
+  await mkdir(dir, { recursive: true })
+  const staging = join(dir, '.lark-cli.writing')
+  await writeFile(staging, script)
+  await chmod(staging, 0o755)
+  await rename(staging, join(dir, 'lark-cli'))
 }

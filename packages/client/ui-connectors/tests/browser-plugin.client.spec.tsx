@@ -22,7 +22,7 @@ afterAll(() => { Reflect.deleteProperty(globalThis, 'dshDesktop') })
 const state: ConnectorsState = {
   connectors: [{
     id: 'feishu', status: 'not-installed', cli: 'lark-cli', version: '1.0.97', receivedBytes: 0, totalBytes: 10, error: null,
-    login: null, loginError: null, account: null, problem: null,
+    login: null, loginError: null, account: null, problem: null, enabled: true, skills: [],
   }],
 }
 
@@ -42,6 +42,7 @@ async function bench() {
     cancelConnect: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
     disconnect: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
     check: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
+    setEnabled: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
     watch: vi.fn(),
   }
   const remote = new TestRemote(ctx, { connectors })
@@ -115,6 +116,8 @@ describe('ui-connectors browser plugin', () => {
     expect(b.connectors.cancelConnect).toHaveBeenCalledWith('feishu')
     expect(b.connectors.disconnect).toHaveBeenCalledWith('feishu')
     expect(b.connectors.check).toHaveBeenCalledOnce()
+    await injected.onSetEnabled('feishu', false)
+    expect(b.connectors.setEnabled).toHaveBeenCalledWith('feishu', false)
     const open = vi.spyOn(globalThis, 'open').mockReturnValue(null)
     injected.onOpenUrl('https://open.feishu.cn/x')
     expect(open).toHaveBeenCalledWith('https://open.feishu.cn/x', '_blank', 'noopener')

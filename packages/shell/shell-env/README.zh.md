@@ -52,6 +52,23 @@ export function apply(ctx: Context): void {
 
 contributor 必须声明它返回的每个键；返回未声明或非字符串的值会让该次调用失败。注册随注册插件的释放而释放，因此热重载插件会移除它的事实。
 
+### 把你的可执行文件放到 PATH 最前面
+
+以常见名称提供自己可执行文件的插件可以注册一个 `PATH` contributor；shell 工具会在该次调用中把每个解析出的目录放到 Host 的 `PATH` 之前，因此该命令名运行的是插件的可执行文件，而不是用户自己安装的那个：
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-shell-env'
+
+export const inject = ['shellEnv']
+
+export function apply(ctx: Context, config: { toolDir?: string }): void {
+  ctx.shellEnv.registerPath({ name: 'my-tools', resolve: () => config.toolDir })
+}
+```
+
+`collectPath(execution)` 按 contributor 名称顺序返回解析出的目录，跳过解析为 `undefined` 的 contributor；相对目录会让该次调用失败。名称唯一，注册随注册插件的释放而释放。`dsh-tool-bash` 会应用这些目录；`dsh-tool-pwsh` 不会。
+
 ### 选择 Harness 主目录
 
 唯一配置字段决定暴露为 `DSH_HOME` 的主目录；默认解析顺序为 `dshHome` 配置、环境变量 `$DSH_HOME`，然后是 `~/.dsh`。

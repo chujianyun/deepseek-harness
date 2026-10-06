@@ -12,6 +12,10 @@
 
 连接属于当前 Hub 登录所在的租户。每个租户在 `<dshHome>/connectors/<id>/tenants/<tenantId>/` 下拥有自己的 CLI 配置、数据和日志目录，每次运行都会去掉调用方自己的 lark-cli 变量，因此用户自己的 CLI 配置不受影响。连接飞书按 lark-cli 面向 Agent 的流程进行：`config init --new` 在浏览器中创建租户的应用，然后 `auth login --recommend --json` 让用户授权；每一步的地址和二维码会送到连接器页面，由页面在浏览器中打开地址。创建了应用的登录失败或取消时，用 `config remove` 删除该应用。连接[状态](../glossary.zh.md#connector-status)来自 `auth status --json --verify`，在启动时、安装后、租户变化时、定期以及打开页面时检查。断开会运行 `config remove` 并删除该租户的目录；卸载会对每个租户这样做，再删除 CLI。
 
+## 在对话中使用
+
+连接器已安装且当前租户开启它时，`dsh-shell-env` 的 PATH contributor 会把每个租户的 `lark-cli` 脚本放到模型 shell 的 `PATH` 最前面：已连接时，它用该租户的目录运行已安装的 CLI；未连接时，它拒绝执行并指向连接器页面；命令失败会触发一次健康检查。已连接时，CLI 内置的 Skill 从 `connectors` provider 加入 skill 目录，排在用户自己的 Skill 目录之前。关闭连接器会保留登录，但会把两者都撤下。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -41,7 +45,7 @@ Host owner of the connectors and of the `connectors` Remote namespace.
 @Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<ConnectorsState>
 
 /**
- * Install a connector's CLI in the background; installing an installed or installing connector changes nothing.
+ * Install a connector's CLI in the background; installing an installed, installing, or uninstalling connector changes nothing.
  * @param id - the connector.
  * @returns the state with the install running.
  * @throws RemoteError `connectors/not-found` for an unknown id, `connectors/unavailable` when it cannot be installed here.
@@ -88,6 +92,17 @@ Host owner of the connectors and of the `connectors` Remote namespace.
  * @returns the state once the checks have finished.
  */
 @Remote async check(): Promise<ConnectorsState>
+
+/**
+ * Switch a connector on or off for the current tenant, persisting the profile's list. A switched-off
+ * connector stays signed in, but the model gets neither its Skills nor its CLI.
+ * @param id - the connector.
+ * @param enabled - whether the model may use it.
+ * @returns the state once the setting is saved.
+ * @throws RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`;
+ *   Error when mounted without Settings or a profile entry.
+ */
+@Remote async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState>
 ```
 
 Source: [`packages/connector/connectors/src/index.ts`](../../packages/connector/connectors/src/index.ts)

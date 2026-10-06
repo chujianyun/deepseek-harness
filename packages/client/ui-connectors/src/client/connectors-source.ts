@@ -23,6 +23,7 @@ export interface ConnectorsDependencies {
   readonly cancelConnect: (id: string) => Promise<RemoteResult<ConnectorsState>>
   readonly disconnect: (id: string) => Promise<RemoteResult<ConnectorsState>>
   readonly check: () => Promise<RemoteResult<ConnectorsState>>
+  readonly setEnabled: (id: string, enabled: boolean) => Promise<RemoteResult<ConnectorsState>>
   /** Open an address in the system browser. */
   readonly openUrl: (url: string) => void
 }
@@ -35,6 +36,8 @@ export interface ConnectorsInjected {
   readonly onConnect: (id: string) => Promise<void>
   readonly onCancelConnect: (id: string) => Promise<void>
   readonly onDisconnect: (id: string) => Promise<void>
+  /** Switch a connector on or off for the current company. */
+  readonly onSetEnabled: (id: string, enabled: boolean) => Promise<void>
   /** Check every connection again, as opening the page does. */
   readonly onCheck: () => Promise<void>
   /** Open a sign-in address in the system browser. */
@@ -90,6 +93,7 @@ export function createConnectorsSource(deps: ConnectorsDependencies): Connectors
     },
     onCancelConnect: id => run(id, () => deps.cancelConnect(id)),
     onDisconnect: id => run(id, () => deps.disconnect(id)),
+    onSetEnabled: (id, enabled) => run(id, () => deps.setEnabled(id, enabled)),
     onCheck: async () => {
       const result = await deps.check()
       if (!result.ok) patch({ failure: result.error.message })

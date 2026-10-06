@@ -9,6 +9,10 @@ import { create } from 'tar'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
+import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
+import SkillRegistry from '@deepseek-ai/dsh-skill'
+import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
+import { hubStub } from './support.ts'
 import ConnectorsService, { type CliSpec, type ConnectorsState } from '../src/index.ts'
 
 /** A rename into this path fails, as a full or read-only disk would refuse it. */
@@ -89,39 +93,18 @@ function spec(mirror: Mirror, body: Buffer, file = `lark-cli-${VERSION}.tar.gz`,
   }
 }
 
-/** A stand-in Hub sign-in whose tenant the spec switches. */
-function hubStub(tenantId: string | null) {
-  let current = tenantId
-  const waiting = new Set<() => void>()
-  const view = () => ({ profile: current === null ? null : { tenantId: current } })
-  return {
-    set: (next: string | null) => { current = next; for (const wake of waiting) wake() },
-    service: {
-      getState: () => Promise.resolve(view()),
-      async *watch(signal: AbortSignal) {
-        for (;;) {
-          await new Promise<void>((resolve) => {
-            const wake = (): void => { waiting.delete(wake); resolve() }
-            waiting.add(wake)
-            signal.addEventListener('abort', wake, { once: true })
-          })
-          if (signal.aborted) return
-          yield view()
-        }
-      },
-    },
-  }
-}
-
 async function boot(home: string, feishu?: CliSpec, options: { tenant?: string | null; checkIntervalMs?: number } = {}) {
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
   const hub = hubStub(options.tenant ?? null)
   ctx.provide('hubAccount', hub.service as never)
-  await ctx.plugin(ConnectorsService, {
+  await ctx.plugin(SkillRegistry)
+  await ctx.plugin(ShellEnv, { dshHome: home })
+  const live = await liveConfig(ctx, ConnectorsService, {
     dshHome: home, ...feishu === undefined ? {} : { feishu },
     ...options.checkIntervalMs === undefined ? {} : { checkIntervalMs: options.checkIntervalMs },
   })
+  ctx.provide('settings', { update: async (_entry: string, patch: Record<string, unknown>) => { await live.update(patch) } } as never)
   const service = ctx.get('connectors')!
   const stream = new AbortController()
   cleanups.push(async () => { stream.abort() })
@@ -144,14 +127,14 @@ describe('connectors', () => {
     const { service } = await boot(await scratch('dsh-connectors-home-'))
     expect(service.typertRemote.namespace).toBe('connectors')
     expect(remoteMethods(service).map(method => method.method)).toEqual([
-      'getState', 'watch', 'installConnector', 'uninstallConnector', 'connect', 'cancelConnect', 'disconnect', 'check',
+      'getState', 'watch', 'installConnector', 'uninstallConnector', 'connect', 'cancelConnect', 'disconnect', 'check', 'setEnabled',
     ])
     const state = await service.getState()
     expect(state.connectors.map(connector => [connector.id, connector.status])).toEqual([['feishu', PLATFORM === 'linux-riscv64' ? 'unsupported' : 'not-installed'], ['dingtalk', 'coming-soon']])
     expect(feishu(state)).toMatchObject({ cli: 'lark-cli', version: '1.0.97', receivedBytes: 0, error: null, login: null, loginError: null })
     expect(state.connectors[1]).toEqual({
       id: 'dingtalk', status: 'coming-soon', cli: null, version: null, receivedBytes: 0, totalBytes: 0, error: null,
-      login: null, loginError: null, account: null, problem: null,
+      login: null, loginError: null, account: null, problem: null, enabled: true, skills: [],
     })
   })
 

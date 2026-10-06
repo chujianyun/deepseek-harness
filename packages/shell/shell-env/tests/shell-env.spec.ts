@@ -227,4 +227,26 @@ describe('ShellEnvRegistry', () => {
     expect(ctx.shellEnv).toBeInstanceOf(ShellEnvRegistry)
     expect(ctx.shellEnv.list()).toEqual([])
   })
+
+  it('collects PATH directories in contributor-name order, skips undefined ones, and disposes registrations', () => {
+    const ctx = new Context()
+    const registry = new ShellEnvRegistry(ctx)
+    const dirA = resolve('/opt/a-bin')
+    const dirB = resolve('/opt/b-bin')
+    const disposeB = registry.registerPath({ name: 'b-plugin', resolve: () => dirB })
+    registry.registerPath({ name: 'a-plugin', resolve: () => dirA })
+    registry.registerPath({ name: 'c-plugin', resolve: () => undefined })
+    expect(registry.collectPath(execution())).toEqual([dirA, dirB])
+    disposeB()
+    expect(registry.collectPath(execution())).toEqual([dirA])
+  })
+
+  it('rejects empty and duplicate PATH contributor names and relative directories', () => {
+    const ctx = new Context()
+    const registry = new ShellEnvRegistry(ctx)
+    expect(() => registry.registerPath({ name: ' ', resolve: () => undefined })).toThrow('shell PATH contributor name must be non-empty')
+    registry.registerPath({ name: 'tool', resolve: () => 'relative/bin' })
+    expect(() => registry.registerPath({ name: 'tool', resolve: () => undefined })).toThrow('shell PATH contributor "tool" is already registered')
+    expect(() => registry.collectPath(execution())).toThrow('shell PATH contributor "tool" resolved a relative directory "relative/bin"')
+  })
 })

@@ -3,91 +3,14 @@
  * lark-cli: a shell script that prints what the real CLI prints at each step and waits for the spec
  * to finish the step through control files beside it.
  */
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { describe, expect, it, vi } from 'vitest'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import ConnectorsService, { type CliSpec, type ConnectorsState } from '../src/index.ts'
 import { failureMessage } from '../src/lark.ts'
-import { FAKE_LARK_CLI as FAKE } from './fake-lark-cli.ts'
-
-const VERSION = '9.9.9'
-const PLATFORM = `${process.platform}-${process.arch}`
-const SPEC: CliSpec = {
-  binary: 'lark-cli', version: VERSION, mirrors: ['http://127.0.0.1:9/{file}'],
-  archives: [{ platform: PLATFORM, file: 'lark-cli.tar.gz', size: 1, sha256: '0'.repeat(64) }],
-}
-
-const cleanups: (() => Promise<unknown>)[] = []
-afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
-  vi.unstubAllEnvs()
-})
-
-/** A Hub sign-in stand-in whose tenant the spec switches. */
-function hubStub(tenantId: string | null) {
-  let current = tenantId
-  const waiting = new Set<() => void>()
-  const view = () => ({ profile: current === null ? null : { tenantId: current } })
-  return {
-    set: (next: string | null) => { current = next; for (const wake of waiting) wake() },
-    service: {
-      getState: () => Promise.resolve(view()),
-      async *watch(signal: AbortSignal) {
-        for (;;) {
-          await new Promise<void>((resolve) => {
-            const wake = (): void => { waiting.delete(wake); resolve() }
-            waiting.add(wake)
-            signal.addEventListener('abort', wake, { once: true })
-          })
-          if (signal.aborted) return
-          yield view()
-        }
-      },
-    },
-  }
-}
+import { feishu, setup, VERSION } from './support.ts'
 
 const runs = it.skipIf(process.platform === 'win32')
-const feishu = (state: ConnectorsState) => state.connectors[0]!
-
-async function setup(options: { tenant?: string | null; installed?: boolean; checkIntervalMs?: number } = {}) {
-  const home = await mkdtemp(join(tmpdir(), 'dsh-connection-'))
-  cleanups.push(() => rm(home, { recursive: true, force: true }))
-  const root = join(home, 'connectors', 'feishu')
-  const control = join(root, 'control')
-  if (options.installed !== false) {
-    await mkdir(join(root, VERSION), { recursive: true })
-    await writeFile(join(root, VERSION, 'lark-cli'), FAKE)
-    await chmod(join(root, VERSION, 'lark-cli'), 0o755)
-    await mkdir(control, { recursive: true })
-  }
-  const ctx = new Context()
-  cleanups.push(() => ctx.fiber.dispose())
-  const hub = hubStub(options.tenant === undefined ? 't-a' : options.tenant)
-  ctx.provide('hubAccount', hub.service as never)
-  const interval = options.checkIntervalMs === undefined ? {} : { checkIntervalMs: options.checkIntervalMs }
-  await ctx.plugin(ConnectorsService, { dshHome: home, feishu: SPEC, ...interval })
-  const service = ctx.get('connectors')!
-  const stream = new AbortController()
-  cleanups.push(async () => { stream.abort() })
-  const iterator = service.watch(stream.signal)[Symbol.asyncIterator]()
-  const until = async (predicate: (view: ReturnType<typeof feishu>) => boolean) => {
-    for (;;) {
-      const next = await iterator.next()
-      if (next.done === true) throw new Error('state stream ended')
-      if (predicate(feishu(next.value))) return feishu(next.value)
-    }
-  }
-  const tenantDir = (tenant: string) => join(root, 'tenants', tenant)
-  const exists = (path: string) => stat(path).then(() => true, () => false)
-  const calls = async () => (await readFile(join(control, 'calls'), 'utf8').catch(() => '')).trim().split('\n').filter(line => line !== '')
-  const answer = (step: 'app' | 'user', result: string) => writeFile(join(control, step), result)
-  const status = (value: object | string) => writeFile(join(control, 'status.json'), typeof value === 'string' ? value : JSON.stringify(value))
-  return { ctx, service, hub, until, root, control, tenantDir, exists, calls, answer, status }
-}
 
 describe('connecting Feishu', () => {
   runs('creates the tenant\'s app, authorizes the user, and turns green, in the tenant\'s own directories', async () => {

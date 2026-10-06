@@ -23,7 +23,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this package as a Loader entry in the Desktop profile beside `hub-account`, which it injects. The web-app bundle enables it for the `desktop` profile with a configured user center, beside the knowledge bases, and `ui-connectors` renders its page.
+Mount this package as a Loader entry in the Desktop profile beside `hub-account`, `skill`, and `shell-env`, which it injects. The web-app bundle enables it for the `desktop` profile with a configured user center, beside the knowledge bases, and `ui-connectors` renders its page.
 
 `getState()` and `watch()` return one view per connector, Feishu then DingTalk, with its status: `coming-soon` while DSH does not support it, `unsupported` when its CLI has no build for this platform, `not-installed`, `installing`, and, once its CLI is installed, the current tenant's [connection status](../../../docs/glossary.md#connector-status) — `disconnected` (red), `connecting`, `connected` (green), or `degraded` (yellow). A view carries the CLI name and the version this release installs, download progress while installing, the reason the last install failed, the sign-in under way, the reason the last sign-in failed, the signed-in account's name, and the reason the connection is degraded.
 
@@ -34,6 +34,10 @@ The connection belongs to the tenant of the current [Hub sign-in](../../../docs/
 `connect(id)` starts the current tenant's sign-in in the background and returns at once; a sign-in under way or a connected connector changes nothing. For Feishu it follows lark-cli's agent flow: a tenant without an app first runs `config init --new`, where the user creates the app in the browser, then `auth login --recommend --json`, where the user authorizes their own identity. While a step waits, the view's `login` carries the step, the address the CLI printed, and a QR code of it drawn by `auth qrcode`. When the user finishes, a health check decides the connection; a step that fails sets `loginError` with the step and the CLI's message (an app the platform refused to create reads as `create-app`). `cancelConnect(id)` ends the step's process. A failed or cancelled sign-in that created the tenant's app runs `config remove` and deletes the tenant's directory, so nothing half done remains; a sign-in that only authorizes keeps the existing app.
 
 A health check runs `auth status --json --verify`, which asks the server whether the user's token still works: `ready` or `needs_refresh` is `connected` with the user's name, `missing` and an unconfigured tenant are `disconnected`, and anything else — `verify_failed`, `error`, output that cannot be read, or a CLI that does not run — is `degraded` with the reason. Checks run for every installed connector at startup, after an install, when the tenant changes, every `checkIntervalMs`, and on `check()`, which the Connectors page calls when it opens; a check that a sign-in, disconnect, or tenant switch overtook is dropped. Signing in to another tenant stops a sign-in under way and shows that tenant's own connection.
+
+While a connector is installed and switched on for the current tenant, the model shell finds a `lark-cli` script in `<dshHome>/connectors/<id>/bin/<tenantId>/`, which this package puts ahead of `PATH` through `ctx.shellEnv.registerPath()`. Connected or degraded, the script drops the caller's lark-cli variables and runs the installed CLI with the tenant's configuration and data directories, so a command reaches DSH's CLI and the tenant's sign-in rather than a CLI or `~/.lark-cli` the user set up; its logs go under the system temporary directory, which a sandboxed model shell may write. Disconnected, the script refuses with a message that asks the user to connect on the Connectors page. When a command fails, the script adds that the Connectors page may help, and the service, which observes `tools/result`, runs a health check after any bash call of `lark-cli` that failed. The script is rewritten whenever the tenant, the connection, or the switch changes.
+
+While a connector is connected or degraded and switched on, the Skills its CLI embeds reach the model through `ctx.skills`, from the `connectors` provider with source `connector-<id>` and rank 350 — ahead of the user's own Skill directories, so a stale copy there never shadows the Skill matching the installed CLI, and behind project Skills. The list comes from `skills list`, read once per CLI version, and a Skill's instructions from `skills read <name>` without its frontmatter; its files are read with `lark-cli skills read <name> <path>`. Each view lists the installed CLI's Skills for the card. `setEnabled(id, enabled)` switches a connector on or off for the current tenant in the volatile `disabled` list, through the Settings service: off, the connector stays signed in, but the model gets neither its Skills nor its CLI, and a user's own `lark-cli` is left as it is.
 
 `disconnect(id)` stops a sign-in under way, runs `config remove`, which clears the tenant's app configuration and tokens, keychain entries included, and deletes the tenant's directory; the CLI stays. `uninstallConnector(id)` stops a running install or sign-in, runs `config remove` for every tenant on the machine, and deletes `<dshHome>/connectors/<id>`, downloads included. Every method refuses an unknown id with `connectors/not-found` and a connector that is coming soon or unsupported here with `connectors/unavailable`; `connect` also refuses a connector that is not installed with `connectors/not-installed`, and `connect` and `disconnect` refuse while signed out of the Hub with `hub-account/signed-out`.
 
@@ -47,23 +51,26 @@ A health check runs `auth status --json --verify`, which asks the server whether
 | `dshHome` | `$DSH_HOME` or `~/.dsh` | Harness home; connector CLIs live under `<dshHome>/connectors`. |
 | `feishu` | `lark-cli` 1.0.97 | The Feishu CLI: `binary`, `version`, `mirrors` (URL templates with `{version}` and `{file}`), and one `archives` entry per platform with its `file`, `size`, and `sha256`. |
 | `checkIntervalMs` | `1800000` (30 minutes) | Time between periodic health checks of the connections. |
+| `disabled` | `[]` | Connectors switched off, as `<tenantId>/<id>`; volatile, written by `setEnabled()`. |
 
 -----
 
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as installing a connector's CLI and signing in add nothing to model requests.
+Indirectly, through the skill registry and the bash tool: a connected, switched-on connector's Skills join the model's skill catalog, and its `lark-cli` runs in bash; disconnecting or switching it off takes the Skills out of the catalog. The script adds one of two lines to a command's stderr, which the bash result carries: `DSH: the Feishu connector is not connected for this company. Ask the user to connect Feishu on the DSH Connectors page (连接器), then try again.` when it refuses, and `DSH: lark-cli exited with status <n>. If signing in to Feishu or a missing permission is the cause, ask the user to check the Feishu connector on the DSH Connectors page (连接器).` after a failed command.
 
 #### KV Cache effect
 
-No effect.
+No direct effect; the skill catalog consumer appends a replacement catalog message when the connector's Skills join or leave, as for any other Skill switched on or off.
 
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Not in conversations yet** — a connected connector's Skills do not reach the model until conversations use connectors.
+- **Writes are not confirmed yet** — the model can run any lark-cli command, including ones that send or change content; confirming writes comes next.
+- **Sandboxed writes** — in a sandboxed model shell, a lark-cli command that writes into the tenant's configuration or data directory (outside the writable roots) is refused, and the model is offered the sandbox's escalation; commands that only read and log are unaffected.
+- **Bash only, POSIX only** — the `lark-cli` script is a POSIX shell script on `PATH` for `dsh-tool-bash`; PowerShell and Windows get no script.
 - **No install cancel** — a running install stops only through uninstalling.
 - **One app per tenant member** — the Feishu sign-in creates a self-built app per tenant on this machine; a company that forbids employees to create apps cannot connect until an administrator-provided tenant app is supported.
 

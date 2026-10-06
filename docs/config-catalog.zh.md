@@ -748,8 +748,9 @@ export interface ToolResultPruneConfig {
 
 ## `@deepseek-ai/dsh-connectors`
 
-- `inject`: `hubAccount`
-- `source`: [`packages/connector/connectors/src/index.ts:71`](../packages/connector/connectors/src/index.ts)
+- `inject`: `hubAccount` · `skills` · `shellEnv`
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/connector/connectors/src/index.ts:87`](../packages/connector/connectors/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -760,6 +761,8 @@ export interface Config {
   feishu?: CliSpec
   /** Time between periodic health checks of the connections, in milliseconds. */
   checkIntervalMs?: number
+  /** Connectors switched off, as `<tenantId>/<id>`; edited live through `setEnabled()`. */
+  disabled?: Volatile<readonly string[]>
 }
 
 /** A connector CLI pinned to one release. */
@@ -3024,7 +3027,7 @@ export type Config = SessionTitleLlmConfig
 
 ## `@deepseek-ai/dsh-shell-env`
 
-- `source`: [`packages/shell/shell-env/src/index.ts:30`](../packages/shell/shell-env/src/index.ts)
+- `source`: [`packages/shell/shell-env/src/index.ts:32`](../packages/shell/shell-env/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config (all optional — the built-in facts resolve without defaults). */

@@ -12,11 +12,11 @@ afterEach(() => { cleanup() })
 
 const feishu = (over: Partial<ConnectorView> = {}): ConnectorView => ({
   id: 'feishu', status: 'not-installed', cli: 'lark-cli', version: '1.0.97', receivedBytes: 0, totalBytes: 1000, error: null,
-  login: null, loginError: null, account: null, problem: null, ...over,
+  login: null, loginError: null, account: null, problem: null, enabled: true, skills: [], ...over,
 })
 const dingtalk: ConnectorView = {
   id: 'dingtalk', status: 'coming-soon', cli: null, version: null, receivedBytes: 0, totalBytes: 0, error: null,
-  login: null, loginError: null, account: null, problem: null,
+  login: null, loginError: null, account: null, problem: null, enabled: true, skills: [],
 }
 
 function mount(state: ConnectorsState | undefined, extra: Partial<ConnectorsSnapshot> = {}, copy = zh) {
@@ -26,6 +26,7 @@ function mount(state: ConnectorsState | undefined, extra: Partial<ConnectorsSnap
     onInstall: vi.fn(async (_id: string) => {}), onUninstall: vi.fn(async (_id: string) => {}), onDismiss: vi.fn(),
     onConnect: vi.fn(async (_id: string) => {}), onCancelConnect: vi.fn(async (_id: string) => {}),
     onDisconnect: vi.fn(async (_id: string) => {}), onCheck: vi.fn(async () => {}), onOpenUrl: vi.fn((_url: string) => {}),
+    onSetEnabled: vi.fn(async (_id: string, _enabled: boolean) => {}),
   }
   render(<ConnectorsPage {...props} />)
   return { props, store }
@@ -195,5 +196,26 @@ describe('connectors page', () => {
     expect(screen.getByRole('alert').textContent).toContain('操作失败：no connector x')
     fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     expect(props.onDismiss).toHaveBeenCalledOnce()
+  })
+
+  it('lists the Skills the connector adds, collapsing the rest, and switches it off and on', () => {
+    const skills = Array.from({ length: 10 }, (_, index) => ({ name: `lark-s${String(index)}`, description: `能力 ${String(index)}` }))
+    const { props, store } = mount({ connectors: [feishu({ status: 'connected', skills })] })
+    const connected = card('飞书')
+    expect(within(connected).getByText('带来的 Skill（10）')).toBeTruthy()
+    expect(within(connected).getByText('lark-s0').getAttribute('title')).toBe('能力 0')
+    expect(within(connected).queryByText('lark-s9')).toBeNull()
+    fireEvent.click(within(connected).getByRole('button', { name: '还有 2 个' }))
+    expect(within(connected).getByText('lark-s9')).toBeTruthy()
+    const toggle = within(connected).getByRole('switch', { name: '在对话中使用飞书' })
+    fireEvent.click(toggle)
+    expect(props.onSetEnabled).toHaveBeenCalledWith('feishu', false)
+    act(() => { store.set({ ...store.getSnapshot(), state: { connectors: [feishu({ status: 'connected', skills, enabled: false })] } }) })
+    expect(card('飞书').getAttribute('data-enabled')).toBe('false')
+    expect(within(card('飞书')).getByText('已停用：对话中的模型不会使用飞书，登录信息保留。')).toBeTruthy()
+    fireEvent.click(within(card('飞书')).getByRole('switch', { name: '在对话中使用飞书' }))
+    expect(props.onSetEnabled).toHaveBeenLastCalledWith('feishu', true)
+    act(() => { store.set({ ...store.getSnapshot(), state: { connectors: [feishu({ status: 'installing', skills })] } }) })
+    expect(within(card('飞书')).queryByText('带来的 Skill（10）')).toBeNull()
   })
 })

@@ -3,11 +3,13 @@
  * trusted, per-execution `DSH_*` variables consumed by the model-facing shell
  * tools (`dsh-tool-bash`, `dsh-tool-pwsh`). Built-in shell facts are owned by
  * the registry itself while plugins can register additional, enumerable facts
- * with effect-scoped disposal.
+ * with effect-scoped disposal. Plugins can also put a directory of their own
+ * executables ahead of `PATH` for each call.
  *
  * @module @deepseek-ai/dsh-shell-env
  */
 
+import { isAbsolute } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { DSH_ENV_PREFIX } from '@deepseek-ai/dsh-shell'
@@ -61,6 +63,21 @@ export interface BashEnvContributor {
   resolve(execution: ToolExecution): Readonly<Partial<Record<DshEnvironmentKey, string>>>
 }
 
+/**
+ * A plugin's directory of executables, put ahead of `PATH` for the model shell calls it resolves for,
+ * so a command name runs the plugin's executable instead of one the user installed.
+ */
+export interface ShellPathContributor {
+  /** Stable contributor name used in diagnostics and duplicate detection. */
+  name: string
+  /**
+   * Resolve the directory for one tool execution.
+   * @param execution - the shell tool execution and its optional calling agent.
+   * @returns an absolute directory, or undefined to contribute none to this call.
+   */
+  resolve(execution: ToolExecution): string | undefined
+}
+
 /** An enumerable declaration returned by {@link ShellEnvRegistry.list}. */
 export interface BashEnvVariableInfo extends BashEnvVariable {
   /** Contributor that owns the variable. */
@@ -92,6 +109,7 @@ const BASH_ENV_KEY_SUFFIX = /^[A-Z][A-Z0-9_]*$/
  */
 export class ShellEnvRegistry extends Service {
   private readonly contributors = new Map<string, BashEnvContributor>()
+  private readonly pathContributors = new Map<string, ShellPathContributor>()
   private readonly keyOwners = new Map<DshEnvironmentKey, string>()
   private readonly dshHome: string
 
@@ -182,6 +200,38 @@ export class ShellEnvRegistry extends Service {
     }
 
     return Object.freeze(Object.fromEntries(Object.entries(values).sort(([left], [right]) => left.localeCompare(right))))
+  }
+
+  /**
+   * Register one `PATH` contributor; names are unique. Registration is disposed with the calling plugin fiber.
+   * @param contributor - the named per-execution directory resolver.
+   * @returns the disposer that unregisters the contribution.
+   */
+  registerPath(contributor: ShellPathContributor): () => void {
+    const dispose = this.ctx.effect(function* (this: ShellEnvRegistry) {
+      if (contributor.name.trim().length === 0) throw new Error('shell PATH contributor name must be non-empty')
+      if (this.pathContributors.has(contributor.name)) throw new Error(`shell PATH contributor "${contributor.name}" is already registered`)
+      this.pathContributors.set(contributor.name, contributor)
+      yield () => { this.pathContributors.delete(contributor.name) }
+    }.bind(this), 'shellEnv.registerPath()')
+    return () => void dispose()
+  }
+
+  /**
+   * Resolve the directories to put ahead of `PATH` for one shell tool execution.
+   * @param execution - the current tool execution.
+   * @returns absolute directories in contributor-name order, empty when none applies.
+   * @throws Error when a contributor resolves a relative directory.
+   */
+  collectPath(execution: ToolExecution): string[] {
+    const dirs: string[] = []
+    for (const contributor of [...this.pathContributors.values()].sort((left, right) => left.name.localeCompare(right.name))) {
+      const dir = contributor.resolve(execution)
+      if (dir === undefined) continue
+      if (!isAbsolute(dir)) throw new Error(`shell PATH contributor "${contributor.name}" resolved a relative directory "${dir}"`)
+      dirs.push(dir)
+    }
+    return dirs
   }
 
   // TODO(bash-env-list-builtins): Include registry-owned built-ins before diagnostics,

@@ -5,7 +5,8 @@
  * live in `../control` beside its version directory: `config init` and `auth login` print their
  * address and wait for `control/app` or `control/user` to say `ok` or `fail:<message>`; `auth status`
  * answers from the tenant's configuration unless `control/status.json` overrides it; errors go to
- * stderr as the real CLI's do; every call is logged to `control/calls`.
+ * stderr as the real CLI's do; `skills list` and `skills read lark-calendar` serve two Skills;
+ * `calendar +agenda` succeeds and `calendar +fail` fails; every call is logged to `control/calls`.
  */
 export const FAKE_LARK_CLI = String.raw`#!/bin/sh
 C="$(cd "$(dirname "$0")" && pwd)/../control"
@@ -39,5 +40,16 @@ case "$1 $2" in
     if [ -f "$C/noqr" ]; then exit 1; fi
     printf 'PNG' > "$5" ;;
   "config remove") rm -rf "$CFG" ;;
+  "skills list")
+    if [ -f "$C/noskills" ]; then exit 1; fi
+    echo '{"ok":true,"skills":[{"name":"lark-calendar","description":"飞书日历：查看日程"},{"name":"lark-im","description":"飞书消息：搜索消息"},{"name":"Bad Name","description":"skipped"},{"name":"lark-empty","description":" "}]}' ;;
+  "skills read")
+    if [ "$3" != lark-calendar ]; then echo "no skill $3" >&2; exit 1; fi
+    printf '%s\n' '> Tip: read files with lark-cli skills read lark-calendar <path>.' '---' 'name: lark-calendar' 'description: "飞书日历"' '---' '' '# calendar' '' 'Run lark-cli calendar +agenda.' ;;
+  "calendar +agenda")
+    env | grep -E '^(LARKSUITE_CLI_|OPENCLAW_HOME|HERMES_HOME)' | sort > "$C/run-env"
+    echo '{"ok":true,"data":{"events":[{"summary":"产品周会","start":"10:00"}]}}' ;;
+  "calendar +fail")
+    echo '{"ok":false,"error":{"message":"permission denied"}}' >&2; exit 4 ;;
 esac
 `

@@ -16,20 +16,36 @@
  * connection's color at startup, on request, after a sign-in, and periodically. Disconnecting
  * deletes the tenant's sign-in; uninstalling deletes every tenant's and the CLI.
  *
+ * While a connector is installed and enabled for the tenant, the model shell finds a `lark-cli`
+ * script under `<dshHome>/connectors/<id>/bin/<tenantId>` ahead of `PATH`: connected, it runs the
+ * installed CLI with the tenant's directories; otherwise it refuses and points to the Connectors
+ * page. A bash call of `lark-cli` that fails triggers a health check. While connected, the Skills the CLI embeds
+ * reach the model through the skill registry.
+ *
  * @module @deepseek-ai/dsh-connectors
  */
 
 import { readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context, Service, type Volatile } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type {} from '@deepseek-ai/dsh-hub-account'
+import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-shell-env'
+import type {} from '@deepseek-ai/dsh-skill'
+import type {} from '@deepseek-ai/dsh-tools'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { bytesOnDisk } from '@deepseek-ai/dsh-verified-download'
 import Schema from '@deepseek-ai/schemastery'
 import { LARK_CLI } from './catalog.ts'
 import { cliInstalled, executableName, installCli, platformKey, type InstallError } from './install.ts'
-import { checkHealth, LoginError, qrCode, removeTenant, runLoginStep, type Health, type LoginStep, type TenantCli } from './lark.ts'
+import {
+  checkHealth, LoginError, qrCode, removeTenant, runLoginStep, wrapperScript, writeWrapper,
+  type Health, type LoginStep, type TenantCli, type WrapperMode,
+} from './lark.ts'
+import { ConnectorSkillProvider, type ConnectorSkill, type SkillSource } from './skills.ts'
 import type {
   ConnectorId, ConnectorInstallError, ConnectorLoginError, ConnectorLoginView, ConnectorsState, ConnectorStatus, ConnectorView,
 } from './types.ts'
@@ -75,6 +91,8 @@ export interface Config {
   feishu?: CliSpec
   /** Time between periodic health checks of the connections, in milliseconds. */
   checkIntervalMs?: number
+  /** Connectors switched off, as `<tenantId>/<id>`; edited live through `setEnabled()`. */
+  disabled?: Volatile<readonly string[]>
 }
 
 const cliSpec = Schema.object({
@@ -94,7 +112,12 @@ export const Config = Schema.object({
   dshHome: Schema.string(),
   feishu: cliSpec.default(LARK_CLI),
   checkIntervalMs: Schema.natural().min(1000).default(30 * 60 * 1000),
+  disabled: Schema.array(Schema.string()).default([]).volatile()
+    .description('Connectors switched off, as `<tenantId>/<id>`. A switched-off connector stays signed in, but the model gets neither its Skills nor its CLI.'),
 }) as Schema<Config>
+
+/** A failing command's check waits this long for more failures. */
+const FAILURE_CHECK_DELAY_MS = 500
 
 /** Progress frames are published at most this often while bytes stream in. */
 const PROGRESS_INTERVAL_MS = 250
@@ -128,6 +151,18 @@ interface Installable {
   running: Promise<void> | undefined
   controller: AbortController | undefined
   connection: Connection
+  /** The Skills the installed CLI embeds; empty until listed. */
+  skills: readonly ConnectorSkill[]
+  /** What the model shell's `lark-cli` was last written for, as `<tenantId>:<mode>`; undefined while it gets none. */
+  wrapper: string | undefined
+  /** Set while uninstalling: the connector is hidden from the model and refuses a new install until its files are gone. */
+  removing: boolean
+}
+
+/** The tenant and script mode the model shell gets for one connector now, if any. */
+interface Exposure {
+  readonly tenant: string
+  readonly mode: WrapperMode
 }
 
 function idle(epoch: number): Connection {
@@ -136,11 +171,19 @@ function idle(epoch: number): Connection {
 
 /** Host owner of the connectors and of the `connectors` Remote namespace. */
 export class ConnectorsService extends TypertRemoteService {
-  static inject = ['hubAccount']
+  static inject = ['hubAccount', 'skills', 'shellEnv']
   static Config = Config
 
   private readonly installables = new Map<ConnectorId, Installable>()
   private readonly checkIntervalMs: number
+  private readonly disabled: Volatile<readonly string[]> | undefined
+  private readonly entryId: string | undefined
+  private provider: ConnectorSkillProvider | undefined
+  /** What the skill provider was last told about, so it is invalidated only on a change. */
+  private skillKey = ''
+  private writes: Promise<void> = Promise.resolve()
+  private disabledWrites: Promise<void> = Promise.resolve()
+  private failureTimer: ReturnType<typeof setTimeout> | undefined
   private tenantId: string | null = null
   private progressTimer: ReturnType<typeof setTimeout> | undefined
   private readonly listeners = new Set<() => void>()
@@ -149,12 +192,30 @@ export class ConnectorsService extends TypertRemoteService {
   /** @param ctx - Host context with the Hub sign-in. @param config - home, pinned CLIs, and the check interval. */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'connectors', { namespace: 'connectors' })
-    const resolved = Config(config) as Config & { feishu: CliSpec; checkIntervalMs: number }
+    // The live disabled list arrives as a Volatile handle; the schema validates the rest.
+    const { disabled, ...rest } = config
+    const resolved = Config(rest) as Config & { feishu: CliSpec; checkIntervalMs: number }
     this.checkIntervalMs = resolved.checkIntervalMs
+    this.disabled = disabled
+    this.entryId = ctx.fiber.entry?.options.id
     const root = join(resolveDshHome(resolved.dshHome), 'connectors')
-    this.installables.set('feishu', {
+    const feishu: Installable = {
       id: 'feishu', spec: resolved.feishu, root: join(root, 'feishu'), install: 'not-installed', error: null, received: 0,
-      running: undefined, controller: undefined, connection: idle(0),
+      running: undefined, controller: undefined, connection: idle(0), skills: [], wrapper: undefined, removing: false,
+    }
+    this.installables.set('feishu', feishu)
+    ctx.skills.registerProvider((control) => {
+      this.provider = new ConnectorSkillProvider(() => this.skillSources(), control)
+      return this.provider
+    })
+    ctx.shellEnv.registerPath({ name: 'connectors-feishu', resolve: () => this.scriptDir(feishu) })
+    ctx.on('loader/volatile-update', () => { this.changed() })
+    // A bash call of a connector's CLI that fails may mean the sign-in broke: check it.
+    ctx.on('tools/result', (exec, result) => {
+      const command = (exec.arguments as { command?: unknown }).command
+      if (exec.name !== 'bash' || typeof command !== 'string' || !/(?:^|[\s;&|(])lark-cli(?=$|[\s;&|)])/u.test(command)) return
+      const exitCode = result.isError ? null : (result.value as { exitCode?: unknown }).exitCode
+      if (exitCode !== 0) this.failed(feishu)
     })
     ctx.effect(() => () => {
       this.lifetime.abort()
@@ -163,13 +224,17 @@ export class ConnectorsService extends TypertRemoteService {
         entry.connection.controller?.abort()
       }
       clearTimeout(this.progressTimer)
+      clearTimeout(this.failureTimer)
       this.changed()
     }, 'connectors: lifetime')
   }
 
   async [Service.init](): Promise<void> {
     for (const entry of this.installables.values()) {
-      if (this.archive(entry) !== undefined && await cliInstalled(this.versionDir(entry), entry.spec)) entry.install = 'installed'
+      if (this.archive(entry) !== undefined && await cliInstalled(this.versionDir(entry), entry.spec)) {
+        entry.install = 'installed'
+        void this.listSkills(entry)
+      }
     }
     this.tenantId = (await this.ctx.hubAccount.getState()).profile?.tenantId ?? null
     void this.checkAll()
@@ -217,7 +282,7 @@ export class ConnectorsService extends TypertRemoteService {
   }
 
   /**
-   * Install a connector's CLI in the background; installing an installed or installing connector changes nothing.
+   * Install a connector's CLI in the background; installing an installed, installing, or uninstalling connector changes nothing.
    * @param id - the connector.
    * @returns the state with the install running.
    * @throws RemoteError `connectors/not-found` for an unknown id, `connectors/unavailable` when it cannot be installed here.
@@ -225,7 +290,7 @@ export class ConnectorsService extends TypertRemoteService {
   @Remote
   async installConnector(id: string): Promise<ConnectorsState> {
     const { entry, archive } = this.installable(id)
-    if (entry.install === 'not-installed') entry.running = this.run(entry, archive)
+    if (entry.install === 'not-installed' && !entry.removing) entry.running = this.run(entry, archive)
     return this.getState()
   }
 
@@ -238,15 +303,20 @@ export class ConnectorsService extends TypertRemoteService {
   @Remote
   async uninstallConnector(id: string): Promise<ConnectorsState> {
     const { entry } = this.installable(id)
+    entry.removing = true
     entry.controller?.abort('uninstalled')
     await entry.running
     await this.stopLogin(entry)
     if (entry.install === 'installed') {
       for (const tenant of await readdir(join(entry.root, 'tenants')).catch(() => [])) await removeTenant(this.cliAt(entry, tenant))
     }
+    this.changed()
+    await this.writes
     await rm(entry.root, { recursive: true, force: true })
-    entry.received = 0
     entry.install = 'not-installed'
+    entry.removing = false
+    entry.received = 0
+    entry.skills = []
     entry.error = null
     entry.connection = idle(entry.connection.epoch + 1)
     this.changed()
@@ -317,6 +387,32 @@ export class ConnectorsService extends TypertRemoteService {
     return this.getState()
   }
 
+  /**
+   * Switch a connector on or off for the current tenant, persisting the profile's list. A switched-off
+   * connector stays signed in, but the model gets neither its Skills nor its CLI.
+   * @param id - the connector.
+   * @param enabled - whether the model may use it.
+   * @returns the state once the setting is saved.
+   * @throws RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`;
+   *   Error when mounted without Settings or a profile entry.
+   */
+  @Remote
+  async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState> {
+    this.installable(id)
+    const key = `${this.requireTenant()}/${id}`
+    const write = this.disabledWrites.then(async () => {
+      const current = this.disabledList()
+      if (current.includes(key) !== enabled) return
+      const settings = this.ctx.get('settings')
+      if (settings === undefined || this.entryId === undefined) throw new Error('switching connectors requires the settings service and a profile entry')
+      await settings.update(this.entryId, { disabled: enabled ? current.filter(item => item !== key) : [...current, key].sort() })
+    })
+    this.disabledWrites = write.catch(() => {})
+    await write
+    this.changed()
+    return this.getState()
+  }
+
   /** A connector this platform can install, with its archive. */
   private installable(id: string): { entry: Installable; archive: CliArchive } {
     if (!ORDER.includes(id as ConnectorId)) throw new RemoteError('connectors/not-found', `no connector ${id}`, { id })
@@ -338,7 +434,7 @@ export class ConnectorsService extends TypertRemoteService {
     if (entry === undefined) {
       return {
         id, status: 'coming-soon', cli: null, version: null, receivedBytes: 0, totalBytes: 0, error: null,
-        login: null, loginError: null, account: null, problem: null,
+        login: null, loginError: null, account: null, problem: null, enabled: true, skills: [],
       }
     }
     const archive = this.archive(entry)
@@ -348,7 +444,83 @@ export class ConnectorsService extends TypertRemoteService {
       id, status, cli: entry.spec.binary, version: entry.spec.version, receivedBytes: entry.received, totalBytes: archive?.size ?? 0,
       error: entry.error, login: status === 'connecting' ? connection.login : null, loginError: connection.loginError,
       account: status === 'connected' ? connection.account : null, problem: status === 'degraded' ? connection.problem : null,
+      enabled: this.enabled(entry), skills: entry.skills,
     }
+  }
+
+  private disabledList(): readonly string[] {
+    // Every mount passes the Volatile handle; the optional type comes from the Config interface.
+    /* v8 ignore next */
+    return this.disabled?.get() ?? []
+  }
+
+  /** Whether the current tenant leaves the connector on; signed out, nothing is switched off. */
+  private enabled(entry: Installable): boolean {
+    return this.tenantId === null || !this.disabledList().includes(`${this.tenantId}/${entry.id}`)
+  }
+
+  /** The tenant and script the model shell gets for a connector now: installed, signed in to the Hub, and switched on. */
+  private exposure(entry: Installable): Exposure | undefined {
+    if (entry.install !== 'installed' || entry.removing || this.tenantId === null || !this.enabled(entry)) return undefined
+    const live = entry.connection.state === 'connected' || entry.connection.state === 'degraded'
+    return { tenant: this.tenantId, mode: live ? 'run' : 'not-connected' }
+  }
+
+  /** The directory put ahead of the model shell's PATH for a connector, while it is exposed. */
+  private scriptDir(entry: Installable): string | undefined {
+    const exposure = this.exposure(entry)
+    return exposure === undefined ? undefined : join(entry.root, 'bin', exposure.tenant)
+  }
+
+  /** The connectors whose Skills reach the model: exposed with a live connection. */
+  private skillSources(): SkillSource[] {
+    return [...this.installables.values()].flatMap((entry) => {
+      const exposure = this.exposure(entry)
+      return exposure?.mode === 'run'
+        ? [{ source: `connector-${entry.id}`, version: entry.spec.version, cli: this.cliAt(entry, exposure.tenant) }]
+        : []
+    })
+  }
+
+  /** List the installed CLI's Skills for the card; the tenant-free catalog directory keeps tenants out of it. */
+  private async listSkills(entry: Installable): Promise<void> {
+    /* v8 ignore next -- the skill registry builds the provider synchronously inside registerProvider(). */
+    if (this.provider === undefined) return
+    const cli = { bin: join(this.versionDir(entry), executableName(entry.spec)), dir: join(entry.root, 'catalog') }
+    const skills = await this.provider.skills({ source: `connector-${entry.id}`, version: entry.spec.version, cli })
+    // An uninstall that finished meanwhile keeps the card empty.
+    if (entry.install !== 'installed' || entry.removing) return
+    entry.skills = skills
+    this.changed()
+  }
+
+  /**
+   * Bring the model shell's script and the Skill catalog in line with the connections. Runs after
+   * every change; only an actual change writes or invalidates.
+   */
+  private sync(): void {
+    const skillKey = JSON.stringify(this.skillSources().map(source => source.cli.dir))
+    if (skillKey !== this.skillKey) {
+      this.skillKey = skillKey
+      this.provider?.invalidate()
+    }
+    for (const entry of this.installables.values()) {
+      const exposure = this.exposure(entry)
+      const wrapper = exposure === undefined ? undefined : `${exposure.tenant}:${exposure.mode}`
+      if (wrapper === entry.wrapper) continue
+      entry.wrapper = wrapper
+      if (exposure === undefined) continue
+      const logs = join(tmpdir(), 'dsh-connectors', entry.id, exposure.tenant, 'logs')
+      const script = wrapperScript(this.cliAt(entry, exposure.tenant), exposure.mode, logs)
+      this.writes = this.writes.then(() => writeWrapper(join(entry.root, 'bin', exposure.tenant), script))
+        .catch((error: unknown) => { console.info('[connectors] could not write the lark-cli script', { error: String(error) }) })
+    }
+  }
+
+  /** A command of the connector's CLI failed: check the connection once the failures settle. */
+  private failed(entry: Installable): void {
+    clearTimeout(this.failureTimer)
+    this.failureTimer = setTimeout(() => { void this.checkOne(entry) }, FAILURE_CHECK_DELAY_MS)
   }
 
   private archive(entry: Installable) {
@@ -361,7 +533,10 @@ export class ConnectorsService extends TypertRemoteService {
     return { bin: join(this.versionDir(entry), executableName(entry.spec)), dir: join(entry.root, 'tenants', tenant) }
   }
 
-  private changed(): void { for (const listener of this.listeners) listener() }
+  private changed(): void {
+    for (const listener of this.listeners) listener()
+    if (!this.lifetime.signal.aborted) this.sync()
+  }
 
   private setInstall(entry: Installable, install: Installable['install'], error: ConnectorInstallError | null): void {
     entry.install = install
@@ -386,6 +561,7 @@ export class ConnectorsService extends TypertRemoteService {
       this.changed()
       await installCli(entry.root, entry.spec, archive, onBytes, AbortSignal.any([controller.signal, this.lifetime.signal]))
       this.setInstall(entry, 'installed', null)
+      void this.listSkills(entry)
       void this.checkOne(entry)
     } catch (error) {
       if (controller.signal.aborted || this.lifetime.signal.aborted) return

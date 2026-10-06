@@ -119,6 +119,7 @@
     "apps/web/tests/knowledge-chat.e2e.ts",
     "apps/web/tests/knowledge-support.ts",
     "apps/web/tests/connectors.e2e.ts",
+    "apps/web/tests/connectors-chat.e2e.ts",
     "apps/web/tests/models-custom-provider.e2e.ts",
     "apps/web/tests/skills-market.e2e.ts",
     "apps/web/tests/skills-market-lifecycle.e2e.ts",

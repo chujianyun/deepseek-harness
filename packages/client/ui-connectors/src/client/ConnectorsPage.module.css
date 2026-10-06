@@ -234,3 +234,39 @@
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary);
 }
+
+.card[data-enabled='false'] .name,
+.card[data-enabled='false'] .description,
+.card[data-enabled='false'] .skills {
+  opacity: 0.5;
+}
+
+.skills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.skillsLabel {
+  margin-right: 2px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.skill {
+  padding: 1px 6px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.more {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

@@ -1,0 +1,12 @@
+# For the connectors chat e2e (`connectors-chat.e2e.ts`), beside the Hub sign-in and connector rows:
+# a scripted OpenAI-compatible chat model whose credential the spec stores.
+- id: llm-pi-ai
+  config:
+    providers:
+      acme-gateway:
+        displayName: Acme 网关
+        api: openai-completions
+        baseURL: !!js process.env.DSH_E2E_CHAT_API
+        apiKeyEnv: DSH_E2E_ACME_KEY
+        models:
+          - id: acme-chat

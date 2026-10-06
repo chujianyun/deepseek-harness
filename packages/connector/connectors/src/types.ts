@@ -83,6 +83,16 @@ export interface ConnectorView {
   readonly account: string | null
   /** Why the last health check failed while `degraded`. */
   readonly problem: string | null
+  /** Whether the current tenant leaves the connector on; off, the model gets neither its Skills nor its CLI. */
+  readonly enabled: boolean
+  /** The Skills the installed CLI embeds, which reach the model while connected and on. */
+  readonly skills: readonly ConnectorSkillView[]
+}
+
+/** A Skill a connector gives the model. */
+export interface ConnectorSkillView {
+  readonly name: string
+  readonly description: string
 }
 
 /** Everything the Connectors page shows, in display order. */

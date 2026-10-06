@@ -28,6 +28,18 @@
     },
     {
       "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../skill/skill"
+    },
+    {
+      "path": "../../shell/shell-env"
+    },
+    {
+      "path": "../../settings/settings"
+    },
+    {
+      "path": "../../../vendor/loader"
     }
   ]
 }

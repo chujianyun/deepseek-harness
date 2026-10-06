@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react'
 import type { ConnectorView } from '@deepseek-ai/dsh-connectors/types'
 import {
-  Button, IconEllipsisOutlineRegular, IconPlusOutlineRegular, Menu, Modal, StateDot, Tag,
+  Button, IconEllipsisOutlineRegular, IconPlusOutlineRegular, Menu, Modal, StateDot, Switch, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConnectorsInjected } from './connectors-source.ts'
@@ -69,13 +69,14 @@ function ConnectorCard({ connector, props, onConfirm }: {
   const { t } = props
   const name = t(`name.${connector.id}`)
   return (
-    <li className={css.card} data-status={connector.status}>
+    <li className={css.card} data-status={connector.status} data-enabled={connector.enabled ? 'true' : 'false'}>
       <div className={css.cardHead}>
         <span className={css.avatar} aria-hidden="true">{name.slice(0, 1)}</span>
         <span className={css.name}>{name}</span>
         <Corner connector={connector} name={name} props={props} onConfirm={onConfirm} />
       </div>
       <p className={css.description}>{t(`description.${connector.id}`)}</p>
+      <Skills connector={connector} t={t} />
       <Footer connector={connector} t={t} />
     </li>
   )
@@ -94,7 +95,7 @@ function Corner({ connector, name, props, onConfirm }: {
   props: ConnectorsPageProps
   onConfirm: (action: Confirming['action']) => void
 }) {
-  const { t, useConnectors, onInstall, onConnect, onCheck } = props
+  const { t, useConnectors, onInstall, onConnect, onCheck, onSetEnabled } = props
   const busy = useConnectors(snapshot => snapshot.busy.includes(connector.id))
   switch (connector.status) {
     case 'coming-soon':
@@ -133,6 +134,8 @@ function Corner({ connector, name, props, onConfirm }: {
             else if (id === 'check') void onCheck()
             else onConfirm(id)
           }} />
+          <Switch checked={connector.enabled} label={t('enable', { name })} disabled={busy}
+            onChange={(next) => { void onSetEnabled(connector.id, next) }} />
         </span>
       )
     }
@@ -165,6 +168,24 @@ function ActionsMenu<Id extends string>({ name, t, busy, actions, onSelect }: {
   )
 }
 
+/** Shown Skill names before the rest collapse into a count. */
+const SHOWN_SKILLS = 8
+
+/** The Skills the connector gives the model, once its CLI listed them; the description is each one's tooltip. */
+function Skills({ connector, t }: { connector: ConnectorView; t: T }) {
+  const [all, setAll] = useState(false)
+  if (connector.skills.length === 0 || connector.status === 'installing') return null
+  const shown = all ? connector.skills : connector.skills.slice(0, SHOWN_SKILLS)
+  const rest = connector.skills.length - shown.length
+  return (
+    <div className={css.skills} aria-label={t('skills', { count: String(connector.skills.length) })}>
+      <span className={css.skillsLabel}>{t('skills', { count: String(connector.skills.length) })}</span>
+      {shown.map(skill => <span key={skill.name} className={css.skill} title={skill.description}>{skill.name}</span>)}
+      {rest > 0 && <button type="button" className={css.more} onClick={() => { setAll(true) }}>{t('skillsMore', { count: String(rest) })}</button>}
+    </div>
+  )
+}
+
 /** The card's last lines: download progress while installing, the signed-in account, why something failed, and the pinned CLI. */
 function Footer({ connector, t }: { connector: ConnectorView; t: T }) {
   if (connector.cli === null || connector.version === null) return null
@@ -181,6 +202,7 @@ function Footer({ connector, t }: { connector: ConnectorView; t: T }) {
   return (
     <>
       {connector.account !== null && <p className={css.account}>{t('account', { account: connector.account })}</p>}
+      {!connector.enabled && <p className={css.meta}>{t('disabledHint', { name: t(`name.${connector.id}`) })}</p>}
       {connector.problem !== null && <p className={css.warning} role="alert">{t('problem', { problem: connector.problem })}</p>}
       {connector.loginError !== null && connector.status !== 'connecting' && (
         <p className={css.error} role="alert">{t(`loginError.${connector.loginError.step}`, { message: connector.loginError.message })}</p>

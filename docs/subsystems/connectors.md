@@ -12,6 +12,10 @@ Each DSH release pins every connector CLI to one version, with the size and sha2
 
 The connection belongs to the tenant of the current Hub sign-in. Each tenant gets its own CLI configuration, data, and log directories under `<dshHome>/connectors/<id>/tenants/<tenantId>/`, and every run strips the caller's own lark-cli variables, so the user's own CLI configuration stays untouched. Connecting Feishu follows lark-cli's agent flow: `config init --new` creates the tenant's app in the browser, then `auth login --recommend --json` authorizes the user; each step's address and QR code reach the Connectors page, which opens the address in the browser. A failed or cancelled sign-in that created the app removes it with `config remove`. The connection's [status](../glossary.md#connector-status) comes from `auth status --json --verify` at startup, after an install, when the tenant changes, periodically, and when the page opens. Disconnecting runs `config remove` and deletes the tenant's directory; uninstalling does so for every tenant before deleting the CLI.
 
+## Use in conversations
+
+While a connector is installed and switched on for the current tenant, `dsh-shell-env`'s PATH contributor puts a per-tenant `lark-cli` script ahead of the model shell's `PATH`: connected, it runs the installed CLI with the tenant's directories; disconnected, it refuses and points to the Connectors page; a failing command triggers a health check. While connected, the Skills the CLI embeds join the skill catalog from the `connectors` provider, ahead of the user's own Skill directories. Switching the connector off keeps the sign-in and takes both away.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -41,7 +45,7 @@ Host owner of the connectors and of the `connectors` Remote namespace.
 @Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<ConnectorsState>
 
 /**
- * Install a connector's CLI in the background; installing an installed or installing connector changes nothing.
+ * Install a connector's CLI in the background; installing an installed, installing, or uninstalling connector changes nothing.
  * @param id - the connector.
  * @returns the state with the install running.
  * @throws RemoteError `connectors/not-found` for an unknown id, `connectors/unavailable` when it cannot be installed here.
@@ -88,6 +92,17 @@ Host owner of the connectors and of the `connectors` Remote namespace.
  * @returns the state once the checks have finished.
  */
 @Remote async check(): Promise<ConnectorsState>
+
+/**
+ * Switch a connector on or off for the current tenant, persisting the profile's list. A switched-off
+ * connector stays signed in, but the model gets neither its Skills nor its CLI.
+ * @param id - the connector.
+ * @param enabled - whether the model may use it.
+ * @returns the state once the setting is saved.
+ * @throws RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`;
+ *   Error when mounted without Settings or a profile entry.
+ */
+@Remote async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState>
 ```
 
 Source: [`packages/connector/connectors/src/index.ts`](../../packages/connector/connectors/src/index.ts)
