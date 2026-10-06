@@ -7,7 +7,7 @@ import { createRequire } from 'node:module'
 import { mkdir, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { extract } from 'tar'
-import { DownloadError, downloadFile } from './download.ts'
+import { DownloadError, downloadFile } from '@deepseek-ai/dsh-verified-download'
 import type { RuntimeSpec } from './index.ts'
 
 /** The subset of the onnxruntime-node API the embedder uses. */

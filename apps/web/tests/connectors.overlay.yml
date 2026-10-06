@@ -1,0 +1,7 @@
+# Enables the Desktop connector rows for the keyless Web e2e (`connectors.e2e.ts`) beside the Hub
+# sign-in rows (`hub-account.overlay.yml`). The spec writes the connectors row's pinned CLI — a
+# stand-in archive on its loopback mirror — into the home profile patch.
+- id: connectors
+  disabled: false
+- id: ui-connectors
+  disabled: false

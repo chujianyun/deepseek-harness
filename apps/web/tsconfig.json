@@ -126,6 +126,7 @@
     "tests/knowledge-sources.e2e.ts",
     "tests/knowledge-chat.e2e.ts",
     "tests/knowledge-support.ts",
+    "tests/connectors.e2e.ts",
     "tests/models-custom-provider.e2e.ts",
     "tests/skills-market.e2e.ts",
     "tests/skills-market-lifecycle.e2e.ts",

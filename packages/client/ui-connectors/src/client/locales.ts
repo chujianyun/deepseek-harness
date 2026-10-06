@@ -1,0 +1,66 @@
+/** Connectors page copy. */
+
+/** Simplified Chinese dictionary and key source of truth. */
+export const zh = {
+  panel: '连接器',
+  title: '连接器',
+  intro: '把 DSH 连到公司使用的办公平台，模型就能以你的身份在平台上查消息、看文档、安排日程。',
+  'name.feishu': '飞书',
+  'name.dingtalk': '钉钉',
+  'description.feishu': '通过飞书官方命令行工具 lark-cli 使用消息、文档、日历、多维表格等。',
+  'description.dingtalk': '通过钉钉官方命令行工具 dws 使用消息、日程、待办、审批等。',
+  install: '安装{name}',
+  installing: '正在安装{name}',
+  downloading: '正在下载 {percent}%',
+  checking: '正在检查…',
+  'status.disconnected': '未连接',
+  'status.coming-soon': '即将支持',
+  'status.unsupported': '此系统暂不支持',
+  cliVersion: '{cli} {version}',
+  more: '{name}的更多操作',
+  uninstall: '卸载',
+  uninstallTitle: '卸载{name}连接器',
+  uninstallDescription: '将删除 DSH 为它安装的 {cli}，之后可以重新安装。你自己在电脑上安装的 {cli} 不受影响。',
+  uninstallConfirm: '卸载',
+  cancel: '取消',
+  close: '关闭',
+  'error.network': '{cli} 下载失败：无法连接下载源，请检查网络后点 + 重试。',
+  'error.verification': '下载的 {cli} 校验不通过，请点 + 重试。',
+  'error.storage': '无法写入 {cli} 的安装目录，请检查磁盘空间和权限后点 + 重试。',
+  'error.launch': '{cli} 安装后无法运行，请点 + 重试。',
+  actionFailed: '操作失败：{message}',
+}
+
+/** Locale key of the Connectors page dictionary. */
+export type ConnectorsLocaleKey = keyof typeof zh
+
+/** English dictionary. */
+export const en = {
+  panel: 'Connectors',
+  title: 'Connectors',
+  intro: 'Connect DSH to the office platforms your company uses, so the model can read messages, open documents, and plan schedules there as you.',
+  'name.feishu': 'Feishu',
+  'name.dingtalk': 'DingTalk',
+  'description.feishu': 'Messages, documents, calendars, Base, and more through lark-cli, the official Feishu command-line tool.',
+  'description.dingtalk': 'Messages, schedules, to-dos, approvals, and more through dws, the official DingTalk command-line tool.',
+  install: 'Install {name}',
+  installing: 'Installing {name}',
+  downloading: 'Downloading {percent}%',
+  checking: 'Checking…',
+  'status.disconnected': 'Not connected',
+  'status.coming-soon': 'Coming soon',
+  'status.unsupported': 'Not available on this system',
+  cliVersion: '{cli} {version}',
+  more: 'More actions for {name}',
+  uninstall: 'Uninstall',
+  uninstallTitle: 'Uninstall the {name} connector',
+  uninstallDescription: 'This deletes the {cli} that DSH installed for it; you can install it again later. A {cli} you installed yourself is not affected.',
+  uninstallConfirm: 'Uninstall',
+  cancel: 'Cancel',
+  close: 'Close',
+  'error.network': '{cli} could not be downloaded: no download source was reachable. Check the network and select + to retry.',
+  'error.verification': 'The downloaded {cli} did not pass verification. Select + to retry.',
+  'error.storage': '{cli} could not be written to its install folder. Check disk space and permissions, then select + to retry.',
+  'error.launch': '{cli} does not run after installing. Select + to retry.',
+  actionFailed: 'Action failed: {message}',
+} satisfies Record<ConnectorsLocaleKey, string>

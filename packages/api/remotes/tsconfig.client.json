@@ -103,6 +103,9 @@
       "path": "../../knowledge/knowledge-selection"
     },
     {
+      "path": "../../connector/connectors"
+    },
+    {
       "path": "../workspace-controller/tsconfig.client.json"
     },
     {

@@ -743,6 +743,48 @@ export interface ToolResultPruneConfig {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-compaction-tool-result-pruner -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-connectors -->
+<a id="deepseek-aidsh-connectors"></a>
+
+## `@deepseek-ai/dsh-connectors`
+
+- `source`: [`packages/connector/connectors/src/index.ts:60`](../packages/connector/connectors/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** DeepSeek Harness home; connector CLIs live under `<dshHome>/connectors`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** The Feishu CLI. */
+  feishu?: CliSpec
+}
+
+/** A connector CLI pinned to one release. */
+export interface CliSpec {
+  /** Executable name inside the archive, without `.exe`. */
+  binary: string
+  /** Version installed; `--version` must report it. */
+  version: string
+  /** Archive URL templates tried in order; `{version}` and `{file}` are substituted. */
+  mirrors: string[]
+  /** One archive per supported platform. */
+  archives: CliArchive[]
+}
+
+/** One platform's archive of a CLI release. */
+export interface CliArchive {
+  /** `<platform>-<arch>` of the process that runs it, as Node names them. */
+  platform: string
+  /** Archive file name; `.zip` or `.tar.gz`. */
+  file: string
+  /** Size in bytes. */
+  size: number
+  /** Lowercase hex sha256. */
+  sha256: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-connectors -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-cordis-host-runner -->
 <a id="deepseek-aidsh-cordis-host-runner"></a>
 
@@ -4564,6 +4606,7 @@ export interface Config {
 | `@deepseek-ai/dsh-client-ui-brand-official` | — | [`packages/client/ui-brand-official/src/index.ts`](../packages/client/ui-brand-official/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-chat` | — | [`packages/client/ui-chat/src/index.ts`](../packages/client/ui-chat/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-commands` | — | [`packages/client/ui-commands/src/index.ts`](../packages/client/ui-commands/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-connectors` | — | [`packages/client/ui-connectors/src/index.ts`](../packages/client/ui-connectors/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-conversation` | — | [`packages/client/ui-conversation/src/index.ts`](../packages/client/ui-conversation/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-cordis` | — | [`packages/extensions/ui-cordis/src/index.ts`](../packages/extensions/ui-cordis/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-deliverables` | `systemPrompt` · `connection` · `sessionQuery` · `sessionController` · `workspaceFiles` · `fs` · `sandboxPolicy` · `workspaceChanges` | [`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts) |
@@ -4741,5 +4784,6 @@ export interface Config {
 | `@deepseek-ai/dsh-util-time` | — | [`packages/util/time/src/index.ts`](../packages/util/time/src/index.ts) |
 | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
 | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
+| `@deepseek-ai/dsh-verified-download` | — | [`packages/util/verified-download/src/index.ts`](../packages/util/verified-download/src/index.ts) |
 | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
 <!-- END GENERATED config-catalog:library -->

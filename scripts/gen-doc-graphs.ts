@@ -295,6 +295,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Logs the knowledge bases each session may search and offers the `knowledge_search` tool over them only while a session has selected any.',
   },
   {
+    key: 'connectors',
+    pkg: 'connectors',
+    title: 'Connectors',
+    mode: 'core',
+    note: 'Lists the built-in connectors and installs and uninstalls their official CLIs at the versions a release pins.',
+  },
+  {
     key: 'skillMarket',
     pkg: 'skill-market',
     title: 'Skill Hub market',

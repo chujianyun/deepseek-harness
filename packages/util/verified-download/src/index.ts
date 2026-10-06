@@ -2,6 +2,8 @@
  * Resumable, verified file download over an ordered mirror list: bytes land in `<dest>.part`,
  * a later attempt continues from its length with an HTTP Range request, and the finished file
  * is renamed into place only when its size and sha256 match.
+ *
+ * @module @deepseek-ai/dsh-verified-download
  */
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'

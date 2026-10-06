@@ -193,6 +193,13 @@
       name: '@deepseek-ai/dsh-knowledge-selection'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
+    # Connectors for Desktop: office platforms reached through their official
+    # CLIs, installed at the versions this release pins; offered beside the
+    # knowledge bases, where the user center is configured.
+    - id: connectors
+      name: '@deepseek-ai/dsh-connectors'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'
@@ -368,6 +375,12 @@
     # knowledge-base row is.
     - id: ui-knowledge
       name: '@deepseek-ai/dsh-client-ui-knowledge'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # Connectors page: the sidebar entry below Knowledge and the connector cards
+    # over the `connectors` Remote; mounted exactly when the connectors row is.
+    - id: ui-connectors
+      name: '@deepseek-ai/dsh-client-ui-connectors'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
     # Settings → Embedding models over the `embedding` Remote; mounted exactly

@@ -88,6 +88,7 @@
     "@deepseek-ai/dsh-embedding": "workspace:*",
     "@deepseek-ai/dsh-knowledge-base": "workspace:*",
     "@deepseek-ai/dsh-knowledge-selection": "workspace:*",
+    "@deepseek-ai/dsh-connectors": "workspace:*",
     "@deepseek-ai/dsh-subagent": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@deepseek-ai/dsh-user-approval": "workspace:*",

@@ -759,6 +759,39 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'connectors',
+    summary: 'Host owner of the connectors and of the `connectors` Remote namespace.',
+    description: 'Host owner of the connectors and of the `connectors` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote getState(): Promise<ConnectorsState>',
+        description: 'Read every connector card.',
+        parameters: [],
+        returns: 'the connectors in display order.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<ConnectorsState>',
+        description: 'Stream the state.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change; download progress at most four times a second.',
+      },
+      {
+        signature: '@Remote async installConnector(id: string): Promise<ConnectorsState>',
+        description: 'Install a connector\'s CLI in the background; installing an installed or installing connector changes nothing.',
+        parameters: [{ name: 'id', description: 'the connector.' }],
+        returns: 'the state with the install running.',
+        throws: ['RemoteError `connectors/not-found` for an unknown id, `connectors/unavailable` when it cannot be installed here.'],
+      },
+      {
+        signature: '@Remote async uninstallConnector(id: string): Promise<ConnectorsState>',
+        description: 'Stop a running install and delete the connector\'s CLI, downloads included.',
+        parameters: [{ name: 'id', description: 'the connector.' }],
+        returns: 'the state with the connector not installed.',
+        throws: ['RemoteError `connectors/not-found` for an unknown id, `connectors/unavailable` when it cannot be installed here.'],
+      },
+    ],
+  },
+  {
     key: 'credentials',
     summary: 'Abstract credential service over two key spaces that answer two questions.',
     description: 'Abstract credential service over two key spaces that answer two questions.\n\nA CredentialRef answers "what is behind this environment-variable name", layered over the process environment, the provider-managed store, and `.env` files. One seam-wide rule binds that half: an empty stored value is absent everywhere — `resolve` skips it, `describe` reports it unconfigured — so a blank never masquerades as a configured secret.\n\nA CredentialKey answers "what credential does this plugin hold for this id". Nothing can layer here — an authorization grant has no environment to be read from — so presence of the record is the whole fact, and modifyRecord is the only write path because a correct write depends on the current value (a token refresh is read-decide-replace under one lock).',
@@ -5307,6 +5340,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ConnectionTrustRequest',
     declaration: 'export interface ConnectionTrustRequest {\n    readonly headers: Headers | Readonly<Record<string, string | readonly string[] | undefined>>;\n}',
+  },
+  {
+    name: 'ConnectorId',
+    declaration: 'export type ConnectorId = \'feishu\' | \'dingtalk\';',
+  },
+  {
+    name: 'ConnectorInstallError',
+    declaration: 'export type ConnectorInstallError = \'network\' | \'verification\' | \'storage\' | \'launch\';',
+  },
+  {
+    name: 'ConnectorsState',
+    declaration: 'export interface ConnectorsState {\n    readonly connectors: readonly ConnectorView[];\n}',
+  },
+  {
+    name: 'ConnectorStatus',
+    declaration: 'export type ConnectorStatus = \'coming-soon\' | \'unsupported\' | \'not-installed\' | \'installing\' | \'disconnected\';',
+  },
+  {
+    name: 'ConnectorView',
+    declaration: 'export interface ConnectorView {\n    readonly id: ConnectorId;\n    readonly status: ConnectorStatus;\n    readonly cli: string | null;\n    readonly version: string | null;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly error: ConnectorInstallError | null;\n}',
   },
   {
     name: 'ContentBlockMap',
