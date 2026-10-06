@@ -36,6 +36,9 @@ export class LoginError extends Error {
 /** Longest wait for `auth status`, which reaches the server to verify the token. */
 const CHECK_TIMEOUT_MS = 30_000
 
+/** Longest failure message kept for the user. */
+const FAILURE_MAX_CHARS = 300
+
 /** Longest wait for a QR code to be drawn. */
 const QR_TIMEOUT_MS = 10_000
 
@@ -114,8 +117,9 @@ export function failureMessage(result: Run): string {
       return (error as { message: string }).message
     }
   }
-  const text = lines.filter(line => !/[█▀▄]/u.test(line))
-  return text.slice(-2).join(' ') || `exit code ${String(result.code)}`
+  const text = lines.filter(line => !/[█▀▄]/u.test(line) && json(line) === undefined).slice(-2).join(' ')
+  if (text === '') return `exit code ${String(result.code)}`
+  return text.length > FAILURE_MAX_CHARS ? `${text.slice(0, FAILURE_MAX_CHARS)}…` : text
 }
 
 /**
@@ -183,9 +187,26 @@ function addressIn(step: LoginStep, output: string): string | undefined {
 }
 
 /**
+ * Whether `auth login --json` completed the authorization. It exits nonzero when the tenant's
+ * administrator withheld some of the requested permissions, yet the user is signed in with the
+ * rest; the missing ones are logged.
+ */
+function authorized(stdout: string): boolean {
+  for (const line of stdout.split('\n')) {
+    const event = json(line)
+    if (event?.event !== 'authorization_complete' || typeof event.user_open_id !== 'string') continue
+    // Only a sign-in that missed some permissions exits nonzero with this event.
+    console.info('[connectors] signed in without some permissions', { missing: event.missing })
+    return true
+  }
+  return false
+}
+
+/**
  * Run one sign-in step to completion. `create-app` is `config init --new`, which creates the tenant's
  * app in the browser; `authorize` is `auth login --recommend --json`, which authorizes the user.
- * Both block until the user finishes in the browser or the authorization expires.
+ * Both block until the user finishes in the browser or the authorization expires. An authorization
+ * that completed without some permissions the administrator withholds still succeeds.
  * @param cli - the tenant's lark-cli.
  * @param step - which step.
  * @param onAddress - called once with the address the user opens.
@@ -216,7 +237,7 @@ export function runLoginStep(cli: TenantCli, step: LoginStep, onAddress: (url: s
     })
     child.once('close', (code) => {
       if (signal.aborted) { reject(stopped()); return }
-      if (code === 0) { resolve(); return }
+      if (code === 0 || (step === 'authorize' && authorized(stdout))) { resolve(); return }
       reject(new LoginError(step, failureMessage({ code, stdout, stderr })))
     })
   })

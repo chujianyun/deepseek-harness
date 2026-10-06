@@ -67,6 +67,29 @@ describe('connecting Feishu', () => {
     expect(await t.exists(t.tenantDir('t-a'))).toBe(false)
   })
 
+  runs('signs in when the administrator withholds some of the requested permissions', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const t = await setup()
+    await t.service.connect('feishu')
+    await t.until(view => view.login?.url != null)
+    await t.answer('app', 'ok')
+    await t.until(view => view.login?.step === 'authorize' && view.login.url !== null)
+    await t.answer('user', 'partial')
+    expect(await t.until(view => view.status === 'connected')).toMatchObject({ account: '韩梅梅', loginError: null })
+    expect(info).toHaveBeenCalledWith('[connectors] signed in without some permissions', { missing: ['vc:meeting.realtime:read'] })
+    expect(await t.calls()).not.toContain('config remove')
+  })
+
+  runs('treats a completion event without a user as a failed authorization', async () => {
+    const t = await setup()
+    await t.service.connect('feishu')
+    await t.until(view => view.login?.url != null)
+    await t.answer('app', 'ok')
+    await t.until(view => view.login?.step === 'authorize' && view.login.url !== null)
+    await t.answer('user', 'denied')
+    expect((await t.until(view => view.status === 'disconnected')).loginError).toEqual({ step: 'authorize', message: 'exit code 3' })
+  })
+
   runs('cancels a sign-in, removing the app it created, and can connect again', async () => {
     const t = await setup()
     await t.service.connect('feishu')
@@ -227,7 +250,8 @@ describe('disconnecting, tenants, and uninstalling', () => {
 describe('failure messages', () => {
   it('prefers a JSON error, then the last text lines without QR art, then the exit code', () => {
     expect(failureMessage({ code: 1, stdout: '{"ok":false,"error":{"message":"denied"}}', stderr: '' })).toBe('denied')
-    expect(failureMessage({ code: 1, stdout: '', stderr: '█▀▄\nfirst\nsecond\nthird\n' })).toBe('second third')
+    expect(failureMessage({ code: 1, stdout: '', stderr: '█▀▄\nfirst\nsecond\nthird\n{"event":"x"}\n' })).toBe('second third')
+    expect(failureMessage({ code: 1, stdout: '', stderr: 'x'.repeat(400) })).toBe(`${'x'.repeat(300)}…`)
     expect(failureMessage({ code: 7, stdout: '', stderr: '' })).toBe('exit code 7')
     expect(failureMessage({ code: 1, stdout: '42', stderr: '' })).toBe('42')
     expect(failureMessage({ code: 2, stdout: '{"event":"device_authorization"}\n{"event":"authorization_failed","error":"expired"}\n', stderr: '' })).toBe('expired')

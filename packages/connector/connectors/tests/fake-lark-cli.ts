@@ -3,7 +3,8 @@
 /**
  * A shell script that prints what the real lark-cli prints at each sign-in step. Its control files
  * live in `../control` beside its version directory: `config init` and `auth login` print their
- * address and wait for `control/app` or `control/user` to say `ok` or `fail:<message>`; `auth status`
+ * address and wait for `control/app` or `control/user` to say `ok` or `fail:<message>` (`control/user` also takes `partial`, a sign-in the
+ * administrator withheld some permissions from); `auth status`
  * answers from the tenant's configuration unless `control/status.json` overrides it; errors go to
  * stderr as the real CLI's do; `skills list` and `skills read lark-calendar` serve two Skills;
  * `calendar +agenda` succeeds and `calendar +fail` fails; every call is logged to `control/calls`.
@@ -30,6 +31,12 @@ case "$1 $2" in
     echo '{"event":"device_authorization","verification_uri":"https://accounts.feishu.cn/verify","verification_uri_complete":"https://accounts.feishu.cn/verify?user_code=USER-1","user_code":"USER-1","expires_in":600}'
     await "$C/user"
     if [ "$r" = ok ]; then echo 韩梅梅 > "$CFG/user"; echo '{"event":"authorization_success"}'; exit 0; fi
+    if [ "$r" = partial ]; then
+      echo 韩梅梅 > "$CFG/user"
+      echo '{"event":"authorization_complete","user_open_id":"ou_1","user_name":"韩梅梅","missing":["vc:meeting.realtime:read"],"warning":{"type":"missing_scope"}}'
+      exit 3
+    fi
+    if [ "$r" = denied ]; then echo '{"event":"authorization_complete","missing":[]}'; exit 3; fi
     echo "{\"event\":\"authorization_failed\",\"error\":\"$m\"}"; exit 2 ;;
   "auth status")
     if [ -f "$C/status.json" ]; then cat "$C/status.json"; exit 0; fi
