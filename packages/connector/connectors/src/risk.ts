@@ -44,15 +44,22 @@ const READ_ONLY_FLAGS = new Set(['--help', '-h', '--version', '--dry-run'])
 /** Longest wait for `--help`, which reads the binary's own command table. */
 const HELP_TIMEOUT_MS = 10_000
 
-/** A word or a separator; `expanded` marks a word with an unquoted `$`. */
+/** Words that run the command after them, so the command position moves on past them. */
+const PREFIXES = new Set(['sudo', 'env', 'time', 'nohup', 'nice', 'command', 'exec'])
+
+/**
+ * A word, a separator, or a redirection; `expanded` marks a word with an unquoted `$`, and
+ * `redirect` marks a redirection operator and the file it names, neither of which is an argument.
+ */
 interface Token {
   readonly text: string
   readonly separator: boolean
   readonly expanded: boolean
+  readonly redirect: boolean
 }
 
 /**
- * Split a bash command into words and separators, honouring quotes and backslashes.
+ * Split a bash command into words, separators, and redirections, honouring quotes and backslashes.
  * @param command - the bash command.
  * @returns the tokens.
  */
@@ -61,11 +68,19 @@ export function tokenize(command: string): Token[] {
   let word = ''
   let inWord = false
   let expanded = false
+  // The next word names a redirection's file.
+  let target = false
   const end = (): void => {
-    if (inWord) tokens.push({ text: word, separator: false, expanded })
+    if (inWord) {
+      tokens.push({ text: word, separator: false, expanded, redirect: target })
+      target = false
+    }
     word = ''
     inWord = false
     expanded = false
+  }
+  const push = (text: string, separator: boolean, redirect = false): void => {
+    tokens.push({ text, separator, expanded: false, redirect })
   }
   for (let index = 0; index < command.length; index += 1) {
     const char = command.charAt(index)
@@ -92,8 +107,20 @@ export function tokenize(command: string): Token[] {
     }
     if (char === ' ' || char === '\t') { end(); continue }
     const pair = command.slice(index, index + 2)
-    if (pair === '&&' || pair === '||') { end(); tokens.push({ text: pair, separator: true, expanded: false }); index += 1; continue }
-    if (SEPARATORS.has(char)) { end(); tokens.push({ text: char, separator: true, expanded: false }); continue }
+    // A redirection: `>`, `>>`, `<`, `2>`, `&>`, `>&2`, `2>&1`; a file descriptor before it is no word.
+    if (char === '>' || char === '<' || pair === '&>') {
+      if (/^\d+$/u.test(word)) { word = ''; inWord = false } else end()
+      let op = pair === '&>' ? '&>' : char
+      index += op.length - 1
+      const next = command.charAt(index + 1)
+      if (next === op.charAt(op.length - 1) || next === '&') { op += next; index += 1 }
+      const fd = op.endsWith('&') ? /^(?:\d+|-)/u.exec(command.slice(index + 1))?.[0] : undefined
+      if (fd !== undefined) { op += fd; index += fd.length } else target = true
+      push(op, false, true)
+      continue
+    }
+    if (pair === '&&' || pair === '||') { end(); push(pair, true); index += 1; continue }
+    if (SEPARATORS.has(char)) { end(); push(char, true); continue }
     if (char === '$') expanded = true
     word += char
     inWord = true
@@ -103,8 +130,10 @@ export function tokenize(command: string): Token[] {
 }
 
 /**
- * The invocations of a CLI in a bash command: each word naming the CLI, by name or by path, with
- * the words after it up to the next separator.
+ * The invocations of a CLI in a bash command: each word in command position naming the CLI, by
+ * name or by path, with the words after it up to the next separator. Command position is the first
+ * word of a command, after any variable assignments and prefixes such as `sudo` or `env`; the CLI's
+ * name elsewhere, as in `which dws`, is an argument. Redirections are not arguments.
  * @param command - the bash command.
  * @param cli - the CLI's name, such as `lark-cli`.
  * @returns each invocation's arguments, or `opaque` when the command hides how the CLI is called.
@@ -118,10 +147,12 @@ export function invocations(command: string, cli: string): readonly Token[][] | 
   const tokens = tokenize(command)
   const found: Token[][] = []
   let args: Token[] | undefined
+  let start = true
   for (const token of tokens) {
-    if (token.separator) args = undefined
+    if (token.separator) { args = undefined; start = true } else if (token.redirect) continue
     else if (args !== undefined) args.push(token)
-    else if (named(token.text)) found.push(args = [])
+    else if (start && named(token.text)) found.push(args = [])
+    else if (start) start = PREFIXES.has(token.text) || /^[A-Za-z_]\w*=/u.test(token.text)
   }
   return found
 }

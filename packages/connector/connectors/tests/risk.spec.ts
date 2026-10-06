@@ -18,7 +18,14 @@ describe('tokenize', () => {
     expect(tokenize('a \'b c\' "d \\"e\\"" f\\ g && h||i;j|k&l (m) $X "$Y" \'no$\'\nz').map(t => `${t.separator ? '#' : ''}${t.text}${t.expanded ? '$' : ''}`)).toEqual([
       'a', 'b c', 'd "e"', 'f g', '#&&', 'h', '#||', 'i', '#;', 'j', '#|', 'k', '#&', 'l', '#(', 'm', '#)', '$X$', '$Y$', 'no$', '#\n', 'z',
     ])
-    expect(tokenize("'open")).toEqual([{ text: 'open', separator: false, expanded: false }])
+    expect(tokenize("'open")).toEqual([{ text: 'open', separator: false, expanded: false, redirect: false }])
+  })
+
+  it('reads redirections, with the file they name, apart from words and separators', () => {
+    const shown = (command: string) => tokenize(command).map(t => `${t.separator ? '#' : ''}${t.redirect ? '>' : ''}${t.text}`)
+    expect(shown('a 2>&1 b >&2 c >> log d < in e &> all f 3>&- g 2> err h >& both')).toEqual([
+      'a', '>>&1', 'b', '>>&2', 'c', '>>>', '>log', 'd', '><', '>in', 'e', '>&>', '>all', 'f', '>>&-', 'g', '>>', '>err', 'h', '>>&', '>both',
+    ])
   })
 })
 
@@ -30,6 +37,18 @@ describe('invocations', () => {
     // Nor is a name inside another word, even in a form whose calls cannot be read.
     expect(invocations("cat $(find . -name '*kdws.txt')", 'dws')).toEqual([])
     expect(invocations('echo $(dws calendar event list)', 'dws')).toBe('opaque')
+  })
+
+  it('counts the CLI only in command position, past assignments and prefixes, without redirections', () => {
+    const words = (command: string) => {
+      const found = invocations(command, 'dws')
+      if (found === 'opaque') throw new Error('expected readable calls')
+      return found.map(args => args.map(arg => arg.text))
+    }
+    // The command a real model ran: `which dws` names dws as an argument, and `2>&1` is a redirection.
+    expect(words('which dws 2>&1; echo "---"; dws --version 2>&1 | head -5')).toEqual([['--version']])
+    expect(words('FOO=1 sudo env BAR=2 dws calendar event list > out.json 2>err.log')).toEqual([['calendar', 'event', 'list']])
+    expect(words('echo dws; grep dws notes.txt')).toEqual([])
     const found = invocations('cd /tmp && lark-cli im +messages-send --text "a b"; /opt/x/lark-cli calendar +agenda | jq .', 'lark-cli')
     if (found === 'opaque') throw new Error('expected lark-cli calls')
     expect(found.map(args => args.map(arg => arg.text))).toEqual([['im', '+messages-send', '--text', 'a b'], ['calendar', '+agenda']])
@@ -55,7 +74,7 @@ describe('classify', () => {
   })
 
   it('reads help, version, a dry run, and a bare call as read, and an expanded argument or opaque form as unknown', async () => {
-    for (const command of ['lark-cli drive +delete --help', 'lark-cli --version', 'lark-cli im +messages-send --dry-run', 'which lark-cli']) {
+    for (const command of ['lark-cli drive +delete --help', 'lark-cli --version', 'lark-cli im +messages-send --dry-run', 'lark-cli']) {
       expect((await classify(command, 'lark-cli', reader)).risk).toBe('read')
     }
     expect(await classify('lark-cli im +messages-send --chat-id $CHAT', 'lark-cli', reader)).toEqual({ risk: 'unknown', invocations: [{ command: 'im +messages-send', risk: 'unknown', confirm: false }] })
