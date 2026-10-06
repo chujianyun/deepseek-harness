@@ -1171,6 +1171,60 @@ describe('SkillRegistry scoped layers', () => {
     await preset.dispose()
   })
 
+  it('lets an everyLayer global provider compete by rank inside each scoped layer', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    ctx.skills.registerProvider(() => new MemoryProvider([
+      memorySkill('shared-name', 'Global ranked', 350), memorySkill('project-name', 'Global behind project', 350),
+    ]), { everyLayer: true })
+    const preset = createScope(ctx, { preset: 'ranked' })
+    const local = (name: string, description: string, rank: number): SkillCandidate => ({
+      name, description, invocation: { modelInvocable: true, userInvocable: true }, provider: 'preset-local', source: 'preset', rank,
+      locator: { content: `${description} body.` },
+    })
+    scopedSkills(preset.ctx).registerProvider(() => ({
+      name: 'preset-local',
+      async list() { return [local('shared-name', 'User copy', 500), local('project-name', 'Project copy', 100), local('local-only', 'Local', 500)] },
+      async get(candidate: SkillCandidate) { return { ...candidate, content: (candidate.locator as { content: string }).content } },
+    }))
+    // A scoped provider that cannot list leaves the scope's catalog uncached, so each read lists again.
+    const failing = { name: 'preset-failing', list: vi.fn(async () => { throw new Error('offline') }), get: async () => undefined }
+    scopedSkills(preset.ctx).registerProvider(() => failing)
+
+    const scoped = await ctx.skills.list({ scope: scopeOf(preset.ctx) })
+    await ctx.skills.list({ scope: scopeOf(preset.ctx) })
+    expect(failing.list).toHaveBeenCalledTimes(2)
+    expect(scoped.map(skill => [skill.name, skill.description])).toEqual([
+      ['local-only', 'Local'], ['project-name', 'Project copy'], ['shared-name', 'Global ranked'],
+    ])
+    expect((await ctx.skills.list()).map(skill => skill.description)).toEqual(['Global behind project', 'Global ranked'])
+    await preset.dispose()
+  })
+
+  it('keeps a farther layer\'s better-ranked winner when a nearer layer has no candidate of that name', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    ctx.skills.registerProvider(() => new MemoryProvider([memorySkill('shared-name', 'Global ranked', 350)]), { everyLayer: true })
+    const preset = createScope(ctx, { preset: 'project' })
+    scopedSkills(preset.ctx).register({ name: 'shared-name', description: 'Project copy', source: 'project-dsh', content: 'Project body.' })
+    const agent = createScope(ctx, { agent: 'nested' }, { parent: scopeOf(preset.ctx)! })
+    scopedSkills(agent.ctx).register({ name: 'agent-only', description: 'Agent', source: 'preset', content: 'Agent body.' })
+
+    const scoped = await ctx.skills.list({ scope: scopeOf(agent.ctx) })
+    expect(scoped.map(skill => [skill.name, skill.description])).toEqual([['agent-only', 'Agent'], ['shared-name', 'Project copy']])
+    await agent.dispose()
+    await preset.dispose()
+  })
+
+  it('refuses everyLayer from a scoped context', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    const preset = createScope(ctx, { preset: 'refused' })
+    expect(() => scopedSkills(preset.ctx).registerProvider(() => new MemoryProvider([]), { everyLayer: true }))
+      .toThrow('can compete in every layer only when registered globally')
+    await preset.dispose()
+  })
+
   it('resolves the scope chain so an agent key inherits its preset layer and recompose follows the new parent', async () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)

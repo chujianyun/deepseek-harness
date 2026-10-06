@@ -10,7 +10,7 @@
 
 `ctx.skills` 组合本地、内嵌、远程或其他提供方。注册是同步的；远程初始化与发现属于 `list()` 的 await 阶段。提供方对象、选项与候选项以只读方式借用，语义字段会被校验。
 
-注册表采用宿主 + 按 scope 的分层结构，即[工具注册表](tools.zh.md)在 [dsh-scope](../../packages/core/scope) 之上确立的形态：注册会落入调用方上下文 scope 对应的层——宿主行与 repository 插件落入全局层，由 agent（智能体） preset 常驻组合挂载的插件落入该 preset 的层——提供方名称在每层内唯一，而非进程级唯一。读取时将全局层与观察 scope 的链合并：最近层的条目直接赢得重名 skill，下文的 rank 顺序只在单层内裁决重名。发现缓存以解析后的 scope 链为键，因此重设 scope 父级（空会话重组）无需注册表变更即可被下一次读取看到。
+注册表采用宿主 + 按 scope 的分层结构，即[工具注册表](tools.zh.md)在 [dsh-scope](../../packages/core/scope) 之上确立的形态：注册会落入调用方上下文 scope 对应的层——宿主行与 repository 插件落入全局层，由 agent（智能体） preset 常驻组合挂载的插件落入该 preset 的层——提供方名称在每层内唯一，而非进程级唯一。读取时将全局层与观察 scope 的链合并：最近层的条目直接赢得重名 skill，下文的 rank 顺序只在单层内裁决重名；例外是以 `everyLayer: true` 注册的全局提供方，它还会加入每个 scope 层的 rank 排序（连接器服务即如此注册，使 preset 内连接器的 Skill 仍排在用户自己的副本之前）。发现缓存以解析后的 scope 链为键，因此重设 scope 父级（空会话重组）无需注册表变更即可被下一次读取看到。
 
 在单层内，重名项依次按 rank、提供方顺序和本地顺序确定优先级；摘要按名称排序。提供方的 `list()` 被拒绝时，系统会记录日志，并从不完整观测中省略该提供方的结果；显式的不完整观测会提供可用候选项，但不会使结果变得可缓存；格式错误的候选项快速失败。每个提供方工厂都会接收一项注册作用域内的控制能力；仅当该精确注册仍处于活动状态时，其 `invalidate()` 才会清除已完成目录；注册失败或 dispose（资源释放）时，其信号会中止。若提供方代次在发现进行期间发生变化，该发现会重试一次；若再次变化，则返回最新候选项，并将结果标为不完整且不予缓存。提供方和运行时变更会发出不带过滤条件的 `skills/change` 失效事件；该事件不携带 diff，因此消费方会使用自身的查找选项重新获取 `snapshot()`。
 
@@ -472,12 +472,15 @@ setDisabled(name: string, disabled: boolean): Promise<void>
  * preset's standing mount) registers for that scope alone, an unscoped
  * context registers globally. Duplicate names within one layer and reserved
  * names throw; remote initialization belongs in `list()`. Fiber disposal
- * unregisters the provider and invalidates catalog caches.
+ * unregisters the provider and invalidates catalog caches. With
+ * `everyLayer`, a global provider's candidates also join each scoped
+ * layer's rank order; a scoped context that sets it throws.
  * @param create - synchronous factory receiving this registration's lifecycle and invalidation control.
+ * @param options - registration options.
  * @returns the exact Cordis effect disposer that unregisters this provider;
  *   composite effects may yield it directly to preserve teardown ordering.
  */
-registerProvider(create: (control: SkillProviderControl) => SkillProvider): () => void
+registerProvider(create: (control: SkillProviderControl) => SkillProvider, options: SkillProviderRegistrationOptions = {}): () => void
 
 /**
  * Register a borrowed readonly runtime skill into the calling context's

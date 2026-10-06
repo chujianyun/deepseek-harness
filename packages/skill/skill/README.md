@@ -83,7 +83,7 @@ This section explains how the registry merges, caches, and invalidates provider 
 
 The package is built on one separation: the registry owns merging, winning resolution, and validation, while providers own where skills come from. A provider is a borrowed same-process object with a `list()` that returns candidates and a `get()` that loads a body; the registry never inspects skill content beyond validating its semantic fields.
 
-The registry is host+per-scope layered, the shape the tools registry established: a registration is filed into the layer of its calling context's scope — host rows and repository plugins land in the global layer, a plugin mounted by an agent preset's standing composition lands in that preset's layer. A read merges the global layer with the viewing scope's chain; the nearest layer wins a duplicate name outright, and within one layer duplicates resolve by rank, provider registration order, then provider-local order.
+The registry is host+per-scope layered, the shape the tools registry established: a registration is filed into the layer of its calling context's scope — host rows and repository plugins land in the global layer, a plugin mounted by an agent preset's standing composition lands in that preset's layer. A read merges the global layer with the viewing scope's chain; the nearest layer wins a duplicate name outright, and within one layer duplicates resolve by rank, provider registration order, then provider-local order. A global registration with `registerProvider(create, { everyLayer: true })` also joins the rank order of every scoped layer the read merges, so a scoped provider's same-name candidate wins only with a better rank; a scoped context that passes `everyLayer` throws. The connectors service registers this way, so a preset's local Skill discovery cannot replace a connector's Skill with the user's own copy.
 
 ### Source map
 
@@ -140,7 +140,7 @@ These limits define when the registry is a poor fit or needs special operational
 - **Invalidation is provider-driven** — the registry has no TTL and cannot infer that an arbitrary remote source changed; each mutable provider must retain and call its registration-scoped `invalidate()` capability from its own observation mechanism.
 - **Providers are queried sequentially** — one slow provider delays every provider registered after it; cancellation stops the caller's wait but cannot terminate work an uncooperative provider keeps running.
 - **Incomplete observations are not retained** — rejected providers are omitted and explicitly supplied candidates remain available only to the current lookup; the registry owns neither a last-good catalog nor per-provider diagnostics.
-- **Duplicate resolution is first-wins** — later lower-priority candidates within a layer are logged and hidden, and a nearer layer shadows a farther one silently; there is no API to inspect all shadowed definitions.
+- **Duplicate resolution is first-wins** — later lower-priority candidates within a layer are logged and hidden, and a nearer layer shadows a farther one silently, unless the farther one is an `everyLayer` provider with a better rank; there is no API to inspect all shadowed definitions.
 
 <a id="dev-note"></a>
 ### Dev Note

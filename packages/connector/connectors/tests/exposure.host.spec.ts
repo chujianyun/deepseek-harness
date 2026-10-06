@@ -9,6 +9,8 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import { createScope, scopeOf } from '@deepseek-ai/dsh-scope'
+import type { SkillCandidate, SkillProvider } from '@deepseek-ai/dsh-skill'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { readSkill } from '../src/lark.ts'
 import { ConnectorSkillProvider } from '../src/skills.ts'
@@ -211,5 +213,28 @@ describe('connector Skills', () => {
     expect(lark(await t.ctx.skills.list())).toEqual([])
     expect(feishu(await t.service.getState()).skills).toEqual([])
     await expect(stat(join(t.root, 'bin'))).rejects.toThrow()
+  })
+
+  runs('outranks the user\'s own copy of a Skill inside a preset that discovers local Skills', async () => {
+    const t = await connected()
+    const preset = createScope(t.ctx, { preset: 'standard' })
+    // The user's stale copy, as a preset's skill-filesystem lists ~/.agents/skills in the preset's layer.
+    const userCopy: SkillProvider = {
+      name: 'filesystem',
+      list: async () => [{
+        name: 'lark-calendar', description: 'stale copy', invocation: { modelInvocable: true, userInvocable: true },
+        provider: 'filesystem', source: 'user-agents', rank: 500, locator: null,
+      }],
+      get: async (candidate: SkillCandidate) => ({ ...candidate, content: 'Stale instructions.' }),
+    }
+    preset.ctx.get('skills')!.registerProvider(() => userCopy)
+    const scope = { scope: scopeOf(preset.ctx) }
+    expect((await t.ctx.skills.get('lark-calendar', scope))?.content).toContain('Run lark-cli calendar +agenda.')
+    expect(lark(await t.ctx.skills.list(scope))).toEqual(['lark-calendar', 'lark-im'])
+    // Disconnected, the connector's Skills leave and the user's copy is back.
+    await t.service.disconnect('feishu')
+    await vi.waitFor(async () => { expect(lark(await t.ctx.skills.list(scope))).toEqual([]) })
+    expect((await t.ctx.skills.get('lark-calendar', scope))?.content).toBe('Stale instructions.')
+    await preset.dispose()
   })
 })

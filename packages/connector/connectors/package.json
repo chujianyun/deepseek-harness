@@ -68,6 +68,7 @@
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/dsh-hub-account": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/dsh-settings": "workspace:*",
     "@deepseek-ai/dsh-shell-env": "workspace:*",
     "@deepseek-ai/dsh-skill": "workspace:*",

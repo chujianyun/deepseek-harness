@@ -264,10 +264,11 @@ export class ConnectorsService extends TypertRemoteService {
       running: undefined, controller: undefined, connection: idle(0), skills: [], wrapper: undefined, removing: false,
     }
     this.installables.set('feishu', feishu)
+    // Every layer: a preset's local Skill discovery must not replace the connectors' Skills with the user's own copies.
     ctx.skills.registerProvider((control) => {
       this.provider = new ConnectorSkillProvider(() => this.skillSources(), control)
       return this.provider
-    })
+    }, { everyLayer: true })
     ctx.shellEnv.registerPath({ name: 'connectors-feishu', resolve: () => this.scriptDir(feishu) })
     ctx.on('loader/volatile-update', () => { this.changed() })
     // A bash call of a connector's CLI that fails may mean the sign-in broke: check it.

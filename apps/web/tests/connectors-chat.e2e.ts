@@ -5,7 +5,8 @@
 // CLI with the company's own directories — and answers from its output. Asked to send a message, the
 // model's write waits in the approval panel and the rejection reaches it as a denial; asked to delete a
 // file, the high-risk command shows a warning and, once allowed, runs with `--yes`. Switched off on the
-// Connectors page, the session's next request carries a catalog without the Skills.
+// Connectors page, the session's next request carries a catalog without the Skills. A stale copy of a
+// connector Skill in the user's own Skill directory never replaces the one the installed CLI embeds.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
@@ -69,6 +70,14 @@ function streamChat(res: ServerResponse, request: ChatRequest): void {
     usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 },
   })}\n\n`
   const last = request.messages.at(-1)
+  if (last?.role !== 'tool' && /日历技能/u.test(latestAsk(request))) {
+    res.write(chunk({ role: 'assistant', tool_calls: [{
+      index: 0, id: `call_skill_${String(request.messages.length)}`, type: 'function',
+      function: { name: 'skill', arguments: JSON.stringify({ name: 'lark-calendar' }) },
+    }] }, null))
+    res.end(`${chunk({}, 'tool_calls')}${usage}data: [DONE]\n\n`)
+    return
+  }
   if (last?.role === 'tool') {
     res.write(chunk({ role: 'assistant', content: `${ANSWER} ${JSON.stringify(last.content)}` }, null))
   } else if (latestCatalog(request).includes('`lark-calendar`')) {
@@ -171,6 +180,15 @@ it.skipIf(process.platform === 'win32')('gives the model the connected connector
     const runEnv = await readFile(join(control, 'run-env'), 'utf8')
     expect(runEnv).toContain(`LARKSUITE_CLI_CONFIG_DIR=${join(harnessHome, 'connectors', 'feishu', 'tenants', tenantId, 'config')}`)
     const calls = async () => (await readFile(join(control, 'calls'), 'utf8')).split('\n').filter(call => !call.includes('--help'))
+    // The user's own stale copy of the Skill stays behind the one the installed CLI embeds.
+    const userSkill = join(scaffold.workspaceCwd, '.agents-home', 'skills', 'lark-calendar')
+    await mkdir(userSkill, { recursive: true })
+    await writeFile(join(userSkill, 'SKILL.md'), '---\nname: lark-calendar\ndescription: stale user copy\n---\n\nSTALE_USER_COPY\n')
+    await send('请加载日历技能')
+    await page.getByText(/Run lark-cli calendar \+agenda/u).first().waitFor({ timeout: 30_000 })
+    expect(JSON.stringify(chat.chats.at(-1)!.messages.at(-1)!.content)).not.toContain('STALE_USER_COPY')
+    // Switched off below, the connector stops serving the Skill and a user's copy would take its place.
+    await rm(userSkill, { recursive: true, force: true })
     // The agenda only reads, so it ran without an approval.
     expect(await page.locator('[data-approval-key]').count()).toBe(0)
 

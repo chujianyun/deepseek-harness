@@ -319,6 +319,8 @@ interface IndexedCandidate {
   localOrder: number
   /** Owning layer, so a stale-definition invalidation can verify the exact registration is still live. */
   layer: SkillLayer
+  /** Whether the candidate's global provider also competes by rank in every scoped layer. */
+  everyLayer: boolean
 }
 
 /** One provider registration retained by its layer. */
@@ -326,6 +328,18 @@ interface RegisteredProvider {
   provider: SkillProvider
   /** Service-wide monotonic registration order, the within-layer rank tiebreak. */
   order: number
+  /** A global provider whose candidates also compete by rank in every scoped layer. */
+  everyLayer: boolean
+}
+
+/** Options of a provider registration. */
+export interface SkillProviderRegistrationOptions {
+  /**
+   * Let a global provider's candidates also compete by rank inside every scoped layer a read
+   * merges, so a scoped provider's same-name candidate of a worse rank does not replace them.
+   * Only an unscoped context may set it.
+   */
+  readonly everyLayer?: boolean
 }
 
 interface LayerCollectResult {
@@ -440,12 +454,15 @@ export class SkillRegistry extends Service {
    * preset's standing mount) registers for that scope alone, an unscoped
    * context registers globally. Duplicate names within one layer and reserved
    * names throw; remote initialization belongs in `list()`. Fiber disposal
-   * unregisters the provider and invalidates catalog caches.
+   * unregisters the provider and invalidates catalog caches. With
+   * `everyLayer`, a global provider's candidates also join each scoped
+   * layer's rank order; a scoped context that sets it throws.
    * @param create - synchronous factory receiving this registration's lifecycle and invalidation control.
+   * @param options - registration options.
    * @returns the exact Cordis effect disposer that unregisters this provider;
    *   composite effects may yield it directly to preserve teardown ordering.
    */
-  registerProvider(create: (control: SkillProviderControl) => SkillProvider): () => void {
+  registerProvider(create: (control: SkillProviderControl) => SkillProvider, options: SkillProviderRegistrationOptions = {}): () => void {
     const lifecycle = new AbortController()
     let registration: { layer: SkillLayer; name: string } | undefined
     let provider: SkillProvider
@@ -469,7 +486,11 @@ export class SkillRegistry extends Service {
       return this.layers.effect(
         this.ctx,
         (layer) => {
-          const undo = layer.providers.insert(name, { provider, order })
+          const everyLayer = options.everyLayer === true
+          if (everyLayer && layer !== this.layers.global) {
+            throw new Error(`skill provider "${name}" can compete in every layer only when registered globally`)
+          }
+          const undo = layer.providers.insert(name, { provider, order, everyLayer })
           registration = { layer, name }
           return () => {
             registration = undefined
@@ -610,24 +631,31 @@ export class SkillRegistry extends Service {
     // Global first, then existing chain overlays farthest ancestor first and
     // the exact scope last, so the nearest layer's same-name entry replaces
     // the farther ones — the tools registry's shadowing rule. Rank decides
-    // duplicates only within one layer.
-    const layers = [this.layers.global, ...this.layers.chainLayers(options.scope)]
+    // duplicates only within one layer; candidates of `everyLayer` global
+    // providers also join each scoped layer's rank order, so a worse-ranked
+    // scoped duplicate cannot replace them.
+    const global = await this.listLayerCandidates(this.layers.global, options)
+    const everyLayer = global.entries.filter(entry => entry.everyLayer)
     const merged = new Map<string, IndexedCandidate>()
-    let cacheable = true
-    for (const layer of layers) {
-      const collected = await this.collectLayer(layer, options)
+    let cacheable = global.cacheable
+    for (const entry of this.rankLayer(global.entries)) merged.set(entry.candidate.name, entry)
+    for (const layer of this.layers.chainLayers(options.scope)) {
+      const collected = await this.listLayerCandidates(layer, options)
       if (!collected.cacheable) cacheable = false
-      for (const entry of collected.entries) merged.set(entry.candidate.name, entry)
+      // Only against this layer's own duplicates: a layer without the name keeps the farther winner.
+      const names = new Set(collected.entries.map(entry => entry.candidate.name))
+      const contenders = everyLayer.filter(entry => names.has(entry.candidate.name))
+      for (const entry of this.rankLayer([...collected.entries, ...contenders])) merged.set(entry.candidate.name, entry)
     }
     return { entries: merged, cacheable }
   }
 
-  private async collectLayer(layer: SkillLayer, options: SkillLookupOptions): Promise<LayerCollectResult> {
-    const collected = await this.listLayerCandidates(layer, options)
-    collected.entries.sort(compareIndexedCandidates)
+  /** Order one layer's candidates by rank and keep the first of each name. */
+  private rankLayer(entries: IndexedCandidate[]): IndexedCandidate[] {
+    entries.sort(compareIndexedCandidates)
     const seen = new Set<string>()
     const result: IndexedCandidate[] = []
-    for (const entry of collected.entries) {
+    for (const entry of entries) {
       const skill = entry.candidate
       if (seen.has(skill.name)) {
         this.ctx.logger.warn(`skill "${skill.name}" from ${skill.source} ignored because a higher-priority skill already exists`)
@@ -636,7 +664,7 @@ export class SkillRegistry extends Service {
       seen.add(skill.name)
       result.push(entry)
     }
-    return { entries: result, cacheable: collected.cacheable }
+    return result
   }
 
   private async listLayerCandidates(layer: SkillLayer, options: SkillLookupOptions): Promise<LayerCollectResult> {
@@ -651,10 +679,11 @@ export class SkillRegistry extends Service {
         providerOrder: -1,
         localOrder: runtimeOrder,
         layer,
+        everyLayer: false,
       })
       runtimeOrder += 1
     }
-    for (const { provider, order } of [...layer.providers.values()]) {
+    for (const { provider, order, everyLayer } of [...layer.providers.values()]) {
       let localOrder = 0
       let output: unknown
       try {
@@ -669,7 +698,7 @@ export class SkillRegistry extends Service {
       if (!observation.complete) cacheable = false
       for (const candidate of observation.candidates) {
         validateCandidate(candidate, provider.name)
-        candidates.push({ candidate, provider, providerOrder: order, localOrder, layer })
+        candidates.push({ candidate, provider, providerOrder: order, localOrder, layer, everyLayer })
         localOrder += 1
       }
     }

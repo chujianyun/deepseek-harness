@@ -3139,9 +3139,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when the registry was mounted without Settings or a profile entry.'],
       },
       {
-        signature: 'registerProvider(create: (control: SkillProviderControl) => SkillProvider): () => void',
-        description: 'Register a borrowed same-process provider synchronously during plugin apply, into the calling context\'s layer: a scoped context (an agent preset\'s standing mount) registers for that scope alone, an unscoped context registers globally. Duplicate names within one layer and reserved names throw; remote initialization belongs in `list()`. Fiber disposal unregisters the provider and invalidates catalog caches.',
-        parameters: [{ name: 'create', description: 'synchronous factory receiving this registration\'s lifecycle and invalidation control.' }],
+        signature: 'registerProvider(create: (control: SkillProviderControl) => SkillProvider, options: SkillProviderRegistrationOptions = {}): () => void',
+        description: 'Register a borrowed same-process provider synchronously during plugin apply, into the calling context\'s layer: a scoped context (an agent preset\'s standing mount) registers for that scope alone, an unscoped context registers globally. Duplicate names within one layer and reserved names throw; remote initialization belongs in `list()`. Fiber disposal unregisters the provider and invalidates catalog caches. With `everyLayer`, a global provider\'s candidates also join each scoped layer\'s rank order; a scoped context that sets it throws.',
+        parameters: [{ name: 'create', description: 'synchronous factory receiving this registration\'s lifecycle and invalidation control.' }, { name: 'options', description: 'registration options.' }],
         returns: 'the exact Cordis effect disposer that unregisters this provider; composite effects may yield it directly to preserve teardown ordering.',
       },
       {
@@ -7863,6 +7863,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SkillProviderObservation',
     declaration: 'export interface SkillProviderObservation {\n    readonly candidates: readonly SkillCandidate[];\n    readonly complete: boolean;\n}',
+  },
+  {
+    name: 'SkillProviderRegistrationOptions',
+    declaration: 'export interface SkillProviderRegistrationOptions {\n    readonly everyLayer?: boolean;\n}',
   },
   {
     name: 'SkillRegistration',

@@ -10,7 +10,7 @@ Source: [`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/ind
 
 `ctx.skills` combines local, embedded, remote, or other providers. Registration is synchronous; remote initialization and discovery belong in awaited `list()`. Provider objects, options, and candidates are borrowed readonly, while semantic fields are validated.
 
-The registry is host+per-scope layered, the shape the [tools registry](tools.md) established over [dsh-scope](../../packages/core/scope): a registration files into the layer of its calling context's scope, so host rows and repository plugins land in the global layer while a plugin mounted by an agent preset's standing composition lands in that preset's layer, and provider names are unique per layer rather than process-wide. A read merges the global layer with the viewing scope's chain — the nearest layer's entry wins a duplicate skill name outright, and the rank order below decides duplicates only within one layer. Discovery caches are keyed by the resolved scope chain, so re-parenting a scope (a blank-session recompose) is visible to the next read without a registry mutation.
+The registry is host+per-scope layered, the shape the [tools registry](tools.md) established over [dsh-scope](../../packages/core/scope): a registration files into the layer of its calling context's scope, so host rows and repository plugins land in the global layer while a plugin mounted by an agent preset's standing composition lands in that preset's layer, and provider names are unique per layer rather than process-wide. A read merges the global layer with the viewing scope's chain — the nearest layer's entry wins a duplicate skill name outright, and the rank order below decides duplicates only within one layer, except that a global provider registered with `everyLayer: true` also joins each scoped layer's rank order (the connectors service registers so, keeping a connector's Skill ahead of the user's own copy inside a preset). Discovery caches are keyed by the resolved scope chain, so re-parenting a scope (a blank-session recompose) is visible to the next read without a registry mutation.
 
 Within one layer, duplicate names resolve by rank, provider order, then local order; summaries sort by name. A rejected `list()` is logged and omitted from an incomplete observation, while an explicit incomplete observation contributes usable candidates without making the result cacheable; malformed candidates fail fast. Each provider factory receives a registration-scoped control whose `invalidate()` clears completed catalogs only while that exact registration remains active and whose signal aborts on failed registration or disposal. An in-flight discovery retries once when its provider generation changes; a second change returns the latest candidates incomplete and uncached. Provider and runtime mutations emit the unfiltered `skills/change` invalidation event; it carries no diff, so consumers refetch `snapshot()` with their own lookup options.
 
@@ -472,12 +472,15 @@ setDisabled(name: string, disabled: boolean): Promise<void>
  * preset's standing mount) registers for that scope alone, an unscoped
  * context registers globally. Duplicate names within one layer and reserved
  * names throw; remote initialization belongs in `list()`. Fiber disposal
- * unregisters the provider and invalidates catalog caches.
+ * unregisters the provider and invalidates catalog caches. With
+ * `everyLayer`, a global provider's candidates also join each scoped
+ * layer's rank order; a scoped context that sets it throws.
  * @param create - synchronous factory receiving this registration's lifecycle and invalidation control.
+ * @param options - registration options.
  * @returns the exact Cordis effect disposer that unregisters this provider;
  *   composite effects may yield it directly to preserve teardown ordering.
  */
-registerProvider(create: (control: SkillProviderControl) => SkillProvider): () => void
+registerProvider(create: (control: SkillProviderControl) => SkillProvider, options: SkillProviderRegistrationOptions = {}): () => void
 
 /**
  * Register a borrowed readonly runtime skill into the calling context's

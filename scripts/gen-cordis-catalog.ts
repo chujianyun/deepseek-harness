@@ -545,6 +545,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   LlmRuntime: 'llm-streaming.md',
   StreamChunk: 'llm-streaming.md',
   SkillProviderControl: 'skills.md',
+  SkillProviderRegistrationOptions: 'skills.md',
   CreateSessionOptions: 'persistence.md',
   PrepareSessionOptions: 'persistence.md',
   SessionHeader: 'persistence.md',

@@ -13,7 +13,8 @@ export const CONNECTOR_SKILL_PROVIDER = 'connectors'
 
 /**
  * Rank of connector Skills: above the user's own Skill directories, so a stale copy of a CLI's
- * Skill there never shadows the one matching the installed CLI, and below project Skills.
+ * Skill there never shadows the one matching the installed CLI, and below project Skills. The
+ * provider is registered for every layer, so this order also holds in a preset's own layer.
  */
 export const CONNECTOR_SKILL_RANK = 350
 
