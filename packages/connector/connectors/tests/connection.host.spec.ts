@@ -256,5 +256,8 @@ describe('failure messages', () => {
     expect(failureMessage({ code: 1, stdout: '42', stderr: '' })).toBe('42')
     expect(failureMessage({ code: 2, stdout: '{"event":"device_authorization"}\n{"event":"authorization_failed","error":"expired"}\n', stderr: '' })).toBe('expired')
     expect(failureMessage({ code: 3, stdout: '', stderr: '{\n  "ok": false,\n  "error": { "type": "config", "message": "not configured" }\n}' })).toBe('not configured')
+    // dws explains in text, then ends with a pretty-printed JSON error.
+    const dws = '● Step 4: Checking organization CLI auth status...\n\n⚠️  You do not yet have CLI data access permission\n\n{\n  "error": {\n    "code": 2,\n    "message": "device authorization failed: no CLI data access"\n  }\n}\n'
+    expect(failureMessage({ code: 2, stdout: '', stderr: dws })).toBe('device authorization failed: no CLI data access')
   })
 })

@@ -98,8 +98,9 @@ export function field(value: Record<string, unknown> | undefined, name: string):
  */
 export function failureMessage(result: Run): string {
   const lines = `${result.stderr}\n${result.stdout}`.split('\n').map(line => line.trim()).filter(line => line !== '')
-  // A whole stream is one pretty-printed JSON error; `auth login --json` prints one event per line.
-  for (const text of [result.stdout, result.stderr, ...[...lines].reverse()]) {
+  // A whole stream is one pretty-printed JSON error, or ends with one after text (`dws`); `auth login --json` prints one event per line.
+  const trailing = [result.stdout, result.stderr].map(text => text.slice(Math.max(0, text.lastIndexOf('\n{') + 1)))
+  for (const text of [result.stdout, result.stderr, ...trailing, ...[...lines].reverse()]) {
     const error = json(text)?.error
     if (typeof error === 'string') return error
     if (typeof error === 'object' && error !== null && typeof (error as { message?: unknown }).message === 'string') {
