@@ -1410,9 +1410,11 @@ flowchart TD
   pkg_subagent_dsh_sdk --> pkg_subagent
   pkg_subagent_dsh_sdk --> pkg_subprocess
   pkg_connectors --> pkg_hub_account
+  pkg_connectors --> pkg_llm
   pkg_connectors --> pkg_settings
   pkg_connectors --> pkg_shell_env
   pkg_connectors --> pkg_skill
+  pkg_connectors --> pkg_tools
   pkg_connectors --> pkg_typert_protocol
   pkg_knowledge_base --> pkg_embedding
   pkg_knowledge_base --> pkg_hub_account
@@ -1761,7 +1763,7 @@ flowchart TD
 | [`client-test-runtime`](../packages/test-support/client-runtime) | `test-support` | [`api-gateway`](../packages/api/gateway), [`api-session-controller`](../packages/api/session-controller), [`api-workspace-controller`](../packages/api/workspace-controller), [`attachment`](../packages/attachment/attachment), [`client-connection`](../packages/client/connection), [`client-hmr`](../packages/client/hmr), [`client-modules`](../packages/client/modules), [`client-store`](../packages/client/store), [`client-ui-chat`](../packages/client/ui-chat), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-renderer`](../packages/client/ui-renderer), [`client-ui-session`](../packages/client/ui-session), [`client-ui-settings`](../packages/client/ui-settings), [`client-ui-slots`](../packages/client/ui-slots), [`client-web`](../packages/client/web), [`remote-mock`](../packages/test-support/remote-mock), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`typert-protocol`](../packages/typert/protocol) |
 | [`skill-market`](../packages/skill/skill-market) | `skill` | [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`home-paths`](../packages/util/home-paths), [`hub-account`](../packages/credentials/hub-account), [`scope`](../packages/core/scope), [`settings`](../packages/settings/settings), [`skill`](../packages/skill/skill), [`skill-filesystem`](../packages/skill/skill-filesystem), [`typert-protocol`](../packages/typert/protocol) |
 | [`subagent-dsh-sdk`](../packages/subagent/subagent-dsh-sdk) | `subagent` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`sdk-client`](../packages/sdk/client), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess) |
-| [`connectors`](../packages/connector/connectors) | `connector` | [`hub-account`](../packages/credentials/hub-account), [`settings`](../packages/settings/settings), [`shell-env`](../packages/shell/shell-env), [`skill`](../packages/skill/skill), [`typert-protocol`](../packages/typert/protocol) |
+| [`connectors`](../packages/connector/connectors) | `connector` | [`hub-account`](../packages/credentials/hub-account), [`llm`](../packages/llm/llm), [`settings`](../packages/settings/settings), [`shell-env`](../packages/shell/shell-env), [`skill`](../packages/skill/skill), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol) |
 | [`knowledge-base`](../packages/knowledge/knowledge-base) | `knowledge` | [`embedding`](../packages/llm/embedding), [`hub-account`](../packages/credentials/hub-account), [`typert-protocol`](../packages/typert/protocol), [`web`](../packages/web/web) |
 | [`skill-controller`](../packages/skill/skill-controller) | `skill` | [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`native-command`](../packages/util/native-command), [`scope`](../packages/core/scope), [`skill`](../packages/skill/skill), [`skill-market`](../packages/skill/skill-market), [`typert-protocol`](../packages/typert/protocol) |
 | [`knowledge-selection`](../packages/knowledge/knowledge-selection) | `knowledge` | [`agent`](../packages/core/agent), [`api-session-controller`](../packages/api/session-controller), [`knowledge-base`](../packages/knowledge/knowledge-base), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol) |

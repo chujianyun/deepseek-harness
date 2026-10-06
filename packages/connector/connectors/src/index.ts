@@ -35,16 +35,18 @@ import type {} from '@deepseek-ai/dsh-hub-account'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-shell-env'
 import type {} from '@deepseek-ai/dsh-skill'
-import type {} from '@deepseek-ai/dsh-tools'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { PreToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { bytesOnDisk } from '@deepseek-ai/dsh-verified-download'
 import Schema from '@deepseek-ai/schemastery'
 import { LARK_CLI } from './catalog.ts'
 import { cliInstalled, executableName, installCli, platformKey, type InstallError } from './install.ts'
 import {
-  checkHealth, LoginError, qrCode, removeTenant, runLoginStep, wrapperScript, writeWrapper,
+  checkHealth, cliEnv, LoginError, qrCode, removeTenant, runLoginStep, wrapperScript, writeWrapper,
   type Health, type LoginStep, type TenantCli, type WrapperMode,
 } from './lark.ts'
+import { classify, helpRiskReader, invocations, type Classification, type RiskReader } from './risk.ts'
 import { ConnectorSkillProvider, type ConnectorSkill, type SkillSource } from './skills.ts'
 import type {
   ConnectorId, ConnectorInstallError, ConnectorLoginError, ConnectorLoginView, ConnectorsState, ConnectorStatus, ConnectorView,
@@ -116,6 +118,60 @@ export const Config = Schema.object({
     .description('Connectors switched off, as `<tenantId>/<id>`. A switched-off connector stays signed in, but the model gets neither its Skills nor its CLI.'),
 }) as Schema<Config>
 
+/** The variable that names, one per line, the high-risk commands of a shell call the user approved, such as `drive +delete`. */
+const CONFIRMED_KEY = 'DSH_CONNECTOR_CONFIRMED'
+
+/** Longest command text an approval names. */
+const APPROVAL_COMMAND_CHARS = 200
+
+/**
+ * The command of a bash call.
+ * @param exec - a tool call.
+ * @returns its command, or undefined for another tool.
+ */
+function bashCommand(exec: Pick<ToolExecution, 'name' | 'arguments'>): string | undefined {
+  const command = (exec.arguments as { command?: unknown }).command
+  return exec.name === 'bash' && typeof command === 'string' ? command : undefined
+}
+
+/**
+ * The approval a bash call that writes through Feishu asks for: the audit reason names the
+ * commands, and the user sees what will happen as them — with a warning for a high-risk command.
+ * @param classification - the call's lark-cli commands and their highest risk.
+ * @returns the pre-execution decision.
+ */
+function approvalAsk(classification: Classification): PreToolDecision {
+  const listed = classification.invocations.filter(item => item.risk !== 'read').map(item => `lark-cli ${item.command}`.trim()).join('; ')
+  const commands = listed.length > APPROVAL_COMMAND_CHARS ? `${listed.slice(0, APPROVAL_COMMAND_CHARS)}…` : listed
+  const reason = `Feishu connector ${classification.risk} command: ${commands}`
+  switch (classification.risk) {
+    case 'high-risk-write':
+      return {
+        kind: 'ask', reason,
+        displayReason: {
+          en: `⚠️ High-risk operation: the Feishu connector will run ${commands} as you. It may delete data or make changes that cannot be undone. If you allow it, DSH adds --yes for this run.`,
+          zh: `⚠️ 高风险操作：飞书连接器将以你的身份执行 ${commands}，可能删除数据或造成无法撤销的修改。同意后 DSH 会为本次执行加上 --yes。`,
+        },
+      }
+    case 'unknown':
+      return {
+        kind: 'ask', reason,
+        displayReason: {
+          en: `The risk of this Feishu command cannot be determined, so it is confirmed like a write: ${commands}. Allow it to run as you once?`,
+          zh: `无法确定这条飞书命令的风险，按写操作确认：${commands}。允许以你的身份执行一次吗？`,
+        },
+      }
+    default:
+      return {
+        kind: 'ask', reason,
+        displayReason: {
+          en: `The Feishu connector will write as you: ${commands}. Allow it to run once?`,
+          zh: `飞书连接器将以你的身份执行写操作：${commands}。允许执行一次吗？`,
+        },
+      }
+  }
+}
+
 /** A failing command's check waits this long for more failures. */
 const FAILURE_CHECK_DELAY_MS = 500
 
@@ -179,6 +235,10 @@ export class ConnectorsService extends TypertRemoteService {
   private readonly disabled: Volatile<readonly string[]> | undefined
   private readonly entryId: string | undefined
   private provider: ConnectorSkillProvider | undefined
+  /** Calls whose high-risk connector commands wait for, or have, the user's approval, with those commands one per line. */
+  private readonly confirmed = new Map<ToolCallId, string>()
+  /** Reads a command's stated risk from the installed CLI, per CLI. */
+  private readonly riskReaders = new Map<string, RiskReader>()
   /** What the skill provider was last told about, so it is invalidated only on a change. */
   private skillKey = ''
   private writes: Promise<void> = Promise.resolve()
@@ -212,12 +272,35 @@ export class ConnectorsService extends TypertRemoteService {
     ctx.on('loader/volatile-update', () => { this.changed() })
     // A bash call of a connector's CLI that fails may mean the sign-in broke: check it.
     ctx.on('tools/result', (exec, result) => {
-      const command = (exec.arguments as { command?: unknown }).command
-      if (exec.name !== 'bash' || typeof command !== 'string' || !/(?:^|[\s;&|(])lark-cli(?=$|[\s;&|)])/u.test(command)) return
+      this.confirmed.delete(exec.callId)
+      const command = bashCommand(exec)
+      const found = command === undefined ? [] : invocations(command)
+      if (found !== 'opaque' && found.length === 0) return
       const exitCode = result.isError ? null : (result.value as { exitCode?: unknown }).exitCode
       if (exitCode !== 0) this.failed(feishu)
     })
-    ctx.effect(() => () => {
+    // A bash call that would write through a connected connector waits for the user's approval.
+    ctx.on('tools/pre-execute', async (exec, next) => {
+      const decision = await next()
+      const command = bashCommand(exec)
+      if (decision.kind !== 'allow' || command === undefined || this.exposure(feishu)?.mode !== 'run') return decision
+      const classification = await classify(command, this.riskReader(feishu))
+      if (classification.risk === 'none' || classification.risk === 'read') return decision
+      if (classification.risk === 'high-risk-write') {
+        const risky = classification.invocations.filter(item => item.risk === 'high-risk-write').map(item => item.command)
+        this.confirmed.set(exec.callId, risky.join('\n'))
+      }
+      return approvalAsk(classification)
+    })
+    ctx.shellEnv.register({
+      name: 'connectors',
+      variables: { [CONFIRMED_KEY]: { description: 'The high-risk connector commands, one per line, the user approved for this shell call.' } },
+      resolve: (exec): Readonly<Partial<Record<typeof CONFIRMED_KEY, string>>> => {
+        const commands = this.confirmed.get(exec.callId)
+        return commands === undefined ? {} : { [CONFIRMED_KEY]: commands }
+      },
+    })
+    ctx.effect(() => async () => {
       this.lifetime.abort()
       for (const entry of this.installables.values()) {
         entry.controller?.abort()
@@ -226,6 +309,8 @@ export class ConnectorsService extends TypertRemoteService {
       clearTimeout(this.progressTimer)
       clearTimeout(this.failureTimer)
       this.changed()
+      // A script write still under way would recreate files in a directory its owner is deleting.
+      await this.writes
     }, 'connectors: lifetime')
   }
 
@@ -515,6 +600,17 @@ export class ConnectorsService extends TypertRemoteService {
       this.writes = this.writes.then(() => writeWrapper(join(entry.root, 'bin', exposure.tenant), script))
         .catch((error: unknown) => { console.info('[connectors] could not write the lark-cli script', { error: String(error) }) })
     }
+  }
+
+  /** The stated-risk reader of a connector's installed CLI, created once per CLI version. */
+  private riskReader(entry: Installable): RiskReader {
+    const bin = join(this.versionDir(entry), executableName(entry.spec))
+    let reader = this.riskReaders.get(bin)
+    if (reader === undefined) {
+      reader = helpRiskReader(bin, cliEnv({ bin, dir: join(entry.root, 'catalog') }))
+      this.riskReaders.set(bin, reader)
+    }
+    return reader
   }
 
   /** A command of the connector's CLI failed: check the connection once the failures settle. */

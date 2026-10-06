@@ -14,7 +14,7 @@
 
 ## 在对话中使用
 
-连接器已安装且当前租户开启它时，`dsh-shell-env` 的 PATH contributor 会把每个租户的 `lark-cli` 脚本放到模型 shell 的 `PATH` 最前面：已连接时，它用该租户的目录运行已安装的 CLI；未连接时，它拒绝执行并指向连接器页面；命令失败会触发一次健康检查。已连接时，CLI 内置的 Skill 从 `connectors` provider 加入 skill 目录，排在用户自己的 Skill 目录之前。关闭连接器会保留登录，但会把两者都撤下。
+连接器已安装且当前租户开启它时，`dsh-shell-env` 的 PATH contributor 会把每个租户的 `lark-cli` 脚本放到模型 shell 的 `PATH` 最前面：已连接时，它用该租户的目录运行已安装的 CLI；未连接时，它拒绝执行并指向连接器页面；命令失败会触发一次健康检查。已连接时，CLI 内置的 Skill 从 `connectors` provider 加入 skill 目录，排在用户自己的 Skill 目录之前。关闭连接器会保留登录，但会把两者都撤下。bash 调用运行前，连接器的 `tools/pre-execute` 监听器按每条 lark-cli 命令在 `--help` 中声明的风险分类：读取直接运行；写入以及无法读出风险的命令在审批面板中等待用户批准；高风险写入带 ⚠️ 警告，允许后以 `--yes` 运行。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

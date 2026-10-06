@@ -14,7 +14,7 @@ The connection belongs to the tenant of the current Hub sign-in. Each tenant get
 
 ## Use in conversations
 
-While a connector is installed and switched on for the current tenant, `dsh-shell-env`'s PATH contributor puts a per-tenant `lark-cli` script ahead of the model shell's `PATH`: connected, it runs the installed CLI with the tenant's directories; disconnected, it refuses and points to the Connectors page; a failing command triggers a health check. While connected, the Skills the CLI embeds join the skill catalog from the `connectors` provider, ahead of the user's own Skill directories. Switching the connector off keeps the sign-in and takes both away.
+While a connector is installed and switched on for the current tenant, `dsh-shell-env`'s PATH contributor puts a per-tenant `lark-cli` script ahead of the model shell's `PATH`: connected, it runs the installed CLI with the tenant's directories; disconnected, it refuses and points to the Connectors page; a failing command triggers a health check. While connected, the Skills the CLI embeds join the skill catalog from the `connectors` provider, ahead of the user's own Skill directories. Switching the connector off keeps the sign-in and takes both away. Before a bash call runs, the connector's `tools/pre-execute` listener classifies its lark-cli commands by the risk each states in `--help`: reads run unasked; writes, and commands whose risk cannot be read, wait for the user's approval in the approval panel; a high-risk write carries a ⚠️ warning and, once allowed, runs with `--yes`.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

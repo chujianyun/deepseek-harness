@@ -2,7 +2,9 @@
 // `shell-env`, bash, and `llm-pi-ai` rows: signed in to a mock user center and connected through a
 // stand-in lark-cli, the employee asks about today's schedule; a scripted model sees the connector's
 // Skills in the catalog, runs `lark-cli calendar +agenda` through bash — which reaches the installed
-// CLI with the company's own directories — and answers from its output. Switched off on the
+// CLI with the company's own directories — and answers from its output. Asked to send a message, the
+// model's write waits in the approval panel and the rejection reaches it as a denial; asked to delete a
+// file, the high-risk command shows a warning and, once allowed, runs with `--yes`. Switched off on the
 // Connectors page, the session's next request carries a catalog without the Skills.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -40,9 +42,22 @@ function latestCatalog(request: ChatRequest): string {
   return request.messages.map(message => JSON.stringify(message.content ?? '')).filter(text => text.includes('available_skills')).at(-1) ?? ''
 }
 
+/** The lark-cli command the model runs for each request of the employee. */
+const COMMANDS: readonly (readonly [RegExp, string])[] = [
+  [/群里发消息/u, 'lark-cli im +messages-send --chat-id oc_team --text 周会改到下午三点'],
+  [/周报文件/u, 'lark-cli drive +delete --file-token box_old'],
+  [/日程/u, 'lark-cli calendar +agenda'],
+]
+
+/** The text of the latest user message. */
+function latestAsk(request: ChatRequest): string {
+  return JSON.stringify(request.messages.filter(message => message.role === 'user').at(-1)?.content ?? '')
+}
+
 /**
- * The model: with `lark-calendar` in the latest catalog and no tool result yet it runs the agenda
- * through bash; after a tool result it answers with that result; without the Skill it says so.
+ * The model: with `lark-calendar` in the latest catalog and no tool result yet it runs the command
+ * matching the employee's request through bash; after a tool result it answers with that result;
+ * without the Skill it says so.
  */
 function streamChat(res: ServerResponse, request: ChatRequest): void {
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
@@ -57,9 +72,10 @@ function streamChat(res: ServerResponse, request: ChatRequest): void {
   if (last?.role === 'tool') {
     res.write(chunk({ role: 'assistant', content: `${ANSWER} ${JSON.stringify(last.content)}` }, null))
   } else if (latestCatalog(request).includes('`lark-calendar`')) {
+    const command = COMMANDS.find(([pattern]) => pattern.test(latestAsk(request)))?.[1] ?? 'lark-cli calendar +agenda'
     res.write(chunk({ role: 'assistant', tool_calls: [{
       index: 0, id: `call_bash_${String(request.messages.length)}`, type: 'function',
-      function: { name: 'bash', arguments: JSON.stringify({ command: 'lark-cli calendar +agenda', description: '查看今天的日程' }) },
+      function: { name: 'bash', arguments: JSON.stringify({ command, description: '使用飞书' }) },
     }] }, null))
     res.end(`${chunk({}, 'tool_calls')}${usage}data: [DONE]\n\n`)
     return
@@ -154,6 +170,26 @@ it.skipIf(process.platform === 'win32')('gives the model the connected connector
     const tenantId = (await scaffold.ctx.hubAccount.getState()).profile!.tenantId!
     const runEnv = await readFile(join(control, 'run-env'), 'utf8')
     expect(runEnv).toContain(`LARKSUITE_CLI_CONFIG_DIR=${join(harnessHome, 'connectors', 'feishu', 'tenants', tenantId, 'config')}`)
+    const calls = async () => (await readFile(join(control, 'calls'), 'utf8')).split('\n').filter(call => !call.includes('--help'))
+    // The agenda only reads, so it ran without an approval.
+    expect(await page.locator('[data-approval-key]').count()).toBe(0)
+
+    // A write waits for the user; rejected, it never runs and the model learns the user said no.
+    const answers = await page.getByText(ANSWER).count()
+    await send('帮我在群里发消息：周会改到下午三点')
+    const panel = page.locator('[data-approval-key]')
+    await panel.getByText('飞书连接器将以你的身份执行写操作：lark-cli im +messages-send。允许执行一次吗？').waitFor({ timeout: 30_000 })
+    await panel.getByRole('button', { name: '拒绝', exact: true }).click()
+    await expect.poll(async () => page.getByText(ANSWER).count(), { timeout: 30_000 }).toBeGreaterThan(answers)
+    expect(JSON.stringify(chat.chats.at(-1)!.messages.at(-1)!.content)).toContain('the user rejected tool \\"bash\\"')
+    expect((await calls()).some(call => call.startsWith('im +messages-send'))).toBe(false)
+
+    // A high-risk write shows the warning; allowed once, it runs with --yes and the model gets its result.
+    await send('删除旧的周报文件')
+    await panel.getByText(/^⚠️ 高风险操作：飞书连接器将以你的身份执行 lark-cli drive \+delete/u).waitFor({ timeout: 30_000 })
+    await panel.getByRole('button', { name: '允许一次', exact: true }).click()
+    await page.getByText(/deleted/u).first().waitFor({ timeout: 30_000 })
+    expect(await calls()).toContain('drive +delete --file-token box_old --yes')
 
     // Switched off on the Connectors page: the next request's catalog no longer lists them.
     await page.getByRole('button', { name: '连接器', exact: true }).click()

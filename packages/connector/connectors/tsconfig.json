@@ -40,6 +40,12 @@
     },
     {
       "path": "../../../vendor/loader"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../llm/llm"
     }
   ]
 }

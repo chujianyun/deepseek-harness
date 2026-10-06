@@ -750,7 +750,7 @@ export interface ToolResultPruneConfig {
 
 - `inject`: `hubAccount` · `skills` · `shellEnv`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/connector/connectors/src/index.ts:87`](../packages/connector/connectors/src/index.ts)
+- `source`: [`packages/connector/connectors/src/index.ts:89`](../packages/connector/connectors/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */

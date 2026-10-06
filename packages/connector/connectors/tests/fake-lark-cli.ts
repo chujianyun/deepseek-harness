@@ -7,7 +7,8 @@
  * administrator withheld some permissions from); `auth status`
  * answers from the tenant's configuration unless `control/status.json` overrides it; errors go to
  * stderr as the real CLI's do; `skills list` and `skills read lark-calendar` serve two Skills;
- * `calendar +agenda` succeeds and `calendar +fail` fails; every call is logged to `control/calls`.
+ * `calendar +agenda` succeeds and `calendar +fail` fails; `--help` states `calendar +agenda` read,
+ * `im +messages-send` write, and `drive +delete` high-risk-write, which runs only with `--yes`; every call is logged to `control/calls`.
  */
 export const FAKE_LARK_CLI = String.raw`#!/bin/sh
 C="$(cd "$(dirname "$0")" && pwd)/../control"
@@ -15,7 +16,21 @@ CFG="$LARKSUITE_CLI_CONFIG_DIR"
 mkdir -p "$C"
 echo "$*" >> "$C/calls"
 await() { while [ ! -f "$1" ]; do sleep 0.05; done; r=$(cat "$1"); m=$(printf %s "$r" | cut -c6-); rm -f "$1"; }
+case " $* " in
+  *" --help "*)
+    case "$1 $2" in
+      "calendar +agenda") echo "Risk: read" ;;
+      "im +messages-send") echo "Risk: write" ;;
+      "drive +delete") echo "Risk: high-risk-write (requires explicit user confirmation)" ;;
+      *) echo "Usage: lark-cli $1" ;;
+    esac
+    exit 0 ;;
+esac
 case "$1 $2" in
+  "im +messages-send")
+    echo '{"ok":true,"data":{"message_id":"om_sent"}}' ;;
+  "drive +delete")
+    case " $* " in *" --yes "*) echo '{"ok":true,"data":{"deleted":true}}' ;; *) echo '{"ok":false,"error":{"message":"high-risk-write requires --yes"}}' >&2; exit 2 ;; esac ;;
   "--version ") echo "lark-cli version 9.9.9" ;;
   "config init")
     env | grep -E '^(LARKSUITE_CLI_|OPENCLAW_HOME|HERMES_HOME)' | sort > "$C/env"
