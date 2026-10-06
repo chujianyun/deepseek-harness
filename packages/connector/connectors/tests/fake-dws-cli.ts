@@ -8,7 +8,8 @@
  * unless `control/status.json` overrides it; `auth logout` signs out; `--help` states the Safety of
  * `calendar event list` (read), `chat message send` (write), and `doc delete` (destructive, which
  * runs only with `--yes` or `-y`); `calendar event list` succeeds and `calendar event fail` fails.
- * Every call is logged to `control/calls`, and a business command records its `DWS_*` variables in `control/run-env`.
+ * `calendar event` takes `.data.lock` in the configuration directory, as the real dws does. Every call is logged to
+ * `control/calls`, and a business command records its `DWS_*` variables in `control/run-env`.
  */
 export const FAKE_DWS = String.raw`#!/bin/sh
 C="$(cd "$(dirname "$0")" && pwd)/../control"
@@ -42,6 +43,8 @@ case "$1 $2" in
     else echo '{"success":true,"authenticated":false,"message":"未登录"}'; fi ;;
   "auth logout") rm -f "$CFG/user"; echo "[OK] 已清除认证信息" ;;
   "calendar event")
+    # As the real dws, a call that reads the sign-in takes a lock file in the configuration directory.
+    if ! : > "$CFG/.data.lock"; then echo '{"error":{"message":"opening lock file: operation not permitted"}}' >&2; exit 5; fi
     env | grep -E '^DWS_' | sort > "$C/run-env"
     if [ "$3" = fail ]; then echo '{"error":{"message":"permission denied"}}' >&2; exit 4; fi
     echo '{"events":[{"summary":"钉钉周会","start":"14:00"}]}' ;;

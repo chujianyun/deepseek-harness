@@ -4,6 +4,7 @@
  * @module @deepseek-ai/dsh-sandbox-local/profiles
  */
 
+import { existsSync } from 'node:fs'
 import { grantArgs as landlockGrantArgs } from '@deepseek-ai/node-addon-system/landlock-run'
 import { writableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
@@ -18,6 +19,8 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
   if (policy.mode === 'workspace-write') {
     args.push('--tmpfs', '/tmp')
     args.push('--bind', policy.workspaceRoot, policy.workspaceRoot)
+    // An extra root that does not exist yet grants nothing rather than failing the run.
+    for (const root of policy.extraWritableRoots ?? []) args.push('--bind-try', root, root)
   }
   return args
 }
@@ -30,7 +33,8 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
 export function landlockProfileArgs(policy: SandboxPolicy): string[] {
   const readWrite = ['/dev/null']
   if (policy.mode === 'workspace-write') {
-    readWrite.push('/tmp', policy.workspaceRoot)
+    // The launcher refuses a grant root it cannot open; an extra root that does not exist yet grants nothing.
+    readWrite.push('/tmp', policy.workspaceRoot, ...(policy.extraWritableRoots ?? []).filter(root => existsSync(root)))
   }
   return landlockGrantArgs({ readOnly: ['/'], readWrite })
 }

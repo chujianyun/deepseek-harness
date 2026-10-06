@@ -78,6 +78,18 @@ export interface Config {
   workspaceRoot?: string
 }
 
+/**
+ * A named source of one more directory `workspace-write` executions may write under, resolved
+ * per call. Plugins register one for state their own tools must write from a confined shell,
+ * such as a connected connector's credential directory.
+ */
+export interface WritableRootContributor {
+  /** Unique contributor name; it also orders the roots. */
+  readonly name: string
+  /** The absolute directory to grant now, or undefined when none applies. */
+  resolve(): string | undefined
+}
+
 /** Inputs that select the sandbox policy for one capability call. */
 export interface SandboxPolicyRequest {
   /** Calling session; its immutable cwd becomes the workspace boundary. */
@@ -122,6 +134,7 @@ export class SandboxPolicyService extends Service {
   readonly defaultMode: SandboxMode
   /** The absolute `workspace-write` fallback root for calls without a session cwd. */
   readonly workspaceRoot: string
+  private readonly rootContributors = new Map<string, WritableRootContributor>()
   constructor(ctx: Context, config: Config) {
     super(ctx, 'sandboxPolicy')
     // schemastery (static Config) already filled `mode`; the cast records that
@@ -153,19 +166,45 @@ export class SandboxPolicyService extends Service {
   }
 
   /**
+   * Register one more directory every `workspace-write` execution may write under, for as long as
+   * the calling plugin lives. The grant reaches every enforcing capability alike, as the workspace does.
+   * @param contributor - the named per-call directory resolver.
+   * @returns the disposer that unregisters the contribution.
+   * @throws Error for an empty or duplicate name.
+   */
+  registerWritableRoot(contributor: WritableRootContributor): () => void {
+    const dispose = this.ctx.effect(function* (this: SandboxPolicyService) {
+      if (contributor.name.trim().length === 0) throw new Error('sandbox writable-root contributor name must be non-empty')
+      if (this.rootContributors.has(contributor.name)) throw new Error(`sandbox writable-root contributor "${contributor.name}" is already registered`)
+      this.rootContributors.set(contributor.name, contributor)
+      yield () => { this.rootContributors.delete(contributor.name) }
+    }.bind(this), 'sandboxPolicy.registerWritableRoot()')
+    return () => void dispose()
+  }
+
+  /**
    * Resolve the complete policy for one capability call. An approved explicit
    * mode outranks the session's last `sandbox/mode` event, which outranks the
    * deployment default. A session cwd is its workspace-write boundary; the
    * configured root is the fallback for agentless calls and sessions without a
-   * cwd.
+   * cwd. Registered writable roots that apply now join it as `extraWritableRoots`.
    * @param request - optional session and approved mode override.
-   * @returns the fully resolved per-call mode and absolute workspace root.
+   * @returns the fully resolved per-call mode, absolute workspace root, and extra writable roots.
+   * @throws Error when a contributor resolves a relative directory.
    */
   resolve(request: SandboxPolicyRequest = {}): SandboxExecutionPolicy {
     const { session } = request
+    const extra: string[] = []
+    for (const contributor of [...this.rootContributors.values()].sort((left, right) => left.name.localeCompare(right.name))) {
+      const root = contributor.resolve()
+      if (root === undefined) continue
+      if (!isAbsolute(root)) throw new Error(`sandbox writable-root contributor "${contributor.name}" resolved a relative directory "${root}"`)
+      extra.push(root)
+    }
     return {
       mode: request.mode ?? (session === undefined ? undefined : this.overrideOf(session)) ?? this.defaultMode,
       workspaceRoot: resolveWorkspaceRoot(session?.header.cwd ?? this.workspaceRoot),
+      ...extra.length === 0 ? {} : { extraWritableRoots: extra },
       ...session === undefined ? {} : { sessionId: session.id },
     }
   }

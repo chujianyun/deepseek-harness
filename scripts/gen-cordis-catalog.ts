@@ -576,6 +576,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   TerminalSpawnRequest: 'terminal.md',
   TerminalSpawnResult: 'terminal.md',
   SandboxPolicyRequest: 'sandbox.md',
+  WritableRootContributor: 'sandbox.md',
   SshConnection: 'ssh.md',
   SshStreamEndpoint: 'ssh.md',
   ScopeKey: 'scope.md',

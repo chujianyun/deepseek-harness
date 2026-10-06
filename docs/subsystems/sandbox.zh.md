@@ -54,6 +54,12 @@ interface SandboxExecutionPolicy {
   /** Absolute root directory `workspace-write` may write under. */
   workspaceRoot: string
   /**
+   * Absolute directories, besides the workspace, `workspace-write` may also write under: the
+   * roots Host plugins register through the sandbox-policy service, such as a connected
+   * connector's credential directory. Absent when none applies.
+   */
+  extraWritableRoots?: readonly string[]
+  /**
    * Opaque identity of the calling session (the branded `dsh-session`
    * SessionId). Backends key per-session state off it (e.g. windows-acl gives
    * each live session/workspace pair a random private temp directory and SID,
@@ -197,13 +203,23 @@ The sandbox-policy service (`ctx.sandboxPolicy`). Owns the deployment default mo
 
 ```ts cordis-catalog
 /**
+ * Register one more directory every `workspace-write` execution may write under, for as long as
+ * the calling plugin lives. The grant reaches every enforcing capability alike, as the workspace does.
+ * @param contributor - the named per-call directory resolver.
+ * @returns the disposer that unregisters the contribution.
+ * @throws Error for an empty or duplicate name.
+ */
+registerWritableRoot(contributor: WritableRootContributor): () => void
+
+/**
  * Resolve the complete policy for one capability call. An approved explicit
  * mode outranks the session's last `sandbox/mode` event, which outranks the
  * deployment default. A session cwd is its workspace-write boundary; the
  * configured root is the fallback for agentless calls and sessions without a
- * cwd.
+ * cwd. Registered writable roots that apply now join it as `extraWritableRoots`.
  * @param request - optional session and approved mode override.
- * @returns the fully resolved per-call mode and absolute workspace root.
+ * @returns the fully resolved per-call mode, absolute workspace root, and extra writable roots.
+ * @throws Error when a contributor resolves a relative directory.
  */
 resolve(request: SandboxPolicyRequest = {}): SandboxExecutionPolicy
 

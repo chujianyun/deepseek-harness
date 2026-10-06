@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { afterEach, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
+import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
 import ConnectorsService, { type CliSpec, type ConnectorsState } from '../src/index.ts'
@@ -83,11 +85,14 @@ export async function setup(options: {
   files?: readonly string[]
   /** Leave out the Settings service. */
   settings?: false
+  /** The directory the DSH home is made in; the system temporary directory by default. */
+  homeParent?: string
   /** The connector the spec drives, with its stand-in CLI; the other has no build for any platform. */
   connector?: 'feishu' | 'dingtalk'
 } = {}) {
   const id = options.connector ?? 'feishu'
-  const home = await mkdtemp(join(tmpdir(), 'dsh-connection-'))
+  if (options.homeParent !== undefined) await mkdir(options.homeParent, { recursive: true })
+  const home = await mkdtemp(join(options.homeParent ?? tmpdir(), 'dsh-connection-'))
   cleanups.push(() => rm(home, { recursive: true, force: true }))
   const root = join(home, 'connectors', id)
   const control = join(root, 'control')
@@ -111,6 +116,8 @@ export async function setup(options: {
   ctx.provide('hubAccount', hub.service as never)
   await ctx.plugin(SkillRegistry)
   await ctx.plugin(ShellEnv, { dshHome: home })
+  await ctx.plugin(SessionProjectionRegistry)
+  await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: home })
   const interval = options.checkIntervalMs === undefined ? {} : { checkIntervalMs: options.checkIntervalMs }
   // The other connector stays uninstallable, so no test reaches its real mirrors.
   const specs = id === 'feishu' ? { feishu: SPEC, dingtalk: NOWHERE('dws') } : { feishu: NOWHERE('lark-cli'), dingtalk: DWS_SPEC }

@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { PreToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import { seatbeltProfileArgs } from '../../../sandbox/sandbox-local/src/profiles.ts'
 import { checkHealth, listSkills, qrCode, readSkill, removeTenant } from '../src/dingtalk.ts'
 import { setup, VERSION } from './support.ts'
 
@@ -22,8 +23,8 @@ function bash(command: string, id = 'call-1'): ToolExecution {
   }
 }
 
-async function connected() {
-  const t = await setup({ connector: 'dingtalk' })
+async function connected(options: { homeParent?: string } = {}) {
+  const t = await setup({ connector: 'dingtalk', ...options })
   await t.until(view => view.status === 'disconnected')
   await t.service.connect('dingtalk')
   await t.until(view => view.login?.url != null)
@@ -136,6 +137,36 @@ describe('the model shell\'s dws', () => {
   })
 })
 
+describe('the sandbox and DingTalk', () => {
+  runs('grants the company\'s directory to confined shells while dws runs there, and only then', async () => {
+    const t = await connected()
+    expect(t.ctx.sandboxPolicy.resolve().extraWritableRoots).toEqual([t.tenantDir('t-a')])
+    await t.service.setEnabled('dingtalk', false)
+    expect(t.ctx.sandboxPolicy.resolve().extraWritableRoots).toBeUndefined()
+    await t.service.setEnabled('dingtalk', true)
+    await t.service.disconnect('dingtalk')
+    expect(t.ctx.sandboxPolicy.resolve().extraWritableRoots).toBeUndefined()
+  })
+
+  it.skipIf(process.platform !== 'darwin')('lets dws take its lock under Seatbelt with the grant, and not without', async () => {
+    // Outside the temporary directories, which every confined shell may write anyway.
+    const t = await connected({ homeParent: join(process.cwd(), 'node_modules', '.cache', 'dsh-connectors-sandbox') })
+    type Policy = ReturnType<typeof t.ctx.sandboxPolicy.resolve>
+    const confined = (policy: Policy) => new Promise<{ code: number; stderr: string }>((resolve) => {
+      const args = [...seatbeltProfileArgs({ ...policy, mode: 'workspace-write' }), '--', join(t.dir, 'dws'), 'calendar', 'event', 'list']
+      execFile('/usr/bin/sandbox-exec', args, { encoding: 'utf8' }, (error, _stdout, stderr) => {
+        resolve({ code: error === null ? 0 : Number(error.code), stderr })
+      })
+    })
+    const policy = { ...t.ctx.sandboxPolicy.resolve(), workspaceRoot: tmpdir() }
+    expect(await confined(policy)).toMatchObject({ code: 0 })
+    const { extraWritableRoots: _granted, ...ungranted } = policy
+    const refused = await confined(ungranted)
+    expect(refused.code).toBe(5)
+    expect(refused.stderr).toContain('opening lock file: operation not permitted')
+  })
+})
+
 describe('DingTalk Skills', () => {
   runs('reach the model from the release\'s files while connected, and list on the card', async () => {
     const t = await connected()
@@ -157,6 +188,7 @@ describe('confirming DingTalk writes', () => {
     expect(await t.gate(bash('dws calendar event list --start 2026-10-06'))).toEqual({ kind: 'allow' })
     // Listed read-only commands need no help.
     expect(await t.gate(bash('dws auth status'))).toEqual({ kind: 'allow' })
+    expect(await t.gate(bash('dws shortcut list --service chat --format json 2>&1 | head -200'))).toEqual({ kind: 'allow' })
     expect((await t.calls()).filter(call => call.startsWith('auth status --help'))).toEqual([])
     expect(await t.gate(bash('dws chat message send --text hi'))).toMatchObject({
       kind: 'ask', reason: 'DingTalk connector write command: dws chat message send',

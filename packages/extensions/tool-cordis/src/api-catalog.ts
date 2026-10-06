@@ -2201,10 +2201,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'registerWritableRoot(contributor: WritableRootContributor): () => void',
+        description: 'Register one more directory every `workspace-write` execution may write under, for as long as the calling plugin lives. The grant reaches every enforcing capability alike, as the workspace does.',
+        parameters: [{ name: 'contributor', description: 'the named per-call directory resolver.' }],
+        returns: 'the disposer that unregisters the contribution.',
+        throws: ['Error for an empty or duplicate name.'],
+      },
+      {
         signature: 'resolve(request: SandboxPolicyRequest = {}): SandboxExecutionPolicy',
-        description: 'Resolve the complete policy for one capability call. An approved explicit mode outranks the session\'s last `sandbox/mode` event, which outranks the deployment default. A session cwd is its workspace-write boundary; the configured root is the fallback for agentless calls and sessions without a cwd.',
+        description: 'Resolve the complete policy for one capability call. An approved explicit mode outranks the session\'s last `sandbox/mode` event, which outranks the deployment default. A session cwd is its workspace-write boundary; the configured root is the fallback for agentless calls and sessions without a cwd. Registered writable roots that apply now join it as `extraWritableRoots`.',
         parameters: [{ name: 'request', description: 'optional session and approved mode override.' }],
-        returns: 'the fully resolved per-call mode and absolute workspace root.',
+        returns: 'the fully resolved per-call mode, absolute workspace root, and extra writable roots.',
+        throws: ['Error when a contributor resolves a relative directory.'],
       },
       {
         signature: 'overrideOf(session: Session): SandboxMode | undefined',
@@ -7050,7 +7058,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SandboxExecutionPolicy',
-    declaration: 'export interface SandboxExecutionPolicy {\n    mode: SandboxMode;\n    workspaceRoot: string;\n    sessionId?: SessionId;\n}',
+    declaration: 'export interface SandboxExecutionPolicy {\n    mode: SandboxMode;\n    workspaceRoot: string;\n    extraWritableRoots?: readonly string[];\n    sessionId?: SessionId;\n}',
   },
   {
     name: 'SandboxMode',
@@ -8935,6 +8943,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceView',
     declaration: 'export interface WorkspaceView {\n    readonly workspaceId: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'WritableRootContributor',
+    declaration: 'export interface WritableRootContributor {\n    readonly name: string;\n    resolve(): string | undefined;\n}',
   },
 ]
 

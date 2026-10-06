@@ -34,6 +34,7 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type {} from '@deepseek-ai/dsh-hub-account'
 import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-shell-env'
 import type {} from '@deepseek-ai/dsh-skill'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -313,6 +314,13 @@ export class ConnectorsService extends TypertRemoteService {
     for (const entry of this.installables.values()) {
       ctx.shellEnv.registerPath({ name: `connectors-${entry.id}`, resolve: () => this.scriptDir(entry) })
     }
+    // A connected CLI writes its sign-in state (locks, refreshed tokens) from the model's confined
+    // shell: the current tenant's directory joins the sandbox's writable roots while it runs there.
+    ctx.inject(['sandboxPolicy'], (scope) => {
+      for (const entry of this.installables.values()) {
+        scope.sandboxPolicy.registerWritableRoot({ name: `connectors-${entry.id}`, resolve: () => this.tenantDir(entry) })
+      }
+    })
     ctx.on('loader/volatile-update', () => { this.changed() })
     // A bash call of a connector's CLI that fails may mean the sign-in broke: check it.
     ctx.on('tools/result', (exec, result) => {
@@ -597,6 +605,12 @@ export class ConnectorsService extends TypertRemoteService {
     if (entry.install !== 'installed' || entry.removing || this.tenantId === null || !this.enabled(entry)) return undefined
     const live = entry.connection.state === 'connected' || entry.connection.state === 'degraded'
     return { tenant: this.tenantId, mode: live ? 'run' : 'not-connected' }
+  }
+
+  /** The current tenant's directory, while the model shell runs the connector's CLI. */
+  private tenantDir(entry: Installable): string | undefined {
+    const exposure = this.exposure(entry)
+    return exposure?.mode === 'run' ? this.cliAt(entry, exposure.tenant).dir : undefined
   }
 
   /** The directory put ahead of the model shell's PATH for a connector, while it is exposed. */

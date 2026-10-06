@@ -247,5 +247,5 @@ export const dingtalk: ConnectorDriver = {
   skillResources: (location, name) => ({ kind: 'directory', path: join(location.versionDir, SKILLS_DIR, name) }),
   assess,
   // Commands that only read and whose help states no safety.
-  readOnly: ['auth status', 'version', 'schema', 'profile list'],
+  readOnly: ['auth status', 'version', 'schema', 'profile list', 'shortcut list', 'config list'],
 }
