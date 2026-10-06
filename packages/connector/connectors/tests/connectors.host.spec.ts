@@ -55,6 +55,8 @@ interface Mirror {
   fail?: (path: string) => boolean
   /** Hold every response until released. */
   hold?: Promise<void>
+  /** Send the first half, then the rest this many milliseconds later. */
+  pauseMs?: number
 }
 
 async function startMirror(): Promise<Mirror> {
@@ -65,7 +67,10 @@ async function startMirror(): Promise<Mirror> {
       await mirror.hold
       const body = mirror.files.get(req.url!)
       if (mirror.fail?.(req.url!) === true || body === undefined) { res.writeHead(404).end(); return }
-      res.writeHead(200).end(body)
+      if (mirror.pauseMs === undefined) { res.writeHead(200).end(body); return }
+      res.writeHead(200).write(body.subarray(0, body.length / 2))
+      await new Promise(resolve => setTimeout(resolve, mirror.pauseMs))
+      res.end(body.subarray(body.length / 2))
     })()
   })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
@@ -84,10 +89,39 @@ function spec(mirror: Mirror, body: Buffer, file = `lark-cli-${VERSION}.tar.gz`,
   }
 }
 
-async function boot(home: string, feishu?: CliSpec) {
+/** A stand-in Hub sign-in whose tenant the spec switches. */
+function hubStub(tenantId: string | null) {
+  let current = tenantId
+  const waiting = new Set<() => void>()
+  const view = () => ({ profile: current === null ? null : { tenantId: current } })
+  return {
+    set: (next: string | null) => { current = next; for (const wake of waiting) wake() },
+    service: {
+      getState: () => Promise.resolve(view()),
+      async *watch(signal: AbortSignal) {
+        for (;;) {
+          await new Promise<void>((resolve) => {
+            const wake = (): void => { waiting.delete(wake); resolve() }
+            waiting.add(wake)
+            signal.addEventListener('abort', wake, { once: true })
+          })
+          if (signal.aborted) return
+          yield view()
+        }
+      },
+    },
+  }
+}
+
+async function boot(home: string, feishu?: CliSpec, options: { tenant?: string | null; checkIntervalMs?: number } = {}) {
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
-  await ctx.plugin(ConnectorsService, { dshHome: home, ...feishu === undefined ? {} : { feishu } })
+  const hub = hubStub(options.tenant ?? null)
+  ctx.provide('hubAccount', hub.service as never)
+  await ctx.plugin(ConnectorsService, {
+    dshHome: home, ...feishu === undefined ? {} : { feishu },
+    ...options.checkIntervalMs === undefined ? {} : { checkIntervalMs: options.checkIntervalMs },
+  })
   const service = ctx.get('connectors')!
   const stream = new AbortController()
   cleanups.push(async () => { stream.abort() })
@@ -99,7 +133,7 @@ async function boot(home: string, feishu?: CliSpec) {
       if (predicate(next.value)) return next.value
     }
   }
-  return { ctx, service, until }
+  return { ctx, service, until, hub }
 }
 
 const feishu = (state: ConnectorsState) => state.connectors.find(connector => connector.id === 'feishu')!
@@ -109,11 +143,16 @@ describe('connectors', () => {
   it('publishes the namespace, the feishu connector with its pinned CLI, and dingtalk as coming soon', async () => {
     const { service } = await boot(await scratch('dsh-connectors-home-'))
     expect(service.typertRemote.namespace).toBe('connectors')
-    expect(remoteMethods(service).map(method => method.method)).toEqual(['getState', 'watch', 'installConnector', 'uninstallConnector'])
+    expect(remoteMethods(service).map(method => method.method)).toEqual([
+      'getState', 'watch', 'installConnector', 'uninstallConnector', 'connect', 'cancelConnect', 'disconnect', 'check',
+    ])
     const state = await service.getState()
     expect(state.connectors.map(connector => [connector.id, connector.status])).toEqual([['feishu', PLATFORM === 'linux-riscv64' ? 'unsupported' : 'not-installed'], ['dingtalk', 'coming-soon']])
-    expect(feishu(state)).toMatchObject({ cli: 'lark-cli', version: '1.0.97', receivedBytes: 0, error: null })
-    expect(state.connectors[1]).toEqual({ id: 'dingtalk', status: 'coming-soon', cli: null, version: null, receivedBytes: 0, totalBytes: 0, error: null })
+    expect(feishu(state)).toMatchObject({ cli: 'lark-cli', version: '1.0.97', receivedBytes: 0, error: null, login: null, loginError: null })
+    expect(state.connectors[1]).toEqual({
+      id: 'dingtalk', status: 'coming-soon', cli: null, version: null, receivedBytes: 0, totalBytes: 0, error: null,
+      login: null, loginError: null, account: null, problem: null,
+    })
   })
 
   runs('installs the CLI from the next mirror, keeps only the executable, and finds it installed after a restart', async () => {
@@ -150,6 +189,17 @@ describe('connectors', () => {
     await service.installConnector('feishu')
     await until(state => feishu(state).receivedBytes === 100)
     expect(feishu(await until(state => feishu(state).status !== 'installing'))).toMatchObject({ status: 'disconnected', receivedBytes: body.length })
+  })
+
+  runs('publishes download progress while the bytes stream in', async () => {
+    const mirror = await startMirror()
+    const body = await archive('tar.gz')
+    mirror.pauseMs = 600
+    const { service, until } = await boot(await scratch('dsh-connectors-home-'), spec(mirror, body))
+    await service.installConnector('feishu')
+    const partial = feishu(await until(state => feishu(state).receivedBytes > 0 && feishu(state).receivedBytes < body.length))
+    expect(partial.status).toBe('installing')
+    await until(state => feishu(state).status === 'disconnected')
   })
 
   runs('unpacks a zip archive', async () => {

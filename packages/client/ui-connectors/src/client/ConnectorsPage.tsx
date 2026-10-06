@@ -1,9 +1,12 @@
-/** The Connectors page: one card per built-in connector, with its install control or status in the top-right corner. */
+/**
+ * The Connectors page: one card per built-in connector, with its install control or connection
+ * status in the top-right corner, the sign-in dialog, and the disconnect and uninstall confirmations.
+ */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ConnectorView } from '@deepseek-ai/dsh-connectors/types'
 import {
-  Button, IconEllipsisOutlineRegular, IconPlusOutlineRegular, IconTrashOutlineRegular, Menu, Modal, StateDot, Tag,
+  Button, IconEllipsisOutlineRegular, IconPlusOutlineRegular, Menu, Modal, StateDot, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConnectorsInjected } from './connectors-source.ts'
@@ -14,16 +17,22 @@ export type ConnectorsPageProps = PropsLocale<'connectors'> & InjectFace<Connect
 
 type T = TranslateNS<'connectors'>
 
+/** A confirmation the page is asking for. */
+type Confirming = { readonly action: 'uninstall' | 'disconnect'; readonly connector: ConnectorView }
+
 /**
- * Render the connector cards and the uninstall confirmation.
+ * Render the connector cards, the sign-in dialog of a connector being connected, and the confirmations.
+ * Opening the page checks every connection.
  * @param props - the `connectors` translator and the connectors face.
  * @returns the page.
  */
 export function ConnectorsPage(props: ConnectorsPageProps) {
-  const { t, useConnectors, onDismiss, onUninstall } = props
+  const { t, useConnectors, onDismiss, onCheck } = props
   const state = useConnectors(snapshot => snapshot.state)
   const failure = useConnectors(snapshot => snapshot.failure)
-  const [uninstalling, setUninstalling] = useState<ConnectorView | undefined>(undefined)
+  const [confirming, setConfirming] = useState<Confirming | undefined>(undefined)
+  useEffect(() => { void onCheck() }, [onCheck])
+  const connecting = state?.connectors.find(connector => connector.status === 'connecting')
   return (
     <div className={css.page}>
       <header className={css.header}>
@@ -39,33 +48,23 @@ export function ConnectorsPage(props: ConnectorsPageProps) {
       {state !== undefined && (
         <ul className={css.grid}>
           {state.connectors.map(connector => (
-            <ConnectorCard key={connector.id} connector={connector} props={props} onUninstall={() => { setUninstalling(connector) }} />
+            <ConnectorCard
+              key={connector.id} connector={connector} props={props}
+              onConfirm={(action) => { setConfirming({ action, connector }) }}
+            />
           ))}
         </ul>
       )}
-      <Modal
-        open={uninstalling !== undefined}
-        title={uninstalling === undefined ? '' : t('uninstallTitle', { name: t(`name.${uninstalling.id}`) })}
-        description={t('uninstallDescription', { cli: uninstalling?.cli ?? '' })}
-        closeLabel={t('close')}
-        onClose={() => { setUninstalling(undefined) }}
-        footer={uninstalling !== undefined && (
-          <div className={css.dialogActions}>
-            <Button variant="outline" onClick={() => { setUninstalling(undefined) }}>{t('cancel')}</Button>
-            <Button variant="primary" onClick={() => { setUninstalling(undefined); void onUninstall(uninstalling.id) }}>
-              {t('uninstallConfirm')}
-            </Button>
-          </div>
-        )}
-      />
+      {connecting !== undefined && <LoginDialog connector={connecting} props={props} />}
+      <ConfirmDialog confirming={confirming} props={props} onClose={() => { setConfirming(undefined) }} />
     </div>
   )
 }
 
-function ConnectorCard({ connector, props, onUninstall }: {
+function ConnectorCard({ connector, props, onConfirm }: {
   connector: ConnectorView
   props: ConnectorsPageProps
-  onUninstall: () => void
+  onConfirm: (action: Confirming['action']) => void
 }) {
   const { t } = props
   const name = t(`name.${connector.id}`)
@@ -74,7 +73,7 @@ function ConnectorCard({ connector, props, onUninstall }: {
       <div className={css.cardHead}>
         <span className={css.avatar} aria-hidden="true">{name.slice(0, 1)}</span>
         <span className={css.name}>{name}</span>
-        <Corner connector={connector} name={name} props={props} onUninstall={onUninstall} />
+        <Corner connector={connector} name={name} props={props} onConfirm={onConfirm} />
       </div>
       <p className={css.description}>{t(`description.${connector.id}`)}</p>
       <Footer connector={connector} t={t} />
@@ -82,16 +81,21 @@ function ConnectorCard({ connector, props, onUninstall }: {
   )
 }
 
-/** The card's top-right corner: install button, progress, status dot, or a label for a connector that cannot be installed. */
-function Corner({ connector, name, props, onUninstall }: {
+/** The dot and word of a connection status. */
+const DOTS = { disconnected: 'error', connected: 'done', degraded: 'warning' } as const
+
+/**
+ * The card's top-right corner: install button, progress, connection status with its actions, or a label
+ * for a connector that cannot be installed.
+ */
+function Corner({ connector, name, props, onConfirm }: {
   connector: ConnectorView
   name: string
   props: ConnectorsPageProps
-  onUninstall: () => void
+  onConfirm: (action: Confirming['action']) => void
 }) {
-  const { t, useConnectors, onInstall } = props
+  const { t, useConnectors, onInstall, onConnect, onCheck } = props
   const busy = useConnectors(snapshot => snapshot.busy.includes(connector.id))
-  const [menuOpen, setMenuOpen] = useState(false)
   switch (connector.status) {
     case 'coming-soon':
     case 'unsupported':
@@ -105,30 +109,63 @@ function Corner({ connector, name, props, onUninstall }: {
       )
     case 'installing':
       return <span className={css.corner} role="status" aria-label={t('installing', { name })}><StateDot state="ongoing" /></span>
-    case 'disconnected':
+    case 'connecting':
       return (
-        <span className={css.corner}>
-          <span className={css.status}><StateDot state="error" />{t('status.disconnected')}</span>
-          <Menu
-            open={menuOpen}
-            onClose={() => { setMenuOpen(false) }}
-            align="end"
-            portal
-            items={[{ id: 'uninstall', label: t('uninstall'), icon: <IconTrashOutlineRegular />, danger: true }]}
-            onSelect={() => { setMenuOpen(false); onUninstall() }}
-            anchor={(
-              <Button size="sm" aria-label={t('more', { name })} aria-haspopup="menu" aria-expanded={menuOpen} disabled={busy}
-                onClick={() => { setMenuOpen(open => !open) }}>
-                <IconEllipsisOutlineRegular />
-              </Button>
-            )}
-          />
+        <span className={css.corner} role="status" aria-label={t('connecting', { name })}>
+          <span className={css.status}><StateDot state="ongoing" />{t('status.connecting')}</span>
         </span>
       )
+    default: {
+      const { status } = connector
+      const actions: { id: 'connect' | 'check' | 'disconnect' | 'uninstall'; label: string; danger?: true }[] = [
+        ...status === 'connected' ? [] : [{ id: 'connect' as const, label: t(status === 'degraded' ? 'reconnect' : 'connect') }],
+        ...status === 'disconnected' ? [] : [{ id: 'check' as const, label: t('check') }, { id: 'disconnect' as const, label: t('disconnect') }],
+        { id: 'uninstall', label: t('uninstall'), danger: true },
+      ]
+      return (
+        <span className={css.corner}>
+          <span className={css.status} data-status={status}><StateDot state={DOTS[status]} />{t(`status.${status}`)}</span>
+          {status === 'disconnected' && (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => { void onConnect(connector.id) }}>{t('connect')}</Button>
+          )}
+          <ActionsMenu name={name} t={t} busy={busy} actions={actions} onSelect={(id) => {
+            if (id === 'connect') void onConnect(connector.id)
+            else if (id === 'check') void onCheck()
+            else onConfirm(id)
+          }} />
+        </span>
+      )
+    }
   }
 }
 
-/** The card's last line: the pinned CLI, download progress while installing, or why the last install failed. */
+function ActionsMenu<Id extends string>({ name, t, busy, actions, onSelect }: {
+  name: string
+  t: T
+  busy: boolean
+  actions: readonly { id: Id; label: string; danger?: true }[]
+  onSelect: (id: Id) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Menu
+      open={open}
+      onClose={() => { setOpen(false) }}
+      align="end"
+      portal
+      items={actions.map(action => ({ id: action.id, label: action.label, ...action.danger === undefined ? {} : { danger: true } }))}
+      onSelect={(id) => { setOpen(false); onSelect(id as Id) }}
+      anchor={(
+        <Button size="sm" aria-label={t('more', { name })} aria-haspopup="menu" aria-expanded={open} disabled={busy}
+          onClick={() => { setOpen(value => !value) }}>
+          <IconEllipsisOutlineRegular />
+        </Button>
+      )}
+    />
+  )
+}
+
+/** The card's last lines: download progress while installing, the signed-in account, why something failed, and the pinned CLI. */
 function Footer({ connector, t }: { connector: ConnectorView; t: T }) {
   if (connector.cli === null || connector.version === null) return null
   const cli = connector.cli
@@ -143,8 +180,86 @@ function Footer({ connector, t }: { connector: ConnectorView; t: T }) {
   }
   return (
     <>
+      {connector.account !== null && <p className={css.account}>{t('account', { account: connector.account })}</p>}
+      {connector.problem !== null && <p className={css.warning} role="alert">{t('problem', { problem: connector.problem })}</p>}
+      {connector.loginError !== null && connector.status !== 'connecting' && (
+        <p className={css.error} role="alert">{t(`loginError.${connector.loginError.step}`, { message: connector.loginError.message })}</p>
+      )}
       {connector.error !== null && <p className={css.error} role="alert">{t(`error.${connector.error}`, { cli })}</p>}
       <p className={css.meta}>{t('cliVersion', { cli, version: connector.version })}</p>
     </>
+  )
+}
+
+/** The sign-in under way: its two steps, the current step's QR code and address, and Cancel. */
+function LoginDialog({ connector, props }: { connector: ConnectorView; props: ConnectorsPageProps }) {
+  const { t, onCancelConnect, onOpenUrl } = props
+  const name = t(`name.${connector.id}`)
+  const step = connector.login?.step ?? 'authorize'
+  const url = connector.login?.url ?? null
+  const qrCode = connector.login?.qrCode ?? null
+  const cancel = (): void => { void onCancelConnect(connector.id) }
+  return (
+    <Modal
+      open
+      title={t('loginTitle', { name })}
+      description={t(`login.${step}`)}
+      closeLabel={t('loginCancel')}
+      onClose={cancel}
+      footer={(
+        <div className={css.dialogActions}>
+          <Button variant="outline" onClick={cancel}>{t('loginCancel')}</Button>
+        </div>
+      )}
+    >
+      <ol className={css.steps}>
+        {(['create-app', 'authorize'] as const).map((item, index) => (
+          <li key={item} aria-current={item === step ? 'step' : undefined}>{t('loginStep', { index: String(index + 1), label: t(`loginStep.${item}`) })}</li>
+        ))}
+      </ol>
+      {url === null
+        ? <p className={css.waiting} role="status"><StateDot state="ongoing" />{t('loginPreparing')}</p>
+        : (
+          <div className={css.login}>
+            {qrCode === null
+              ? <div className={css.qrMissing}>{t('loginNoQr')}</div>
+              : <img className={css.qr} src={qrCode} alt={t('loginQr', { name })} width={200} height={200} />}
+            <p className={css.hint}>{t('loginHint', { name })}</p>
+            <Button variant="primary" onClick={() => { onOpenUrl(url) }}>{t('loginOpen')}</Button>
+            <p className={css.url}>{url}</p>
+          </div>
+        )}
+    </Modal>
+  )
+}
+
+function ConfirmDialog({ confirming, props, onClose }: {
+  confirming: Confirming | undefined
+  props: ConnectorsPageProps
+  onClose: () => void
+}) {
+  const { t, onUninstall, onDisconnect } = props
+  const name = confirming === undefined ? '' : t(`name.${confirming.connector.id}`)
+  const cli = confirming?.connector.cli ?? ''
+  const action = confirming?.action ?? 'uninstall'
+  return (
+    <Modal
+      open={confirming !== undefined}
+      title={t(`${action}Title`, { name })}
+      description={t(`${action}Description`, { cli, name })}
+      closeLabel={t('close')}
+      onClose={onClose}
+      footer={confirming !== undefined && (
+        <div className={css.dialogActions}>
+          <Button variant="outline" onClick={onClose}>{t('cancel')}</Button>
+          <Button variant="primary" onClick={() => {
+            onClose()
+            void (action === 'uninstall' ? onUninstall : onDisconnect)(confirming.connector.id)
+          }}>
+            {t(`${action}Confirm`)}
+          </Button>
+        </div>
+      )}
+    />
   )
 }

@@ -12,6 +12,9 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../credentials/hub-account"
+    },
+    {
       "path": "../../typert/protocol"
     },
     {

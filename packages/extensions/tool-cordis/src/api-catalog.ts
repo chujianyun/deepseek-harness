@@ -784,10 +784,37 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async uninstallConnector(id: string): Promise<ConnectorsState>',
-        description: 'Stop a running install and delete the connector\'s CLI, downloads included.',
+        description: 'Stop a running install or sign-in, delete every tenant\'s sign-in, and delete the connector\'s CLI, downloads included.',
         parameters: [{ name: 'id', description: 'the connector.' }],
         returns: 'the state with the connector not installed.',
         throws: ['RemoteError `connectors/not-found` for an unknown id, `connectors/unavailable` when it cannot be installed here.'],
+      },
+      {
+        signature: '@Remote async connect(id: string): Promise<ConnectorsState>',
+        description: 'Sign the current tenant in to the connector\'s platform in the background, through the CLI\'s own agent sign-in; a sign-in under way or a connected connector changes nothing. A tenant without an app first creates one, then the user authorizes; each step\'s address appears in the view\'s `login` until the step ends. A failed or cancelled sign-in leaves no app it created behind.',
+        parameters: [{ name: 'id', description: 'the connector.' }],
+        returns: 'the state with the sign-in started.',
+        throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, `connectors/not-installed`, or `hub-account/signed-out`.'],
+      },
+      {
+        signature: '@Remote async cancelConnect(id: string): Promise<ConnectorsState>',
+        description: 'Cancel the sign-in under way; an app it created is deleted.',
+        parameters: [{ name: 'id', description: 'the connector.' }],
+        returns: 'the state once the sign-in has stopped.',
+        throws: ['RemoteError `connectors/not-found` or `connectors/unavailable`.'],
+      },
+      {
+        signature: '@Remote async disconnect(id: string): Promise<ConnectorsState>',
+        description: 'Sign the current tenant out of the connector\'s platform and delete its sign-in; the CLI stays.',
+        parameters: [{ name: 'id', description: 'the connector.' }],
+        returns: 'the state with the connector disconnected.',
+        throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`.'],
+      },
+      {
+        signature: '@Remote async check(): Promise<ConnectorsState>',
+        description: 'Check every installed connector\'s connection now, as opening the Connectors page does.',
+        parameters: [],
+        returns: 'the state once the checks have finished.',
       },
     ],
   },
@@ -5350,16 +5377,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ConnectorInstallError = \'network\' | \'verification\' | \'storage\' | \'launch\';',
   },
   {
+    name: 'ConnectorLoginError',
+    declaration: 'export interface ConnectorLoginError {\n    readonly step: ConnectorLoginStep;\n    readonly message: string;\n}',
+  },
+  {
+    name: 'ConnectorLoginStep',
+    declaration: 'export type ConnectorLoginStep = \'create-app\' | \'authorize\';',
+  },
+  {
+    name: 'ConnectorLoginView',
+    declaration: 'export interface ConnectorLoginView {\n    readonly step: ConnectorLoginStep;\n    readonly url: string | null;\n    readonly qrCode: string | null;\n}',
+  },
+  {
     name: 'ConnectorsState',
     declaration: 'export interface ConnectorsState {\n    readonly connectors: readonly ConnectorView[];\n}',
   },
   {
     name: 'ConnectorStatus',
-    declaration: 'export type ConnectorStatus = \'coming-soon\' | \'unsupported\' | \'not-installed\' | \'installing\' | \'disconnected\';',
+    declaration: 'export type ConnectorStatus = \'coming-soon\' | \'unsupported\' | \'not-installed\' | \'installing\' | \'disconnected\' | \'connecting\' | \'connected\' | \'degraded\';',
   },
   {
     name: 'ConnectorView',
-    declaration: 'export interface ConnectorView {\n    readonly id: ConnectorId;\n    readonly status: ConnectorStatus;\n    readonly cli: string | null;\n    readonly version: string | null;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly error: ConnectorInstallError | null;\n}',
+    declaration: 'export interface ConnectorView {\n    readonly id: ConnectorId;\n    readonly status: ConnectorStatus;\n    readonly cli: string | null;\n    readonly version: string | null;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly error: ConnectorInstallError | null;\n    readonly login: ConnectorLoginView | null;\n    readonly loginError: ConnectorLoginError | null;\n    readonly account: string | null;\n    readonly problem: string | null;\n}',
   },
   {
     name: 'ContentBlockMap',

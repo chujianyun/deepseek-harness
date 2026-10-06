@@ -746,7 +746,8 @@ export interface ToolResultPruneConfig {
 
 ## `@deepseek-ai/dsh-connectors`
 
-- `source`: [`packages/connector/connectors/src/index.ts:60`](../packages/connector/connectors/src/index.ts)
+- `inject`: `hubAccount`
+- `source`: [`packages/connector/connectors/src/index.ts:71`](../packages/connector/connectors/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -755,6 +756,8 @@ export interface Config {
   dshHome?: string
   /** The Feishu CLI. */
   feishu?: CliSpec
+  /** Time between periodic health checks of the connections, in milliseconds. */
+  checkIntervalMs?: number
 }
 
 /** A connector CLI pinned to one release. */

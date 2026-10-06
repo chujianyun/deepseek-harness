@@ -457,7 +457,6 @@ flowchart TD
   pkg_attachment --> pkg_brand
   pkg_browser_use --> pkg_brand
   pkg_computer_use --> pkg_brand
-  pkg_connectors --> pkg_typert_protocol
   pkg_credentials --> pkg_invariants
   pkg_experimental_inspector --> pkg_client_modules
   pkg_experimental_inspector --> pkg_host_webserver
@@ -1410,6 +1409,8 @@ flowchart TD
   pkg_subagent_dsh_sdk --> pkg_session
   pkg_subagent_dsh_sdk --> pkg_subagent
   pkg_subagent_dsh_sdk --> pkg_subprocess
+  pkg_connectors --> pkg_hub_account
+  pkg_connectors --> pkg_typert_protocol
   pkg_knowledge_base --> pkg_embedding
   pkg_knowledge_base --> pkg_hub_account
   pkg_knowledge_base --> pkg_typert_protocol
@@ -1554,7 +1555,6 @@ flowchart TD
 | [`attachment`](../packages/attachment/attachment) | `attachment` | [`brand`](../packages/util/brand) |
 | [`browser-use`](../packages/browser-use/browser-use) | `browser-use` | [`brand`](../packages/util/brand) |
 | [`computer-use`](../packages/computer-use/computer-use) | `computer-use` | [`brand`](../packages/util/brand) |
-| [`connectors`](../packages/connector/connectors) | `connector` | [`typert-protocol`](../packages/typert/protocol) |
 | [`credentials`](../packages/credentials/credentials) | `credentials` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`experimental-inspector`](../packages/experimental/inspector) | `experimental` | [`client-modules`](../packages/client/modules), [`host-webserver`](../packages/host/webserver) |
 | [`host-directory-picker-auto`](../packages/host/directory-picker-auto) | `host` | [`client-ui-directory-picker-browse`](../packages/client/ui-directory-picker-browse), [`client-ui-directory-picker-native`](../packages/client/ui-directory-picker-native), [`host-directory-picker-browse`](../packages/host/directory-picker-browse), [`host-directory-picker-native`](../packages/host/directory-picker-native), [`host-webserver`](../packages/host/webserver) |
@@ -1758,6 +1758,7 @@ flowchart TD
 | [`client-test-runtime`](../packages/test-support/client-runtime) | `test-support` | [`api-gateway`](../packages/api/gateway), [`api-session-controller`](../packages/api/session-controller), [`api-workspace-controller`](../packages/api/workspace-controller), [`attachment`](../packages/attachment/attachment), [`client-connection`](../packages/client/connection), [`client-hmr`](../packages/client/hmr), [`client-modules`](../packages/client/modules), [`client-store`](../packages/client/store), [`client-ui-chat`](../packages/client/ui-chat), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-renderer`](../packages/client/ui-renderer), [`client-ui-session`](../packages/client/ui-session), [`client-ui-settings`](../packages/client/ui-settings), [`client-ui-slots`](../packages/client/ui-slots), [`client-web`](../packages/client/web), [`remote-mock`](../packages/test-support/remote-mock), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`typert-protocol`](../packages/typert/protocol) |
 | [`skill-market`](../packages/skill/skill-market) | `skill` | [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`home-paths`](../packages/util/home-paths), [`hub-account`](../packages/credentials/hub-account), [`scope`](../packages/core/scope), [`settings`](../packages/settings/settings), [`skill`](../packages/skill/skill), [`skill-filesystem`](../packages/skill/skill-filesystem), [`typert-protocol`](../packages/typert/protocol) |
 | [`subagent-dsh-sdk`](../packages/subagent/subagent-dsh-sdk) | `subagent` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`sdk-client`](../packages/sdk/client), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess) |
+| [`connectors`](../packages/connector/connectors) | `connector` | [`hub-account`](../packages/credentials/hub-account), [`typert-protocol`](../packages/typert/protocol) |
 | [`knowledge-base`](../packages/knowledge/knowledge-base) | `knowledge` | [`embedding`](../packages/llm/embedding), [`hub-account`](../packages/credentials/hub-account), [`typert-protocol`](../packages/typert/protocol), [`web`](../packages/web/web) |
 | [`skill-controller`](../packages/skill/skill-controller) | `skill` | [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`native-command`](../packages/util/native-command), [`scope`](../packages/core/scope), [`skill`](../packages/skill/skill), [`skill-market`](../packages/skill/skill-market), [`typert-protocol`](../packages/typert/protocol) |
 | [`knowledge-selection`](../packages/knowledge/knowledge-selection) | `knowledge` | [`agent`](../packages/core/agent), [`api-session-controller`](../packages/api/session-controller), [`knowledge-base`](../packages/knowledge/knowledge-base), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol) |

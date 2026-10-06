@@ -54,10 +54,12 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-hub-account": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-hub-account": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*"
   }
 }

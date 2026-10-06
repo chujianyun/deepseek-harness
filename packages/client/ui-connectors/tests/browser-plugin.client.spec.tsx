@@ -20,7 +20,10 @@ beforeAll(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { pro
 afterAll(() => { Reflect.deleteProperty(globalThis, 'dshDesktop') })
 
 const state: ConnectorsState = {
-  connectors: [{ id: 'feishu', status: 'not-installed', cli: 'lark-cli', version: '1.0.97', receivedBytes: 0, totalBytes: 10, error: null }],
+  connectors: [{
+    id: 'feishu', status: 'not-installed', cli: 'lark-cli', version: '1.0.97', receivedBytes: 0, totalBytes: 10, error: null,
+    login: null, loginError: null, account: null, problem: null,
+  }],
 }
 
 async function bench() {
@@ -35,6 +38,10 @@ async function bench() {
   const connectors = {
     installConnector: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
     uninstallConnector: vi.fn(() => Promise.resolve({ ok: false as const, error: new RemoteError('connectors/unavailable', 'nope', { id: 'x' }) })),
+    connect: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
+    cancelConnect: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
+    disconnect: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
+    check: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
     watch: vi.fn(),
   }
   const remote = new TestRemote(ctx, { connectors })
@@ -100,6 +107,18 @@ describe('ui-connectors browser plugin', () => {
     await injected.onUninstall('feishu')
     expect(b.connectors.uninstallConnector).toHaveBeenCalledWith('feishu')
     expect(injected.hooks.connectors.getSnapshot().failure).toBe('nope')
+    await injected.onConnect('feishu')
+    await injected.onCancelConnect('feishu')
+    await injected.onDisconnect('feishu')
+    await injected.onCheck()
+    expect(b.connectors.connect).toHaveBeenCalledWith('feishu')
+    expect(b.connectors.cancelConnect).toHaveBeenCalledWith('feishu')
+    expect(b.connectors.disconnect).toHaveBeenCalledWith('feishu')
+    expect(b.connectors.check).toHaveBeenCalledOnce()
+    const open = vi.spyOn(globalThis, 'open').mockReturnValue(null)
+    injected.onOpenUrl('https://open.feishu.cn/x')
+    expect(open).toHaveBeenCalledWith('https://open.feishu.cn/x', '_blank', 'noopener')
+    open.mockRestore()
     const signal = new AbortController().signal
     b.options.open!(signal)
     expect(b.connectors.watch).toHaveBeenCalledWith(signal)

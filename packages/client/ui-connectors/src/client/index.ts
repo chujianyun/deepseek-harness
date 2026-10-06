@@ -1,7 +1,8 @@
 /**
  * Connectors page, browser half: the **Connectors** entry of the Desktop sidebar and the page it
- * opens in the main column, where each built-in connector's CLI is installed and uninstalled.
- * State streams from the `connectors` Remote.
+ * opens in the main column, where each built-in connector's CLI is installed, the signed-in
+ * tenant connects and disconnects it, and its connection status shows. State streams from the
+ * `connectors` Remote.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -42,7 +43,16 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-connectors: dictionaries')
   const t = ctx.locale.bind(NS)
   const remote = ctx.remote.connectors
-  const source = createConnectorsSource({ install: id => remote.installConnector(id), uninstall: id => remote.uninstallConnector(id) })
+  const source = createConnectorsSource({
+    install: id => remote.installConnector(id),
+    uninstall: id => remote.uninstallConnector(id),
+    connect: id => remote.connect(id),
+    cancelConnect: id => remote.cancelConnect(id),
+    disconnect: id => remote.disconnect(id),
+    check: () => remote.check(),
+    // The Desktop shell sends a new window's http(s) address to the default browser.
+    openUrl: (url) => { globalThis.open(url, '_blank', 'noopener') },
+  })
   const connectors = ctx.remote.$stream<ConnectorsState>({
     name: 'connectors', open: signal => remote.watch(signal), ended: () => new Error('connectors stream ended'),
   })
