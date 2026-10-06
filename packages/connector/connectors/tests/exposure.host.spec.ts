@@ -110,7 +110,7 @@ describe('the model shell\'s lark-cli', () => {
     // A file where the next tenant's script directory belongs.
     await writeFile(join(t.root, 'bin', 't-b'), '')
     t.hub.set('t-b')
-    await vi.waitFor(() => { expect(info).toHaveBeenCalledWith('[connectors] could not write the lark-cli script', expect.anything()) })
+    await vi.waitFor(() => { expect(info).toHaveBeenCalledWith('[connectors] could not write the CLI script', expect.objectContaining({ connector: 'feishu' })) })
     info.mockRestore()
   })
 

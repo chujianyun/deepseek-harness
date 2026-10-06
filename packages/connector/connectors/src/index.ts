@@ -1,7 +1,7 @@
 /**
  * Connectors for Desktop, behind one Host service and the `connectors` Remote namespace. A
  * connector links DSH to an office platform through that platform's unmodified official CLI.
- * Feishu is supported and DingTalk is listed as coming soon.
+ * Feishu (`lark-cli`) and DingTalk (`dws`) are supported, each through its driver.
  *
  * Installing a connector downloads the CLI version pinned by this release from the configured
  * mirrors in order, verifies the archive by size and sha256, unpacks only the executable, and
@@ -16,11 +16,12 @@
  * connection's color at startup, on request, after a sign-in, and periodically. Disconnecting
  * deletes the tenant's sign-in; uninstalling deletes every tenant's and the CLI.
  *
- * While a connector is installed and enabled for the tenant, the model shell finds a `lark-cli`
- * script under `<dshHome>/connectors/<id>/bin/<tenantId>` ahead of `PATH`: connected, it runs the
+ * While a connector is installed and enabled for the tenant, the model shell finds a script named
+ * after its CLI under `<dshHome>/connectors/<id>/bin/<tenantId>` ahead of `PATH`: connected, it runs the
  * installed CLI with the tenant's directories; otherwise it refuses and points to the Connectors
- * page. A bash call of `lark-cli` that fails triggers a health check. While connected, the Skills the CLI embeds
- * reach the model through the skill registry.
+ * page. A bash call of the CLI that fails triggers a health check. While connected, the Skills the CLI
+ * release ships reach the model through the skill registry, and a bash call that would write through
+ * the CLI waits for the user's approval.
  *
  * @module @deepseek-ai/dsh-connectors
  */
@@ -40,12 +41,12 @@ import type { PreToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { bytesOnDisk } from '@deepseek-ai/dsh-verified-download'
 import Schema from '@deepseek-ai/schemastery'
-import { LARK_CLI } from './catalog.ts'
+import { DWS_CLI, LARK_CLI } from './catalog.ts'
+import { LoginError, writeWrapper, type Health, type LoginStep, type TenantCli, type WrapperMode } from './cli.ts'
+import { dingtalk } from './dingtalk.ts'
+import type { ConnectorDriver } from './driver.ts'
 import { cliInstalled, executableName, installCli, platformKey, type InstallError } from './install.ts'
-import {
-  checkHealth, cliEnv, LoginError, qrCode, removeTenant, runLoginStep, wrapperScript, writeWrapper,
-  type Health, type LoginStep, type TenantCli, type WrapperMode,
-} from './lark.ts'
+import { feishu as feishuDriver } from './lark.ts'
 import { classify, helpRiskReader, invocations, type Classification, type RiskReader } from './risk.ts'
 import { ConnectorSkillProvider, type ConnectorSkill, type SkillSource } from './skills.ts'
 import type {
@@ -59,6 +60,16 @@ declare module '@deepseek-ai/cordis' {
     /** Built-in connectors, the install state of their CLIs, and the signed-in tenant's connections. */
     connectors: ConnectorsService
   }
+}
+
+/** A file a CLI release publishes for every platform. */
+export interface CliAsset {
+  /** File name; `.zip`. */
+  file: string
+  /** Size in bytes. */
+  size: number
+  /** Lowercase hex sha256. */
+  sha256: string
 }
 
 /** One platform's archive of a CLI release. */
@@ -83,6 +94,8 @@ export interface CliSpec {
   mirrors: string[]
   /** One archive per supported platform. */
   archives: CliArchive[]
+  /** The release's Skills archive, downloaded from the same mirrors, when the executable does not embed them. */
+  skills?: CliAsset
 }
 
 /** Plugin configuration. */
@@ -91,6 +104,8 @@ export interface Config {
   dshHome?: string
   /** The Feishu CLI. */
   feishu?: CliSpec
+  /** The DingTalk CLI. */
+  dingtalk?: CliSpec
   /** Time between periodic health checks of the connections, in milliseconds. */
   checkIntervalMs?: number
   /** Connectors switched off, as `<tenantId>/<id>`; edited live through `setEnabled()`. */
@@ -107,12 +122,19 @@ const cliSpec = Schema.object({
     size: Schema.natural().required(),
     sha256: Schema.string().pattern(/^[0-9a-f]{64}$/u).required(),
   })).required(),
+  // Absent for a CLI that embeds its Skills; an object would default to {} and fail its required fields.
+  skills: Schema.union([Schema.object({
+    file: Schema.string().pattern(/\.zip$/u).required(),
+    size: Schema.natural().required(),
+    sha256: Schema.string().pattern(/^[0-9a-f]{64}$/u).required(),
+  }), Schema.const(undefined)]),
 })
 
 /** Validated plugin configuration. */
 export const Config = Schema.object({
   dshHome: Schema.string(),
   feishu: cliSpec.default(LARK_CLI),
+  dingtalk: cliSpec.default(DWS_CLI),
   checkIntervalMs: Schema.natural().min(1000).default(30 * 60 * 1000),
   disabled: Schema.array(Schema.string()).default([]).volatile()
     .description('Connectors switched off, as `<tenantId>/<id>`. A switched-off connector stays signed in, but the model gets neither its Skills nor its CLI.'),
@@ -134,39 +156,58 @@ function bashCommand(exec: Pick<ToolExecution, 'name' | 'arguments'>): string | 
   return exec.name === 'bash' && typeof command === 'string' ? command : undefined
 }
 
+/** What a bash call does through one connected connector. */
+interface Classified {
+  readonly driver: ConnectorDriver
+  readonly cli: string
+  readonly classification: Classification
+}
+
+const RISK_ORDER: readonly Classification['risk'][] = ['none', 'read', 'write', 'unknown', 'high-risk-write']
+
 /**
- * The approval a bash call that writes through Feishu asks for: the audit reason names the
- * commands, and the user sees what will happen as them — with a warning for a high-risk command.
- * @param classification - the call's lark-cli commands and their highest risk.
+ * The approval a bash call that writes through connectors asks for: the audit reason names the
+ * commands, and the user sees what will happen as them — with a warning for a high-risk command,
+ * and the note that DSH confirms the commands the CLI asks to confirm.
+ * @param parts - the call's commands per connector; at least one writes.
  * @returns the pre-execution decision.
  */
-function approvalAsk(classification: Classification): PreToolDecision {
-  const listed = classification.invocations.filter(item => item.risk !== 'read').map(item => `lark-cli ${item.command}`.trim()).join('; ')
+function approvalAsk(parts: readonly Classified[]): PreToolDecision {
+  // Every risk is in the order, so the highest index names one.
+  const risk = RISK_ORDER[Math.max(...parts.map(part => RISK_ORDER.indexOf(part.classification.risk)))] as Classification['risk']
+  const asked = parts.flatMap(part => part.classification.invocations.filter(item => item.risk !== 'read').map(item => ({ ...item, cli: part.cli })))
+  const listed = asked.map(item => `${item.cli} ${item.command}`.trim()).join('; ')
   const commands = listed.length > APPROVAL_COMMAND_CHARS ? `${listed.slice(0, APPROVAL_COMMAND_CHARS)}…` : listed
-  const reason = `Feishu connector ${classification.risk} command: ${commands}`
-  switch (classification.risk) {
+  const drivers = parts.filter(part => part.classification.risk !== 'none' && part.classification.risk !== 'read').map(part => part.driver)
+  const en = drivers.map(driver => driver.name.en).join(' and ')
+  const zh = drivers.map(driver => driver.name.zh).join('、')
+  const reason = `${en} connector ${risk} command: ${commands}`
+  const yes = asked.some(item => item.confirm)
+  const yesEn = yes ? ' If you allow it, DSH confirms it with --yes for this run.' : ''
+  const yesZh = yes ? '同意后 DSH 会为本次执行加上 --yes。' : ''
+  switch (risk) {
     case 'high-risk-write':
       return {
         kind: 'ask', reason,
         displayReason: {
-          en: `⚠️ High-risk operation: the Feishu connector will run ${commands} as you. It may delete data or make changes that cannot be undone. If you allow it, DSH adds --yes for this run.`,
-          zh: `⚠️ 高风险操作：飞书连接器将以你的身份执行 ${commands}，可能删除数据或造成无法撤销的修改。同意后 DSH 会为本次执行加上 --yes。`,
+          en: `⚠️ High-risk operation: the ${en} connector will run ${commands} as you. It may delete data or make changes that cannot be undone.${yesEn}`,
+          zh: `⚠️ 高风险操作：${zh}连接器将以你的身份执行 ${commands}，可能删除数据或造成无法撤销的修改。${yesZh}`,
         },
       }
     case 'unknown':
       return {
         kind: 'ask', reason,
         displayReason: {
-          en: `The risk of this Feishu command cannot be determined, so it is confirmed like a write: ${commands}. Allow it to run as you once?`,
-          zh: `无法确定这条飞书命令的风险，按写操作确认：${commands}。允许以你的身份执行一次吗？`,
+          en: `The risk of this ${en} command cannot be determined, so it is confirmed like a write: ${commands}. Allow it to run as you once?${yesEn}`,
+          zh: `无法确定这条${zh}命令的风险，按写操作确认：${commands}。允许以你的身份执行一次吗？${yesZh}`,
         },
       }
     default:
       return {
         kind: 'ask', reason,
         displayReason: {
-          en: `The Feishu connector will write as you: ${commands}. Allow it to run once?`,
-          zh: `飞书连接器将以你的身份执行写操作：${commands}。允许执行一次吗？`,
+          en: `The ${en} connector will write as you: ${commands}. Allow it to run once?${yesEn}`,
+          zh: `${zh}连接器将以你的身份执行写操作：${commands}。允许执行一次吗？${yesZh}`,
         },
       }
   }
@@ -177,9 +218,6 @@ const FAILURE_CHECK_DELAY_MS = 500
 
 /** Progress frames are published at most this often while bytes stream in. */
 const PROGRESS_INTERVAL_MS = 250
-
-/** Display order of the connector cards. */
-const ORDER: readonly ConnectorId[] = ['feishu', 'dingtalk']
 
 /** The signed-in tenant's connection to one platform. */
 interface Connection {
@@ -198,6 +236,7 @@ interface Connection {
 /** A connector DSH supports: its CLI's install state and the signed-in tenant's connection. */
 interface Installable {
   readonly id: ConnectorId
+  readonly driver: ConnectorDriver
   readonly spec: CliSpec
   /** `<dshHome>/connectors/<id>`. */
   readonly root: string
@@ -209,7 +248,7 @@ interface Installable {
   connection: Connection
   /** The Skills the installed CLI embeds; empty until listed. */
   skills: readonly ConnectorSkill[]
-  /** What the model shell's `lark-cli` was last written for, as `<tenantId>:<mode>`; undefined while it gets none. */
+  /** What the model shell's script was last written for, as `<tenantId>:<mode>`; undefined while it gets none. */
   wrapper: string | undefined
   /** Set while uninstalling: the connector is hidden from the model and refuses a new install until its files are gone. */
   removing: boolean
@@ -230,6 +269,7 @@ export class ConnectorsService extends TypertRemoteService {
   static inject = ['hubAccount', 'skills', 'shellEnv']
   static Config = Config
 
+  /** The supported connectors, in display order. */
   private readonly installables = new Map<ConnectorId, Installable>()
   private readonly checkIntervalMs: number
   private readonly disabled: Volatile<readonly string[]> | undefined
@@ -254,44 +294,55 @@ export class ConnectorsService extends TypertRemoteService {
     super(ctx, 'connectors', { namespace: 'connectors' })
     // The live disabled list arrives as a Volatile handle; the schema validates the rest.
     const { disabled, ...rest } = config
-    const resolved = Config(rest) as Config & { feishu: CliSpec; checkIntervalMs: number }
+    const resolved = Config(rest) as Config & { feishu: CliSpec; dingtalk: CliSpec; checkIntervalMs: number }
     this.checkIntervalMs = resolved.checkIntervalMs
     this.disabled = disabled
     this.entryId = ctx.fiber.entry?.options.id
     const root = join(resolveDshHome(resolved.dshHome), 'connectors')
-    const feishu: Installable = {
-      id: 'feishu', spec: resolved.feishu, root: join(root, 'feishu'), install: 'not-installed', error: null, received: 0,
-      running: undefined, controller: undefined, connection: idle(0), skills: [], wrapper: undefined, removing: false,
+    for (const [driver, spec] of [[feishuDriver, resolved.feishu], [dingtalk, resolved.dingtalk]] as const) {
+      this.installables.set(driver.id, {
+        id: driver.id, driver, spec, root: join(root, driver.id), install: 'not-installed', error: null, received: 0,
+        running: undefined, controller: undefined, connection: idle(0), skills: [], wrapper: undefined, removing: false,
+      })
     }
-    this.installables.set('feishu', feishu)
     // Every layer: a preset's local Skill discovery must not replace the connectors' Skills with the user's own copies.
     ctx.skills.registerProvider((control) => {
       this.provider = new ConnectorSkillProvider(() => this.skillSources(), control)
       return this.provider
     }, { everyLayer: true })
-    ctx.shellEnv.registerPath({ name: 'connectors-feishu', resolve: () => this.scriptDir(feishu) })
+    for (const entry of this.installables.values()) {
+      ctx.shellEnv.registerPath({ name: `connectors-${entry.id}`, resolve: () => this.scriptDir(entry) })
+    }
     ctx.on('loader/volatile-update', () => { this.changed() })
     // A bash call of a connector's CLI that fails may mean the sign-in broke: check it.
     ctx.on('tools/result', (exec, result) => {
       this.confirmed.delete(exec.callId)
       const command = bashCommand(exec)
-      const found = command === undefined ? [] : invocations(command)
-      if (found !== 'opaque' && found.length === 0) return
+      if (command === undefined) return
       const exitCode = result.isError ? null : (result.value as { exitCode?: unknown }).exitCode
-      if (exitCode !== 0) this.failed(feishu)
+      if (exitCode === 0) return
+      for (const entry of this.installables.values()) {
+        const found = invocations(command, entry.spec.binary)
+        if (found === 'opaque' || found.length > 0) this.failed(entry)
+      }
     })
     // A bash call that would write through a connected connector waits for the user's approval.
     ctx.on('tools/pre-execute', async (exec, next) => {
       const decision = await next()
       const command = bashCommand(exec)
-      if (decision.kind !== 'allow' || command === undefined || this.exposure(feishu)?.mode !== 'run') return decision
-      const classification = await classify(command, this.riskReader(feishu))
-      if (classification.risk === 'none' || classification.risk === 'read') return decision
-      if (classification.risk === 'high-risk-write') {
-        const risky = classification.invocations.filter(item => item.risk === 'high-risk-write').map(item => item.command)
-        this.confirmed.set(exec.callId, risky.join('\n'))
+      if (decision.kind !== 'allow' || command === undefined) return decision
+      const parts: Classified[] = []
+      for (const entry of this.installables.values()) {
+        if (this.exposure(entry)?.mode !== 'run') continue
+        const cli = entry.spec.binary
+        const classification = await classify(command, cli, this.riskReader(entry), entry.driver.readOnly)
+        parts.push({ driver: entry.driver, cli, classification })
       }
-      return approvalAsk(classification)
+      if (parts.every(part => part.classification.risk === 'none' || part.classification.risk === 'read')) return decision
+      // Commands the CLI runs only confirmed get its confirm flag once the user approves the call.
+      const confirmed = parts.flatMap(part => part.classification.invocations.filter(item => item.confirm).map(item => `${part.cli} ${item.command}`))
+      if (confirmed.length > 0) this.confirmed.set(exec.callId, confirmed.join('\n'))
+      return approvalAsk(parts)
     })
     ctx.shellEnv.register({
       name: 'connectors',
@@ -341,7 +392,7 @@ export class ConnectorsService extends TypertRemoteService {
    */
   @Remote
   getState(): Promise<ConnectorsState> {
-    return Promise.resolve({ connectors: ORDER.map(id => this.view(id)) })
+    return Promise.resolve({ connectors: [...this.installables.values()].map(entry => this.view(entry)) })
   }
 
   /**
@@ -394,7 +445,7 @@ export class ConnectorsService extends TypertRemoteService {
     await entry.running
     await this.stopLogin(entry)
     if (entry.install === 'installed') {
-      for (const tenant of await readdir(join(entry.root, 'tenants')).catch(() => [])) await removeTenant(this.cliAt(entry, tenant))
+      for (const tenant of await readdir(join(entry.root, 'tenants')).catch(() => [])) await entry.driver.removeTenant(this.cliAt(entry, tenant))
     }
     this.changed()
     await this.writes
@@ -426,7 +477,8 @@ export class ConnectorsService extends TypertRemoteService {
     const { connection } = entry
     if (connection.state === 'disconnected' || connection.state === 'degraded') {
       const controller = new AbortController()
-      entry.connection = { ...idle(connection.epoch + 1), state: 'connecting', controller, login: { step: 'authorize', url: null, qrCode: null } }
+      // Until the health check before it says whether an app is needed, the sign-in shows its last step.
+      entry.connection = { ...idle(connection.epoch + 1), state: 'connecting', controller, login: { steps: entry.driver.steps, step: 'authorize', url: null, qrCode: null } }
       entry.connection.running = this.login(entry, this.cliAt(entry, tenant), controller)
       this.changed()
     }
@@ -458,7 +510,7 @@ export class ConnectorsService extends TypertRemoteService {
     const tenant = this.requireTenant()
     await this.stopLogin(entry)
     entry.connection = idle(entry.connection.epoch + 1)
-    if (entry.install === 'installed') await removeTenant(this.cliAt(entry, tenant))
+    if (entry.install === 'installed') await entry.driver.removeTenant(this.cliAt(entry, tenant))
     this.changed()
     return this.getState()
   }
@@ -501,10 +553,10 @@ export class ConnectorsService extends TypertRemoteService {
 
   /** A connector this platform can install, with its archive. */
   private installable(id: string): { entry: Installable; archive: CliArchive } {
-    if (!ORDER.includes(id as ConnectorId)) throw new RemoteError('connectors/not-found', `no connector ${id}`, { id })
     const entry = this.installables.get(id as ConnectorId)
-    const archive = entry === undefined ? undefined : this.archive(entry)
-    if (entry === undefined || archive === undefined) {
+    if (entry === undefined) throw new RemoteError('connectors/not-found', `no connector ${id}`, { id })
+    const archive = this.archive(entry)
+    if (archive === undefined) {
       throw new RemoteError('connectors/unavailable', `the connector ${id} cannot be installed here`, { id })
     }
     return { entry, archive }
@@ -515,19 +567,14 @@ export class ConnectorsService extends TypertRemoteService {
     return this.tenantId
   }
 
-  private view(id: ConnectorId): ConnectorView {
-    const entry = this.installables.get(id)
-    if (entry === undefined) {
-      return {
-        id, status: 'coming-soon', cli: null, version: null, receivedBytes: 0, totalBytes: 0, error: null,
-        login: null, loginError: null, account: null, problem: null, enabled: true, skills: [],
-      }
-    }
+  private view(entry: Installable): ConnectorView {
+    const { id } = entry
     const archive = this.archive(entry)
     const { connection } = entry
     const status: ConnectorStatus = archive === undefined ? 'unsupported' : entry.install === 'installed' ? connection.state : entry.install
     return {
-      id, status, cli: entry.spec.binary, version: entry.spec.version, receivedBytes: entry.received, totalBytes: archive?.size ?? 0,
+      id, status, cli: entry.spec.binary, version: entry.spec.version, receivedBytes: entry.received,
+      totalBytes: archive === undefined ? 0 : archive.size + (entry.spec.skills?.size ?? 0),
       error: entry.error, login: status === 'connecting' ? connection.login : null, loginError: connection.loginError,
       account: status === 'connected' ? connection.account : null, problem: status === 'degraded' ? connection.problem : null,
       enabled: this.enabled(entry), skills: entry.skills,
@@ -562,18 +609,25 @@ export class ConnectorsService extends TypertRemoteService {
   private skillSources(): SkillSource[] {
     return [...this.installables.values()].flatMap((entry) => {
       const exposure = this.exposure(entry)
-      return exposure?.mode === 'run'
-        ? [{ source: `connector-${entry.id}`, version: entry.spec.version, cli: this.cliAt(entry, exposure.tenant) }]
-        : []
+      if (exposure?.mode !== 'run') return []
+      const location = { versionDir: this.versionDir(entry), cli: this.cliAt(entry, exposure.tenant) }
+      return [{ source: `connector-${entry.id}`, version: entry.spec.version, driver: entry.driver, location }]
     })
   }
 
-  /** List the installed CLI's Skills for the card; the tenant-free catalog directory keeps tenants out of it. */
+  /** The tenant-free CLI that lists Skills and reads help, so no tenant's directories are touched. */
+  private catalogCli(entry: Installable): TenantCli {
+    return { bin: join(this.versionDir(entry), executableName(entry.spec)), dir: join(entry.root, 'catalog') }
+  }
+
+  /** List the installed CLI's Skills for the card. */
   private async listSkills(entry: Installable): Promise<void> {
     /* v8 ignore next -- the skill registry builds the provider synchronously inside registerProvider(). */
     if (this.provider === undefined) return
-    const cli = { bin: join(this.versionDir(entry), executableName(entry.spec)), dir: join(entry.root, 'catalog') }
-    const skills = await this.provider.skills({ source: `connector-${entry.id}`, version: entry.spec.version, cli })
+    const skills = await this.provider.skills({
+      source: `connector-${entry.id}`, version: entry.spec.version, driver: entry.driver,
+      location: { versionDir: this.versionDir(entry), cli: this.catalogCli(entry) },
+    })
     // An uninstall that finished meanwhile keeps the card empty.
     if (entry.install !== 'installed' || entry.removing) return
     entry.skills = skills
@@ -585,7 +639,7 @@ export class ConnectorsService extends TypertRemoteService {
    * every change; only an actual change writes or invalidates.
    */
   private sync(): void {
-    const skillKey = JSON.stringify(this.skillSources().map(source => source.cli.dir))
+    const skillKey = JSON.stringify(this.skillSources().map(source => source.location.cli.dir))
     if (skillKey !== this.skillKey) {
       this.skillKey = skillKey
       this.provider?.invalidate()
@@ -597,9 +651,9 @@ export class ConnectorsService extends TypertRemoteService {
       entry.wrapper = wrapper
       if (exposure === undefined) continue
       const logs = join(tmpdir(), 'dsh-connectors', entry.id, exposure.tenant, 'logs')
-      const script = wrapperScript(this.cliAt(entry, exposure.tenant), exposure.mode, logs)
-      this.writes = this.writes.then(() => writeWrapper(join(entry.root, 'bin', exposure.tenant), script))
-        .catch((error: unknown) => { console.info('[connectors] could not write the lark-cli script', { error: String(error) }) })
+      const script = entry.driver.wrapperScript(this.cliAt(entry, exposure.tenant), exposure.mode, logs)
+      this.writes = this.writes.then(() => writeWrapper(join(entry.root, 'bin', exposure.tenant), entry.spec.binary, script))
+        .catch((error: unknown) => { console.info('[connectors] could not write the CLI script', { connector: entry.id, error: String(error) }) })
     }
   }
 
@@ -608,7 +662,7 @@ export class ConnectorsService extends TypertRemoteService {
     const bin = join(this.versionDir(entry), executableName(entry.spec))
     let reader = this.riskReaders.get(bin)
     if (reader === undefined) {
-      reader = helpRiskReader(bin, cliEnv({ bin, dir: join(entry.root, 'catalog') }))
+      reader = helpRiskReader(bin, entry.driver.env(this.catalogCli(entry)), help => entry.driver.assess(help))
       this.riskReaders.set(bin, reader)
     }
     return reader
@@ -654,7 +708,9 @@ export class ConnectorsService extends TypertRemoteService {
     }
     try {
       // A download an earlier install left unfinished resumes, so progress starts from its bytes.
-      entry.received = await bytesOnDisk(join(entry.root, 'downloads', archive.file))
+      for (const asset of [archive, ...entry.spec.skills === undefined ? [] : [entry.spec.skills]]) {
+        entry.received += await bytesOnDisk(join(entry.root, 'downloads', asset.file))
+      }
       this.changed()
       await installCli(entry.root, entry.spec, archive, onBytes, AbortSignal.any([controller.signal, this.lifetime.signal]))
       this.setInstall(entry, 'installed', null)
@@ -699,7 +755,7 @@ export class ConnectorsService extends TypertRemoteService {
     const { epoch } = entry.connection
     let health: Health
     try {
-      health = await checkHealth(this.cliAt(entry, this.tenantId), this.lifetime.signal)
+      health = await entry.driver.checkHealth(this.cliAt(entry, this.tenantId), this.lifetime.signal)
     } catch {
       // Only the plugin's disposal stops a check.
       return
@@ -724,27 +780,27 @@ export class ConnectorsService extends TypertRemoteService {
     this.changed()
   }
 
-  /** One sign-in: create the tenant's app when it has none, authorize the user, then check the result. */
+  /** One sign-in: run the steps the driver needs from the health check before it, then check the result. */
   private async login(entry: Installable, cli: TenantCli, controller: AbortController): Promise<void> {
     const signal = AbortSignal.any([controller.signal, this.lifetime.signal])
-    const connection = entry.connection
+    const { connection, driver } = entry
     let created = false
     try {
-      const before = await checkHealth(cli, signal)
+      const before = await driver.checkHealth(cli, signal)
       if (before.kind === 'connected') {
         this.finish(entry, connection, before)
         return
       }
-      if (before.kind === 'unconfigured') {
-        created = true
-        await this.step(cli, connection, 'create-app', signal)
+      const steps = driver.loginSteps(before)
+      for (const step of steps) {
+        if (step === 'create-app') created = true
+        await this.step(entry, cli, connection, steps, step, signal)
       }
-      await this.step(cli, connection, 'authorize', signal)
-      this.finish(entry, connection, await checkHealth(cli, signal))
+      this.finish(entry, connection, await driver.checkHealth(cli, signal))
     } catch (error) {
       if (this.lifetime.signal.aborted) return
       // A sign-in that created the tenant's app and did not finish leaves nothing half done behind.
-      if (created) await removeTenant(cli)
+      if (created) await driver.removeTenant(cli)
       const failure = error instanceof LoginError ? { step: error.step, message: error.message } : null
       if (failure !== null) console.info('[connectors] sign-in failed', { connector: entry.id, step: failure.step, error: failure.message })
       Object.assign(connection, { state: 'disconnected', login: null, loginError: failure, controller: undefined })
@@ -760,15 +816,17 @@ export class ConnectorsService extends TypertRemoteService {
   }
 
   /** Run one sign-in step, publishing its address and QR code as they become known. */
-  private async step(cli: TenantCli, connection: Connection, step: LoginStep, signal: AbortSignal): Promise<void> {
-    connection.login = { step, url: null, qrCode: null }
+  private async step(
+    entry: Installable, cli: TenantCli, connection: Connection, steps: readonly LoginStep[], step: LoginStep, signal: AbortSignal,
+  ): Promise<void> {
+    connection.login = { steps, step, url: null, qrCode: null }
     this.changed()
-    await runLoginStep(cli, step, (url) => {
-      connection.login = { step, url, qrCode: null }
+    await entry.driver.runLoginStep(cli, step, (url) => {
+      connection.login = { steps, step, url, qrCode: null }
       this.changed()
-      void qrCode(cli, url, signal).then((image) => {
+      void entry.driver.qrCode(cli, url, signal).then((image) => {
         if (connection.login?.step !== step || connection.login.url !== url) return
-        connection.login = { step, url, qrCode: image }
+        connection.login = { steps, step, url, qrCode: image }
         this.changed()
       })
     }, signal)

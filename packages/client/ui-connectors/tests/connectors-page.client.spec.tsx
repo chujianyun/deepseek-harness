@@ -14,10 +14,11 @@ const feishu = (over: Partial<ConnectorView> = {}): ConnectorView => ({
   id: 'feishu', status: 'not-installed', cli: 'lark-cli', version: '1.0.97', receivedBytes: 0, totalBytes: 1000, error: null,
   login: null, loginError: null, account: null, problem: null, enabled: true, skills: [], ...over,
 })
-const dingtalk: ConnectorView = {
-  id: 'dingtalk', status: 'coming-soon', cli: null, version: null, receivedBytes: 0, totalBytes: 0, error: null,
-  login: null, loginError: null, account: null, problem: null, enabled: true, skills: [],
-}
+const dingtalk = (over: Partial<ConnectorView> = {}): ConnectorView => ({
+  id: 'dingtalk', status: 'not-installed', cli: 'dws', version: '1.0.63', receivedBytes: 0, totalBytes: 2000, error: null,
+  login: null, loginError: null, account: null, problem: null, enabled: true, skills: [], ...over,
+})
+const BOTH_STEPS = ['create-app', 'authorize'] as const
 
 function mount(state: ConnectorsState | undefined, extra: Partial<ConnectorsSnapshot> = {}, copy = zh) {
   const store = createSnapshotStore<ConnectorsSnapshot>({ state, busy: [], failure: null, ...extra })
@@ -41,16 +42,15 @@ describe('connectors page', () => {
     expect(screen.queryByRole('listitem')).toBeNull()
   })
 
-  it.each([zh, en])('offers + on a connector that is not installed, and labels one DSH does not support yet', (copy) => {
-    const { props } = mount({ connectors: [feishu(), dingtalk] }, {}, copy)
+  it.each([zh, en])('offers + on each connector that is not installed, with its pinned CLI', (copy) => {
+    const { props } = mount({ connectors: [feishu(), dingtalk()] }, {}, copy)
     const install = within(card(copy['name.feishu'])).getByRole('button', { name: copy.install.replace('{name}', copy['name.feishu']) })
     expect(within(card(copy['name.feishu'])).getByText('lark-cli 1.0.97')).toBeTruthy()
     fireEvent.click(install)
     expect(props.onInstall).toHaveBeenCalledWith('feishu')
-    const coming = card(copy['name.dingtalk'])
-    expect(coming.getAttribute('data-status')).toBe('coming-soon')
-    expect(within(coming).getByText(copy['status.coming-soon'])).toBeTruthy()
-    expect(within(coming).queryByRole('button')).toBeNull()
+    expect(within(card(copy['name.dingtalk'])).getByText('dws 1.0.63')).toBeTruthy()
+    fireEvent.click(within(card(copy['name.dingtalk'])).getByRole('button', { name: copy.install.replace('{name}', copy['name.dingtalk']) }))
+    expect(props.onInstall).toHaveBeenCalledWith('dingtalk')
   })
 
   it('disables + while the install request is in flight', () => {
@@ -149,20 +149,20 @@ describe('connectors page', () => {
   })
 
   it('walks the sign-in dialog through preparing, the app step with its QR code, and the authorize step without one', () => {
-    const { props, store } = mount({ connectors: [feishu({ status: 'connecting', login: { step: 'create-app', url: null, qrCode: null } })] })
+    const { props, store } = mount({ connectors: [feishu({ status: 'connecting', login: { steps: BOTH_STEPS, step: 'create-app', url: null, qrCode: null } })] })
     expect(within(card('飞书')).getByRole('status', { name: '正在连接飞书' })).toBeTruthy()
     const dialog = screen.getByRole('dialog', { name: '连接飞书' })
     expect(within(dialog).getByRole('status').textContent).toBe('正在准备授权链接…')
     expect(dialog.querySelector('[aria-current="step"]')?.textContent).toBe('1. 创建飞书应用')
     act(() => {
-      store.set({ ...store.getSnapshot(), state: { connectors: [feishu({ status: 'connecting', login: { step: 'create-app', url: 'https://open.feishu.cn/x', qrCode: 'data:image/png;base64,UE5H' } })] } })
+      store.set({ ...store.getSnapshot(), state: { connectors: [feishu({ status: 'connecting', login: { steps: BOTH_STEPS, step: 'create-app', url: 'https://open.feishu.cn/x', qrCode: 'data:image/png;base64,UE5H' } })] } })
     })
     expect(within(screen.getByRole('dialog')).getByRole('img', { name: '飞书授权二维码' }).getAttribute('src')).toBe('data:image/png;base64,UE5H')
     expect(within(screen.getByRole('dialog')).getByText('https://open.feishu.cn/x')).toBeTruthy()
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '在浏览器中打开' }))
     expect(props.onOpenUrl).toHaveBeenCalledWith('https://open.feishu.cn/x')
     act(() => {
-      store.set({ ...store.getSnapshot(), state: { connectors: [feishu({ status: 'connecting', login: { step: 'authorize', url: 'https://accounts.feishu.cn/y', qrCode: null } })] } })
+      store.set({ ...store.getSnapshot(), state: { connectors: [feishu({ status: 'connecting', login: { steps: BOTH_STEPS, step: 'authorize', url: 'https://accounts.feishu.cn/y', qrCode: null } })] } })
     })
     const authorize = screen.getByRole('dialog')
     expect(authorize.querySelector('[aria-current="step"]')?.textContent).toBe('2. 授权飞书账号')
@@ -173,9 +173,19 @@ describe('connectors page', () => {
     act(() => {
       store.set({ ...store.getSnapshot(), state: { connectors: [feishu({ status: 'connecting', login: null })] } })
     })
-    expect(screen.getByRole('dialog').querySelector('[aria-current="step"]')?.textContent).toBe('2. 授权飞书账号')
+    // Without a sign-in view yet, the dialog lists no steps.
+    expect(screen.getByRole('dialog').querySelector('ol')).toBeNull()
     act(() => { store.set({ ...store.getSnapshot(), state: { connectors: [feishu({ status: 'connected' })] } }) })
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it.each([zh, en])('signs in to DingTalk in one step, without a step list', (copy) => {
+    const qr = 'data:image/svg+xml;base64,PHN2Zy8+'
+    mount({ connectors: [feishu(), dingtalk({ status: 'connecting', login: { steps: ['authorize'], step: 'authorize', url: 'https://login.dingtalk.com/x?user_code=A', qrCode: qr } })] }, {}, copy)
+    const dialog = screen.getByRole('dialog', { name: copy.loginTitle.replace('{name}', copy['name.dingtalk']) })
+    expect(dialog.querySelector('ol')).toBeNull()
+    expect(within(dialog).getByText(copy['login.dingtalk.authorize'])).toBeTruthy()
+    expect(within(dialog).getByRole('img', { name: copy.loginQr.replace('{name}', copy['name.dingtalk']) }).getAttribute('src')).toBe(qr)
   })
 
   it('closes the uninstall confirmation from its close button', () => {

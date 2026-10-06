@@ -1,43 +1,22 @@
 /**
- * Running an installed lark-cli for one tenant. Every run gets that tenant's own configuration,
- * data, and log directories and none of the caller's `LARKSUITE_CLI_*` variables, so DSH never
- * reads or changes the user's own `~/.lark-cli`. Each tenant creates its own app, so the tokens
- * and app secret lark-cli keeps in the system keychain, keyed by app, never mix either.
+ * The Feishu driver: running an installed lark-cli for one tenant. Every run gets that tenant's
+ * own configuration, data, and log directories and none of the caller's `LARKSUITE_CLI_*`
+ * variables, so DSH never reads or changes the user's own `~/.lark-cli`. Each tenant creates its
+ * own app, so the tokens and app secret lark-cli keeps in the system keychain, keyed by app, never mix either.
  */
-import { execFile, spawn } from 'node:child_process'
-import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
+import { mkdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-
-/** One tenant's lark-cli: the executable and the tenant's directory under the connector. */
-export interface TenantCli {
-  readonly bin: string
-  readonly dir: string
-}
-
-/** What a health check found. */
-export type Health =
-  | { readonly kind: 'unconfigured' }
-  | { readonly kind: 'signed-out' }
-  | { readonly kind: 'connected'; readonly account: string | null }
-  | { readonly kind: 'degraded'; readonly problem: string }
-
-/** The step a sign-in is on: creating the tenant's app, then authorizing the user. */
-export type LoginStep = 'create-app' | 'authorize'
-
-/** Why a sign-in step stopped. */
-export class LoginError extends Error {
-  /**
-   * @param step - the step that failed.
-   * @param message - what lark-cli reported, for the user.
-   */
-  constructor(readonly step: LoginStep, message: string) { super(message) }
-}
+import { LARK_CLI } from './catalog.ts'
+import {
+  confirmLines, failureMessage, field, json, LoginError, quote, run,
+  type Health, type LoginStep, type Run, type TenantCli, type WrapperMode,
+} from './cli.ts'
+import type { ConnectorDriver, DriverSkill, SkillLocation } from './driver.ts'
+import type { Assessment } from './risk.ts'
 
 /** Longest wait for `auth status`, which reaches the server to verify the token. */
 const CHECK_TIMEOUT_MS = 30_000
-
-/** Longest failure message kept for the user. */
-const FAILURE_MAX_CHARS = 300
 
 /** Longest wait for a QR code to be drawn. */
 const QR_TIMEOUT_MS = 10_000
@@ -66,60 +45,9 @@ function tenantVariables(cli: TenantCli, logs: string): Record<string, string> {
   }
 }
 
-interface Run {
-  readonly code: number | null
-  readonly stdout: string
-  readonly stderr: string
-}
-
-/** Run to completion; a nonzero exit is a result, a process that cannot start rejects. */
-function run(cli: TenantCli, args: readonly string[], signal: AbortSignal, cwd?: string): Promise<Run> {
-  return new Promise((resolve, reject) => {
-    execFile(cli.bin, [...args], { env: cliEnv(cli), encoding: 'utf8', signal, windowsHide: true, ...cwd === undefined ? {} : { cwd } },
-      (error, stdout, stderr) => {
-        if (error === null) { resolve({ code: 0, stdout, stderr }); return }
-        if (typeof error.code === 'number') { resolve({ code: error.code, stdout, stderr }); return }
-        reject(new Error(error.message, { cause: error }))
-      })
-  })
-}
-
-/** Parse the JSON object a command printed, if it printed one. */
-function json(text: string): Record<string, unknown> | undefined {
-  try {
-    const value: unknown = JSON.parse(text.trim())
-    return typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined
-  } catch {
-    // Not JSON: an old CLI, a crash message, or nothing at all.
-    return undefined
-  }
-}
-
-/** A field of a parsed JSON object, when it is an object. */
-function field(value: Record<string, unknown> | undefined, name: string): Record<string, unknown> | undefined {
-  const inner = value?.[name]
-  return typeof inner === 'object' && inner !== null ? inner as Record<string, unknown> : undefined
-}
-
-/**
- * The readable part of what a failed command printed: a JSON error (`{ error: { message } }`, or `{ error: "…" }`
- * as `auth login --json` reports a failed authorization), else its last text lines without the QR art.
- * @param result - the finished command.
- * @returns a message for the user.
- */
-export function failureMessage(result: Run): string {
-  const lines = `${result.stderr}\n${result.stdout}`.split('\n').map(line => line.trim()).filter(line => line !== '')
-  // A whole stream is one pretty-printed JSON error; `auth login --json` prints one event per line.
-  for (const text of [result.stdout, result.stderr, ...[...lines].reverse()]) {
-    const error = json(text)?.error
-    if (typeof error === 'string') return error
-    if (typeof error === 'object' && error !== null && typeof (error as { message?: unknown }).message === 'string') {
-      return (error as { message: string }).message
-    }
-  }
-  const text = lines.filter(line => !/[█▀▄]/u.test(line) && json(line) === undefined).slice(-2).join(' ')
-  if (text === '') return `exit code ${String(result.code)}`
-  return text.length > FAILURE_MAX_CHARS ? `${text.slice(0, FAILURE_MAX_CHARS)}…` : text
+/** Run lark-cli for a tenant to completion. */
+function lark(cli: TenantCli, args: readonly string[], signal: AbortSignal, cwd?: string): Promise<Run> {
+  return run(cli.bin, args, cliEnv(cli), signal, cwd)
 }
 
 /**
@@ -131,7 +59,7 @@ export function failureMessage(result: Run): string {
 export async function checkHealth(cli: TenantCli, signal: AbortSignal): Promise<Health> {
   let result: Run
   try {
-    result = await run(cli, ['auth', 'status', '--json', '--verify'], AbortSignal.any([signal, AbortSignal.timeout(CHECK_TIMEOUT_MS)]))
+    result = await lark(cli, ['auth', 'status', '--json', '--verify'], AbortSignal.any([signal, AbortSignal.timeout(CHECK_TIMEOUT_MS)]))
   } catch (error) {
     signal.throwIfAborted()
     return { kind: 'degraded', problem: String(error) }
@@ -165,7 +93,7 @@ export async function qrCode(cli: TenantCli, url: string, signal: AbortSignal): 
   const dir = join(cli.dir, 'qr')
   try {
     await mkdir(dir, { recursive: true })
-    const result = await run(cli, ['auth', 'qrcode', url, '-o', 'login.png', '--size', '240'], AbortSignal.any([signal, AbortSignal.timeout(QR_TIMEOUT_MS)]), dir)
+    const result = await lark(cli, ['auth', 'qrcode', url, '-o', 'login.png', '--size', '240'], AbortSignal.any([signal, AbortSignal.timeout(QR_TIMEOUT_MS)]), dir)
     if (result.code !== 0) return null
     return `data:image/png;base64,${(await readFile(join(dir, 'login.png'))).toString('base64')}`
   } catch {
@@ -215,14 +143,43 @@ function authorized(stdout: string): boolean {
  */
 export function runLoginStep(cli: TenantCli, step: LoginStep, onAddress: (url: string) => void, signal: AbortSignal): Promise<void> {
   const args = step === 'create-app' ? ['config', 'init', '--new', '--brand', 'feishu'] : ['auth', 'login', '--recommend', '--json']
+  return watchLogin(cli.bin, args, cliEnv(cli), step, {
+    address: ({ stdout, stderr }) => addressIn(step, step === 'create-app' ? stderr : stdout),
+    succeeded: ({ code, stdout }) => code === 0 || (step === 'authorize' && authorized(stdout)),
+  }, onAddress, signal)
+}
+
+/** How a sign-in command reports its address and its outcome. */
+export interface LoginWatch {
+  /** The address the user opens, once the output so far contains it. */
+  address(output: { stdout: string; stderr: string }): string | undefined
+  /** Whether the finished command signed the user in. */
+  succeeded(result: Run): boolean
+}
+
+/**
+ * Run a sign-in command to completion, reporting the address it prints once.
+ * @param bin - the CLI executable.
+ * @param args - the sign-in command.
+ * @param env - its environment.
+ * @param step - the step it is, for a failure.
+ * @param watch - how it reports its address and outcome.
+ * @param onAddress - called once with the address.
+ * @param signal - stops it, ending the process.
+ * @throws LoginError when it fails; the abort reason, as an Error, when aborted.
+ */
+export function watchLogin(
+  bin: string, args: readonly string[], env: NodeJS.ProcessEnv, step: LoginStep, watch: LoginWatch,
+  onAddress: (url: string) => void, signal: AbortSignal,
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cli.bin, args, { env: cliEnv(cli), signal, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(bin, [...args], { env, signal, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
     let announced = false
     const scan = (): void => {
       if (announced) return
-      const url = addressIn(step, step === 'create-app' ? stderr : stdout)
+      const url = watch.address({ stdout, stderr })
       if (url !== undefined) { announced = true; onAddress(url) }
     }
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; scan() })
@@ -237,7 +194,7 @@ export function runLoginStep(cli: TenantCli, step: LoginStep, onAddress: (url: s
     })
     child.once('close', (code) => {
       if (signal.aborted) { reject(stopped()); return }
-      if (code === 0 || (step === 'authorize' && authorized(stdout))) { resolve(); return }
+      if (watch.succeeded({ code, stdout, stderr })) { resolve(); return }
       reject(new LoginError(step, failureMessage({ code, stdout, stderr })))
     })
   })
@@ -249,7 +206,7 @@ export function runLoginStep(cli: TenantCli, step: LoginStep, onAddress: (url: s
  */
 export async function removeTenant(cli: TenantCli): Promise<void> {
   // A tenant that never finished creating its app has nothing for config remove to clear.
-  await run(cli, ['config', 'remove'], AbortSignal.timeout(CHECK_TIMEOUT_MS)).catch(() => undefined)
+  await lark(cli, ['config', 'remove'], AbortSignal.timeout(CHECK_TIMEOUT_MS)).catch(() => undefined)
   await rm(cli.dir, { recursive: true, force: true })
 }
 
@@ -257,17 +214,17 @@ export async function removeTenant(cli: TenantCli): Promise<void> {
 const SKILL_TIMEOUT_MS = 15_000
 
 /** Kebab-case Skill name, as the skill registry requires. */
-const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
+export const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
 
 /**
  * List the Skills the CLI embeds with `skills list`.
- * @param cli - the tenant's lark-cli.
+ * @param cli - a lark-cli.
  * @param signal - stops it.
  * @returns each Skill's name and description; none when the CLI cannot list them.
  */
-export async function listSkills(cli: TenantCli, signal: AbortSignal): Promise<{ name: string; description: string }[]> {
+export async function listSkills(cli: TenantCli, signal: AbortSignal): Promise<DriverSkill[]> {
   try {
-    const result = await run(cli, ['skills', 'list'], AbortSignal.any([signal, AbortSignal.timeout(SKILL_TIMEOUT_MS)]))
+    const result = await lark(cli, ['skills', 'list'], AbortSignal.any([signal, AbortSignal.timeout(SKILL_TIMEOUT_MS)]))
     const skills = json(result.stdout)?.skills
     if (!Array.isArray(skills)) return []
     return skills.flatMap((skill: unknown) => {
@@ -290,7 +247,7 @@ export async function listSkills(cli: TenantCli, signal: AbortSignal): Promise<{
  */
 export async function readSkill(cli: TenantCli, name: string, signal: AbortSignal): Promise<string | undefined> {
   try {
-    const result = await run(cli, ['skills', 'read', name], AbortSignal.any([signal, AbortSignal.timeout(SKILL_TIMEOUT_MS)]))
+    const result = await lark(cli, ['skills', 'read', name], AbortSignal.any([signal, AbortSignal.timeout(SKILL_TIMEOUT_MS)]))
     if (result.code !== 0 || result.stdout.trim() === '') return undefined
     // The CLI prints a tip line, then the SKILL.md frontmatter, then the body.
     return result.stdout.replace(/^((?:>[^\n]*\n)?)---\n[\s\S]*?\n---\n/u, '$1')
@@ -298,14 +255,6 @@ export async function readSkill(cli: TenantCli, name: string, signal: AbortSigna
     // As above.
     return undefined
   }
-}
-
-/** What the `lark-cli` on the model shell's PATH does for one tenant. */
-export type WrapperMode = 'run' | 'not-connected'
-
-/** Quote a value for a POSIX shell. */
-function quote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`
 }
 
 /**
@@ -332,14 +281,7 @@ export function wrapperScript(cli: TenantCli, mode: WrapperMode, logs: string): 
     'for name in $(env | sed -n \'s/^\\(LARKSUITE_CLI_[A-Za-z0-9_]*\\)=.*/\\1/p\'); do unset "$name"; done',
     'unset OPENCLAW_HOME HERMES_HOME',
     ...Object.entries(tenantVariables(cli, logs)).map(([name, value]) => `export ${name}=${quote(value)}`),
-    '# A command the user approved as high-risk for this call runs confirmed.',
-    'case " $* " in *" --yes "*) ;; *)',
-    '  while IFS= read -r confirmed; do',
-    '    if [ -n "$confirmed" ]; then case "$* " in "$confirmed "*) set -- "$@" --yes; break ;; esac; fi',
-    '  done <<DSH_CONFIRMED',
-    '$DSH_CONNECTOR_CONFIRMED',
-    'DSH_CONFIRMED',
-    ';; esac',
+    ...confirmLines('lark-cli', ['--yes']),
     `${quote(cli.bin)} "$@"`,
     'status=$?',
     'if [ "$status" -ne 0 ]; then',
@@ -351,14 +293,33 @@ export function wrapperScript(cli: TenantCli, mode: WrapperMode, logs: string): 
 }
 
 /**
- * Write the tenant's `lark-cli` script into `dir`, replacing it in one rename.
- * @param dir - the directory put on the model shell's PATH.
- * @param script - the script.
+ * Read the risk lark-cli states in a command's help: `Risk: read | write | high-risk-write`. A
+ * high-risk write runs only with `--yes`.
+ * @param help - the help text.
+ * @returns the stated risk, or unknown without one.
  */
-export async function writeWrapper(dir: string, script: string): Promise<void> {
-  await mkdir(dir, { recursive: true })
-  const staging = join(dir, '.lark-cli.writing')
-  await writeFile(staging, script)
-  await chmod(staging, 0o755)
-  await rename(staging, join(dir, 'lark-cli'))
+export function assess(help: string): Assessment {
+  const risk = /^Risk:\s*(read|write|high-risk-write)\b/mu.exec(help)?.[1] as Assessment['risk'] | undefined
+  return { risk: risk ?? 'unknown', confirm: risk === 'high-risk-write' }
+}
+
+/** Feishu through `lark-cli`. */
+export const feishu: ConnectorDriver = {
+  id: 'feishu',
+  name: { en: 'Feishu', zh: '飞书' },
+  spec: LARK_CLI,
+  steps: ['create-app', 'authorize'],
+  env: cliEnv,
+  checkHealth,
+  // A tenant without an app creates one first.
+  loginSteps: before => before.kind === 'unconfigured' ? ['create-app', 'authorize'] : ['authorize'],
+  runLoginStep,
+  qrCode,
+  removeTenant,
+  wrapperScript,
+  listSkills: (location, signal) => listSkills(location.cli, signal),
+  readSkill: (location, name, signal) => readSkill(location.cli, name, signal),
+  skillResources: (_location: SkillLocation, name) => ({ kind: 'opaque', description: `files of this Skill are read with \`lark-cli skills read ${name} <path>\`` }),
+  assess,
+  readOnly: [],
 }

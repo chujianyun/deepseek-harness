@@ -128,6 +128,7 @@
     "tests/knowledge-support.ts",
     "tests/connectors.e2e.ts",
     "tests/connectors-chat.e2e.ts",
+    "tests/connectors-dingtalk.e2e.ts",
     "tests/models-custom-provider.e2e.ts",
     "tests/skills-market.e2e.ts",
     "tests/skills-market-lifecycle.e2e.ts",

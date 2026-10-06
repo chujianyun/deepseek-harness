@@ -748,7 +748,7 @@ export interface ToolResultPruneConfig {
 
 - `inject`: `hubAccount` · `skills` · `shellEnv`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/connector/connectors/src/index.ts:89`](../packages/connector/connectors/src/index.ts)
+- `source`: [`packages/connector/connectors/src/index.ts:102`](../packages/connector/connectors/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -757,6 +757,8 @@ export interface Config {
   dshHome?: string
   /** The Feishu CLI. */
   feishu?: CliSpec
+  /** The DingTalk CLI. */
+  dingtalk?: CliSpec
   /** Time between periodic health checks of the connections, in milliseconds. */
   checkIntervalMs?: number
   /** Connectors switched off, as `<tenantId>/<id>`; edited live through `setEnabled()`. */
@@ -773,6 +775,8 @@ export interface CliSpec {
   mirrors: string[]
   /** One archive per supported platform. */
   archives: CliArchive[]
+  /** The release's Skills archive, downloaded from the same mirrors, when the executable does not embed them. */
+  skills?: CliAsset
 }
 
 /** One platform's archive of a CLI release. */
@@ -780,6 +784,16 @@ export interface CliArchive {
   /** `<platform>-<arch>` of the process that runs it, as Node names them. */
   platform: string
   /** Archive file name; `.zip` or `.tar.gz`. */
+  file: string
+  /** Size in bytes. */
+  size: number
+  /** Lowercase hex sha256. */
+  sha256: string
+}
+
+/** A file a CLI release publishes for every platform. */
+export interface CliAsset {
+  /** File name; `.zip`. */
   file: string
   /** Size in bytes. */
   size: number

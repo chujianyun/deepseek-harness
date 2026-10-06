@@ -93,7 +93,9 @@ function spec(mirror: Mirror, body: Buffer, file = `lark-cli-${VERSION}.tar.gz`,
   }
 }
 
-async function boot(home: string, feishu?: CliSpec, options: { tenant?: string | null; checkIntervalMs?: number } = {}) {
+type BootOptions = { tenant?: string | null; checkIntervalMs?: number; dingtalk?: CliSpec }
+
+async function boot(home: string, feishu?: CliSpec, options: BootOptions = {}) {
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
   const hub = hubStub(options.tenant ?? null)
@@ -101,7 +103,7 @@ async function boot(home: string, feishu?: CliSpec, options: { tenant?: string |
   await ctx.plugin(SkillRegistry)
   await ctx.plugin(ShellEnv, { dshHome: home })
   const live = await liveConfig(ctx, ConnectorsService, {
-    dshHome: home, ...feishu === undefined ? {} : { feishu },
+    dshHome: home, ...feishu === undefined ? {} : { feishu }, ...options.dingtalk === undefined ? {} : { dingtalk: options.dingtalk },
     ...options.checkIntervalMs === undefined ? {} : { checkIntervalMs: options.checkIntervalMs },
   })
   ctx.provide('settings', { update: async (_entry: string, patch: Record<string, unknown>) => { await live.update(patch) } } as never)
@@ -120,22 +122,30 @@ async function boot(home: string, feishu?: CliSpec, options: { tenant?: string |
 }
 
 const feishu = (state: ConnectorsState) => state.connectors.find(connector => connector.id === 'feishu')!
+const dingtalkView = (state: ConnectorsState) => state.connectors.find(connector => connector.id === 'dingtalk')!
 const runs = it.skipIf(process.platform === 'win32')
 
 describe('connectors', () => {
-  it('publishes the namespace, the feishu connector with its pinned CLI, and dingtalk as coming soon', async () => {
+  it('publishes the namespace, and Feishu and DingTalk with their pinned CLIs', async () => {
     const { service } = await boot(await scratch('dsh-connectors-home-'))
     expect(service.typertRemote.namespace).toBe('connectors')
     expect(remoteMethods(service).map(method => method.method)).toEqual([
       'getState', 'watch', 'installConnector', 'uninstallConnector', 'connect', 'cancelConnect', 'disconnect', 'check', 'setEnabled',
     ])
     const state = await service.getState()
-    expect(state.connectors.map(connector => [connector.id, connector.status])).toEqual([['feishu', PLATFORM === 'linux-riscv64' ? 'unsupported' : 'not-installed'], ['dingtalk', 'coming-soon']])
+    // dws has no Windows build DSH can isolate, and neither CLI builds for every architecture.
+    const dwsPlatforms = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'linux-arm64']
+    expect(state.connectors.map(connector => [connector.id, connector.status])).toEqual([
+      ['feishu', PLATFORM === 'linux-riscv64' ? 'unsupported' : 'not-installed'],
+      ['dingtalk', dwsPlatforms.includes(PLATFORM) ? 'not-installed' : 'unsupported'],
+    ])
     expect(feishu(state)).toMatchObject({ cli: 'lark-cli', version: '1.0.97', receivedBytes: 0, error: null, login: null, loginError: null })
-    expect(state.connectors[1]).toEqual({
-      id: 'dingtalk', status: 'coming-soon', cli: null, version: null, receivedBytes: 0, totalBytes: 0, error: null,
+    expect(state.connectors[1]).toMatchObject({
+      id: 'dingtalk', cli: 'dws', version: '1.0.63', receivedBytes: 0, error: null,
       login: null, loginError: null, account: null, problem: null, enabled: true, skills: [],
     })
+    // The DingTalk download is the executable's archive plus the release's Skills archive.
+    if (dwsPlatforms.includes(PLATFORM)) expect(state.connectors[1]?.totalBytes).toBeGreaterThan(3_251_120)
   })
 
   runs('installs the CLI from the next mirror, keeps only the executable, and finds it installed after a restart', async () => {
@@ -275,9 +285,56 @@ describe('connectors', () => {
     expect(feishu(await service.getState()).status).toBe('installing')
   })
 
-  it('refuses unknown connectors, connectors not supported yet, and CLIs without a build for this platform', async () => {
+  /** A dws spec whose executable and Skills archives the mirror serves under `/second`. */
+  async function dwsSpec(mirror: Mirror, skills: Record<string, Uint8Array>): Promise<CliSpec> {
+    const body = await archive('tar.gz', { entry: 'dws' })
+    const zip = Buffer.from(zipSync(skills))
+    mirror.files.set(`/second/v${VERSION}/dws.tar.gz`, body)
+    mirror.files.set(`/second/v${VERSION}/dws-skills.zip`, zip)
+    const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
+    return {
+      binary: 'dws', version: VERSION, mirrors: [`${mirror.origin}/second/v{version}/{file}`],
+      archives: [{ platform: PLATFORM, file: 'dws.tar.gz', size: body.length, sha256: digest(body) }],
+      skills: { file: 'dws-skills.zip', size: zip.length, sha256: digest(zip) },
+    }
+  }
+
+  runs('installs dws with the per-Skill tree of its release\'s Skills archive', async () => {
+    const home = await scratch('dsh-connectors-home-')
     const mirror = await startMirror()
-    const { service } = await boot(await scratch('dsh-connectors-home-'), spec(mirror, await archive('tar.gz'), `lark-cli-${VERSION}.tar.gz`, 'plan9-mips'))
+    const skill = Buffer.from('---\nname: dingtalk-calendar\ndescription: 钉钉日历\n---\nbody\n')
+    const dingtalk = await dwsSpec(mirror, {
+      'SKILL.md': Buffer.from('mono copy'), 'mono/SKILL.md': Buffer.from('mono'),
+      'multi/dingtalk-calendar/SKILL.md': skill, 'multi/dingtalk-calendar/references/guide.md': Buffer.from('guide'),
+    })
+    const { service, until } = await boot(home, undefined, { dingtalk })
+    expect(dingtalkView(await service.getState()).totalBytes).toBe(dingtalk.archives[0]!.size + dingtalk.skills!.size)
+    await service.installConnector('dingtalk')
+    const installed = await until(state => dingtalkView(state).skills.length > 0)
+    expect(dingtalkView(installed).skills).toEqual([{ name: 'dingtalk-calendar', description: '钉钉日历' }])
+    const version = join(home, 'connectors', 'dingtalk', VERSION)
+    expect((await readdir(version)).sort()).toEqual(['dws', 'skills'])
+    expect(await readdir(join(version, 'skills'))).toEqual(['dingtalk-calendar'])
+    expect(await readFile(join(version, 'skills', 'dingtalk-calendar', 'references', 'guide.md'), 'utf8')).toBe('guide')
+    expect(await readdir(join(home, 'connectors', 'dingtalk', 'downloads'))).toEqual([])
+  })
+
+  runs('refuses a Skills archive whose entry would leave the Skills directory, installing nothing', async () => {
+    const home = await scratch('dsh-connectors-home-')
+    const mirror = await startMirror()
+    const dingtalk = await dwsSpec(mirror, { 'multi/../../escaped.md': Buffer.from('x') })
+    const { service, until } = await boot(home, undefined, { dingtalk })
+    await service.installConnector('dingtalk')
+    expect(dingtalkView(await until(state => dingtalkView(state).error !== null))).toMatchObject({ status: 'not-installed', error: 'storage' })
+    expect(await stat(join(home, 'connectors', 'escaped.md')).catch(() => undefined)).toBeUndefined()
+    expect(await stat(join(home, 'connectors', 'dingtalk', VERSION)).catch(() => undefined)).toBeUndefined()
+  })
+
+  it('refuses unknown connectors and CLIs without a build for this platform', async () => {
+    const mirror = await startMirror()
+    const { service } = await boot(await scratch('dsh-connectors-home-'), spec(mirror, await archive('tar.gz'), `lark-cli-${VERSION}.tar.gz`, 'plan9-mips'), {
+      dingtalk: { binary: 'dws', version: VERSION, mirrors: [], archives: [] },
+    })
     expect(feishu(await service.getState()).status).toBe('unsupported')
     for (const [id, code] of [['feishu', 'connectors/unavailable'], ['dingtalk', 'connectors/unavailable'], ['wecom', 'connectors/not-found']] as const) {
       const install = await service.installConnector(id).catch((error: unknown) => error)

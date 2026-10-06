@@ -4,18 +4,36 @@
  */
 
 import { useEffect, useState } from 'react'
-import type { ConnectorView } from '@deepseek-ai/dsh-connectors/types'
+import type { ConnectorId, ConnectorLoginStep, ConnectorView } from '@deepseek-ai/dsh-connectors/types'
 import {
   Button, IconEllipsisOutlineRegular, IconPlusOutlineRegular, Menu, Modal, StateDot, Switch, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConnectorsInjected } from './connectors-source.ts'
+import type { ConnectorsLocaleKey } from './locales.ts'
 import css from './ConnectorsPage.module.css'
 
 /** Props the page reads from its `main` registration: the translator and the connectors face. */
 export type ConnectorsPageProps = PropsLocale<'connectors'> & InjectFace<ConnectorsInjected>
 
 type T = TranslateNS<'connectors'>
+
+/** The dialog text and list label of one sign-in step. */
+interface StepCopy {
+  readonly description: ConnectorsLocaleKey
+  readonly label: ConnectorsLocaleKey
+}
+
+const DINGTALK_AUTHORIZE: StepCopy = { description: 'login.dingtalk.authorize', label: 'loginStep.dingtalk.authorize' }
+
+/** Each connector's sign-in steps. DingTalk signs in with its own app in one step, so it never creates one. */
+const LOGIN_COPY: Record<ConnectorId, Record<ConnectorLoginStep, StepCopy>> = {
+  feishu: {
+    'create-app': { description: 'login.feishu.create-app', label: 'loginStep.feishu.create-app' },
+    authorize: { description: 'login.feishu.authorize', label: 'loginStep.feishu.authorize' },
+  },
+  dingtalk: { 'create-app': DINGTALK_AUTHORIZE, authorize: DINGTALK_AUTHORIZE },
+}
 
 /** A confirmation the page is asking for. */
 type Confirming = { readonly action: 'uninstall' | 'disconnect'; readonly connector: ConnectorView }
@@ -98,7 +116,6 @@ function Corner({ connector, name, props, onConfirm }: {
   const { t, useConnectors, onInstall, onConnect, onCheck, onSetEnabled } = props
   const busy = useConnectors(snapshot => snapshot.busy.includes(connector.id))
   switch (connector.status) {
-    case 'coming-soon':
     case 'unsupported':
       return <Tag tone="neutral">{t(`status.${connector.status}`)}</Tag>
     case 'not-installed':
@@ -188,7 +205,6 @@ function Skills({ connector, t }: { connector: ConnectorView; t: T }) {
 
 /** The card's last lines: download progress while installing, the signed-in account, why something failed, and the pinned CLI. */
 function Footer({ connector, t }: { connector: ConnectorView; t: T }) {
-  if (connector.cli === null || connector.version === null) return null
   const cli = connector.cli
   if (connector.status === 'installing') {
     const percent = connector.totalBytes === 0 ? 0 : Math.floor(connector.receivedBytes * 100 / connector.totalBytes)
@@ -218,6 +234,7 @@ function LoginDialog({ connector, props }: { connector: ConnectorView; props: Co
   const { t, onCancelConnect, onOpenUrl } = props
   const name = t(`name.${connector.id}`)
   const step = connector.login?.step ?? 'authorize'
+  const steps = connector.login?.steps ?? []
   const url = connector.login?.url ?? null
   const qrCode = connector.login?.qrCode ?? null
   const cancel = (): void => { void onCancelConnect(connector.id) }
@@ -225,7 +242,7 @@ function LoginDialog({ connector, props }: { connector: ConnectorView; props: Co
     <Modal
       open
       title={t('loginTitle', { name })}
-      description={t(`login.${step}`)}
+      description={t(LOGIN_COPY[connector.id][step].description)}
       closeLabel={t('loginCancel')}
       onClose={cancel}
       footer={(
@@ -234,11 +251,15 @@ function LoginDialog({ connector, props }: { connector: ConnectorView; props: Co
         </div>
       )}
     >
-      <ol className={css.steps}>
-        {(['create-app', 'authorize'] as const).map((item, index) => (
-          <li key={item} aria-current={item === step ? 'step' : undefined}>{t('loginStep', { index: String(index + 1), label: t(`loginStep.${item}`) })}</li>
-        ))}
-      </ol>
+      {steps.length > 1 && (
+        <ol className={css.steps}>
+          {steps.map((item, index) => (
+            <li key={item} aria-current={item === step ? 'step' : undefined}>
+              {t('loginStep', { index: String(index + 1), label: t(LOGIN_COPY[connector.id][item].label) })}
+            </li>
+          ))}
+        </ol>
+      )}
       {url === null
         ? <p className={css.waiting} role="status"><StateDot state="ongoing" />{t('loginPreparing')}</p>
         : (

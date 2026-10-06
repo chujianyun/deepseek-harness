@@ -1,25 +1,31 @@
 /**
- * The risk of the lark-cli commands in one bash command. Each `lark-cli` invocation is found
+ * The risk of one connector CLI's commands in a bash command. Each invocation of the CLI is found
  * by splitting the command into words and separators, and its risk is the one the CLI states in
- * `<command> --help` (`Risk: read | write | high-risk-write`). Anything this cannot read with
+ * `<command> --help`, as the connector's driver reads it. Anything this cannot read with
  * certainty — command substitution, `eval`, a nested shell, an argument built from a variable, a
  * command without a stated risk — counts as a write, so it is confirmed rather than run unasked.
  */
 import { execFile } from 'node:child_process'
 
-/** Risk of a lark-cli command, from least to most; `unknown` is confirmed like a write. */
+/** Risk of a connector command, from least to most; `unknown` is confirmed like a write. */
 export type Risk = 'none' | 'read' | 'write' | 'unknown' | 'high-risk-write'
 
-/** One lark-cli invocation found in a bash command, with the risk the CLI states for it. */
-export interface Invocation {
-  /** The command words after `lark-cli`, such as `im +messages-send`. */
-  readonly command: string
+/** What a command's help states: its risk, and whether the CLI asks to confirm it. */
+export interface Assessment {
   readonly risk: Risk
+  /** Whether the CLI runs it only with its confirm flag, which DSH adds once the user approves. */
+  readonly confirm: boolean
 }
 
-/** What a bash command does through lark-cli. */
+/** One invocation of the CLI found in a bash command, with what the CLI states for it. */
+export interface Invocation extends Assessment {
+  /** The command words after the CLI's name, such as `im +messages-send`. */
+  readonly command: string
+}
+
+/** What a bash command does through one CLI. */
 export interface Classification {
-  /** The highest risk among its invocations; `none` when it runs no lark-cli. */
+  /** The highest risk among its invocations; `none` when it does not run the CLI. */
   readonly risk: Risk
   readonly invocations: readonly Invocation[]
 }
@@ -32,7 +38,7 @@ const OPAQUE = /`|\$\(|<\(|\beval\b|\b(?:ba|z)?sh\s+-c\b|\bxargs\b/u
 /** Separators that start a new command. */
 const SEPARATORS = new Set([';', '&', '|', '&&', '||', '(', ')', '\n'])
 
-/** Flags that make a lark-cli call read-only whatever its command: help, version, and a dry run. */
+/** Flags that make a call read-only whatever its command: help, version, and a dry run. */
 const READ_ONLY_FLAGS = new Set(['--help', '-h', '--version', '--dry-run'])
 
 /** Longest wait for `--help`, which reads the binary's own command table. */
@@ -96,18 +102,18 @@ export function tokenize(command: string): Token[] {
   return tokens
 }
 
-/** Whether a word names the lark-cli executable, by name or by path. */
-function isLarkCli(word: string): boolean {
-  return word === 'lark-cli' || word.endsWith('/lark-cli')
-}
-
 /**
- * The lark-cli invocations of a bash command: each word naming lark-cli, with the words after it up to the next separator.
+ * The invocations of a CLI in a bash command: each word naming the CLI, by name or by path, with
+ * the words after it up to the next separator.
  * @param command - the bash command.
- * @returns each invocation's arguments, or `opaque` when the command hides how lark-cli is called.
+ * @param cli - the CLI's name, such as `lark-cli`.
+ * @returns each invocation's arguments, or `opaque` when the command hides how the CLI is called.
  */
-export function invocations(command: string): readonly Token[][] | 'opaque' {
-  if (!/lark-cli/u.test(command)) return []
+export function invocations(command: string, cli: string): readonly Token[][] | 'opaque' {
+  const named = (word: string): boolean => word === cli || word.endsWith(`/${cli}`)
+  // The name as a whole word: `dws` inside `kdws.txt` or `lark-cli` inside `lark-cli-free` is another word.
+  const escaped = cli.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  if (!new RegExp(`(?:^|[^\\w.-])${escaped}(?![\\w.-])`, 'u').test(command)) return []
   if (OPAQUE.test(command)) return 'opaque'
   const tokens = tokenize(command)
   const found: Token[][] = []
@@ -115,31 +121,33 @@ export function invocations(command: string): readonly Token[][] | 'opaque' {
   for (const token of tokens) {
     if (token.separator) args = undefined
     else if (args !== undefined) args.push(token)
-    else if (isLarkCli(token.text)) found.push(args = [])
+    else if (named(token.text)) found.push(args = [])
   }
   return found
 }
 
-/** Read the risk the CLI states for a command from its `--help`; a command without one is unknown. */
-export type RiskReader = (words: readonly string[]) => Promise<Risk>
+/** Read what the CLI states for a command from its `--help`; a command it states nothing for is unknown. */
+export type RiskReader = (words: readonly string[]) => Promise<Assessment>
 
 /**
- * A reader that runs `lark-cli <words> --help` and parses its `Risk:` line, caching each command.
- * @param bin - the lark-cli executable.
+ * A reader that runs `<bin> <words> --help` and assesses its text, caching each command.
+ * @param bin - the CLI executable.
  * @param env - the environment of the help run.
+ * @param assess - reads the stated risk from the help text.
  * @returns the reader.
  */
-export function helpRiskReader(bin: string, env: NodeJS.ProcessEnv): RiskReader {
-  const cache = new Map<string, Promise<Risk>>()
+export function helpRiskReader(bin: string, env: NodeJS.ProcessEnv, assess: (help: string) => Assessment): RiskReader {
+  const cache = new Map<string, Promise<Assessment>>()
   return (words) => {
     const key = words.join('\u0000')
     let risk = cache.get(key)
     if (risk === undefined) {
       risk = new Promise((resolve) => {
-        execFile(bin, [...words, '--help'], { env, encoding: 'utf8', timeout: HELP_TIMEOUT_MS, windowsHide: true }, (_error, stdout) => {
-          const stated = /^Risk:\s*(read|write|high-risk-write)\b/mu.exec(stdout)?.[1]
-          resolve((stated ?? 'unknown') as Risk)
+        // The help run reads no stdin: a CLI that waits on it must not consume the caller's.
+        const child = execFile(bin, [...words, '--help'], { env, encoding: 'utf8', timeout: HELP_TIMEOUT_MS, windowsHide: true }, (_error, stdout) => {
+          resolve(assess(stdout))
         })
+        child.stdin?.end()
       })
       cache.set(key, risk)
     }
@@ -148,26 +156,29 @@ export function helpRiskReader(bin: string, env: NodeJS.ProcessEnv): RiskReader 
 }
 
 /**
- * Classify the lark-cli calls of a bash command.
+ * Classify one CLI's calls in a bash command.
  * @param command - the bash command.
- * @param read - reads the stated risk of a command.
+ * @param cli - the CLI's name, such as `lark-cli`.
+ * @param read - reads what the CLI states for a command.
+ * @param readOnly - command words that only read, with whatever words follow, although the CLI states no risk for them.
  * @returns the highest risk and each invocation.
  */
-export async function classify(command: string, read: RiskReader): Promise<Classification> {
-  const found = invocations(command)
-  if (found === 'opaque') return { risk: 'unknown', invocations: [{ command: command.trim(), risk: 'unknown' }] }
+export async function classify(command: string, cli: string, read: RiskReader, readOnly: readonly string[] = []): Promise<Classification> {
+  const found = invocations(command, cli)
+  if (found === 'opaque') return { risk: 'unknown', invocations: [{ command: command.trim(), risk: 'unknown', confirm: false }] }
   const classified: Invocation[] = []
   for (const args of found) {
     // The command path is the words before the first flag; flag values never name a command.
     const first = args.findIndex(token => token.text.startsWith('-'))
     const words = (first === -1 ? args : args.slice(0, first)).map(token => token.text)
     const name = words.join(' ')
-    if (args.length === 0 || args.some(token => READ_ONLY_FLAGS.has(token.text))) {
-      classified.push({ command: name, risk: 'read' })
+    const listed = readOnly.some(words => name === words || name.startsWith(`${words} `))
+    if (args.length === 0 || args.some(token => READ_ONLY_FLAGS.has(token.text)) || listed) {
+      classified.push({ command: name, risk: 'read', confirm: false })
     } else if (args.some(token => token.expanded)) {
-      classified.push({ command: name, risk: 'unknown' })
+      classified.push({ command: name, risk: 'unknown', confirm: false })
     } else {
-      classified.push({ command: name, risk: await read(words) })
+      classified.push({ command: name, ...await read(words) })
     }
   }
   const risk = classified.reduce<Risk>((highest, item) => ORDER.indexOf(item.risk) > ORDER.indexOf(highest) ? item.risk : highest, 'none')

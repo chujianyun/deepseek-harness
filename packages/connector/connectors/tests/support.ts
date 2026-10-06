@@ -1,4 +1,4 @@
-/** Shared by the connector specs: a Hub sign-in stand-in and a service booted over the stand-in lark-cli. */
+/** Shared by the connector specs: a Hub sign-in stand-in and a service booted over a stand-in lark-cli or dws. */
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +8,7 @@ import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
 import ConnectorsService, { type CliSpec, type ConnectorsState } from '../src/index.ts'
+import { FAKE_DWS } from './fake-dws-cli.ts'
 import { FAKE_LARK_CLI as FAKE } from './fake-lark-cli.ts'
 
 export const VERSION = '9.9.9'
@@ -15,6 +16,24 @@ const PLATFORM = `${process.platform}-${process.arch}`
 const SPEC: CliSpec = {
   binary: 'lark-cli', version: VERSION, mirrors: ['http://127.0.0.1:9/{file}'],
   archives: [{ platform: PLATFORM, file: 'lark-cli.tar.gz', size: 1, sha256: '0'.repeat(64) }],
+}
+const DWS_SPEC: CliSpec = {
+  binary: 'dws', version: VERSION, mirrors: ['http://127.0.0.1:9/{file}'],
+  archives: [{ platform: PLATFORM, file: 'dws.tar.gz', size: 1, sha256: '0'.repeat(64) }],
+  skills: { file: 'dws-skills.zip', size: 1, sha256: '0'.repeat(64) },
+}
+/** A connector with no build for any platform. */
+const NOWHERE = (binary: string): CliSpec => ({ binary, version: VERSION, mirrors: [], archives: [] })
+
+/** The Skills the stand-in dws release ships, as `<name>/SKILL.md`. */
+export const DWS_SKILLS: Readonly<Record<string, string>> = {
+  'dingtalk-calendar': '---\nname: dingtalk-calendar\ndescription: 钉钉日历与会议室\nmetadata:\n  category: product\n---\n\n# calendar\n\nRun dws calendar event list.\n',
+  'dingtalk-chat': '---\nname: dingtalk-chat\ndescription: "钉钉群聊与消息"\n---\nRun dws chat message send.\n',
+  // Skipped: a name that disagrees with its directory, no description, YAML that does not parse, and no frontmatter.
+  'dingtalk-other': '---\nname: dingtalk-renamed\ndescription: x\n---\n',
+  'dingtalk-empty': '---\nname: dingtalk-empty\n---\n',
+  'dingtalk-broken': '---\nname: [unclosed\n---\n',
+  'dingtalk-plain': '# no frontmatter\n',
 }
 
 export const cleanups: (() => Promise<unknown>)[] = []
@@ -54,6 +73,7 @@ export function hubStub(tenantId: string | null) {
 }
 
 export const feishu = (state: ConnectorsState) => state.connectors[0]!
+export const dingtalk = (state: ConnectorsState) => state.connectors[1]!
 
 export async function setup(options: {
   tenant?: string | null
@@ -63,15 +83,25 @@ export async function setup(options: {
   files?: readonly string[]
   /** Leave out the Settings service. */
   settings?: false
+  /** The connector the spec drives, with its stand-in CLI; the other has no build for any platform. */
+  connector?: 'feishu' | 'dingtalk'
 } = {}) {
+  const id = options.connector ?? 'feishu'
   const home = await mkdtemp(join(tmpdir(), 'dsh-connection-'))
   cleanups.push(() => rm(home, { recursive: true, force: true }))
-  const root = join(home, 'connectors', 'feishu')
+  const root = join(home, 'connectors', id)
   const control = join(root, 'control')
+  const binary = id === 'feishu' ? 'lark-cli' : 'dws'
   if (options.installed !== false) {
     await mkdir(join(root, VERSION), { recursive: true })
-    await writeFile(join(root, VERSION, 'lark-cli'), FAKE)
-    await chmod(join(root, VERSION, 'lark-cli'), 0o755)
+    await writeFile(join(root, VERSION, binary), id === 'feishu' ? FAKE : FAKE_DWS)
+    await chmod(join(root, VERSION, binary), 0o755)
+    if (id === 'dingtalk') {
+      for (const [name, markdown] of Object.entries(DWS_SKILLS)) {
+        await mkdir(join(root, VERSION, 'skills', name), { recursive: true })
+        await writeFile(join(root, VERSION, 'skills', name, 'SKILL.md'), markdown)
+      }
+    }
     await mkdir(control, { recursive: true })
     for (const file of options.files ?? []) await writeFile(join(control, file), '')
   }
@@ -82,7 +112,9 @@ export async function setup(options: {
   await ctx.plugin(SkillRegistry)
   await ctx.plugin(ShellEnv, { dshHome: home })
   const interval = options.checkIntervalMs === undefined ? {} : { checkIntervalMs: options.checkIntervalMs }
-  const live = await liveConfig(ctx, ConnectorsService, { dshHome: home, feishu: SPEC, ...interval })
+  // The other connector stays uninstallable, so no test reaches its real mirrors.
+  const specs = id === 'feishu' ? { feishu: SPEC, dingtalk: NOWHERE('dws') } : { feishu: NOWHERE('lark-cli'), dingtalk: DWS_SPEC }
+  const live = await liveConfig(ctx, ConnectorsService, { dshHome: home, ...specs, ...interval })
   if (options.settings !== false) {
     ctx.provide('settings', { update: async (_entry: string, patch: Record<string, unknown>) => { await live.update(patch) } } as never)
   }
@@ -90,11 +122,12 @@ export async function setup(options: {
   const stream = new AbortController()
   cleanups.push(async () => { stream.abort() })
   const iterator = service.watch(stream.signal)[Symbol.asyncIterator]()
+  const pick = id === 'feishu' ? feishu : dingtalk
   const until = async (predicate: (view: ReturnType<typeof feishu>) => boolean) => {
     for (;;) {
       const next = await iterator.next()
       if (next.done === true) throw new Error('state stream ended')
-      if (predicate(feishu(next.value))) return feishu(next.value)
+      if (predicate(pick(next.value))) return pick(next.value)
     }
   }
   const tenantDir = (tenant: string) => join(root, 'tenants', tenant)

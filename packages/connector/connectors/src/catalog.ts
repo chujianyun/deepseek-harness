@@ -40,3 +40,34 @@ export const LARK_CLI: CliSpec = {
     },
   ],
 }
+
+/**
+ * DingTalk: `dws` 1.0.63 from DingTalk-Real-AI/dingtalk-workspace-cli, from its GitHub release; npmmirror
+ * serves only the npm package, which carries every platform's archive. Windows is left out: there `dws`
+ * keeps sign-ins in the user's registry, which no per-tenant directory can isolate. The Skills ship
+ * beside the executable as `dws-skills.zip`.
+ */
+export const DWS_CLI: CliSpec = {
+  binary: 'dws',
+  version: '1.0.63',
+  mirrors: ['https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/releases/download/v{version}/{file}'],
+  archives: [
+    {
+      platform: 'darwin-arm64', file: 'dws-darwin-arm64.tar.gz', size: 16_062_209,
+      sha256: '7f57c3e4e141b9f0fd81a04f0298023a0855e1b6e02ad09c897e91e9c58bd5a9',
+    },
+    {
+      platform: 'darwin-x64', file: 'dws-darwin-amd64.tar.gz', size: 17_627_332,
+      sha256: '87added1a0b2b2192516283b210ae90ab3770f55518560243c3c1905824485ed',
+    },
+    {
+      platform: 'linux-x64', file: 'dws-linux-amd64.tar.gz', size: 18_434_895,
+      sha256: '78cab668bf671c17128ac55347627fb28f80c15b9c30c5f86e32e2b5ee6e34bc',
+    },
+    {
+      platform: 'linux-arm64', file: 'dws-linux-arm64.tar.gz', size: 17_367_271,
+      sha256: '14df04191b8d3826ca48a26be290eae65bd3fcc15e45fbb580ae1d1542b891fc',
+    },
+  ],
+  skills: { file: 'dws-skills.zip', size: 3_251_120, sha256: '6a36e5a501fd8eb748702b1dedb33f93a166c0a88b459b6f982d926bfb8e150b' },
+}

@@ -3,14 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/connectors.md
 /connectors:
-  en: d85dd81d8a5dbd94
-  zh: 5430717ef97cd1f1
+  en: ec966b0a3e18e072
+  zh: c9547183e7bb4bc9
 /connectors/installing-a-cli:
-  en: 8d5e7e96bae3466c
-  zh: ccc08b7d29ee6489
+  en: d6dc946ffb162fa1
+  zh: e03ae4e867bf3acf
 /connectors/connecting:
-  en: 5baa75bcd445022e
-  zh: 6c6eeb1b7e5ac5da
+  en: 6ffb09d9301b007b
+  zh: e597a64bf2d7dca9
 /connectors/use-in-conversations:
-  en: f0c2ae5f73a2df81
-  zh: c15f86a30217ddf8
+  en: 2aeabbf9ab0effdf
+  zh: a926329e858cb437

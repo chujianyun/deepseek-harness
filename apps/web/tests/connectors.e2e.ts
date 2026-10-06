@@ -1,6 +1,6 @@
 // The Connectors page over the real `connectors` and `hub-account` rows: signed in to a mock user
-// center, the employee opens 连接器 from the sidebar, sees Feishu offered with + and DingTalk as
-// coming soon, retries an install after the download sources fail, watches the CLI download and
+// center, the employee opens 连接器 from the sidebar, sees Feishu and DingTalk offered with +,
+// retries an install after the download sources fail, watches the CLI download and
 // get checked, and sees the installed Feishu card turn red. A stand-in lark-cli then walks the
 // sign-in: the dialog shows each step's QR code and address and opens it in the browser, and the
 // card turns green with the account; a failing health check turns it yellow; disconnecting deletes
@@ -83,8 +83,9 @@ it.skipIf(process.platform === 'win32')('installs, connects, checks, disconnects
     const feishuCard = page.getByRole('listitem').filter({ hasText: '飞书' })
     const dingtalkCard = page.getByRole('listitem').filter({ hasText: '钉钉' })
     await feishuCard.getByText('lark-cli 9.9.9').waitFor()
-    await dingtalkCard.getByText('即将支持').waitFor()
-    expect(await dingtalkCard.getByRole('button').count()).toBe(0)
+    // DingTalk is offered with its pinned dws; installing it is connectors-dingtalk.e2e.ts's.
+    await dingtalkCard.getByText('dws 1.0.63').waitFor()
+    expect(await dingtalkCard.getByRole('button', { name: '安装钉钉' }).count()).toBe(1)
 
     // No download source answers: the card explains and offers + again.
     mirror.state.refuse = true

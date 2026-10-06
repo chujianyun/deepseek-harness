@@ -5406,7 +5406,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectorLoginView',
-    declaration: 'export interface ConnectorLoginView {\n    readonly step: ConnectorLoginStep;\n    readonly url: string | null;\n    readonly qrCode: string | null;\n}',
+    declaration: 'export interface ConnectorLoginView {\n    readonly steps: readonly ConnectorLoginStep[];\n    readonly step: ConnectorLoginStep;\n    readonly url: string | null;\n    readonly qrCode: string | null;\n}',
   },
   {
     name: 'ConnectorSkillView',
@@ -5418,11 +5418,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectorStatus',
-    declaration: 'export type ConnectorStatus = \'coming-soon\' | \'unsupported\' | \'not-installed\' | \'installing\' | \'disconnected\' | \'connecting\' | \'connected\' | \'degraded\';',
+    declaration: 'export type ConnectorStatus = \'unsupported\' | \'not-installed\' | \'installing\' | \'disconnected\' | \'connecting\' | \'connected\' | \'degraded\';',
   },
   {
     name: 'ConnectorView',
-    declaration: 'export interface ConnectorView {\n    readonly id: ConnectorId;\n    readonly status: ConnectorStatus;\n    readonly cli: string | null;\n    readonly version: string | null;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly error: ConnectorInstallError | null;\n    readonly login: ConnectorLoginView | null;\n    readonly loginError: ConnectorLoginError | null;\n    readonly account: string | null;\n    readonly problem: string | null;\n    readonly enabled: boolean;\n    readonly skills: readonly ConnectorSkillView[];\n}',
+    declaration: 'export interface ConnectorView {\n    readonly id: ConnectorId;\n    readonly status: ConnectorStatus;\n    readonly cli: string;\n    readonly version: string;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly error: ConnectorInstallError | null;\n    readonly login: ConnectorLoginView | null;\n    readonly loginError: ConnectorLoginError | null;\n    readonly account: string | null;\n    readonly problem: string | null;\n    readonly enabled: boolean;\n    readonly skills: readonly ConnectorSkillView[];\n}',
   },
   {
     name: 'ContentBlockMap',

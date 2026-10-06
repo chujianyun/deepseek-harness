@@ -66,9 +66,9 @@
   background: var(--dsw-alias-bg-layer-1);
 }
 
-.card[data-status='coming-soon'] .avatar,
-.card[data-status='coming-soon'] .name,
-.card[data-status='coming-soon'] .description {
+.card[data-status='unsupported'] .avatar,
+.card[data-status='unsupported'] .name,
+.card[data-status='unsupported'] .description {
   opacity: 0.5;
 }
 

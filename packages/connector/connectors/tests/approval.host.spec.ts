@@ -63,7 +63,7 @@ describe('confirming connector writes', () => {
       displayReason: { zh: '⚠️ 高风险操作：飞书连接器将以你的身份执行 lark-cli drive +delete，可能删除数据或造成无法撤销的修改。同意后 DSH 会为本次执行加上 --yes。' },
     })
     const { DSH_CONNECTOR_CONFIRMED: confirmed } = t.ctx.shellEnv.collect(exec)
-    expect(confirmed).toBe('drive +delete')
+    expect(confirmed).toBe('lark-cli drive +delete')
     // The approved call's script adds --yes once, to the approved command only; an unapproved call's adds none.
     const [dir] = t.ctx.shellEnv.collectPath(exec)
     await vi.waitFor(async () => { await stat(join(dir!, 'lark-cli')) })

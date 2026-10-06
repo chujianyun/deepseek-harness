@@ -13,9 +13,9 @@ Status: proposed
 [连接器](../../../../docs/glossary.zh.md#connector)就是平台**未经修改的官方 CLI**（飞书为 larksuite/cli 的 `lark-cli`，钉钉为 DingTalk-Real-AI/dingtalk-workspace-cli 的 `dws`）加上该 CLI 自带的 Skill。模型通过现有的 shell 工具运行 CLI，并从这些 Skill 学习用法；DSH 不为每个操作注册工具。
 
 - **固定版本。** 每个 DSH 发行版固定各 CLI 的版本和校验值；DSH 按下载嵌入运行时的方式下载它（先 npmmirror，再 npmjs），并只随 DSH 升级。
-- **程序共用，登录按租户隔离。** 整台机器共用一份 CLI 程序。每个 [Hub 登录](../../../../docs/glossary.zh.md#skill-hub)租户拥有自己的 CLI 配置目录（`LARKSUITE_CLI_CONFIG_DIR`、`DWS_CONFIG_DIR`），因此 DSH 从不读取或修改用户自己的 `~/.lark-cli` 或 `~/.dws`。
+- **程序共用，登录按租户隔离。** 整台机器共用一份 CLI 程序。每个 [Hub 登录](../../../../docs/glossary.zh.md#skill-hub)租户拥有自己的 CLI 配置目录（`LARKSUITE_CLI_CONFIG_DIR`、`DWS_CONFIG_DIR`），因此 DSH 从不读取或修改用户自己的 `~/.lark-cli` 或 `~/.dws`。`dws` 还会把凭据库的密钥以对所有目录相同的名字存进系统钥匙串，并在退出登录时清掉这个名字，因此 DSH 运行它时把 `DWS_KEYCHAIN_DIR` 设在租户目录中并设置 `DWS_DISABLE_KEYCHAIN=1`；在 Windows 上 `dws` 改用用户注册表，因此不支持钉钉。
 - **登录沿用各 CLI 面向 Agent 的流程。** 飞书先运行 `config init --new`（用户在浏览器中创建自己的应用），再运行 `auth login --recommend`；钉钉使用其官方应用运行 `auth login`。DSH 在弹窗中显示每个验证链接和二维码，并打开浏览器。
-- **写操作通过 `user-approval` 确认。** 对飞书，DSH 读取每条命令的官方风险等级：`read` 直接运行，`write` 每次询问，`high-risk-write` 以更醒目的警告询问，用户同意后 DSH 再加上 `--yes`。钉钉没有风险元数据，因此 DSH 维护只读子命令白名单。无法确定风险的命令一律视为写操作。
+- **写操作通过 `user-approval` 确认。** 对飞书，DSH 读取每条命令的官方风险等级：`read` 直接运行，`write` 每次询问，`high-risk-write` 以更醒目的警告询问，用户同意后 DSH 再加上 `--yes`。对钉钉，DSH 读取 `dws` 在每条命令帮助中声明的 `Safety:` 行（`effect=read|write|destructive`、`risk`、`confirmation`）：读取直接运行，其他命令询问，破坏性或高风险命令以更醒目的警告询问，需要用户确认的命令由 DSH 加上 `--yes`。DSH 另有一个简短列表，覆盖没有声明安全性的只读工具命令，例如 `auth status`。无法确定风险的命令一律视为写操作。（这取代了当初以为 `dws` 没有风险元数据时计划的只读白名单。）
 - **状态来自 CLI。** `auth status --json`（飞书）和 `auth status --readonly --format json`（钉钉）决定[连接器状态](../../../../docs/glossary.zh.md#connector-status)。
 
 ## 考虑过的替代方案
@@ -40,11 +40,11 @@ larksuite/cli 支持通过包装 `main` 嵌入，替换凭据来源、拦截请�
 
 - 安装连接器会下载固定版本的 CLI、校验其校验值并完成登录，且不触及用户自己的 CLI 配置。
 - 已连接且已启用的连接器的 Skill 在每个会话中都送达模型；已停用或已退出登录的连接器不提供任何内容。
-- 飞书的 `write` 或 `high-risk-write` 命令，以及钉钉白名单之外的命令，只有在用户批准该次调用后才会运行，请求和结果都记录在会话审计日志中。
+- 飞书或钉钉中不只是读取的命令，只有在用户批准该次调用后才会运行，请求和结果都记录在会话审计日志中。
 
 ## 风险
 
 - **shell 是边界。** 模型通过 shell 工具使用 CLI，因此审批依赖于识别出 CLI 调用；藏在脚本或其他程序背后的命令会绕过风险检查，除非 shell 策略也拦住它。
-- **上游变化。** 风险等级、参数和 Skill 内容都跟随固定版本；每次升级都要复核钉钉白名单和飞书风险查询方式。
+- **上游变化。** 风险等级、参数和 Skill 内容都跟随固定版本；每次升级都要复核各 CLI 在帮助中声明风险的方式，以及 DSH 的钉钉工具命令列表。
 - **可能被禁止创建应用。** 禁止员工自建飞书应用的公司，在租户应用方案上线前无法使用飞书连接器。
 - **未覆盖企业微信。** 其 CLI 的配置隔离、状态输出和登录身份都未经验证，因此企业微信要等单独的调研。

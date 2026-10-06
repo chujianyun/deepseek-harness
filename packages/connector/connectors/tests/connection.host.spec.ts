@@ -7,7 +7,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import { failureMessage } from '../src/lark.ts'
+import { failureMessage } from '../src/cli.ts'
 import { feishu, setup, VERSION } from './support.ts'
 
 const runs = it.skipIf(process.platform === 'win32')

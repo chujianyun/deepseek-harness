@@ -9,7 +9,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
     /** No built-in connector has this id. */
     'connectors/not-found': { readonly id: string }
-    /** The connector cannot be installed here: it is not supported yet, or its CLI has no build for this platform. */
+    /** The connector cannot be installed here: its CLI has no build for this platform. */
     'connectors/unavailable': { readonly id: string }
     /** The connector's CLI is not installed, so it cannot connect yet. */
     'connectors/not-installed': { readonly id: string }
@@ -21,7 +21,6 @@ export type ConnectorId = 'feishu' | 'dingtalk'
 
 /**
  * Where a connector is for the signed-in tenant; the colors are the glossary's connector status.
- * - `coming-soon`: DSH does not support it yet.
  * - `unsupported`: its CLI has no build for this platform.
  * - `not-installed`: its CLI is not installed; installing it is offered.
  * - `installing`: its CLI is downloading or being checked.
@@ -32,13 +31,18 @@ export type ConnectorId = 'feishu' | 'dingtalk'
  * - `degraded` (yellow): signed in, but the last health check failed; {@link ConnectorView.problem} says why.
  */
 export type ConnectorStatus =
-  | 'coming-soon' | 'unsupported' | 'not-installed' | 'installing' | 'disconnected' | 'connecting' | 'connected' | 'degraded'
+  | 'unsupported' | 'not-installed' | 'installing' | 'disconnected' | 'connecting' | 'connected' | 'degraded'
 
-/** A sign-in step: creating the tenant's app on the platform, then authorizing the user. */
+/**
+ * A sign-in step: creating the tenant's app on the platform (Feishu, when the tenant has none),
+ * then authorizing the user.
+ */
 export type ConnectorLoginStep = 'create-app' | 'authorize'
 
 /** The sign-in under way. */
 export interface ConnectorLoginView {
+  /** The steps this sign-in takes, in order; one for a platform that signs in with its own app. */
+  readonly steps: readonly ConnectorLoginStep[]
   readonly step: ConnectorLoginStep
   /** The address the user opens to finish this step; null until the CLI reports it. */
   readonly url: string | null
@@ -66,10 +70,10 @@ export type ConnectorInstallError = 'network' | 'verification' | 'storage' | 'la
 export interface ConnectorView {
   readonly id: ConnectorId
   readonly status: ConnectorStatus
-  /** CLI executable name, such as `lark-cli`; null while DSH does not support the connector. */
-  readonly cli: string | null
-  /** The CLI version this DSH release installs; null while DSH does not support the connector. */
-  readonly version: string | null
+  /** CLI executable name, such as `lark-cli`. */
+  readonly cli: string
+  /** The CLI version this DSH release installs. */
+  readonly version: string
   /** Archive bytes downloaded out of {@link totalBytes} while installing. */
   readonly receivedBytes: number
   readonly totalBytes: number
@@ -85,7 +89,7 @@ export interface ConnectorView {
   readonly problem: string | null
   /** Whether the current tenant leaves the connector on; off, the model gets neither its Skills nor its CLI. */
   readonly enabled: boolean
-  /** The Skills the installed CLI embeds, which reach the model while connected and on. */
+  /** The Skills the installed CLI release ships, which reach the model while connected and on. */
   readonly skills: readonly ConnectorSkillView[]
 }
 

@@ -2,19 +2,19 @@
 
 [English](connectors.md) | 中文
 
-连接器让桌面版用户把 DSH 连到公司使用的办公平台。连接器和连接器状态等术语定义在[术语表](../glossary.zh.md#connector)中，连接器为什么是平台未经修改的官方 CLI，记录在[连接器 Agent Note](../../.agents/notes/proposed/feature/2026-10-06-connectors-over-official-clis.zh.md) 中。[`@deepseek-ai/dsh-connectors`](../../packages/connector/connectors/README.zh.md) 负责内置连接器及其 CLI；[`@deepseek-ai/dsh-client-ui-connectors`](../../packages/client/ui-connectors/README.zh.md) 渲染连接器页面。
+连接器让桌面版用户把 DSH 连到公司使用的办公平台：飞书经 `lark-cli`，钉钉经 `dws`。连接器和连接器状态等术语定义在[术语表](../glossary.zh.md#connector)中，连接器为什么是平台未经修改的官方 CLI，记录在[连接器 Agent Note](../../.agents/notes/proposed/feature/2026-10-06-connectors-over-official-clis.zh.md) 中。[`@deepseek-ai/dsh-connectors`](../../packages/connector/connectors/README.zh.md) 负责内置连接器及其 CLI；[`@deepseek-ai/dsh-client-ui-connectors`](../../packages/client/ui-connectors/README.zh.md) 渲染连接器页面。
 
 ## 安装 CLI
 
-每个 DSH 发行版把每个连接器 CLI 固定为一个版本，并记录每个平台压缩包的大小和 sha256。安装连接器时，按配置的镜像顺序下载本平台的压缩包，从 `<dshHome>/connectors/<id>/downloads/` 续传未完成的下载，只把可执行文件解压到暂存目录，以 `--version` 运行它，只有报告了固定版本时才改名为 `<dshHome>/connectors/<id>/<version>/`，因此中断的安装永远不会被当作已安装。已安装的 CLI 供本机所有租户使用。DSH 从不全局安装 CLI，也从不读取或修改用户自己安装的 CLI 或其配置目录。卸载会删除 `<dshHome>/connectors/<id>`。
+每个 DSH 发行版把每个连接器 CLI 固定为一个版本，并记录每个平台压缩包的大小和 sha256。安装连接器时，按配置的镜像顺序下载本平台的压缩包，从 `<dshHome>/connectors/<id>/downloads/` 续传未完成的下载，只把可执行文件解压到暂存目录，把发行版附带的 Skill 压缩包（`dws-skills.zip`）解压到 `skills/`，以 `--version` 运行它，只有报告了固定版本时才改名为 `<dshHome>/connectors/<id>/<version>/`，因此中断的安装永远不会被当作已安装。已安装的 CLI 供本机所有租户使用。DSH 从不全局安装 CLI，也从不读取或修改用户自己安装的 CLI 或其配置目录。卸载会删除 `<dshHome>/connectors/<id>`。
 
 ## 连接
 
-连接属于当前 Hub 登录所在的租户。每个租户在 `<dshHome>/connectors/<id>/tenants/<tenantId>/` 下拥有自己的 CLI 配置、数据和日志目录，每次运行都会去掉调用方自己的 lark-cli 变量，因此用户自己的 CLI 配置不受影响。连接飞书按 lark-cli 面向 Agent 的流程进行：`config init --new` 在浏览器中创建租户的应用，然后 `auth login --recommend --json` 让用户授权；每一步的地址和二维码会送到连接器页面，由页面在浏览器中打开地址。创建了应用的登录失败或取消时，用 `config remove` 删除该应用。连接[状态](../glossary.zh.md#connector-status)来自 `auth status --json --verify`，在启动时、安装后、租户变化时、定期以及打开页面时检查。断开会运行 `config remove` 并删除该租户的目录；卸载会对每个租户这样做，再删除 CLI。
+连接属于当前 Hub 登录所在的租户。每个租户在 `<dshHome>/connectors/<id>/tenants/<tenantId>/` 下拥有自己的 CLI 配置、数据和日志目录，每次运行都会去掉调用方自己的 lark-cli 变量，因此用户自己的 CLI 配置不受影响；钉钉的租户目录还存放其加密凭据库，不进入系统钥匙串，否则 `dws` 会与用户自己的 `~/.dws` 共用同一个密钥。连接飞书按 lark-cli 面向 Agent 的流程进行：`config init --new` 在浏览器中创建租户的应用，然后 `auth login --recommend --json` 让用户授权；每一步的地址和二维码会送到连接器页面，由页面在浏览器中打开地址。创建了应用的登录失败或取消时，用 `config remove` 删除该应用。连接钉钉只需一步，使用钉钉自己的应用：`dws auth login --device` 打印设备流地址，由 DSH 绘制其二维码。钉钉的状态来自 `dws auth status --readonly`。连接[状态](../glossary.zh.md#connector-status)来自 `auth status --json --verify`，在启动时、安装后、租户变化时、定期以及打开页面时检查。断开会让该租户退出登录（`config remove`、`dws auth logout`）并删除该租户的目录；卸载会对每个租户这样做，再删除 CLI。
 
 ## 在对话中使用
 
-连接器已安装且当前租户开启它时，`dsh-shell-env` 的 PATH contributor 会把每个租户的 `lark-cli` 脚本放到模型 shell 的 `PATH` 最前面：已连接时，它用该租户的目录运行已安装的 CLI；未连接时，它拒绝执行并指向连接器页面；命令失败会触发一次健康检查。已连接时，CLI 内置的 Skill 从 `connectors` provider 加入 skill 目录，排在用户自己的 Skill 目录之前。关闭连接器会保留登录，但会把两者都撤下。bash 调用运行前，连接器的 `tools/pre-execute` 监听器按每条 lark-cli 命令在 `--help` 中声明的风险分类：读取直接运行；写入以及无法读出风险的命令在审批面板中等待用户批准；高风险写入带 ⚠️ 警告，允许后以 `--yes` 运行。
+连接器已安装且当前租户开启它时，`dsh-shell-env` 的 PATH contributor 会把每个租户以各 CLI 命名的脚本放到模型 shell 的 `PATH` 最前面：已连接时，它用该租户的目录运行已安装的 CLI；未连接时，它拒绝执行并指向连接器页面；命令失败会触发一次健康检查。已连接时，CLI 发行版提供的 Skill 从 `connectors` provider 加入 skill 目录，排在用户自己的 Skill 目录之前。关闭连接器会保留登录，但会把两者都撤下。bash 调用运行前，连接器的 `tools/pre-execute` 监听器按每条连接器命令在 `--help` 中的声明分类（lark-cli 的 `Risk:` 行、dws 的 `Safety:` 行）：读取直接运行；写入以及无法读出风险的命令在审批面板中等待用户批准；高风险写入带 ⚠️ 警告，CLI 只在确认后运行的命令在允许后以 `--yes` 运行。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
