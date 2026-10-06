@@ -38,7 +38,7 @@ const NS = 'skills'
 const PANEL_ID = 'skills' as MainPanelId
 
 /** Services the page reads: the installed-skill and market Remotes, and Session navigation with draft access for "chat with it". */
-export const inject = ['slots', 'locale', 'remote', 'remote.installedSkills', 'remote.skillMarket', 'uiWorkspace', 'sessions', 'conversation']
+export const inject = ['slots', 'locale', 'remote', 'remote.installedSkills', 'remote.skillMarket', 'uiWorkspace']
 
 /**
  * Contribute the Skills sidebar entry and the page it opens.
@@ -56,10 +56,7 @@ export function apply(ctx: ClientContext): void {
     uninstall: name => remote.uninstall(name),
     // A new Session in the usual New Session Workspace, its draft invoking the skill without sending.
     chat: (name) => {
-      ctx.uiWorkspace.startSession(undefined, (sessionId) => {
-        const binding = ctx.sessions.binding(sessionId)
-        if (binding !== undefined) ctx.conversation.input.for(binding.ctx).setDraft(`/${name} `)
-      })
+      ctx.uiWorkspace.startSession(undefined, { prompt: `/${name} ` })
     },
   })
   const market = ctx.remote.skillMarket

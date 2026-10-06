@@ -26,8 +26,7 @@ const FAILURE_KEYS = {
  * @returns the localized reason, or the Host message for an unexpected refusal.
  */
 function failureText(failure: MarketFailure, t: TranslateNS<'skills'>): string {
-  const key = FAILURE_KEYS[failure.code as keyof typeof FAILURE_KEYS]
-  return key === undefined ? failure.message : t(key)
+  return failure.code in FAILURE_KEYS ? t(FAILURE_KEYS[failure.code as keyof typeof FAILURE_KEYS]) : failure.message
 }
 
 /** The card list, labelled by the selected category tab. */

@@ -104,7 +104,6 @@ export function apply(ctx: Context, config: { toolDir?: string }): void {
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口、`ShellEnvRegistry` 服务与内置事实 |
-| — | 不发布运行时不变式伴生入口；环境注册表会在每次注册和收集时校验所有权与收集值，也不发布可供伴生入口交叉检查的独立快照。 |
 
 ### 收集
 

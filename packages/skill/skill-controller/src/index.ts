@@ -168,7 +168,7 @@ export class SkillController extends TypertRemoteService {
     const skill = await this.find(name)
     const result = await this.act(name, () => this.moveToTrash(installedEntry(skill), signal))
     // The skill is already gone; a failure to forget its disabled state must not report the removal as failed.
-    if (this.view(skill).enabled === false) {
+    if (!this.view(skill).enabled) {
       await this.setDisabled(skill, false).catch((error: unknown) => {
         this.ctx.logger.warn(`uninstalled skill "${name}" stays in disabledSkills: ${messageOf(error)}`)
       })

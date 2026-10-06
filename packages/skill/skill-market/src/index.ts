@@ -242,7 +242,7 @@ class MarketProvider implements SkillProvider {
     // Discovery that could not start its watcher keeps its incomplete flag.
     /* v8 ignore start */
     if (!Array.isArray(listed)) {
-      const observation = listed as SkillProviderObservation
+      const observation = listed
       return { candidates: observation.candidates.map(close), complete: observation.complete }
     }
     /* v8 ignore stop */

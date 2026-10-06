@@ -50,11 +50,6 @@ async function bench() {
   }
   const directoryPicker = { pick: vi.fn(async () => ({ ok: true as const, value: '/picked' as string | null })) }
   new TestRemote(ctx, { installedSkills, skillMarket, directoryPicker })
-  const setDraft = vi.fn()
-  const sessionCtx = new Context()
-  const binding = vi.fn((sessionId: string) => sessionId === 'fresh' ? { ctx: sessionCtx } : undefined)
-  ctx.provide('sessions', { binding } as never)
-  ctx.provide('conversation', { input: { for: vi.fn((actx: Context) => { expect(actx).toBe(sessionCtx); return { setDraft } }) } } as never)
   const startSession = vi.fn()
   ctx.provide('uiWorkspace', { startSession } as never)
   const slots = ctx.get('slots') as SlotRegistry
@@ -66,7 +61,7 @@ async function bench() {
     },
   } as never, () => null)
   onTestFinished(removeRoot)
-  return { ctx, slots, installedSkills, skillMarket, directoryPicker, startSession, setDraft }
+  return { ctx, slots, installedSkills, skillMarket, directoryPicker, startSession }
 }
 
 /**
@@ -118,12 +113,8 @@ describe('ui-skills browser plugin', () => {
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const face = pageFace(b.slots) as InstalledSkillsInjected
     face.onChat('alpha')
-    const [workspaceId, beforeOpen] = b.startSession.mock.calls[0] as [undefined, (sessionId: string) => void]
-    expect(workspaceId).toBeUndefined()
-    beforeOpen('fresh')
-    expect(b.setDraft).toHaveBeenCalledWith('/alpha ')
-    beforeOpen('unknown')
-    expect(b.setDraft).toHaveBeenCalledOnce()
+    // The New Session flow seeds the draft without sending it.
+    expect(b.startSession).toHaveBeenCalledWith(undefined, { prompt: '/alpha ' })
   })
 
   it('wires the market callbacks to the skillMarket Remote and refreshes the installed list after an install', async () => {
