@@ -3,8 +3,9 @@
 // stand-in lark-cli, the employee asks about today's schedule; a scripted model sees the connector's
 // Skills in the catalog, runs `lark-cli calendar +agenda` through bash — which reaches the installed
 // CLI with the company's own directories — and answers from its output. Asked to send a message, the
-// model's write waits in the approval panel and the rejection reaches it as a denial; asked to delete a
-// file, the high-risk command shows a warning and, once allowed, runs with `--yes`. Switched off on the
+// model's write waits in the approval panel and the rejection reaches it as a denial; always allowed,
+// the same write then runs unasked until the Connectors page revokes it; asked to delete a file, the
+// high-risk command shows a warning, offers no always-allow and, once allowed, runs with `--yes`. Switched off on the
 // Connectors page, the session's next request carries a catalog without the Skills. A stale copy of a
 // connector Skill in the user's own Skill directory never replaces the one the installed CLI embeds.
 import { execFileSync } from 'node:child_process'
@@ -202,16 +203,40 @@ it.skipIf(process.platform === 'win32')('gives the model the connected connector
     expect(JSON.stringify(chat.chats.at(-1)!.messages.at(-1)!.content)).toContain('the user rejected tool \\"bash\\"')
     expect((await calls()).some(call => call.startsWith('im +messages-send'))).toBe(false)
 
-    // A high-risk write shows the warning; allowed once, it runs with --yes and the model gets its result.
+    // Always allowed: this call runs, and the next send of the same command asks nothing.
+    const sends = async () => (await calls()).filter(call => call.startsWith('im +messages-send')).length
+    await send('帮我在群里发消息：周会改到下午三点')
+    await panel.getByText('飞书连接器将以你的身份执行写操作：lark-cli im +messages-send。允许执行一次吗？').waitFor({ timeout: 30_000 })
+    await panel.getByRole('button', { name: '始终允许', exact: true }).click()
+    await expect.poll(sends, { timeout: 30_000 }).toBe(1)
+    await send('帮我在群里发消息：周会改到下午三点')
+    await expect.poll(sends, { timeout: 30_000 }).toBe(2)
+    expect(await panel.count()).toBe(0)
+
+    // A high-risk write shows the warning and cannot be always allowed; allowed once, it runs with --yes and the model gets its result.
     await send('删除旧的周报文件')
     await panel.getByText(/^⚠️ 高风险操作：飞书连接器将以你的身份执行 lark-cli drive \+delete/u).waitFor({ timeout: 30_000 })
+    expect(await panel.getByRole('button', { name: '始终允许', exact: true }).count()).toBe(0)
     await panel.getByRole('button', { name: '允许一次', exact: true }).click()
     await page.getByText(/deleted/u).first().waitFor({ timeout: 30_000 })
     expect(await calls()).toContain('drive +delete --file-token box_old --yes')
 
+    // The card lists the always-allowed command; revoked, the next send asks again.
+    await page.getByRole('button', { name: '连接器', exact: true }).click()
+    const card = page.getByRole('listitem').filter({ hasText: '飞书' }).first()
+    await card.getByText('带来的 Skill（2）').waitFor()
+    const allowed = card.getByRole('list', { name: '始终允许的操作' })
+    await allowed.getByText('lark-cli im +messages-send', { exact: true }).waitFor()
+    await allowed.getByRole('button', { name: '撤销始终允许 lark-cli im +messages-send' }).click()
+    await allowed.waitFor({ state: 'detached' })
+    await page.getByText('今天有什么日程？').first().click()
+    await send('帮我在群里发消息：周会改到下午三点')
+    await panel.getByText('飞书连接器将以你的身份执行写操作：lark-cli im +messages-send。允许执行一次吗？').waitFor({ timeout: 30_000 })
+    await panel.getByRole('button', { name: '拒绝', exact: true }).click()
+    await panel.waitFor({ state: 'detached' })
+
     // Switched off on the Connectors page: the next request's catalog no longer lists them.
     await page.getByRole('button', { name: '连接器', exact: true }).click()
-    const card = page.getByRole('listitem').filter({ hasText: '飞书' })
     await card.getByText('带来的 Skill（2）').waitFor()
     await card.getByRole('switch', { name: '在对话中使用飞书' }).click()
     await card.getByText('已停用：对话中的模型不会使用飞书，登录信息保留。').waitFor()

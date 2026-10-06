@@ -14,7 +14,7 @@
 
 ## 在对话中使用
 
-连接器已安装且当前租户开启它时，`dsh-shell-env` 的 PATH contributor 会把每个租户以各 CLI 命名的脚本放到模型 shell 的 `PATH` 最前面：已连接时，它用该租户的目录运行已安装的 CLI；未连接时，它拒绝执行并指向连接器页面；命令失败会触发一次健康检查。已连接时，CLI 发行版提供的 Skill 从 `connectors` provider 加入 skill 目录，排在用户自己的 Skill 目录之前。关闭连接器会保留登录，但会把两者都撤下。bash 调用运行前，连接器的 `tools/pre-execute` 监听器按每条连接器命令在 `--help` 中的声明分类（lark-cli 的 `Risk:` 行、dws 的 `Safety:` 行）：读取直接运行；写入以及无法读出风险的命令在审批面板中等待用户批准；高风险写入带 ⚠️ 警告，CLI 只在确认后运行的命令在允许后以 `--yes` 运行。
+连接器已安装且当前租户开启它时，`dsh-shell-env` 的 PATH contributor 会把每个租户以各 CLI 命名的脚本放到模型 shell 的 `PATH` 最前面：已连接时，它用该租户的目录运行已安装的 CLI；未连接时，它拒绝执行并指向连接器页面；命令失败会触发一次健康检查。已连接时，CLI 发行版提供的 Skill 从 `connectors` provider 加入 skill 目录，排在用户自己的 Skill 目录之前。关闭连接器会保留登录，但会把两者都撤下。bash 调用运行前，连接器的 `tools/pre-execute` 监听器按每条连接器命令在 `--help` 中的声明分类（lark-cli 的 `Risk:` 行、dws 的 `Safety:` 行）：读取直接运行；写入以及无法读出风险的命令在审批面板中等待用户批准；高风险写入带 ⚠️ 警告，CLI 只在确认后运行的命令在允许后以 `--yes` 运行。普通写入可以为当前租户 **始终允许**：之后相同命令词的调用不再询问，并留下 `connectors/always-allowed` 审计事件；连接器卡片列出这些命令并可撤销。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -103,6 +103,16 @@ Host owner of the connectors and of the `connectors` Remote namespace.
  *   Error when mounted without Settings or a profile entry.
  */
 @Remote async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState>
+
+/**
+ * Stop always allowing a write command for the current tenant: it asks again.
+ * @param id - the connector.
+ * @param command - the command words, as the view lists them.
+ * @returns the state once the setting is saved.
+ * @throws RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`;
+ *   Error when mounted without Settings or a profile entry.
+ */
+@Remote async revokeAlwaysAllowed(id: string, command: string): Promise<ConnectorsState>
 ```
 
 Source: [`packages/connector/connectors/src/index.ts`](../../packages/connector/connectors/src/index.ts)

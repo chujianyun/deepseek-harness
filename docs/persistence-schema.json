@@ -6450,6 +6450,85 @@
       }
     },
     {
+      "key": "event:connectors/always-allowed",
+      "kind": "event",
+      "event": "connectors/always-allowed",
+      "surface": false,
+      "digest": "492954dcf5c71ab11312adacc10f9de45eed6bbe90549ec10c21c7e7386efa27",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "callId",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "commands",
+                "type": 3,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "array",
+            "element": 2
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "connectors/always-allowed"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:deliverables/presented",
       "kind": "event",
       "event": "deliverables/presented",
@@ -21965,6 +22044,11 @@
       "sources": []
     },
     {
+      "digest": "08019d166cdeb2620c50b42b194045f07eb848ed042b40acee6cb1270457e4a1",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "09655b34d7f3cf1e9005974de2357de2d4a60deea165d16dac1eadaa6ec539a8",
       "names": [],
       "sources": []
@@ -22568,6 +22652,13 @@
       "sources": []
     },
     {
+      "digest": "2bcf34ac7dc95d34676ac2da19c692bd1fb17a58c54164fb904c8cd1b83c243b",
+      "names": [],
+      "sources": [
+        "packages/connector/connectors/src/types.ts:17"
+      ]
+    },
+    {
       "digest": "2c4c21f19f426a58f2dac914e34313aa43f8408972de857a486d1f086d5adb6c",
       "names": [],
       "sources": []
@@ -22810,7 +22901,7 @@
         "packages/core/tools/src/index.ts#ToolRestriction"
       ],
       "sources": [
-        "packages/core/tools/src/index.ts:700"
+        "packages/core/tools/src/index.ts:707"
       ]
     },
     {
@@ -22916,7 +23007,7 @@
       "digest": "45f2a07ea94573123b6ae14db787a40062dec3834f36d8be92c523d40ba28448",
       "names": [],
       "sources": [
-        "packages/interaction/user-approval/src/types.ts:44"
+        "packages/interaction/user-approval/src/types.ts:57"
       ]
     },
     {
@@ -22954,6 +23045,11 @@
     },
     {
       "digest": "48f9c19417a1abbedfa59f4667bba36b93ac2db407adf5e84cb3ba0de30942cb",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "492954dcf5c71ab11312adacc10f9de45eed6bbe90549ec10c21c7e7386efa27",
       "names": [],
       "sources": []
     },
@@ -24074,7 +24170,7 @@
       "digest": "93cbbc5a7fd0b1aa1ff1b9a6bb5ec52b073f48e5a5200365c45c0cd54059e1b9",
       "names": [],
       "sources": [
-        "packages/interaction/user-approval/src/types.ts:55"
+        "packages/interaction/user-approval/src/types.ts:68"
       ]
     },
     {

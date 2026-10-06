@@ -188,7 +188,7 @@ describe('connector Skills', () => {
     const signedOut = await setup({ tenant: null })
     expect(remoteErrorOf(await signedOut.service.setEnabled('feishu', false).catch((error: unknown) => error))?.code).toBe('hub-account/signed-out')
     const unsaved = await setup({ settings: false })
-    await expect(unsaved.service.setEnabled('feishu', false)).rejects.toThrow('switching connectors requires the settings service and a profile entry')
+    await expect(unsaved.service.setEnabled('feishu', false)).rejects.toThrow('changing connector settings requires the settings service and a profile entry')
   })
 
   it('loads nothing for a Skill whose connector no longer gives Skills', async () => {

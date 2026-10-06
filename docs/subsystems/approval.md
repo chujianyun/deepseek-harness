@@ -18,7 +18,7 @@ Every request receives a fresh `ApprovalRequestId`. The brand pairs the `approva
 type ApprovalRequestId = Branded<'ApprovalRequestId'>
 ```
 
-`ApprovalOutcome` is closed and fail-closed. `allowed-once` grants only the asked-about action; callers deny on `rejected`, `cancelled`, and `unavailable`. A missing, non-owning, throwing, or non-conforming answerer becomes `unavailable` rather than opening the gate.
+`ApprovalOutcome` is closed and fail-closed. `allowed-once` grants only the asked-about action; callers deny on `rejected`, `cancelled`, and `unavailable`. A missing, non-owning, throwing, or non-conforming answerer becomes `unavailable` rather than opening the gate. A request that sets `remember` offers to remember the grant: an answerer may then return `{ outcome: 'allowed-once', remember: true }` (`ApprovalRememberedGrant`), which still resolves `allowed-once`, is audited as `allowed-once`, and calls the requester's `onRemember` from `ctx.approval.request(req, options)` before the request resolves. Remembering is the requester's own policy; the service keeps no grant. `PreToolDecision`'s `ask` sets it through its `onRemember` callback.
 
 ```ts type-equiv
 /**
@@ -124,12 +124,15 @@ setPolicy(agent: Agent, policy: ApprovalPolicy): void
  * violate the pair. Session contains post-commit observer failures, so an
  * authoritative append cannot reject the request or suppress its matching
  * audit event.
+ * An answerer may answer a request that offers `remember` with a grant to remember: the request
+ * still resolves `'allowed-once'` and calls `options.onRemember` first; the audit pair is unchanged.
  * @param req - the pending decision (agent, tool identity, reason, signal).
+ * @param options - same-process hooks, such as remembering an offered grant.
  * @returns the closed outcome; `'allowed-once'` is the only grant.
  * @throws when no turn is open or either audit event fails before the session
  *   append commit point.
  */
-async request(req: ApprovalRequest): Promise<ApprovalOutcome>
+async request(req: ApprovalRequest, options: ApprovalRequestOptions = {}): Promise<ApprovalOutcome>
 
 /**
  * Read the session override without applying the configured default.
@@ -161,7 +164,7 @@ Ask composed answerers for one decision. Return an outcome to claim the request 
  * @param req - pending approval request.
  * @mode waterfall
  */
-'approval/request'( this: Scoped<Agent>, req: ApprovalRequestEvent, next: () => Promise<ApprovalOutcome>, ): Promise<ApprovalOutcome>
+'approval/request'( this: Scoped<Agent>, req: ApprovalRequestEvent, next: () => Promise<ApprovalAnswer>, ): Promise<ApprovalAnswer>
 ```
 
 Types: [Agent](core.md) · [Scoped](scope.md)

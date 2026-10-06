@@ -270,3 +270,43 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+.allowed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.allowedLabel {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.allowedList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.allowedItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.allowedItem code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ds-font-family-code);
+}
+
+.more:disabled {
+  cursor: default;
+  opacity: 0.5;
+}

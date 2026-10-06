@@ -130,7 +130,7 @@ describe('connectors', () => {
     const { service } = await boot(await scratch('dsh-connectors-home-'))
     expect(service.typertRemote.namespace).toBe('connectors')
     expect(remoteMethods(service).map(method => method.method)).toEqual([
-      'getState', 'watch', 'installConnector', 'uninstallConnector', 'connect', 'cancelConnect', 'disconnect', 'check', 'setEnabled',
+      'getState', 'watch', 'installConnector', 'uninstallConnector', 'connect', 'cancelConnect', 'disconnect', 'check', 'setEnabled', 'revokeAlwaysAllowed',
     ])
     const state = await service.getState()
     // dws has no Windows build DSH can isolate, and neither CLI builds for every architecture.

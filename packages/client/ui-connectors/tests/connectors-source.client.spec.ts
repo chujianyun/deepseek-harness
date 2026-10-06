@@ -10,7 +10,7 @@ const refused = (message: string) => Promise.resolve({ ok: false as const, error
 function deps(over: Partial<ConnectorsDependencies> = {}): ConnectorsDependencies {
   return {
     install: vi.fn(ok), uninstall: vi.fn(ok), connect: vi.fn(ok), cancelConnect: vi.fn(ok), disconnect: vi.fn(ok),
-    check: vi.fn(ok), setEnabled: vi.fn(ok),
+    check: vi.fn(ok), setEnabled: vi.fn(ok), revokeAlwaysAllowed: vi.fn(ok),
     openUrl: vi.fn(), ...over,
   }
 }
@@ -18,7 +18,7 @@ function deps(over: Partial<ConnectorsDependencies> = {}): ConnectorsDependencie
 const feishu = (over: Partial<ConnectorView>): ConnectorsState => ({
   connectors: [{
     id: 'feishu', status: 'connecting', cli: 'lark-cli', version: '1', receivedBytes: 0, totalBytes: 0, error: null,
-    login: null, loginError: null, account: null, problem: null, enabled: true, skills: [], ...over,
+    login: null, loginError: null, account: null, problem: null, enabled: true, skills: [], alwaysAllowed: [], ...over,
   }],
 })
 
@@ -51,6 +51,8 @@ describe('connectors source', () => {
     await source.onDisconnect('feishu')
     await source.onSetEnabled('feishu', false)
     expect(d.setEnabled).toHaveBeenCalledWith('feishu', false)
+    await source.onRevokeAlwaysAllowed('feishu', 'im +messages-send')
+    expect(d.revokeAlwaysAllowed).toHaveBeenCalledWith('feishu', 'im +messages-send')
     await source.onCheck()
     expect(d.cancelConnect).toHaveBeenCalledWith('feishu')
     expect(d.disconnect).toHaveBeenCalledWith('feishu')

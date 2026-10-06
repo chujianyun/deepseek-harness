@@ -404,14 +404,21 @@ Each interception waterfall returns a typed **Decision** (the idiom shared with 
  * the canonical cancellation result without presenting a policy denial; `ask`
  * runs only after an approval service returns `allowed-once` and otherwise
  * denies; its `reason` is the audited approval reason and its optional
- * `displayReason` is the localized prompt text. Input rewriting is excluded because arguments are already logged and
- * presented.
+ * `displayReason` is the localized prompt text. An `ask` with `onRemember` also offers the user to
+ * remember the grant; the callback runs, before the call dispatches, when the user does. Input
+ * rewriting is excluded because arguments are already logged and presented.
  */
 type PreToolDecision =
   | { kind: 'allow' }
   | { kind: 'deny'; reason: string; info?: ToolErrorInfo }
   | { kind: 'cancel' }
-  | { kind: 'ask'; reason?: string; displayReason?: { readonly en: string; readonly [locale: string]: string } }
+  | {
+    kind: 'ask'
+    reason?: string
+    displayReason?: { readonly en: string; readonly [locale: string]: string }
+    /** Offers to remember the grant; called when the user grants and asks to remember it. */
+    onRemember?: () => void
+  }
 ```
 
 ```ts type-equiv

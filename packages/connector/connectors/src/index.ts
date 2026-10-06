@@ -111,6 +111,8 @@ export interface Config {
   checkIntervalMs?: number
   /** Connectors switched off, as `<tenantId>/<id>`; edited live through `setEnabled()`. */
   disabled?: Volatile<readonly string[]>
+  /** Write commands always allowed, as `<tenantId>/<id>/<command words>`; added from an approval, revoked by `revokeAlwaysAllowed()`. */
+  alwaysAllowed?: Volatile<readonly string[]>
 }
 
 const cliSpec = Schema.object({
@@ -139,6 +141,8 @@ export const Config = Schema.object({
   checkIntervalMs: Schema.natural().min(1000).default(30 * 60 * 1000),
   disabled: Schema.array(Schema.string()).default([]).volatile()
     .description('Connectors switched off, as `<tenantId>/<id>`. A switched-off connector stays signed in, but the model gets neither its Skills nor its CLI.'),
+  alwaysAllowed: Schema.array(Schema.string()).default([]).volatile()
+    .description('Write commands that run without asking, as `<tenantId>/<id>/<command words>`, such as `t-1/feishu/im +messages-send`.'),
 }) as Schema<Config>
 
 /** The variable that names, one per line, the high-risk commands of a shell call the user approved, such as `drive +delete`. */
@@ -159,12 +163,24 @@ function bashCommand(exec: Pick<ToolExecution, 'name' | 'arguments'>): string | 
 
 /** What a bash call does through one connected connector. */
 interface Classified {
+  readonly id: ConnectorId
   readonly driver: ConnectorDriver
   readonly cli: string
   readonly classification: Classification
 }
 
 const RISK_ORDER: readonly Classification['risk'][] = ['none', 'read', 'write', 'unknown', 'high-risk-write']
+
+/**
+ * How the profile names a write command a tenant always allows.
+ * @param tenant - the user-center tenant.
+ * @param id - the connector.
+ * @param command - its command words, such as `im +messages-send`.
+ * @returns `<tenant>/<id>/<command>`.
+ */
+function grantKey(tenant: string, id: ConnectorId, command: string): string {
+  return `${tenant}/${id}/${command}`
+}
 
 /**
  * The approval a bash call that writes through connectors asks for: the audit reason names the
@@ -274,6 +290,7 @@ export class ConnectorsService extends TypertRemoteService {
   private readonly installables = new Map<ConnectorId, Installable>()
   private readonly checkIntervalMs: number
   private readonly disabled: Volatile<readonly string[]> | undefined
+  private readonly alwaysAllowed: Volatile<readonly string[]> | undefined
   private readonly entryId: string | undefined
   private provider: ConnectorSkillProvider | undefined
   /** Calls whose high-risk connector commands wait for, or have, the user's approval, with those commands one per line. */
@@ -283,7 +300,8 @@ export class ConnectorsService extends TypertRemoteService {
   /** What the skill provider was last told about, so it is invalidated only on a change. */
   private skillKey = ''
   private writes: Promise<void> = Promise.resolve()
-  private disabledWrites: Promise<void> = Promise.resolve()
+  /** Profile writes of the `disabled` and `alwaysAllowed` lists, one at a time. */
+  private settingsWrites: Promise<void> = Promise.resolve()
   private failureTimer: ReturnType<typeof setTimeout> | undefined
   private tenantId: string | null = null
   private progressTimer: ReturnType<typeof setTimeout> | undefined
@@ -293,11 +311,12 @@ export class ConnectorsService extends TypertRemoteService {
   /** @param ctx - Host context with the Hub sign-in. @param config - home, pinned CLIs, and the check interval. */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'connectors', { namespace: 'connectors' })
-    // The live disabled list arrives as a Volatile handle; the schema validates the rest.
-    const { disabled, ...rest } = config
+    // The live lists arrive as Volatile handles; the schema validates the rest.
+    const { disabled, alwaysAllowed, ...rest } = config
     const resolved = Config(rest) as Config & { feishu: CliSpec; dingtalk: CliSpec; checkIntervalMs: number }
     this.checkIntervalMs = resolved.checkIntervalMs
     this.disabled = disabled
+    this.alwaysAllowed = alwaysAllowed
     this.entryId = ctx.fiber.entry?.options.id
     const root = join(resolveDshHome(resolved.dshHome), 'connectors')
     for (const [driver, spec] of [[feishuDriver, resolved.feishu], [dingtalk, resolved.dingtalk]] as const) {
@@ -344,13 +363,24 @@ export class ConnectorsService extends TypertRemoteService {
         if (this.exposure(entry)?.mode !== 'run') continue
         const cli = entry.spec.binary
         const classification = await classify(command, cli, this.riskReader(entry), entry.driver.readOnly)
-        parts.push({ driver: entry.driver, cli, classification })
+        parts.push({ id: entry.id, driver: entry.driver, cli, classification })
       }
       if (parts.every(part => part.classification.risk === 'none' || part.classification.risk === 'read')) return decision
+      // Only plain writes the CLI runs unconfirmed can be always allowed; a call that holds anything else always asks.
+      const asked = parts.flatMap(part => part.classification.invocations.filter(item => item.risk !== 'read').map(item => ({ ...item, id: part.id, cli: part.cli })))
+      const tenant = this.tenantId
+      const rememberable = tenant !== null && asked.every(item => item.risk === 'write' && !item.confirm)
+      const granted = new Set(this.alwaysAllowedList())
+      if (rememberable && exec.agent !== undefined && asked.every(item => granted.has(grantKey(tenant, item.id, item.command)))) {
+        exec.agent.session.append('connectors/always-allowed', { callId: exec.callId, commands: [...new Set(asked.map(item => `${item.cli} ${item.command}`))] })
+        return decision
+      }
       // Commands the CLI runs only confirmed get its confirm flag once the user approves the call.
       const confirmed = parts.flatMap(part => part.classification.invocations.filter(item => item.confirm).map(item => `${part.cli} ${item.command}`))
       if (confirmed.length > 0) this.confirmed.set(exec.callId, confirmed.join('\n'))
-      return approvalAsk(parts)
+      const ask = approvalAsk(parts)
+      if (!rememberable || ask.kind !== 'ask') return ask
+      return { ...ask, onRemember: () => { this.remember(asked.map(item => grantKey(tenant, item.id, item.command))) } }
     })
     ctx.shellEnv.register({
       name: 'connectors',
@@ -455,6 +485,7 @@ export class ConnectorsService extends TypertRemoteService {
     if (entry.install === 'installed') {
       for (const tenant of await readdir(join(entry.root, 'tenants')).catch(() => [])) await entry.driver.removeTenant(this.cliAt(entry, tenant))
     }
+    await this.forget(key => key.split('/')[1] === entry.id)
     this.changed()
     await this.writes
     await rm(entry.root, { recursive: true, force: true })
@@ -519,6 +550,7 @@ export class ConnectorsService extends TypertRemoteService {
     await this.stopLogin(entry)
     entry.connection = idle(entry.connection.epoch + 1)
     if (entry.install === 'installed') await entry.driver.removeTenant(this.cliAt(entry, tenant))
+    await this.forget(key => key.startsWith(grantKey(tenant, entry.id, '')))
     this.changed()
     return this.getState()
   }
@@ -546,16 +578,23 @@ export class ConnectorsService extends TypertRemoteService {
   async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState> {
     this.installable(id)
     const key = `${this.requireTenant()}/${id}`
-    const write = this.disabledWrites.then(async () => {
-      const current = this.disabledList()
-      if (current.includes(key) !== enabled) return
-      const settings = this.ctx.get('settings')
-      if (settings === undefined || this.entryId === undefined) throw new Error('switching connectors requires the settings service and a profile entry')
-      await settings.update(this.entryId, { disabled: enabled ? current.filter(item => item !== key) : [...current, key].sort() })
-    })
-    this.disabledWrites = write.catch(() => {})
-    await write
-    this.changed()
+    await this.updateList('disabled', current => enabled ? current.filter(item => item !== key) : [...current, key])
+    return this.getState()
+  }
+
+  /**
+   * Stop always allowing a write command for the current tenant: it asks again.
+   * @param id - the connector.
+   * @param command - the command words, as the view lists them.
+   * @returns the state once the setting is saved.
+   * @throws RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`;
+   *   Error when mounted without Settings or a profile entry.
+   */
+  @Remote
+  async revokeAlwaysAllowed(id: string, command: string): Promise<ConnectorsState> {
+    const { entry } = this.installable(id)
+    const key = grantKey(this.requireTenant(), entry.id, command)
+    await this.updateList('alwaysAllowed', current => current.filter(item => item !== key))
     return this.getState()
   }
 
@@ -585,8 +624,52 @@ export class ConnectorsService extends TypertRemoteService {
       totalBytes: archive === undefined ? 0 : archive.size + (entry.spec.skills?.size ?? 0),
       error: entry.error, login: status === 'connecting' ? connection.login : null, loginError: connection.loginError,
       account: status === 'connected' ? connection.account : null, problem: status === 'degraded' ? connection.problem : null,
-      enabled: this.enabled(entry), skills: entry.skills,
+      enabled: this.enabled(entry), skills: entry.skills, alwaysAllowed: this.grantsOf(entry),
     }
+  }
+
+  /** The write commands the current tenant always allows through a connector, sorted. */
+  private grantsOf(entry: Installable): string[] {
+    if (this.tenantId === null) return []
+    const prefix = grantKey(this.tenantId, entry.id, '')
+    return this.alwaysAllowedList().filter(key => key.startsWith(prefix)).map(key => key.slice(prefix.length)).sort()
+  }
+
+  private alwaysAllowedList(): readonly string[] {
+    // Every mount passes the Volatile handle; the optional type comes from the Config interface.
+    /* v8 ignore next */
+    return this.alwaysAllowed?.get() ?? []
+  }
+
+  /** Always allow the write commands the user granted from an approval; a failed save leaves them asking. */
+  private remember(keys: readonly string[]): void {
+    this.updateList('alwaysAllowed', current => [...current, ...keys]).catch((error: unknown) => {
+      this.ctx.logger.warn(`connectors: could not save always-allowed commands: ${String(error)}`)
+    })
+  }
+
+  /** Stop always allowing anything the predicate picks. */
+  private forget(pick: (key: string) => boolean): Promise<void> {
+    return this.updateList('alwaysAllowed', current => current.filter(key => !pick(key)))
+  }
+
+  /**
+   * Save one of the profile's lists, sorted and without duplicates, after the writes before it.
+   * @param field - the list.
+   * @param edit - the new list from the current one.
+   */
+  private async updateList(field: 'disabled' | 'alwaysAllowed', edit: (current: readonly string[]) => readonly string[]): Promise<void> {
+    const write = this.settingsWrites.then(async () => {
+      const current = field === 'disabled' ? this.disabledList() : this.alwaysAllowedList()
+      const next = [...new Set(edit(current))].sort()
+      if (next.length === current.length && next.every((item, index) => item === current[index])) return
+      const settings = this.ctx.get('settings')
+      if (settings === undefined || this.entryId === undefined) throw new Error('changing connector settings requires the settings service and a profile entry')
+      await settings.update(this.entryId, { [field]: next })
+    })
+    this.settingsWrites = write.catch(() => {})
+    await write
+    this.changed()
   }
 
   private disabledList(): readonly string[] {
@@ -753,7 +836,14 @@ export class ConnectorsService extends TypertRemoteService {
     // A connect() while a sign-in stops changes nothing, as the connection still reads `connecting`
     // until that sign-in settles, so no sign-in can start for the old tenant before the replacement.
     for (const entry of this.installables.values()) await this.stopLogin(entry)
+    const previous = this.tenantId
     this.tenantId = tenantId
+    // Signing out of the Hub ends what that tenant always allowed; switching tenants keeps it for when it returns.
+    if (tenantId === null && previous !== null) {
+      await this.forget(key => key.startsWith(`${previous}/`)).catch((error: unknown) => {
+        this.ctx.logger.warn(`connectors: could not clear always-allowed commands: ${String(error)}`)
+      })
+    }
     for (const entry of this.installables.values()) entry.connection = idle(entry.connection.epoch + 1)
     this.changed()
     await this.checkAll()

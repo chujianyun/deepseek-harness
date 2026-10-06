@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-07-connectors-always-allowed.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-07-connectors-always-allowed.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-07-connectors-always-allowed:
+  en: cc4248a6201ab753
+  zh: 853467e726396943
+/2026-10-07-connectors-always-allowed/summary:
+  en: 4ccaf6f2e365fe32
+  zh: 63e33fb0694e6550
+/2026-10-07-connectors-always-allowed/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-07-connectors-always-allowed/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-07-connectors-always-allowed/compatibility:
+  en: a424df4fb01ffdf3
+  zh: 5dd0897e982a7dae
+/2026-10-07-connectors-always-allowed/verification:
+  en: 974451cf504775c3
+  zh: fccba9e6ca6f9e23
+/2026-10-07-connectors-always-allowed/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

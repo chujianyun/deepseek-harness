@@ -37,7 +37,7 @@ kind: "package-reference"
 
 连接器已安装且当前租户开启它时，模型 shell 会在 `<dshHome>/connectors/<id>/bin/<tenantId>/` 中找到一个以其 CLI 命名的脚本（`lark-cli`、`dws`），本包通过 `ctx.shellEnv.registerPath()` 把该目录放到 `PATH` 最前面。已连接或异常时，脚本去掉调用方的 lark-cli 变量，用该租户的配置和数据目录运行已安装的 CLI，因此命令使用的是 DSH 的 CLI 和该租户的登录，而不是用户自己设置的 CLI 或 `~/.lark-cli`。脚本运行 CLI 期间，服务用 `ctx.sandboxPolicy.registerWritableRoot()` 登记该租户的目录，让受限模型 shell 中的 CLI 能在那里取锁和刷新令牌（`dws` 每次读取登录态的调用都要取锁）；lark-cli 的日志写在系统临时目录下，沙箱中的模型 shell 也能写入，而 `dws` 把日志写在配置目录中，沙箱拒绝写入时照常运行。未连接时，脚本拒绝执行，并提示请用户在连接器页面连接。命令失败时，脚本会补充说明连接器页面可能有帮助；服务监听 `tools/result`，对失败的 bash 命令所运行的每个连接器 CLI 运行一次健康检查。租户、连接或开关变化时，脚本会被重写。
 
-bash 调用运行前，服务的 `tools/pre-execute` 监听器会读取该调用通过每个已连接且开启的连接器做什么。它把命令拆成单词和分隔符，找出该连接器 CLI 的每个调用；其风险取自 `<cli> <command> --help` 的声明，每条命令读取一次。lark-cli 声明 `Risk: read | write | high-risk-write`，高风险写入只在带 `--yes` 时运行。`dws` 声明 `Safety: effect=… risk=… confirmation=…`：`effect=read` 为读取，`effect=destructive` 或 `risk=high` 为高风险写入，其他 `effect=write` 为写入，`confirmation=user_required` 表示只在带 `--yes` 时运行；没有声明安全性的 `auth status`、`version`、`schema`、`profile list`、`shortcut list` 和 `config list` 视为读取。`--help`、`--version`、`--dry-run` 或无参数视为读取。没有声明风险的命令、由变量构成的参数，以及隐藏 lark-cli 调用方式的命令（命令替换、`eval`、`sh -c`、`xargs`）按 `unknown` 处理，像写操作一样确认。只读取的调用直接运行；其他调用返回 `ask`，以命令作为审计原因并带本地化的 `displayReason`，由用户在审批面板中允许一次，拒绝会作为工具的拒绝结果送达模型。`high-risk-write` 调用的原因以 ⚠️ 警告开头；含有 CLI 只在确认后运行的命令时，原因会说明 DSH 将加上 `--yes`。用户允许后，模型 shell 仅为该次调用获得 `DSH_CONNECTOR_CONFIRMED`，以 `<cli> <命令词>` 的形式每行列出一条这些命令，该 CLI 的脚本会为这些命令的调用加上 `--yes`（已确认则不重复：`--yes`，`dws` 还有 `-y`）；该调用中的其他调用保持不变。该调用的 `tools/result` 结束这次批准。其他监听器的拒绝或询问保持不变。
+bash 调用运行前，服务的 `tools/pre-execute` 监听器会读取该调用通过每个已连接且开启的连接器做什么。它把命令拆成单词和分隔符，找出该连接器 CLI 的每个调用；其风险取自 `<cli> <command> --help` 的声明，每条命令读取一次。lark-cli 声明 `Risk: read | write | high-risk-write`，高风险写入只在带 `--yes` 时运行。`dws` 声明 `Safety: effect=… risk=… confirmation=…`：`effect=read` 为读取，`effect=destructive` 或 `risk=high` 为高风险写入，其他 `effect=write` 为写入，`confirmation=user_required` 表示只在带 `--yes` 时运行；没有声明安全性的 `auth status`、`version`、`schema`、`profile list`、`shortcut list` 和 `config list` 视为读取。`--help`、`--version`、`--dry-run` 或无参数视为读取。没有声明风险的命令、由变量构成的参数，以及隐藏 lark-cli 调用方式的命令（命令替换、`eval`、`sh -c`、`xargs`）按 `unknown` 处理，像写操作一样确认。只读取的调用直接运行；其他调用返回 `ask`，以命令作为审计原因并带本地化的 `displayReason`，由用户在审批面板中允许一次，拒绝会作为工具的拒绝结果送达模型。`high-risk-write` 调用的原因以 ⚠️ 警告开头；含有 CLI 只在确认后运行的命令时，原因会说明 DSH 将加上 `--yes`。用户允许后，模型 shell 仅为该次调用获得 `DSH_CONNECTOR_CONFIRMED`，以 `<cli> <命令词>` 的形式每行列出一条这些命令，该 CLI 的脚本会为这些命令的调用加上 `--yes`（已确认则不重复：`--yes`，`dws` 还有 `-y`）；该调用中的其他调用保持不变。该调用的 `tools/result` 结束这次批准。其他监听器的拒绝或询问保持不变。当一次调用所询问的命令全部是 CLI 无需确认即可运行的普通 `write` 时，询问还会带上 `onRemember`，审批面板因此提供 **始终允许**：选择后允许本次调用，并把每条命令的命令词按当前租户保存到 `alwaysAllowed`，格式为 `<tenantId>/<id>/<command words>`。之后所询问的命令都已保存的调用不再询问（无论参数是什么），并向会话追加一条仅日志的 `connectors/always-allowed` 事件（`callId`、`commands`）；没有可记录的会话时照常询问。包含高风险、需要确认或 `unknown` 命令的调用从不提供该选项。`revokeAlwaysAllowed()` 撤销一条；断开删除该租户的授权，卸载删除所有租户的授权，退出 Hub 登录删除被登出租户的授权；切换租户时各租户保留自己的授权。
 
 连接器已连接或异常且开启时，其 CLI 内置的 Skill 通过 `ctx.skills` 送达模型，来自 `connectors` provider，来源为 `connector-<id>`，rank 为 350：排在用户自己的 Skill 目录之前，因此那里过期的副本不会遮住与已安装 CLI 匹配的 Skill，排在项目 Skill 之后。provider 以 `everyLayer` 注册，因此在自己的层中发现本地 Skill 的 agent 预设里，这一顺序同样成立。飞书的列表来自 `skills list`，每个 CLI 版本读取一次；Skill 的说明来自去掉 frontmatter 的 `skills read <name>`；其文件用 `lark-cli skills read <name> <path>` 读取。钉钉的 Skill 来自已安装的 `skills/<name>/SKILL.md` 文件，其 frontmatter 中的 `name` 必须与目录一致，Skill 的目录即其资源根目录。每个视图会列出已安装 CLI 的 Skill，供卡片显示。`setEnabled(id, enabled)` 通过 Settings 服务在易变的 `disabled` 列表中为当前租户开启或关闭连接器：关闭后连接器保持登录，但模型既得不到它的 Skill 也得不到它的 CLI，用户自己的 `lark-cli` 保持原样。
 
@@ -55,13 +55,14 @@ bash 调用运行前，服务的 `tools/pre-execute` 监听器会读取该调用
 | `dingtalk` | `dws` 1.0.63 | 钉钉 CLI，字段相同，另有 `skills`：发行版的 Skill 压缩包，含 `file`、`size` 和 `sha256`。 |
 | `checkIntervalMs` | `1800000`（30 分钟） | 定期检查连接健康状况的间隔。 |
 | `disabled` | `[]` | 已关闭的连接器，格式为 `<tenantId>/<id>`；易变字段，由 `setEnabled()` 写入。 |
+| `alwaysAllowed` | `[]` | 不再询问的写命令，格式为 `<tenantId>/<id>/<command words>`；易变字段，从审批面板添加，由 `revokeAlwaysAllowed()` 删除。 |
 
 -----
 
 <a id="model-experience"></a>
 ## 模型体验
 
-间接通过 skill 注册表和 bash 工具：已连接且开启的连接器的 Skill 会加入模型的 skill 目录，其 CLI 在 bash 中运行；断开或关闭后这些 Skill 会离开目录。脚本会向命令的 stderr 追加两行之一，由 bash 结果带给模型：拒绝时为 `DSH: the Feishu connector is not connected for this company. Ask the user to connect Feishu on the DSH Connectors page (连接器), then try again.`，命令失败后为 `DSH: lark-cli exited with status <n>. If signing in to Feishu or a missing permission is the cause, ask the user to check the Feishu connector on the DSH Connectors page (连接器).`；钉钉脚本的提示相同，只是换成 DingTalk 和 `dws`。会写入的连接器命令会先等待用户批准；拒绝会作为工具的拒绝结果 `Error: the user rejected tool "bash"` 送达模型。
+间接通过 skill 注册表和 bash 工具：已连接且开启的连接器的 Skill 会加入模型的 skill 目录，其 CLI 在 bash 中运行；断开或关闭后这些 Skill 会离开目录。脚本会向命令的 stderr 追加两行之一，由 bash 结果带给模型：拒绝时为 `DSH: the Feishu connector is not connected for this company. Ask the user to connect Feishu on the DSH Connectors page (连接器), then try again.`，命令失败后为 `DSH: lark-cli exited with status <n>. If signing in to Feishu or a missing permission is the cause, ask the user to check the Feishu connector on the DSH Connectors page (连接器).`；钉钉脚本的提示相同，只是换成 DingTalk 和 `dws`。会写入的连接器命令会先等待用户批准（用户已为该公司始终允许的除外）；拒绝会作为工具的拒绝结果 `Error: the user rejected tool "bash"` 送达模型。
 
 #### KV Cache 影响
 
@@ -72,7 +73,7 @@ bash 调用运行前，服务的 `tools/pre-execute` 监听器会读取该调用
 <a id="known-limitations-and-deferred-work"></a>
 
 - **没有单独的高风险样式** — 审批面板显示高风险命令与其他审批相同；只有原因中的 ⚠️ 文字把它区分出来。
-- **按次批准** — 每次写入调用都会重新询问；连接器命令没有「始终允许」。
+- **始终允许不区分参数** — 被始终允许的命令无论带什么参数都直接运行，例如发给任意群的消息；没有按群或按文档的授权，也没有只在本会话内有效的授权。
 - **模型 shell 可写凭据目录** — 连接器已连接且开启时，其租户目录是沙箱可写根目录，因此受限命令可以修改或删除其中的登录信息，正如它本来就能读取一样。
 - **仅 bash、仅 POSIX** — 这些脚本是放在 `dsh-tool-bash` 的 `PATH` 上的 POSIX shell 脚本；PowerShell 和 Windows 没有脚本。
 - **钉钉只从 GitHub 下载** — npmmirror 没有 `dws` 的二进制镜像，其 npm 包把所有平台的压缩包（约 105 MB）套在另一个包里；GitHub 访问缓慢或受阻时，安装钉钉会以 `network` 失败。

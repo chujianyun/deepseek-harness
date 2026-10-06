@@ -763,6 +763,8 @@ export interface Config {
   checkIntervalMs?: number
   /** Connectors switched off, as `<tenantId>/<id>`; edited live through `setEnabled()`. */
   disabled?: Volatile<readonly string[]>
+  /** Write commands always allowed, as `<tenantId>/<id>/<command words>`; added from an approval, revoked by `revokeAlwaysAllowed()`. */
+  alwaysAllowed?: Volatile<readonly string[]>
 }
 
 /** A connector CLI pinned to one release. */
@@ -4285,7 +4287,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-tools`
 
 - `inject`: `systemPrompt`
-- `source`: [`packages/core/tools/src/index.ts:674`](../packages/core/tools/src/index.ts)
+- `source`: [`packages/core/tools/src/index.ts:681`](../packages/core/tools/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: how the registered tools are presented to the model. */
@@ -4338,7 +4340,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-user-approval`
 
-- `source`: [`packages/interaction/user-approval/src/index.ts:135`](../packages/interaction/user-approval/src/index.ts)
+- `source`: [`packages/interaction/user-approval/src/index.ts:153`](../packages/interaction/user-approval/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config. All optional — `static Config` supplies the defaults. */

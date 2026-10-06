@@ -49,6 +49,7 @@ async function answerApproval(
       : { callId: request.callId }),
     ...(request.reason === undefined ? {} : { reason: request.reason }),
     ...(request.displayReason === undefined ? {} : { displayReason: request.displayReason }),
+    ...(request.remember === true ? { remember: true as const } : {}),
     ...(request.signal === undefined ? {} : { signal: request.signal }),
   })
   const completed = Promise.withResolvers<void>()
@@ -58,7 +59,8 @@ async function answerApproval(
   })
   try {
     try {
-      return await pending.result
+      const decision = await pending.result
+      return decision === 'allowed-always' ? { outcome: 'allowed-once', remember: true } : decision
     } catch (error) {
       if (pending.isDelegation(error)) return await next()
       throw error

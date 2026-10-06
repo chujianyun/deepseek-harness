@@ -5,6 +5,22 @@
  * @module @deepseek-ai/dsh-connectors/types
  */
 
+import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap {
+    /**
+     * A bash call ran connector writes without asking, because the user had always allowed each of
+     * them for the signed-in tenant — log-only audit, never in the model transcript. `commands`
+     * names them as `<cli> <command words>`, such as `lark-cli im +messages-send`.
+     */
+    'connectors/always-allowed': {
+      callId: ToolCallId
+      commands: string[]
+    }
+  }
+}
+
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
     /** No built-in connector has this id. */
@@ -91,6 +107,11 @@ export interface ConnectorView {
   readonly enabled: boolean
   /** The Skills the installed CLI release ships, which reach the model while connected and on. */
   readonly skills: readonly ConnectorSkillView[]
+  /**
+   * The write commands the current tenant always allows, as command words such as
+   * `im +messages-send`; they run without asking. Empty while signed out of the Hub.
+   */
+  readonly alwaysAllowed: readonly string[]
 }
 
 /** A Skill a connector gives the model. */

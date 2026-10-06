@@ -18,6 +18,7 @@ type ApprovalListener = (
     callId?: string
     reason?: string
     displayReason?: PendingApproval['displayReason']
+    remember?: true
     signal?: AbortSignal
   },
   next: () => Promise<'unavailable'>,
@@ -252,6 +253,18 @@ describe('approval Remote Event consumer', () => {
     await scope.fiber.dispose()
   })
 
+  it('answers an offered always-allow as a remembered one-shot grant', async () => {
+    const bench = await setupPlugin()
+    const scope = createScope(bench.ctx, id('s1'))
+    await scope.fiber.await()
+    const result = bench.listener.call(scope.ctx, { toolName: 'bash', remember: true }, vi.fn(() => Promise.resolve<'unavailable'>('unavailable')))
+    const pending = bench.pending.getSnapshot()[0]!
+    expect(pending.remember).toBe(true)
+    await pending.answer('allowed-always')
+    await expect(result).resolves.toEqual({ outcome: 'allowed-once', remember: true })
+    await scope.fiber.dispose()
+  })
+
   it('propagates request cancellation after removing the pending object', async () => {
     const bench = await setupPlugin()
     const scope = createScope(bench.ctx, id('s1'))
@@ -322,6 +335,7 @@ function panelProps(
     escalation: `Tool ${pending.toolName} asks`,
     reject: 'Reject',
     allowOnce: 'Allow once',
+    allowAlways: 'Always allow',
   }
   return {
     matched: pending,
@@ -368,6 +382,24 @@ describe('ApprovalPanel', () => {
     expect(document.querySelector('[data-approval-key]')?.getAttribute('aria-busy')).toBe('true')
 
     await expect(pending.result).resolves.toBe('allowed-once')
+  })
+
+  it('offers always-allow only when the asker does', async () => {
+    const offered = new PendingApproval(id('s1'), { toolName: 'bash', remember: true })
+    render(<ApprovalPanel {...panelProps(offered)} />)
+    const buttons = screen.getAllByRole('button').map(button => button.textContent)
+    expect(buttons).toEqual(['Reject', 'Always allow', 'Allow once'])
+    fireEvent.click(screen.getByRole('button', { name: 'Always allow' }))
+    await expect(offered.result).resolves.toBe('allowed-always')
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Always allow' }).disabled).toBe(true)
+    cleanup()
+    const plain = new PendingApproval(id('s1'), { toolName: 'bash' })
+    expect(plain.remember).toBe(false)
+    render(<ApprovalPanel {...panelProps(plain)} />)
+    expect(screen.queryByRole('button', { name: 'Always allow' })).toBeNull()
+    // A request that offered nothing cannot be answered as remembered.
+    await expect(plain.answer('allowed-always')).rejects.toThrow('does not offer')
+    expect(plain.answerable).toBe(true)
   })
 
   it('keeps the audit reason intact and follows the UI language for presentation copy', () => {

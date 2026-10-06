@@ -33,6 +33,7 @@ The [format references](persistence-changes/historical-formats/README.md) cover 
 | `event:compaction/prune` | event | `7f7fd5a6b0064f597534b29ff62ef26e786dffccf5e14f654a7d4fcea2c35f04` | [`{ type: "compaction/prune" }`](#persistence-type-sha256-7f7fd5a6b0064f597534b29ff62ef26e786dffccf5e14f654a7d4fcea2c35f04) |
 | `event:compaction/start` | event | `db874d463b0fdec77e9da1c4568f37cb70bd6596781eb93800db44fb8a116965` | [`{ type: "compaction/start" }`](#persistence-type-sha256-db874d463b0fdec77e9da1c4568f37cb70bd6596781eb93800db44fb8a116965) |
 | `event:compaction/summary` | event | `e2f9a41e0989f54ed8cee80f8db2bcf9d60a5c810dc9d45b83fa050b9dce7602` | [`{ type: "compaction/summary" }`](#persistence-type-sha256-e2f9a41e0989f54ed8cee80f8db2bcf9d60a5c810dc9d45b83fa050b9dce7602) |
+| `event:connectors/always-allowed` | event | `492954dcf5c71ab11312adacc10f9de45eed6bbe90549ec10c21c7e7386efa27` | [`{ type: "connectors/always-allowed" }`](#persistence-type-sha256-492954dcf5c71ab11312adacc10f9de45eed6bbe90549ec10c21c7e7386efa27) |
 | `event:deliverables/presented` | event | `13d3d180f977bf78081d487ffa0ecb75857349bcab29a5a3fb48189fca2a6176` | [`{ type: "deliverables/presented" }`](#persistence-type-sha256-13d3d180f977bf78081d487ffa0ecb75857349bcab29a5a3fb48189fca2a6176) |
 | `event:developer/message` | event | `186159f5f6f67a0b8cd095b8fe55bef42d4f25ca1a1c248f859867af2ece0467` | [`{ type: "developer/message" }`](#persistence-type-sha256-186159f5f6f67a0b8cd095b8fe55bef42d4f25ca1a1c248f859867af2ece0467) |
 | `event:feedback/message-delete` | event | `3ee93b06f3a125850337602bcdf155d2538c43a5c944ec55b1b3c365152d6796` | [`{ type: "feedback/message-delete" }`](#persistence-type-sha256-3ee93b06f3a125850337602bcdf155d2538c43a5c944ec55b1b3c365152d6796) |
@@ -226,7 +227,7 @@ Source: [`packages/preset/agent-preset-registry/src/session.ts:28`](../packages/
 
 Types: [ToolCallId](subsystems/core.md)
 
-Source: [`packages/interaction/user-approval/src/types.ts:44`](../packages/interaction/user-approval/src/types.ts)
+Source: [`packages/interaction/user-approval/src/types.ts:57`](../packages/interaction/user-approval/src/types.ts)
 
 <a id="approvaldecided--log-only"></a>
 
@@ -244,7 +245,7 @@ Source: [`packages/interaction/user-approval/src/types.ts:44`](../packages/inter
 }
 ```
 
-Source: [`packages/interaction/user-approval/src/types.ts:55`](../packages/interaction/user-approval/src/types.ts)
+Source: [`packages/interaction/user-approval/src/types.ts:68`](../packages/interaction/user-approval/src/types.ts)
 
 <a id="approvalpolicy--log-only"></a>
 
@@ -468,6 +469,28 @@ Source: [`packages/compaction/compaction/src/types.ts:24`](../packages/compactio
 Types: [ContentBlock](subsystems/core.md) · [TokenUsage](subsystems/llm-streaming.md)
 
 Source: [`packages/compaction/compaction/src/types.ts:34`](../packages/compaction/compaction/src/types.ts)
+
+### `connectors/*`
+
+<a id="connectorsalways-allowed--log-only"></a>
+
+#### `connectors/always-allowed` — log-only
+
+```ts persistence-catalog
+/**
+ * A bash call ran connector writes without asking, because the user had always allowed each of
+ * them for the signed-in tenant — log-only audit, never in the model transcript. `commands`
+ * names them as `<cli> <command words>`, such as `lark-cli im +messages-send`.
+ */
+'connectors/always-allowed': {
+  callId: ToolCallId
+  commands: string[]
+}
+```
+
+Types: [ToolCallId](subsystems/core.md)
+
+Source: [`packages/connector/connectors/src/types.ts:17`](../packages/connector/connectors/src/types.ts)
 
 ### `deliverables/*`
 
@@ -1621,6 +1644,14 @@ SHA-256: `d9196086e41e4dd5c2ce87f5c25529c8112a1731d258cf0728747d41a9ee3241`
 SHA-256: `1ebc6f9ff3aa9e3a38f8695f49bacdab1f8b7a3832741853ca46f40af56ccd01`
 
 `"completed"`
+
+<a id="persistence-type-sha256-08019d166cdeb2620c50b42b194045f07eb848ed042b40acee6cb1270457e4a1"></a>
+
+### `"connectors/always-allowed"`
+
+SHA-256: `08019d166cdeb2620c50b42b194045f07eb848ed042b40acee6cb1270457e4a1`
+
+`"connectors/always-allowed"`
 
 <a id="persistence-type-sha256-e5d3828df1ec3e2a66879de0659e0f4866d9cfffc00825ee731a66f8a0c03d98"></a>
 
@@ -4999,7 +5030,7 @@ Sources: [`packages/llm/llm/src/types.ts:127`](../packages/llm/llm/src/types.ts)
 
 SHA-256: `3cfc3a56502da1f8c6153c2c56657bab4b749056968634dd0991d325ec1c919f`
 
-Sources: [`packages/core/tools/src/index.ts:700`](../packages/core/tools/src/index.ts)
+Sources: [`packages/core/tools/src/index.ts:707`](../packages/core/tools/src/index.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -5632,6 +5663,19 @@ Sources: [`packages/knowledge/knowledge-selection/src/types.ts:53`](../packages/
 |---|---|---|
 | `bases` | required | [`KnowledgeSelectionBase[]`](#persistence-type-sha256-0d82af9d9795b1133202a64728f1dd7719ed4e9c1ff26bcf7ce19c0dc489b133) |
 
+<a id="persistence-type-sha256-2bcf34ac7dc95d34676ac2da19c692bd1fb17a58c54164fb904c8cd1b83c243b"></a>
+
+### `{ callId, commands }`
+
+SHA-256: `2bcf34ac7dc95d34676ac2da19c692bd1fb17a58c54164fb904c8cd1b83c243b`
+
+Sources: [`packages/connector/connectors/src/types.ts:17`](../packages/connector/connectors/src/types.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `callId` | required | `string` |
+| `commands` | required | [`string[]`](#persistence-type-sha256-93c33d9687613293f8c95d46c4d922fe9ceae83b84c384beff5c3315abe005f2) |
+
 <a id="persistence-type-sha256-1528539c63db8b23506f0209a99ce77d8ad138adfbfcee3d4769b7382d93756c"></a>
 
 ### `{ callId, files, turn }`
@@ -5652,7 +5696,7 @@ Sources: [`packages/deliverables/tool-present/src/types.ts:15`](../packages/deli
 
 SHA-256: `45f2a07ea94573123b6ae14db787a40062dec3834f36d8be92c523d40ba28448`
 
-Sources: [`packages/interaction/user-approval/src/types.ts:44`](../packages/interaction/user-approval/src/types.ts)
+Sources: [`packages/interaction/user-approval/src/types.ts:57`](../packages/interaction/user-approval/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -6086,7 +6130,7 @@ Sources: [`packages/attachment/attachment/src/types.ts:28`](../packages/attachme
 
 SHA-256: `93cbbc5a7fd0b1aa1ff1b9a6bb5ec52b073f48e5a5200365c45c0cd54059e1b9`
 
-Sources: [`packages/interaction/user-approval/src/types.ts:55`](../packages/interaction/user-approval/src/types.ts)
+Sources: [`packages/interaction/user-approval/src/types.ts:68`](../packages/interaction/user-approval/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -7939,6 +7983,22 @@ SHA-256: `e2f9a41e0989f54ed8cee80f8db2bcf9d60a5c810dc9d45b83fa050b9dce7602`
 | `seq` | required | `number` |
 | `time` | required | `number` |
 | `type` | required | `"compaction/summary"` |
+
+<a id="persistence-type-sha256-492954dcf5c71ab11312adacc10f9de45eed6bbe90549ec10c21c7e7386efa27"></a>
+
+<a id="persistence-type-eventconnectorsalways-allowed"></a>
+
+### `{ type: "connectors/always-allowed" }`
+
+SHA-256: `492954dcf5c71ab11312adacc10f9de45eed6bbe90549ec10c21c7e7386efa27`
+
+| Property | Presence | Type |
+|---|---|---|
+| `data` | required | [`{ callId, commands }`](#persistence-type-sha256-2bcf34ac7dc95d34676ac2da19c692bd1fb17a58c54164fb904c8cd1b83c243b) |
+| `ignorable` | optional | `true` |
+| `seq` | required | `number` |
+| `time` | required | `number` |
+| `type` | required | `"connectors/always-allowed"` |
 
 <a id="persistence-type-sha256-13d3d180f977bf78081d487ffa0ecb75857349bcab29a5a3fb48189fca2a6176"></a>
 

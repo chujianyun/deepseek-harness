@@ -199,6 +199,14 @@ describe('confirming DingTalk writes', () => {
     })
   })
 
+  runs('offers to always allow a plain write, never a destructive or unknown command', async () => {
+    const t = await connected()
+    expect(typeof (await t.gate(bash('dws chat message send --text hi')) as { onRemember?: unknown }).onRemember).toBe('function')
+    for (const command of ['dws doc delete --doc-id d1', 'dws todo task create --title x']) {
+      expect(await t.gate(bash(command))).not.toHaveProperty('onRemember')
+    }
+  })
+
   runs('warns before a destructive command and, once approved, runs it with --yes', async () => {
     const t = await connected()
     const exec = bash('dws doc delete --doc-id d1', 'call-delete')

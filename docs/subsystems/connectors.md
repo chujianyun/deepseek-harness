@@ -14,7 +14,7 @@ The connection belongs to the tenant of the current Hub sign-in. Each tenant get
 
 ## Use in conversations
 
-While a connector is installed and switched on for the current tenant, `dsh-shell-env`'s PATH contributor puts a per-tenant script named after each CLI ahead of the model shell's `PATH`: connected, it runs the installed CLI with the tenant's directories; disconnected, it refuses and points to the Connectors page; a failing command triggers a health check. While connected, the Skills the CLI release ships join the skill catalog from the `connectors` provider, ahead of the user's own Skill directories. Switching the connector off keeps the sign-in and takes both away. Before a bash call runs, the connector's `tools/pre-execute` listener classifies its connector commands by what each states in `--help` — lark-cli's `Risk:` line, dws's `Safety:` line: reads run unasked; writes, and commands whose risk cannot be read, wait for the user's approval in the approval panel; a high-risk write carries a ⚠️ warning, and a command the CLI runs only confirmed runs with `--yes` once allowed.
+While a connector is installed and switched on for the current tenant, `dsh-shell-env`'s PATH contributor puts a per-tenant script named after each CLI ahead of the model shell's `PATH`: connected, it runs the installed CLI with the tenant's directories; disconnected, it refuses and points to the Connectors page; a failing command triggers a health check. While connected, the Skills the CLI release ships join the skill catalog from the `connectors` provider, ahead of the user's own Skill directories. Switching the connector off keeps the sign-in and takes both away. Before a bash call runs, the connector's `tools/pre-execute` listener classifies its connector commands by what each states in `--help` — lark-cli's `Risk:` line, dws's `Safety:` line: reads run unasked; writes, and commands whose risk cannot be read, wait for the user's approval in the approval panel; a high-risk write carries a ⚠️ warning, and a command the CLI runs only confirmed runs with `--yes` once allowed. A plain write can be **always allowed** for the signed-in tenant: later calls of the same command words run unasked and leave a `connectors/always-allowed` audit event, and the connector card lists and revokes them.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -103,6 +103,16 @@ Host owner of the connectors and of the `connectors` Remote namespace.
  *   Error when mounted without Settings or a profile entry.
  */
 @Remote async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState>
+
+/**
+ * Stop always allowing a write command for the current tenant: it asks again.
+ * @param id - the connector.
+ * @param command - the command words, as the view lists them.
+ * @returns the state once the setting is saved.
+ * @throws RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`;
+ *   Error when mounted without Settings or a profile entry.
+ */
+@Remote async revokeAlwaysAllowed(id: string, command: string): Promise<ConnectorsState>
 ```
 
 Source: [`packages/connector/connectors/src/index.ts`](../../packages/connector/connectors/src/index.ts)

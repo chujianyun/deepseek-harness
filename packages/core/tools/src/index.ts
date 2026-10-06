@@ -601,14 +601,21 @@ export type ToolExecutionResult = ToolExecutionSuccess | ToolExecutionFailure
  * the canonical cancellation result without presenting a policy denial; `ask`
  * runs only after an approval service returns `allowed-once` and otherwise
  * denies; its `reason` is the audited approval reason and its optional
- * `displayReason` is the localized prompt text. Input rewriting is excluded because arguments are already logged and
- * presented.
+ * `displayReason` is the localized prompt text. An `ask` with `onRemember` also offers the user to
+ * remember the grant; the callback runs, before the call dispatches, when the user does. Input
+ * rewriting is excluded because arguments are already logged and presented.
  */
 export type PreToolDecision =
   | { kind: 'allow' }
   | { kind: 'deny'; reason: string; info?: ToolErrorInfo }
   | { kind: 'cancel' }
-  | { kind: 'ask'; reason?: string; displayReason?: { readonly en: string; readonly [locale: string]: string } }
+  | {
+    kind: 'ask'
+    reason?: string
+    displayReason?: { readonly en: string; readonly [locale: string]: string }
+    /** Offers to remember the grant; called when the user grants and asks to remember it. */
+    onRemember?: () => void
+  }
 
 /**
  * Post-dispatch decision: accept, replace one projection, attach context for the
@@ -1747,8 +1754,9 @@ export class ToolRuntime extends Service {
       callId: exec.callId,
       ...ask.reason !== undefined ? { reason: ask.reason } : {},
       ...ask.displayReason !== undefined ? { displayReason: ask.displayReason } : {},
+      ...ask.onRemember !== undefined ? { remember: true as const } : {},
       signal: exec.signal,
-    })
+    }, ask.onRemember === undefined ? {} : { onRemember: ask.onRemember })
     switch (outcome) {
       case 'allowed-once': return { decision: { kind: 'allow' }, approvalCancelled: false }
       case 'rejected': return {

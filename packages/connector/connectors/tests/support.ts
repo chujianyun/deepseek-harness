@@ -142,5 +142,7 @@ export async function setup(options: {
   const calls = async () => (await readFile(join(control, 'calls'), 'utf8').catch(() => '')).trim().split('\n').filter(line => line !== '')
   const answer = (step: 'app' | 'user', result: string) => writeFile(join(control, step), result)
   const status = (value: object | string) => writeFile(join(control, 'status.json'), typeof value === 'string' ? value : JSON.stringify(value))
-  return { ctx, service, hub, until, root, control, tenantDir, exists, calls, answer, status }
+  /** The always-allowed list the profile holds. */
+  const saved = () => Promise.resolve((live.entry.options.config as { alwaysAllowed?: readonly string[] }).alwaysAllowed ?? [])
+  return { ctx, service, hub, until, root, control, tenantDir, exists, calls, answer, status, saved }
 }
