@@ -4,8 +4,8 @@
  * human signs in in the system browser. The grant lives in the credential store and never leaves
  * the Host; the access token is refreshed before it expires. While signed out, new prompts are
  * refused; running turns continue. After each sign-in, and at startup while signed in, the tenant's
- * login-page branding is fetched and cached under `<dshHome>/cache/hub-branding` for the Desktop
- * welcome window and sidebar.
+ * branding is fetched and cached under `<dshHome>/cache/hub-branding` for the Desktop welcome
+ * window, the sidebar and the new-session hero.
  *
  * @module @deepseek-ai/dsh-hub-account
  */
@@ -85,6 +85,8 @@ const userinfo = z.object({
 const clientBranding = z.object({
   tenantId: z.string(),
   title: z.string().nullable(),
+  // A user center before T45 does not answer a slogan.
+  slogan: z.string().nullable().default(null),
   logo: z.object({ contentType: z.string(), sha256: z.string() }).nullable(),
 })
 const grant = z.object({
@@ -211,7 +213,7 @@ export class HubAccount extends TypertRemoteService {
   }
 
   /**
-   * Read the cached login-page branding to show: signed in, the signed-in tenant's; signed out,
+   * Read the cached branding to show: signed in, the signed-in tenant's; signed out,
    * the last-signed-in tenant's.
    * @returns the branding, or null when there is none to show.
    */
@@ -219,8 +221,8 @@ export class HubAccount extends TypertRemoteService {
   async getBranding(): Promise<HubBrandingView | null> {
     const shown = this.shownBranding(await this.read())
     if (shown === undefined) return null
-    const { tenantId, title, logo } = shown.branding
-    return { tenantId, title, logo: logo === null ? null : logoDataUrl(logo) }
+    const { tenantId, title, slogan, logo } = shown.branding
+    return { tenantId, title, slogan, logo: logo === null ? null : logoDataUrl(logo) }
   }
 
   /**
@@ -352,7 +354,8 @@ export class HubAccount extends TypertRemoteService {
   private shownBranding(stored: Grant | undefined): { branding: CachedBranding; stamp: HubBrandingStamp } | undefined {
     const branding = this.branding
     if (branding === undefined || (stored !== undefined && stored.profile.tenantId !== branding.tenantId)) return undefined
-    return { branding, stamp: { tenantId: branding.tenantId, title: branding.title, logoSha256: branding.logo?.sha256 ?? null } }
+    const { tenantId, title, slogan, logo } = branding
+    return { branding, stamp: { tenantId, title, slogan, logoSha256: logo?.sha256 ?? null } }
   }
 
   /**
@@ -396,7 +399,8 @@ export class HubAccount extends TypertRemoteService {
     if (fetched.logo !== null) {
       logo = this.branding?.logo?.sha256 === fetched.logo.sha256 ? this.branding.logo : await this.downloadLogo(fetched.logo)
     }
-    return fetched.title === null && logo === null ? undefined : { tenantId: fetched.tenantId, title: fetched.title, logo }
+    const { tenantId, title, slogan } = fetched
+    return title === null && slogan === null && logo === null ? undefined : { tenantId, title, slogan, logo }
   }
 
   /**

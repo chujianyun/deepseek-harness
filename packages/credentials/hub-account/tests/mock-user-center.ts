@@ -43,9 +43,11 @@ export interface MockOwnedSkill {
   readonly versions: { readonly version: string; readonly status: 'published' | 'pending' }[]
 }
 
-/** Login-page branding a tenant set (T30); unset items are null. */
+/** Branding a tenant set (T30, T45); unset items are null. */
 export interface MockBranding {
   readonly title: string | null
+  /** New-session slogan (T45); left out, the answer omits it as a user center before T45 does. */
+  readonly slogan?: string | null
   readonly logo: { readonly contentType: string; readonly data: Buffer } | null
 }
 
@@ -312,7 +314,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     const logo = branding?.logo ?? null
     if (url.pathname === '/api/client/branding') {
       json(200, {
-        tenantId: bound.tenantId, title: branding?.title ?? null, updatedAt: branding === undefined ? null : '2026-10-05T00:00:00.000Z',
+        tenantId: bound.tenantId, title: branding?.title ?? null, ...branding?.slogan === undefined ? {} : { slogan: branding.slogan }, updatedAt: branding === undefined ? null : '2026-10-05T00:00:00.000Z',
         logo: logo === null ? null : { url: `${mock.origin}/api/client/branding/logo`, contentType: logo.contentType, sha256: createHash('sha256').update(logo.data).digest('hex') },
       })
     } else if (mock.logoReply !== undefined) {

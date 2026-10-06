@@ -1391,7 +1391,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async getBranding(): Promise<HubBrandingView | null>',
-        description: 'Read the cached login-page branding to show: signed in, the signed-in tenant\'s; signed out, the last-signed-in tenant\'s.',
+        description: 'Read the cached branding to show: signed in, the signed-in tenant\'s; signed out, the last-signed-in tenant\'s.',
         parameters: [],
         returns: 'the branding, or null when there is none to show.',
       },
@@ -5918,11 +5918,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'HubBrandingStamp',
-    declaration: 'export interface HubBrandingStamp {\n    readonly tenantId: string;\n    readonly title: string | null;\n    readonly logoSha256: string | null;\n}',
+    declaration: 'export interface HubBrandingStamp {\n    readonly tenantId: string;\n    readonly title: string | null;\n    readonly slogan: string | null;\n    readonly logoSha256: string | null;\n}',
   },
   {
     name: 'HubBrandingView',
-    declaration: 'export interface HubBrandingView {\n    readonly tenantId: string;\n    readonly title: string | null;\n    readonly logo: string | null;\n}',
+    declaration: 'export interface HubBrandingView {\n    readonly tenantId: string;\n    readonly title: string | null;\n    readonly slogan: string | null;\n    readonly logo: string | null;\n}',
   },
   {
     name: 'HubProfile',

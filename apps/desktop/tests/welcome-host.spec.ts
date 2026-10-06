@@ -81,11 +81,13 @@ describe('desktop welcome Web operations', () => {
   it('reads the cached branding and admits only image data URLs as its logo', async () => {
     const logo = 'data:image/png;base64,iVBORw0KGgo='
     expect(await (await connectDesktopWelcome(url, transport(undefined, null).send)).branding()).toBeNull()
-    const cached = { tenantId: 't-a', title: '甲公司', logo, extra: 1 }
-    expect(await (await connectDesktopWelcome(url, transport(undefined, cached).send)).branding()).toEqual({ tenantId: 't-a', title: '甲公司', logo })
+    const cached = { tenantId: 't-a', title: '甲公司', slogan: '新会话标语', logo, extra: 1 }
+    expect(await (await connectDesktopWelcome(url, transport(undefined, cached).send)).branding()).toEqual({ tenantId: 't-a', title: '甲公司', slogan: '新会话标语', logo })
     for (const invalid of [
-      { tenantId: 't-a', title: null, logo: 'https://hub.example/logo.png' }, { tenantId: 't-a', title: null, logo: 'data:text/html;base64,PGI+' },
-      { tenantId: 't-a', title: 1, logo: null }, { title: null, logo: null }, 'logo',
+      { tenantId: 't-a', title: null, slogan: null, logo: 'https://hub.example/logo.png' },
+      { tenantId: 't-a', title: null, slogan: null, logo: 'data:text/html;base64,PGI+' },
+      { tenantId: 't-a', title: 1, slogan: null, logo: null }, { tenantId: 't-a', title: null, slogan: 1, logo: null },
+      { tenantId: 't-a', title: null, logo: null }, { title: null, slogan: null, logo: null }, 'logo',
     ]) await expect((await connectDesktopWelcome(url, transport(undefined, invalid).send)).branding()).rejects.toThrow('invalid branding')
   })
 

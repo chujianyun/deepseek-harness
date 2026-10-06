@@ -4,8 +4,8 @@ import type { HubAccountView, HubBrandingView } from '@deepseek-ai/dsh-hub-accou
 import { createBrandSource } from '../src/client/brand-source.ts'
 
 const signedIn: HubAccountView = { status: 'signed-in', profile: null, reason: null, attempt: null, branding: null }
-const stamp = (title: string) => ({ ...signedIn, branding: { tenantId: 't-a', title, logoSha256: null } })
-const ok = (title: string): RemoteResult<HubBrandingView | null> => ({ ok: true, value: { tenantId: 't-a', title, logo: null } })
+const stamp = (title: string) => ({ ...signedIn, branding: { tenantId: 't-a', title, slogan: null, logoSha256: null } })
+const ok = (title: string): RemoteResult<HubBrandingView | null> => ({ ok: true, value: { tenantId: 't-a', title, slogan: null, logo: null } })
 
 it('reads the branding once per stamp and clears it when the stamp goes away', async () => {
   const read = vi.fn(async () => ok('甲公司'))

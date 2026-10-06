@@ -56,21 +56,24 @@ export interface HubSignInAttemptView {
 }
 
 /**
- * Which login-page branding (T30: logo and welcome title the super admin set for a tenant) is
- * cached on this machine: changes whenever the cached branding does.
+ * Which branding (T30: logo and welcome title; T45: new-session slogan, all set by the super
+ * admin per tenant) is cached on this machine: changes whenever the cached branding does.
  */
 export interface HubBrandingStamp {
   readonly tenantId: string
   readonly title: string | null
+  readonly slogan: string | null
   /** sha256 of the cached logo, null when the tenant has none. */
   readonly logoSha256: string | null
 }
 
-/** Cached login-page branding of a tenant, ready to render. Items the tenant has not set are null. */
+/** Cached branding of a tenant, ready to render. Items the tenant has not set are null. */
 export interface HubBrandingView {
   readonly tenantId: string
   /** Welcome title, shown as written whatever the UI language. */
   readonly title: string | null
+  /** New-session slogan, shown as written whatever the UI language. */
+  readonly slogan: string | null
   /** Logo as a `data:image/(png|jpeg|svg+xml);base64,` URL, for an `<img>` only. */
   readonly logo: string | null
 }

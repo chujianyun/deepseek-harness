@@ -40,10 +40,11 @@ const LOGO_DATA_URL = /^data:image\/(png|jpeg|svg\+xml);base64,[A-Za-z0-9+/]+={0
 export function brandingView(value: unknown): HubBrandingView | null {
   if (value === null) return null
   if (!record(value) || typeof value.tenantId !== 'string' || !(value.title === null || typeof value.title === 'string')
+    || !(value.slogan === null || typeof value.slogan === 'string')
     || !(value.logo === null || (typeof value.logo === 'string' && LOGO_DATA_URL.test(value.logo)))) {
     throw new Error('desktop welcome: invalid branding')
   }
-  return { tenantId: value.tenantId, title: value.title, logo: value.logo }
+  return { tenantId: value.tenantId, title: value.title, slogan: value.slogan, logo: value.logo }
 }
 
 function record(value: unknown): value is Record<string, unknown> {

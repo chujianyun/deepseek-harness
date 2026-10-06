@@ -57,10 +57,11 @@ function attemptView(value: unknown): HubSignInAttemptView | null {
 
 function brandingStamp(value: unknown): HubBrandingStamp | null {
   if (value === null) return null
-  if (!record(value) || typeof value.tenantId !== 'string' || !nullableString(value.title) || !nullableString(value.logoSha256)) {
+  if (!record(value) || typeof value.tenantId !== 'string' || !nullableString(value.title) || !nullableString(value.slogan)
+    || !nullableString(value.logoSha256)) {
     throw new Error('desktop hub: invalid branding')
   }
-  return { tenantId: value.tenantId, title: value.title, logoSha256: value.logoSha256 }
+  return { tenantId: value.tenantId, title: value.title, slogan: value.slogan, logoSha256: value.logoSha256 }
 }
 
 /**

@@ -63,9 +63,11 @@ describe('desktop welcome presentation', () => {
   })
 
   it.each([
-    ['logo and title', { tenantId: 't-a', title: '欢迎使用 甲公司 AI 助手', logo: LOGO }],
-    ['title only', { tenantId: 't-a', title: 'Acme Copilot', logo: null }],
-    ['logo only', { tenantId: 't-a', title: null, logo: LOGO }],
+    ['logo and title', { tenantId: 't-a', title: '欢迎使用 甲公司 AI 助手', slogan: null, logo: LOGO }],
+    ['title only', { tenantId: 't-a', title: 'Acme Copilot', slogan: null, logo: null }],
+    ['logo only', { tenantId: 't-a', title: null, slogan: null, logo: LOGO }],
+    // The slogan belongs to the new-session hero, not the welcome page.
+    ['slogan only', { tenantId: 't-a', title: null, slogan: '新会话标语', logo: null }],
   ] as const)('shows the cached tenant branding: %s', async (name, cached) => {
     const view = mount('en', undefined, vi.fn<() => Promise<HubBrandingView | null>>().mockResolvedValue(cached))
     await act(async () => { await view.api.branding.mock.results[0]!.value })
@@ -85,7 +87,7 @@ describe('desktop welcome presentation', () => {
 
   it('reads the branding again when the Host reports a sign-out', async () => {
     const branding = vi.fn<() => Promise<HubBrandingView | null>>().mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ tenantId: 't-b', title: '乙公司', logo: null })
+      .mockResolvedValueOnce({ tenantId: 't-b', title: '乙公司', slogan: null, logo: null })
     const view = mount('zh-CN', undefined, branding)
     await act(async () => { await branding.mock.results[0]!.value })
     expect(view.document.querySelector('#welcome-heading')).toBeNull()

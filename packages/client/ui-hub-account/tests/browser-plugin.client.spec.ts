@@ -11,7 +11,7 @@ import { apply as applyNode } from '../src/index.ts'
 import type { HubAccountInjected } from '../src/client/hub-source.ts'
 import { HubAccountSection } from '../src/client/HubAccountSection.tsx'
 import { HubLauncher } from '../src/client/HubLauncher.tsx'
-import { HubBrandMark, HubBrandName } from '../src/client/HubBrand.tsx'
+import { HubBrandMark, HubBrandName, HubHeroHeadline, HubHeroMark } from '../src/client/HubBrand.tsx'
 import type { HubBrandInjected } from '../src/client/brand-source.ts'
 
 usePinnedBrowserLanguages('zh-CN')
@@ -36,7 +36,7 @@ async function bench() {
     cancelSignIn: vi.fn(() => ok(signedOut)),
     signOut: vi.fn(() => ok(signedOut)),
     switchTenant: vi.fn(() => ok(signedOut)),
-    getBranding: vi.fn(() => Promise.resolve({ ok: true as const, value: { tenantId: 't-a', title: '甲公司', logo: null } })),
+    getBranding: vi.fn(() => Promise.resolve({ ok: true as const, value: { tenantId: 't-a', title: '甲公司', slogan: '标语', logo: null } })),
     watch: vi.fn(),
   }
   const remote = new TestRemote(ctx, { hubAccount })
@@ -66,6 +66,7 @@ async function bench() {
     children: {
       'settings.section': { kind: 'list', scope: 'root' }, 'settings.launcher': { kind: 'single', scope: 'root' },
       'sidebar.brand.mark': { kind: 'single', scope: 'root' }, 'sidebar.brand.name': { kind: 'single', scope: 'root' },
+      'conversation.hero.brand.mark': { kind: 'single', scope: 'root' }, 'conversation.hero.brand.headline': { kind: 'single', scope: 'root' },
     },
   } as never, () => null)
   onTestFinished(removeRoot)
@@ -98,11 +99,15 @@ describe('ui-hub-account browser plugin', () => {
     expect(resolveSlotLabel(section!.options.label)).toMatch(/^Skill Hub/)
     expect(b.slots.entries('sidebar.brand.mark')[0]?.component).toBe(HubBrandMark)
     expect(b.slots.entries('sidebar.brand.name')[0]?.component).toBe(HubBrandName)
+    expect(b.slots.entries('conversation.hero.brand.mark')[0]?.component).toBe(HubHeroMark)
+    expect(b.slots.entries('conversation.hero.brand.headline')[0]?.component).toBe(HubHeroHeadline)
     await fiber.dispose()
     expect(b.slots.entries('settings.section')).toEqual([])
     expect(b.slots.entries('settings.launcher')).toEqual([])
     expect(b.slots.entries('sidebar.brand.mark')).toEqual([])
     expect(b.slots.entries('sidebar.brand.name')).toEqual([])
+    expect(b.slots.entries('conversation.hero.brand.mark')).toEqual([])
+    expect(b.slots.entries('conversation.hero.brand.headline')).toEqual([])
     expect(b.dispose).toHaveBeenCalledOnce()
   })
 
@@ -134,8 +139,11 @@ describe('ui-hub-account browser plugin', () => {
     const { hooks } = brand as HubBrandInjected
     expect(hooks.hub).toBe((face(b.slots) as HubAccountInjected).hooks.hub)
     expect(b.slots.entries('sidebar.brand.mark')[0]!.inject!()).toBe(brand)
-    b.push({ ...signedOut, status: 'signed-in', branding: { tenantId: 't-a', title: '甲公司', logoSha256: null } })
-    await vi.waitFor(() => { expect(hooks.brand.getSnapshot()).toEqual({ tenantId: 't-a', title: '甲公司', logo: null }) })
+    // The new-session hero reads the same branding.
+    expect(b.slots.entries('conversation.hero.brand.mark')[0]!.inject!()).toBe(brand)
+    expect(b.slots.entries('conversation.hero.brand.headline')[0]!.inject!()).toBe(brand)
+    b.push({ ...signedOut, status: 'signed-in', branding: { tenantId: 't-a', title: '甲公司', slogan: '标语', logoSha256: null } })
+    await vi.waitFor(() => { expect(hooks.brand.getSnapshot()).toEqual({ tenantId: 't-a', title: '甲公司', slogan: '标语', logo: null }) })
     expect(b.hubAccount.getBranding).toHaveBeenCalledOnce()
   })
 

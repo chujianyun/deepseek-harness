@@ -6,3 +6,9 @@
 .logo { display: block; max-width: 200px; height: 22px; object-fit: contain; object-position: left center; }
 .tenant { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 600; line-height: 20px; }
 .version { color: var(--dsw-alias-label-tertiary); font-size: 10px; font-weight: 400; line-height: 12px; white-space: nowrap; }
+/* New-session hero: the logo at the mark's height, as wide as its proportions need up to the
+   composer's half width. A dark theme backs it with a light plate, since a logo drawn for a light
+   page can vanish on a dark one; the plate stays within the mark's height so the row never grows. */
+.heroLogo { display: block; width: auto; max-width: min(240px, 50vw); object-fit: contain; }
+:global(body[data-ds-dark-theme]) .heroLogo { box-sizing: border-box; padding: 3px 6px; border-radius: var(--dsw-radius-sm); corner-shape: round;
+  background: var(--dsw-static-neutral-00); }

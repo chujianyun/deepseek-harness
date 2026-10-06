@@ -384,7 +384,7 @@ Host owner of Hub sign-in and of the `hubAccount` Remote namespace.
 @Remote async getState(): Promise<HubAccountView>
 
 /**
- * Read the cached login-page branding to show: signed in, the signed-in tenant's; signed out,
+ * Read the cached branding to show: signed in, the signed-in tenant's; signed out,
  * the last-signed-in tenant's.
  * @returns the branding, or null when there is none to show.
  */

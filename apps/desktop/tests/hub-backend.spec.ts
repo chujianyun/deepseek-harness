@@ -5,7 +5,7 @@ import { desktopHubBackend, hubView } from '../src/hub-backend.ts'
 
 const profile = { nickname: '李雷', phone: '138****0001', tenantId: 't-a', tenantName: '甲公司', isTenantAdmin: false }
 const signedOut = { status: 'signed-out', profile: null, reason: null, attempt: null, branding: null }
-const branding = { tenantId: 't-a', title: '甲公司', logoSha256: null }
+const branding = { tenantId: 't-a', title: '甲公司', slogan: '新会话标语', logoSha256: null }
 
 it('projects only the sign-in fields and refuses non-browser authorization pages', () => {
   const state = { ...signedOut, token: 'not-for-the-renderer',
@@ -24,7 +24,7 @@ it('projects only the sign-in fields and refuses non-browser authorization pages
     null, { ...signedOut, status: 'unknown' }, { ...signedOut, reason: 'revoked' }, { ...signedOut, profile: { ...profile, nickname: 1 } },
     { ...signedOut, profile: { ...profile, isTenantAdmin: 'no' } }, { ...signedOut, attempt: { id: 'a1', phase: 'later' } },
     { ...signedOut, attempt: { id: 'a1', phase: 'failed', error: 'raw-server-message' } }, { ...signedOut, attempt: { id: 'a1', phase: 'waiting-browser', authorizeUrl: 1 } },
-    { ...signedOut, branding: { ...branding, title: 1 } }, { ...signedOut, branding: 'acme' },
+    { ...signedOut, branding: { ...branding, title: 1 } }, { ...signedOut, branding: { ...branding, slogan: 1 } }, { ...signedOut, branding: 'acme' },
   ]) expect(() => hubView(invalid)).toThrow()
 })
 

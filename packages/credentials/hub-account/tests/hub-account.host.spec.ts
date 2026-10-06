@@ -390,8 +390,8 @@ describe('hubAccount branding', () => {
     expect(await hub.getBranding()).toBeNull()
     await signIn()
     const view = await until(state => state.branding !== null)
-    expect(view.branding).toEqual({ tenantId: 't-a', title: '欢迎使用 甲公司 AI 助手', logoSha256: sha(PNG) })
-    expect(await hub.getBranding()).toEqual({ tenantId: 't-a', title: '欢迎使用 甲公司 AI 助手', logo: `data:image/png;base64,${PNG.toString('base64')}` })
+    expect(view.branding).toEqual({ tenantId: 't-a', title: '欢迎使用 甲公司 AI 助手', slogan: null, logoSha256: sha(PNG) })
+    expect(await hub.getBranding()).toEqual({ tenantId: 't-a', title: '欢迎使用 甲公司 AI 助手', slogan: null, logo: `data:image/png;base64,${PNG.toString('base64')}` })
     expect(await readFile(join(cacheDir(home), `logo-${sha(PNG)}`))).toEqual(PNG)
     // Signed out, the last tenant's branding stays for the welcome window.
     await hub.signOut()
@@ -436,7 +436,7 @@ describe('hubAccount branding', () => {
     await hub.switchTenant()
     const waiting = await until(state => state.attempt?.authorizeUrl !== undefined)
     await browse(waiting.attempt!.authorizeUrl!)
-    expect((await until(state => state.branding?.tenantId === 't-b')).branding).toEqual({ tenantId: 't-b', title: null, logoSha256: sha(PNG) })
+    expect((await until(state => state.branding?.tenantId === 't-b')).branding).toEqual({ tenantId: 't-b', title: null, slogan: null, logoSha256: sha(PNG) })
     expect(logoDownloads(center)).toBe(1)
     delete center.brandings['t-b']
     await hub.signOut()
@@ -492,7 +492,7 @@ describe('hubAccount branding', () => {
       await hub.signOut()
       return view.branding
     }
-    expect(await attempt({ status: 200, contentType: 'text/html', body: PNG })).toEqual({ tenantId: 't-a', title: '甲公司', logoSha256: null })
+    expect(await attempt({ status: 200, contentType: 'text/html', body: PNG })).toEqual({ tenantId: 't-a', title: '甲公司', slogan: null, logoSha256: null })
     expect(await attempt({ status: 200, contentType: 'image/png', body: SVG })).toMatchObject({ logoSha256: null })
     expect(await attempt({ status: 200, body: PNG })).toMatchObject({ logoSha256: null })
     expect(await attempt({ status: 200, contentType: 'image/png', body: Buffer.alloc(512 * 1024 + 1) })).toMatchObject({ logoSha256: null })
@@ -563,17 +563,45 @@ describe('hubAccount branding', () => {
     expect(await readBrandingCache(dir, 'https://hub.example.com')).toBeUndefined()
     await writeFile(join(dir, 'branding.json'), '{')
     expect(await readBrandingCache(dir, 'https://hub.example.com')).toBeUndefined()
-    await writeBrandingCache(dir, 'https://hub.example.com', { tenantId: 't-a', title: null, logo: { contentType: 'image/png', sha256: sha(PNG), data: PNG } })
+    await writeBrandingCache(dir, 'https://hub.example.com', { tenantId: 't-a', title: null, slogan: null, logo: { contentType: 'image/png', sha256: sha(PNG), data: PNG } })
     expect(await readBrandingCache(dir, 'https://other.example.com')).toBeUndefined()
     expect((await readBrandingCache(dir, 'https://hub.example.com'))?.logo?.data).toEqual(PNG)
     await writeFile(join(dir, `logo-${sha(PNG)}`), SVG)
     expect(await readBrandingCache(dir, 'https://hub.example.com')).toBeUndefined()
-    await writeBrandingCache(dir, 'https://hub.example.com', { tenantId: 't-a', title: '甲公司', logo: { contentType: 'image/png', sha256: sha(PNG), data: SVG } })
-    expect(await readBrandingCache(dir, 'https://hub.example.com')).toEqual({ tenantId: 't-a', title: '甲公司', logo: null })
-    await writeBrandingCache(dir, 'https://hub.example.com', { tenantId: 't-a', title: '甲公司', logo: null })
-    expect(await readBrandingCache(dir, 'https://hub.example.com')).toEqual({ tenantId: 't-a', title: '甲公司', logo: null })
-    await writeBrandingCache(dir, 'https://hub.example.com', { tenantId: 't-a', title: null, logo: { contentType: 'image/png', sha256: sha(PNG), data: PNG } })
+    await writeBrandingCache(dir, 'https://hub.example.com', { tenantId: 't-a', title: '甲公司', slogan: null, logo: { contentType: 'image/png', sha256: sha(PNG), data: SVG } })
+    expect(await readBrandingCache(dir, 'https://hub.example.com')).toEqual({ tenantId: 't-a', title: '甲公司', slogan: null, logo: null })
+    await writeBrandingCache(dir, 'https://hub.example.com', { tenantId: 't-a', title: '甲公司', slogan: null, logo: null })
+    expect(await readBrandingCache(dir, 'https://hub.example.com')).toEqual({ tenantId: 't-a', title: '甲公司', slogan: null, logo: null })
+    await writeBrandingCache(dir, 'https://hub.example.com', { tenantId: 't-a', title: null, slogan: null, logo: { contentType: 'image/png', sha256: sha(PNG), data: PNG } })
     await rm(join(dir, `logo-${sha(PNG)}`))
     expect(await readBrandingCache(dir, 'https://hub.example.com')).toBeUndefined()
+  })
+  it('caches the new-session slogan, alone or beside the rest, and follows its changes', async () => {
+    const center = await startMockUserCenter()
+    cleanups.push(() => center.close())
+    center.brandings['t-a'] = { title: null, slogan: '让每位员工都有自己的 AI 助手', logo: null }
+    const { hub, home, signIn, until } = await boot({}, center)
+    await signIn()
+    // A slogan alone is branding to show.
+    expect((await until(state => state.branding !== null)).branding).toEqual({ tenantId: 't-a', title: null, slogan: '让每位员工都有自己的 AI 助手', logoSha256: null })
+    expect(await hub.getBranding()).toEqual({ tenantId: 't-a', title: null, slogan: '让每位员工都有自己的 AI 助手', logo: null })
+    expect(JSON.parse(await readFile(join(cacheDir(home), 'branding.json'), 'utf8'))).toMatchObject({ slogan: '让每位员工都有自己的 AI 助手' })
+    await hub.signOut()
+    center.brandings['t-a'] = { title: '甲公司', slogan: 'Work smarter', logo: { contentType: 'image/png', data: PNG } }
+    await signIn()
+    expect((await until(state => state.branding?.slogan === 'Work smarter')).branding).toEqual({ tenantId: 't-a', title: '甲公司', slogan: 'Work smarter', logoSha256: sha(PNG) })
+    // Cleared on the server: the stamp changes, so the renderer reads the branding again.
+    await hub.signOut()
+    center.brandings['t-a'] = { title: '甲公司', slogan: null, logo: { contentType: 'image/png', data: PNG } }
+    await signIn()
+    expect((await until(state => state.status === 'signed-in' && state.branding?.slogan === null)).branding).toMatchObject({ title: '甲公司' })
+  }, 20_000)
+
+  it('reads a cache written before slogans existed as having none', async () => {
+    const { readBrandingCache } = await import('../src/branding.ts')
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-hub-branding-'))
+    cleanups.push(() => rm(dir, { recursive: true, force: true }))
+    await writeFile(join(dir, 'branding.json'), JSON.stringify({ version: 1, issuer: 'https://hub.example.com', tenantId: 't-a', title: '甲公司', logo: null }))
+    expect(await readBrandingCache(dir, 'https://hub.example.com')).toEqual({ tenantId: 't-a', title: '甲公司', slogan: null, logo: null })
   })
 })
