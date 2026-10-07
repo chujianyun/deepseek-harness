@@ -14,6 +14,7 @@ import embeddingRemote from '@deepseek-ai/dsh-embedding/remote'
 import knowledgeBasesRemote from '@deepseek-ai/dsh-knowledge-base/remote'
 import knowledgeSelectionRemote from '@deepseek-ai/dsh-knowledge-selection/remote'
 import connectorsRemote from '@deepseek-ai/dsh-connectors/remote'
+import assistantsRemote from '@deepseek-ai/dsh-assistants/remote'
 import skillMarketRemote from '@deepseek-ai/dsh-skill-market/remote'
 import officeToPdfRemote from '@deepseek-ai/dsh-office-to-pdf/remote'
 import goalsRemote from '@deepseek-ai/dsh-goal/remote'
@@ -56,6 +57,7 @@ export type {} from '@deepseek-ai/dsh-embedding/remote'
 export type {} from '@deepseek-ai/dsh-knowledge-base/remote'
 export type {} from '@deepseek-ai/dsh-knowledge-selection/remote'
 export type {} from '@deepseek-ai/dsh-connectors/remote'
+export type {} from '@deepseek-ai/dsh-assistants/remote'
 export type {} from '@deepseek-ai/dsh-skill-market/remote'
 export type {} from '@deepseek-ai/dsh-api-account-controller/remote'
 export type {} from '@deepseek-ai/dsh-goal/remote'
@@ -202,6 +204,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       knowledgeBasesRemote,
       knowledgeSelectionRemote,
       connectorsRemote,
+      assistantsRemote,
     ]) {
       disposers.push(await ctx.remote.$mount(contribution))
     }

@@ -106,6 +106,9 @@
       "path": "../../connector/connectors"
     },
     {
+      "path": "../../assistant/assistants"
+    },
+    {
       "path": "../workspace-controller/tsconfig.client.json"
     },
     {

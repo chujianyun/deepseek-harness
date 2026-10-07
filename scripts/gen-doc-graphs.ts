@@ -302,6 +302,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Lists the built-in connectors and installs and uninstalls their official CLIs at the versions a release pins.',
   },
   {
+    key: 'assistants',
+    pkg: 'assistants',
+    title: 'Assistants',
+    mode: 'core',
+    note: 'Keeps the signed-in tenant\'s assistants with their core files, binds each blank main session to one, and records the bound assistant\'s core files for its prompt section.',
+  },
+  {
     key: 'skillMarket',
     pkg: 'skill-market',
     title: 'Skill Hub market',

@@ -16,6 +16,7 @@
 | [schedule.md](schedule.zh.md) | Host 拥有的提醒记录、持久转换、活动和已结束视图与普通对话交付 |
 | [knowledge.md](knowledge.zh.md) | 本地知识库：按租户存储、处理队列与混合检索 |
 | [connectors.md](connectors.zh.md) | 连接器：通过官方 CLI 接入办公平台，按固定版本安装 |
+| [assistants.md](assistants.zh.md) | 智能体：按租户保存、核心文件进入所绑定会话的具名角色 |
 | [todo.md](todo.zh.md) | todo 包的整列表条目类型、持久事件所有权和投影 |
 | [deliverables.md](deliverables.zh.md) | 一轮交给用户的东西：`present` 声明的 `PresentedFile` 交付，以及由 git 快照得出、由 Host 提供的 `WorkspaceChangesSummary` 改动摘要 |
 | [commands.md](commands.zh.md) | 人类命令注册表服务：定义、适配器发现、直接调用、结果与解析视图 |

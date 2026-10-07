@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-knowledge-selection",
   "description": "Knowledge bases a conversation may search, logged per session, and the knowledge_search tool over them",
-  "version": "0.2.0-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

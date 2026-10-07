@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/assistant/assistants/README.md
+/:
+  en: 9339858166eb0af2
+  zh: 21131ceba3274c4e
+/assistants:
+  en: 5315e8d24bc488da
+  zh: 42cba3a9e9f7134c
+/assistants/summary:
+  en: 25091ffd15f9751a
+  zh: efe534fa436f35a6
+/assistants/table-of-contents:
+  en: 3a654e12f423946b
+  zh: 4e3a19aaee58f8a7
+/assistants/use-this-package:
+  en: 0ba91cff010630eb
+  zh: c512ae793d380920
+/assistants/configuration:
+  en: c845e68204eaf95b
+  zh: 608b0ceaf5ba1de6
+/assistants/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/assistants/model-experience/bound-assistant-s-core-files:
+  en: ed37601999fe219c
+  zh: af0f8503d607e374
+/assistants/model-experience/bound-assistant-s-core-files/what-the-model-sees:
+  en: 18367d1bac6ada40
+  zh: 38b069753857cf02
+/assistants/model-experience/bound-assistant-s-core-files/what-the-model-sees/section-introduction:
+  en: f3e2c22a009ae60e
+  zh: fc8e91cd59b26b11
+/assistants/model-experience/bound-assistant-s-core-files/token-effect:
+  en: 996e4a134ba15e3b
+  zh: 7ec7239e3f990d14
+/assistants/model-experience/bound-assistant-s-core-files/kv-cache-effect:
+  en: ea113e0b451bdddb
+  zh: 098dbcd26def8c49
+/assistants/known-limitations-and-deferred-work:
+  en: 702f6f34267974d9
+  zh: 9bb091a2aa0bcccf
+/assistants/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: e88aeb617ffb74ea

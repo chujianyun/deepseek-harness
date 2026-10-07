@@ -51,6 +51,7 @@ Every package lives in exactly one group; new packages join existing groups, and
 | [`skill/`](skill/README.md) | Skill capability family: provider registry, local provider, model-facing catalog/loader |
 | [`knowledge/`](knowledge/README.md) | Per-tenant local knowledge bases, hybrid search |
 | [`connector/`](connector/README.md) | Office platform connectors over official CLIs |
+| [`assistant/`](assistant/README.md) | Named assistants with core files, bound to sessions |
 | [`compaction/`](compaction/README.md) | Compaction capability family: Service Definition + basic provider + command Consumer |
 | [`context/`](context/README.md) | Model-visible request context: workspace instructions, time context, references |
 | [`subagent/`](subagent/README.md) | Subagent capability family: provider-registry contract and model-facing delegation tools |

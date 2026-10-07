@@ -4400,6 +4400,76 @@
       }
     },
     {
+      "key": "event:assistant/instructions",
+      "kind": "event",
+      "event": "assistant/instructions",
+      "surface": false,
+      "digest": "d670776895699c9f1c0744f7215f125a489a7a916d6fe9b53ec6e519cb49b215",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "text",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "assistant/instructions"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:assistant/message",
       "kind": "event",
       "event": "assistant/message",
@@ -5430,6 +5500,76 @@
           {
             "kind": "literal",
             "value": "assistant/message"
+          }
+        ]
+      }
+    },
+    {
+      "key": "event:assistant/selected",
+      "kind": "event",
+      "event": "assistant/selected",
+      "surface": false,
+      "digest": "14f2b844c6a6e201db115093edccf48265f1a4704f817762584babe24ef47379",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "assistantId",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "assistant/selected"
           }
         ]
       }
@@ -22049,6 +22189,13 @@
       "sources": []
     },
     {
+      "digest": "08484270c008b80791bb5cb13b26e3e1dbab4c945e8d6699f4f41853dcbf553a",
+      "names": [],
+      "sources": [
+        "packages/assistant/assistants/src/types.ts:63"
+      ]
+    },
+    {
       "digest": "09655b34d7f3cf1e9005974de2357de2d4a60deea165d16dac1eadaa6ec539a8",
       "names": [],
       "sources": []
@@ -22269,6 +22416,11 @@
       "sources": [
         "packages/core/agent/src/types.ts:96"
       ]
+    },
+    {
+      "digest": "14f2b844c6a6e201db115093edccf48265f1a4704f817762584babe24ef47379",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "15196447222782e773eb943c92b18316ce96b9af0f0cfddb6e57ba8274ecc5ff",
@@ -23101,6 +23253,11 @@
       ]
     },
     {
+      "digest": "4b67e2a6f6e58483394804f583f4c1c9b896ddce2585794e800be27bd5eacc0c",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "4b7ddaf3710b88ff9b8df66304f5f97bf03688fd19730eedc2e9535203c820ea",
       "names": [],
       "sources": []
@@ -23759,6 +23916,11 @@
     },
     {
       "digest": "76632533f67879dcb346fcae640540dbc89b2472b0bce88c59f7e48fc5c0e668",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "78620d166bb2eb0d04e4e138f86999f08bc685a5646415a551ddc50aa75ebdf1",
       "names": [],
       "sources": []
     },
@@ -25086,6 +25248,11 @@
       "sources": []
     },
     {
+      "digest": "d670776895699c9f1c0744f7215f125a489a7a916d6fe9b53ec6e519cb49b215",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "d6e654b88b584fcdf290a56802b1730bc7b9847ae86baa4265ab7769eb48990c",
       "names": [],
       "sources": []
@@ -25582,6 +25749,13 @@
       ],
       "sources": [
         "packages/skill/tool-skill/src/index.ts:34"
+      ]
+    },
+    {
+      "digest": "fc362d6c3bc744ee54ea7e008f30aff28f240db9d9882faec31b12982b643d5c",
+      "names": [],
+      "sources": [
+        "packages/assistant/assistants/src/types.ts:68"
       ]
     },
     {

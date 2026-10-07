@@ -82,6 +82,8 @@ flowchart LR
   svc_knowledgeSelection["ctx.knowledgeSelection<br/>Knowledge selection"]
   pkg_connectors["connectors"]
   svc_connectors["ctx.connectors<br/>Connectors"]
+  pkg_assistants["assistants"]
+  svc_assistants["ctx.assistants<br/>Assistants"]
   pkg_skill_market["skill-market"]
   svc_skillMarket["ctx.skillMarket<br/>Skill Hub market"]
   pkg_skill_controller["skill-controller"]
@@ -307,6 +309,7 @@ flowchart LR
   pkg_api_workspace_controller --> svc_workspaceController
   pkg_api_workspace_files --> svc_workspaceFiles
   pkg_app_boot --> svc_profileContext
+  pkg_assistants --> svc_assistants
   pkg_attachment --> svc_attachments
   pkg_attachment_local --> svc_attachments
   pkg_authorization --> svc_authorization
@@ -619,6 +622,7 @@ flowchart LR
 | `ctx.knowledgeBases` | `core` | [`knowledge-base`](../packages/knowledge/knowledge-base) | - | - | - | 保存当前登录租户的知识库，把加入的文件处理成向量化的分块，并以向量与关键词混合打分检索。 |
 | `ctx.knowledgeSelection` | `core` | [`knowledge-selection`](../packages/knowledge/knowledge-selection) | - | - | - | 记录每个会话可检索的知识库，只在会话选择了知识库时提供在其上检索的 `knowledge_search` 工具。 |
 | `ctx.connectors` | `core` | [`connectors`](../packages/connector/connectors) | - | - | - | 列出内置连接器，并按发行版固定的版本安装和卸载它们的官方 CLI。 |
+| `ctx.assistants` | `core` | [`assistants`](../packages/assistant/assistants) | - | - | - | 保存已登录租户的智能体及其核心文件，把每个空白主会话绑定到一个智能体，并为其提示词段落记录所绑定智能体的核心文件。 |
 | `ctx.skillMarket` | `core` | [`skill-market`](../packages/skill/skill-market) | - | - | - | 把当前登录租户的市场 Skill 作为 `market` 来源发现，以登录员工身份浏览 Skill Hub，并把校验通过的安装包一次移到位。 |
 | `ctx.skillController` | `core` | [`skill-controller`](../packages/skill/skill-controller) | - | - | - | 列出本机的用户级 skill，并执行 Desktop Skills 页面的操作：启停、显示位置、编辑与移到废纸篓。 |
 | `ctx.jobController` | `core` | [`api-job-controller`](../packages/api/job-controller) | - | - | - | 经生成的 Remote namespace 流式发送一个后台任务的观测 record；名册仍在会话控制流上。 |

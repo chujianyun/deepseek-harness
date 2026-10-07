@@ -227,6 +227,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-knowledge': { kind: 'none', reason: 'The page only renders and edits knowledge bases.' },
   'packages/connector/connectors': { kind: 'indirect', reason: 'Connected connectors reach the model through the skill catalog and the bash tool.' },
   'packages/client/ui-connectors': { kind: 'none', reason: 'The page only installs and uninstalls connector CLIs.' },
+  'packages/client/ui-assistants': { kind: 'indirect', reason: 'A pick binds the session; dsh-assistants owns the prompt section the binding adds.' },
   'packages/api/workspace-controller': { kind: 'none', reason: 'Workspace API and state projection owner; it registers no prompt, tool, or session event.' },
   'packages/api/workspace-files': { kind: 'none', reason: 'Workspace file read API and its Client resource provider; it registers no prompt, tool, or session event.' },
   'packages/typert/protocol': { kind: 'none', reason: 'Compiler-independent Remote protocol declarations; registers nothing model-facing.' },

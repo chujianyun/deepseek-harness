@@ -1,0 +1,59 @@
+---
+description: "dsh Desktop 客户端的智能体页面和新会话选择器：侧边栏入口、智能体卡片，以及把新会话绑定到智能体的选择器，基于 assistants Remote。"
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-client-ui-assistants
+
+[English](README.md) | 中文
+
+## 概述
+
+[智能体](../../../docs/glossary.zh.md#assistant)在 Desktop 中的界面：侧边栏的**智能体**入口、它打开的页面（以卡片显示已登录租户的智能体），以及新会话页工作区那一行最前面的选择器。两者都渲染 [`assistants`](../../assistant/assistants/README.zh.md) Remote 的状态流。
+
+## 目录
+
+- [使用本包](#use-this-package)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## 使用本包
+
+把浏览器行挂在 Host 的 `assistants` 行旁边，`disabled` 条件相同；web-app bundle 在 `desktop` profile 且配置了用户中心时同时启用两者。插件只在 Desktop 渲染器（存在 `dshDesktop`）中生效。它注入 `remote.assistants`，并在 `sessions` 和 `uiWorkspace` 出现后，把页面以 `assistants` 注册到 `main` 键控插槽，把入口以顺序 8 加到 `sidebar.panellist`（在连接器下方），并填充 `conversation.hero.assistant`。
+
+页面显示一个搜索框和智能体数量，每个智能体一张卡片：头像（彩色圆底加名字首字）、名称（租户默认智能体带**默认**标签）、描述（为空时显示**暂无描述**），以及**对话**按钮。搜索匹配名称和描述。未登录时页面提示登录用户中心；没有智能体的租户显示**还没有智能体。**
+
+选择器显示即将开始的会话所用的智能体：尚未绑定的选择优先，其次是主视图空白会话已绑定的智能体，再其次是租户默认智能体。它的菜单列出每个智能体及其头像和描述。选择后通过 `assistants.select()` 绑定主视图显示的空白会话；没有空白会话时，选择会等待，并在下一次会话列表变化带来空白会话时绑定。卡片上的**对话**会选中该智能体，并通过 `uiWorkspace.startSession()` 打开新会话页，所以随之出现的会话一开始就绑定了它。在主视图之外，或租户没有智能体时，选择器不渲染任何内容。被拒绝的绑定会在输入框上方以提示条显示，并在卡片上方显示消息直到关闭。
+
+-----
+
+<a id="model-experience"></a>
+## 模型体验
+
+间接通过 [`dsh-assistants`](../../assistant/assistants/README.zh.md#model-experience)：选择会把会话绑定到一个智能体，该服务把它的核心文件加进系统提示词。
+
+#### KV Cache 影响
+
+没有直接影响。
+
+## 已知限制与延期工作
+<a id="known-limitations-and-deferred-work"></a>
+
+- **只有预设头像** —— 每个智能体都画成预设圆底；上传图片随创建向导一起实现。
+- **没有管理操作** —— 创建、编辑、复制、删除和设为默认由后续票实现。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+无。
+
+</details>
+
+**运行时不变量：** 不发布伴随状态。页面和选择器渲染 Host 的状态流和会话列表，只保存一个等待空白会话的选择。

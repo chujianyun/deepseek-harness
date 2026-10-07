@@ -416,6 +416,32 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'assistants',
+    summary: 'Host owner of the assistants and of the `assistants` Remote namespace.',
+    description: 'Host owner of the assistants and of the `assistants` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote getState(): Promise<AssistantsState>',
+        description: 'Read the signed-in tenant\'s assistants.',
+        parameters: [],
+        returns: 'the state the Assistants page and the new-session picker show.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<AssistantsState>',
+        description: 'Stream the state.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change.',
+      },
+      {
+        signature: '@Remote(\'select\') select(agent: Agent, assistantId: string): Promise<string>',
+        description: 'Bind a blank session to one of the signed-in tenant\'s assistants.',
+        parameters: [{ name: 'agent', description: 'the session\'s Agent.' }, { name: 'assistantId', description: 'the assistant to bind.' }],
+        returns: 'the bound assistant id.',
+        throws: ['RemoteError `hub-account/signed-out`, `assistants/not-found`, or `assistants/locked` once the session started.'],
+      },
+    ],
+  },
+  {
     key: 'attachments',
     summary: 'Immutable binary attachment service.',
     description: 'Immutable binary attachment service. Implementations validate bytes before publishing a reference.',
@@ -5183,12 +5209,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AssembledSection {\n    name: string;\n    text: string;\n    interpolate?: boolean;\n}',
   },
   {
+    name: 'AssistantAvatar',
+    declaration: 'export type AssistantAvatar = AssistantPresetAvatar;',
+  },
+  {
     name: 'AssistantMessage',
     declaration: 'export interface AssistantMessage extends MessageBase {\n    readonly role: \'assistant\';\n    readonly source: ModelMessageSource;\n}',
   },
   {
+    name: 'AssistantPresetAvatar',
+    declaration: 'export interface AssistantPresetAvatar {\n    readonly kind: \'preset\';\n    readonly key: string;\n}',
+  },
+  {
     name: 'AssistantProviderMetadata',
     declaration: 'export interface AssistantProviderMetadata {\n    provider: string;\n    model: string;\n    replayState?: unknown;\n}',
+  },
+  {
+    name: 'AssistantsState',
+    declaration: 'export interface AssistantsState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly defaultId: string | null;\n    readonly assistants: readonly AssistantView[];\n}',
   },
   {
     name: 'AssistantStreamFrame',
@@ -5197,6 +5235,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AssistantStreamRecord',
     declaration: 'export type AssistantStreamRecord = {\n    readonly type: \'text-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly texts: readonly string[];\n} | {\n    readonly type: \'reasoning-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly texts: readonly string[];\n} | {\n    readonly type: \'tool-call-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly id: ToolCallId;\n    readonly name?: string;\n    readonly args: readonly string[];\n} | {\n    readonly type: \'chunk\';\n    readonly time: number;\n    readonly chunk: StreamChunk;\n};',
+  },
+  {
+    name: 'AssistantView',
+    declaration: 'export interface AssistantView {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly avatar: AssistantAvatar;\n    readonly preset?: string;\n    readonly templateId?: string;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'AtInput',

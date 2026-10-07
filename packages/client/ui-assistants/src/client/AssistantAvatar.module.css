@@ -1,0 +1,19 @@
+/* Assistant avatar: a round disc with the name's first character. */
+
+.avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  corner-shape: round;
+  font-weight: 600;
+  line-height: 1;
+  color: #fff;
+  background: var(--dsw-alias-label-tertiary);
+  user-select: none;
+}
+
+.avatar[data-tone='sun'] {
+  background: linear-gradient(135deg, #f8b84a, #ef7d32);
+}
