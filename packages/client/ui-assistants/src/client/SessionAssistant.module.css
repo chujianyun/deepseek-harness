@@ -1,0 +1,15 @@
+/* The session row's assistant avatar and its hover card line. */
+
+.badge {
+  display: inline-flex;
+}
+
+.hover {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  /* The row hover card is dark in both themes; the same text color as its relative time line. */
+  color: #cfd3d6;
+}

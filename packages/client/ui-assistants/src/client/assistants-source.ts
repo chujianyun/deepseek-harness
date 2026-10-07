@@ -1,7 +1,7 @@
 /** Assistants state and actions over the `assistants` Remote: the page's cards, the detail page, and the new-session picker. */
 
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
-import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   AssistantCapabilityOptions, AssistantDetail, AssistantsState, CreateAssistantInput, CreateAssistantResult, UpdateAssistantInput,
 } from '@deepseek-ai/dsh-assistants/types'
@@ -74,11 +74,15 @@ export interface AssistantsDependencies {
   readonly remove: (assistantId: string) => Promise<RemoteResult<AssistantsState>>
   /** How many started sessions in the session list are bound to the assistant. */
   readonly sessionCount: (assistantId: string) => number
+  /** The session list, whose rows carry each session's assistant. */
+  readonly sessionList: HostObservable<SessionListState>
+  /** Show a session's conversation. */
+  readonly openSession: (sessionId: SessionSummary['id']) => void
 }
 
 /** Business face injected into the page and the picker. */
 export interface AssistantsInjected {
-  readonly hooks: { readonly assistants: HostObservable<AssistantsSnapshot> }
+  readonly hooks: { readonly assistants: HostObservable<AssistantsSnapshot>; readonly sessions: HostObservable<SessionListState> }
   /** Bind an assistant to the session about to start. */
   readonly onPick: (assistantId: string) => Promise<void>
   /** Open a new session with this assistant. */
@@ -101,6 +105,8 @@ export interface AssistantsInjected {
   readonly onDelete: (assistantId: string) => Promise<string | undefined>
   /** How many started sessions are bound to the assistant, for the delete confirmation. */
   readonly sessionCount: (assistantId: string) => number
+  /** Show a session's conversation. */
+  readonly onOpenSession: (sessionId: SessionSummary['id']) => void
 }
 
 /** The face plus the entry points of the Host stream and of session-list changes. */
@@ -108,6 +114,36 @@ export interface AssistantsSource extends AssistantsInjected {
   readonly publish: (state: AssistantsState) => void
   /** Re-read the main view's blank session and bind a staged pick to it. */
   readonly sessionsChanged: () => Promise<void>
+}
+
+/** One started session of an assistant, as the detail page lists it. */
+export interface AssistantSession {
+  readonly id: SessionSummary['id']
+  readonly title: string
+  readonly updatedAt: number
+}
+
+/**
+ * The assistant a session is bound to, as its list row carries it.
+ * @param summary - the session's list row, if listed.
+ * @returns the assistant id, or null for a session bound to none.
+ */
+export function assistantOf(summary: SessionSummary | undefined): string | null {
+  const bound = summary?.projectionValues?.assistant
+  return typeof bound === 'string' ? bound : null
+}
+
+/**
+ * The started main sessions bound to an assistant, most recently updated first.
+ * @param list - the session list.
+ * @param assistantId - the assistant.
+ * @returns the sessions.
+ */
+export function assistantSessions(list: SessionListState, assistantId: string): AssistantSession[] {
+  return list.ids.map(id => list.byId[id]).filter((summary): summary is SessionSummary => summary !== undefined)
+    .filter(summary => !summary.blank && summary.origin !== 'subagent' && assistantOf(summary) === assistantId)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map(summary => ({ id: summary.id, title: summary.displayTitle, updatedAt: summary.updatedAt }))
 }
 
 /**
@@ -161,7 +197,7 @@ export function createAssistantsSource(deps: AssistantsDependencies): Assistants
     return undefined
   }
   return {
-    hooks: { assistants: store },
+    hooks: { assistants: store, sessions: deps.sessionList },
     publish: (state) => { set({ state }) },
     sessionsChanged: apply,
     onPick: async (assistantId) => {
@@ -196,5 +232,6 @@ export function createAssistantsSource(deps: AssistantsDependencies): Assistants
     },
     onDelete: assistantId => settle(deps.remove(assistantId)),
     sessionCount: assistantId => deps.sessionCount(assistantId),
+    onOpenSession: (sessionId) => { deps.openSession(sessionId) },
   }
 }

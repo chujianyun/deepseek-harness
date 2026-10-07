@@ -14,6 +14,7 @@ import type { AssistantsInjected } from '../src/client/assistants-source.ts'
 import { AssistantSeat } from '../src/client/AssistantSeat.tsx'
 import { AssistantsPage } from '../src/client/AssistantsPage.tsx'
 import { AssistantsPanelIcon } from '../src/client/AssistantsPanelIcon.tsx'
+import { SessionAssistantBadge, SessionAssistantHover } from '../src/client/SessionAssistant.tsx'
 
 usePinnedBrowserLanguages('zh-CN')
 
@@ -25,7 +26,14 @@ const state: AssistantsState = {
   assistants: [{ id: 'a1', name: '日常助手', description: '', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:00Z' }],
 }
 
-interface Summary { id: string; blank: boolean; retainedBy: { mainView?: number }; projectionValues?: Record<string, unknown> }
+interface Summary {
+  id: string
+  blank: boolean
+  retainedBy: { mainView?: number }
+  projectionValues?: Record<string, unknown>
+  displayTitle?: string
+  updatedAt?: number
+}
 
 async function bench() {
   const ctx = new Context()
@@ -36,10 +44,11 @@ async function bench() {
     constructor(serviceCtx: Context) { super(serviceCtx, 'localeHolder') }
   }
   new LocaleHolder(ctx)
-  const list = createSnapshotStore<{ byId: Record<string, Summary> }>({ byId: {} })
+  const list = createSnapshotStore<{ ids: string[]; byId: Record<string, Summary> }>({ ids: [], byId: {} })
   ctx.provide('sessions', { list } as never)
   const startSession = vi.fn()
-  ctx.provide('uiWorkspace', { startSession } as never)
+  const openSession = vi.fn()
+  ctx.provide('uiWorkspace', { startSession, openSession } as never)
   const assistants = {
     select: vi.fn((_sessionId: string, assistantId: string) => Promise.resolve({ ok: true as const, value: assistantId })),
     createAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: { assistantId: 'a9', state } })),
@@ -97,11 +106,14 @@ async function bench() {
       main: { kind: 'keyed', scope: 'root' },
       'sidebar.panellist': { kind: 'list', scope: 'root' },
       'conversation.hero.assistant': { kind: 'single', scope: 'session-maybe' },
+      'sidebar.session.row.badge': { kind: 'list', scope: 'root' },
+      'sidebar.session.row.hover': { kind: 'list', scope: 'root' },
     },
   } as never, () => null)
   onTestFinished(removeRoot)
   return {
-    ctx, slots, assistants, session, agentPresets, options, dispose, accepted, list, startSession,
+    ctx, slots, assistants, session, agentPresets, options, dispose, accepted, list, startSession, openSession,
+    setList: (byId: Record<string, Summary>) => { list.set({ ids: Object.keys(byId), byId }) },
     push: (value: AssistantsState) => { frames.push(value); wake?.() },
     fail: (error: Error) => { fail?.(error) },
   }
@@ -118,11 +130,17 @@ describe('ui-assistants browser plugin', () => {
     expect(resolveSlotLabel(entry!.options.label)).toBe('智能体')
     expect(b.slots.entries('conversation.hero.assistant')[0]).toMatchObject({ component: AssistantSeat })
     expect(b.slots.entries('conversation.hero.assistant')[0]!.inject!()).toBe(b.slots.entries('main')[0]!.inject!())
+    expect(b.slots.entries('sidebar.session.row.badge')[0]).toMatchObject({ component: SessionAssistantBadge, options: { id: 'assistant-badge' } })
+    expect(b.slots.entries('sidebar.session.row.hover')[0]).toMatchObject({ component: SessionAssistantHover, options: { id: 'assistant-hover' } })
+    expect(b.slots.entries('sidebar.session.row.badge')[0]!.inject!()).toBe(b.slots.entries('main')[0]!.inject!())
+    expect(b.slots.entries('sidebar.session.row.hover')[0]!.inject!()).toBe(b.slots.entries('main')[0]!.inject!())
     expect(render(<AssistantsPanelIcon {...({} as GlobalStandardProps)} size={18} active={false} />).container.querySelector('svg')).toBeTruthy()
     await fiber.dispose()
     expect(b.slots.entries('main')).toEqual([])
     expect(b.slots.entries('sidebar.panellist')).toEqual([])
     expect(b.slots.entries('conversation.hero.assistant')).toEqual([])
+    expect(b.slots.entries('sidebar.session.row.badge')).toEqual([])
+    expect(b.slots.entries('sidebar.session.row.hover')).toEqual([])
     expect(b.dispose).toHaveBeenCalledOnce()
   })
 
@@ -137,13 +155,13 @@ describe('ui-assistants browser plugin', () => {
     await injected.onChat('a1')
     expect(b.startSession).toHaveBeenCalledOnce()
     expect(b.assistants.select).not.toHaveBeenCalled()
-    b.list.set({ byId: {
+    b.setList({
       old: { id: 'old', blank: false, retainedBy: { mainView: 0 } },
       side: { id: 'side', blank: true, retainedBy: {} },
       s1: { id: 's1', blank: true, retainedBy: { mainView: 1 }, projectionValues: { assistant: 'other' } },
-    } })
+    })
     await vi.waitFor(() => { expect(b.assistants.select).toHaveBeenCalledWith('s1', 'a1') })
-    b.list.set({ byId: { s2: { id: 's2', blank: true, retainedBy: { mainView: 1 } } } })
+    b.setList({ s2: { id: 's2', blank: true, retainedBy: { mainView: 1 } } })
     await vi.waitFor(() => { expect(injected.hooks.assistants.getSnapshot().bound).toBeNull() })
     const signal = new AbortController().signal
     b.options.open!(signal)
@@ -192,14 +210,17 @@ describe('ui-assistants browser plugin', () => {
     expect(b.assistants.duplicateAssistant).toHaveBeenCalledWith('a1')
     await injected.onDelete('a1')
     expect(b.assistants.deleteAssistant).toHaveBeenCalledWith('a1')
-    b.list.set({ byId: {
+    b.setList({
       s1: { id: 's1', blank: false, retainedBy: {}, projectionValues: { assistant: 'a1' } },
       s2: { id: 's2', blank: false, retainedBy: {}, projectionValues: { assistant: 'a1' } },
       s3: { id: 's3', blank: true, retainedBy: { mainView: 1 }, projectionValues: { assistant: 'a1' } },
       s4: { id: 's4', blank: false, retainedBy: {}, projectionValues: { assistant: 'a2' } },
       s5: { id: 's5', blank: false, retainedBy: {} },
-    } })
+    })
     expect(injected.sessionCount('a1')).toBe(2)
+    injected.onOpenSession('s1' as never)
+    expect(b.openSession).toHaveBeenCalledWith('s1')
+    expect(injected.hooks.sessions.getSnapshot().ids).toEqual(['s1', 's2', 's3', 's4', 's5'])
   })
 
   it('stays out of a non-Desktop renderer, and the node half does nothing', async () => {

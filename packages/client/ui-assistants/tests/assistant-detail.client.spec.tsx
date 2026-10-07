@@ -2,7 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { AssistantDetail, AssistantView, UpdateAssistantInput } from '@deepseek-ai/dsh-assistants/types'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { AssistantDetailPage } from '../src/client/AssistantDetail.tsx'
 import type { WizardOptions } from '../src/client/assistants-source.ts'
 import { zh } from '../src/client/locales.ts'
@@ -27,9 +28,17 @@ const options: WizardOptions = {
   },
 }
 
-async function mount(view: AssistantView = assistant, read?: () => Promise<AssistantDetail | string>) {
+const NOW = Date.now()
+const row = (id: string, minutesAgo: number, over: object = {}) => ({
+  id, displayTitle: `会话 ${id}`, blank: false, running: false, retainedBy: {}, updatedAt: NOW - minutesAgo * 60_000,
+  projectionValues: { assistant: 'a1' }, ...over,
+})
+
+async function mount(view: AssistantView = assistant, read?: () => Promise<AssistantDetail | string>, rows: ReturnType<typeof row>[] = []) {
   let stored: AssistantDetail = { assistant: view, files: FILES }
+  const sessions = createSnapshotStore({ ids: rows.map(item => item.id), byId: Object.fromEntries(rows.map(item => [item.id, item])) })
   const props = {
+    useSessions: bindSnapshotSelector(sessions) as never, onOpenSession: vi.fn(),
     t: makeTranslate(zh), assistant: view, isDefault: false,
     onBack: vi.fn(), onChat: vi.fn(async (_id: string) => {}), onSetDefault: vi.fn(), onDuplicate: vi.fn(), onDelete: vi.fn(),
     onRead: vi.fn(read ?? (async (_id: string): Promise<AssistantDetail | string> => stored)),
@@ -163,5 +172,31 @@ describe('subsets on the detail page', () => {
     fireEvent.click(within(screen.getByRole('group', { name: '知识库' })).getByRole('checkbox', { name: '公司制度' }))
     await act(async () => { fireEvent.click(save()) })
     expect(props.onUpdate).toHaveBeenCalledWith('a1', { subsets: { skills: ['weekly-report'], connectors: ['wecom', 'feishu'], knowledgeBases: ['kb1'] } })
+  })
+})
+
+describe('recent sessions on the detail page', () => {
+  it('lists the assistant\'s sessions latest first with their age, and opens one', async () => {
+    const minutes = [0.5, 5, 60 * 3, 60 * 24 * 2, 60 * 24 * 40, 60 * 24 * 400]
+    const rows = [...minutes.map((ago, index) => row(`s${String(index)}`, ago)), row('other', 1, { projectionValues: { assistant: 'a2' } })]
+    const props = await mount(assistant, undefined, rows)
+    const section = screen.getByRole('region', { name: '最近会话' })
+    const items = within(section).getAllByRole('button')
+    expect(items.map(item => item.textContent)).toEqual([
+      '会话 s0刚刚', '会话 s15 分钟前', '会话 s23 小时前', '会话 s32 天前', '会话 s41 个月前', '会话 s51 年前',
+    ])
+    fireEvent.click(items[2]!)
+    expect(props.onOpenSession).toHaveBeenCalledWith('s2')
+    expect(within(section).queryByText(/共/)).toBeNull()
+  })
+
+  it('says when there is none, and how many more there are beyond ten', async () => {
+    await mount()
+    expect(within(screen.getByRole('region', { name: '最近会话' })).getByText('还没有用这个智能体开始的会话。')).toBeTruthy()
+    cleanup()
+    await mount(assistant, undefined, Array.from({ length: 12 }, (_, index) => row(`m${String(index)}`, index)))
+    const section = screen.getByRole('region', { name: '最近会话' })
+    expect(within(section).getAllByRole('button')).toHaveLength(10)
+    expect(within(section).getByText('共 12 个会话，这里显示最近 10 个。')).toBeTruthy()
   })
 })

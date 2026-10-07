@@ -42,6 +42,7 @@ type RowRenderSlots = PropsRenderSlots<
   | 'sidebar.workspaces.session.row.action'
   | 'sidebar.session.row.leading'
   | 'sidebar.session.row.hover'
+  | 'sidebar.session.row.badge'
 >['renderSlot']
 
 /** Row display title: blank rows show the localized New Session label. */
@@ -560,6 +561,7 @@ export function SessionNodeItem({
   | 'sidebar.workspaces.session.row.action'
   | 'sidebar.session.row.leading'
   | 'sidebar.session.row.hover'
+  | 'sidebar.session.row.badge'
 >) {
   const row = node
   const title = displayTitle(node, t)
@@ -633,6 +635,7 @@ export function SessionNodeItem({
           ? <SessionStatusDots statuses={statuses} />
           : renderSlot('sidebar.session.row.leading', { sessionId: node.id }))}
       </span>
+      {!row.blank && <span className={css.badge}>{renderSlot('sidebar.session.row.badge', { sessionId: node.id })}</span>}
       <span
         ref={titleRef}
         className={css.title}

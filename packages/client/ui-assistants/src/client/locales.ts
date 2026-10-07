@@ -96,6 +96,17 @@ export const zh = {
   subsetCount: '已选 {count} 项',
   connectorFeishu: '飞书',
   connectorDingtalk: '钉钉',
+  rowAssistant: '智能体：{name}',
+  deletedAssistant: '已删除的智能体',
+  recentSessions: '最近会话',
+  recentEmpty: '还没有用这个智能体开始的会话。',
+  recentMore: '共 {count} 个会话，这里显示最近 {shown} 个。',
+  timeNow: '刚刚',
+  timeMinutes: '{n} 分钟前',
+  timeHours: '{n} 小时前',
+  timeDays: '{n} 天前',
+  timeMonths: '{n} 个月前',
+  timeYears: '{n} 年前',
 } as const
 
 /** Locale key union of the Assistants copy. */
@@ -197,4 +208,15 @@ export const en = {
   subsetCount: '{count} selected',
   connectorFeishu: 'Feishu',
   connectorDingtalk: 'DingTalk',
+  rowAssistant: 'Assistant: {name}',
+  deletedAssistant: 'Deleted assistant',
+  recentSessions: 'Recent sessions',
+  recentEmpty: 'No session has started with this assistant yet.',
+  recentMore: '{count} sessions; the latest {shown} are shown.',
+  timeNow: 'Just now',
+  timeMinutes: '{n} min ago',
+  timeHours: '{n} h ago',
+  timeDays: '{n} d ago',
+  timeMonths: '{n} mo ago',
+  timeYears: '{n} y ago',
 } satisfies Record<AssistantsLocaleKey, string>

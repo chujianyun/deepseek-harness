@@ -12,6 +12,10 @@ Assistants belong to the tenant of the current Hub sign-in and live under `<dshH
 
 The detail page edits an assistant's fields and its four core files through the `assistants` Remote. Saved core files and a new name reach every session bound to the assistant on its next step, including sessions in progress; a new model or preset applies to sessions bound afterward. Setting another default moves blank sessions bound to the previous default to it. A copy carries the configuration and core files under the name `<name> 副本`, without sessions. Deleting an assistant keeps its sessions, which continue without its core files: since earlier turns stay in the conversation, their next turn tells the model that those core files no longer apply; the first remaining assistant becomes the default, and with none left new sessions bind no assistant.
 
+## Sessions and their assistant
+
+Each session row in the sidebar shows the avatar of its assistant, named on hover and in the row's hover card; a session whose assistant was deleted shows a deleted-assistant mark, and one bound to none shows nothing. An assistant's detail page lists its recent sessions, latest first, and opens one on click.
+
 ## Capability subsets
 
 An assistant can limit the Skills, connectors, and knowledge bases of its sessions: each kind either follows global, including items added later, or allows only the items selected. Each limit is enforced by the service that decides that capability — the skill registry's view filter, the connectors service, and the knowledge selection service — so the model sees and uses only the allowed items, and an item that is later uninstalled, switched off, or deleted simply drops out. The E-commerce Manager template starts with only Feishu among the connectors.

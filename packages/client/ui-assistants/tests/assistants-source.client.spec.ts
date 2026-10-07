@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { AssistantsState, CreateAssistantInput } from '@deepseek-ai/dsh-assistants/types'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-import { createAssistantsSource, shownAssistant, type BlankSession } from '../src/client/assistants-source.ts'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { assistantOf, assistantSessions, createAssistantsSource, shownAssistant, type BlankSession } from '../src/client/assistants-source.ts'
 
 const state: AssistantsState = {
   revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [],
@@ -13,6 +14,7 @@ const state: AssistantsState = {
 }
 const sid = (id: string) => id as SessionSummary['id']
 const unused = {
+  sessionList: createSnapshotStore({ ids: [], byId: {} }) as never, openSession: vi.fn(),
   loadOptions: vi.fn(), squareAvatar: vi.fn(), read: vi.fn(), update: vi.fn(),
   setDefault: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), sessionCount: vi.fn(),
 }
@@ -32,13 +34,14 @@ function harness(initial: BlankSession | undefined) {
   const duplicate = vi.fn(async (_id: string) => ok({ assistantId: 'a9', state: { ...state, revision: 5 } }))
   const remove = vi.fn(async (_id: string) => ok({ ...state, revision: 6, assistants: [state.assistants[1]!] }))
   const sessionCount = vi.fn((_id: string) => 3)
+  const openSession = vi.fn()
   const source = createAssistantsSource({
     select, startSession, blankSession: () => blank, create, loadOptions, squareAvatar,
-    read, update, setDefault, duplicate, remove, sessionCount,
+    read, update, setDefault, duplicate, remove, sessionCount, sessionList: unused.sessionList, openSession,
   })
   source.publish(state)
   return {
-    source, select, startSession, create, loadOptions, squareAvatar, read, update, setDefault, duplicate, remove, sessionCount,
+    source, select, startSession, create, loadOptions, squareAvatar, read, update, setDefault, duplicate, remove, sessionCount, openSession,
     setBlank: (next: BlankSession | undefined) => { blank = next },
     snapshot: () => source.hooks.assistants.getSnapshot(),
   }
@@ -165,5 +168,35 @@ describe('managing assistants through the source', () => {
     const h = harness(undefined)
     expect(h.source.sessionCount('a1')).toBe(3)
     expect(h.sessionCount).toHaveBeenCalledWith('a1')
+  })
+})
+
+describe('sessions of an assistant', () => {
+  const row = (id: string, over: object = {}) => ({ id, displayTitle: `会话 ${id}`, blank: false, updatedAt: 1, retainedBy: {}, running: false, ...over }) as never
+  it('reads the assistant a row is bound to', () => {
+    expect(assistantOf(undefined)).toBeNull()
+    expect(assistantOf(row('s1'))).toBeNull()
+    expect(assistantOf(row('s1', { projectionValues: { assistant: 'a1' } }))).toBe('a1')
+    expect(assistantOf(row('s1', { projectionValues: { assistant: null } }))).toBeNull()
+  })
+
+  it('lists the started main sessions of an assistant, latest first', () => {
+    const list = {
+      ids: ['old', 'new', 'blank', 'child', 'other', 'gone'],
+      byId: {
+        old: row('old', { updatedAt: 1, projectionValues: { assistant: 'a1' } }),
+        new: row('new', { updatedAt: 9, projectionValues: { assistant: 'a1' } }),
+        blank: row('blank', { blank: true, projectionValues: { assistant: 'a1' } }),
+        child: row('child', { origin: 'subagent', projectionValues: { assistant: 'a1' } }),
+        other: row('other', { projectionValues: { assistant: 'a2' } }),
+      },
+    } as never
+    expect(assistantSessions(list, 'a1')).toEqual([{ id: 'new', title: '会话 new', updatedAt: 9 }, { id: 'old', title: '会话 old', updatedAt: 1 }])
+  })
+
+  it('opens a session through the workspace', () => {
+    const h = harness(undefined)
+    h.source.onOpenSession(sid('s9'))
+    expect(h.openSession).toHaveBeenCalledWith('s9')
   })
 })

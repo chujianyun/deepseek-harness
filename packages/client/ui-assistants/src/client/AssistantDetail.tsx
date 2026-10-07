@@ -1,15 +1,17 @@
 /**
- * An assistant's detail page: identity and model, capability base, and the four core files, edited
- * in place and saved together, with the card's actions in the header.
+ * An assistant's detail page: identity and model, capability base, capability subsets, and the four
+ * core files, edited in place and saved together, with the card's actions in the header and the
+ * assistant's recent sessions last.
  */
 
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { AssistantDetail as Detail, AssistantSubsets, AssistantView, CoreFileName, UpdateAssistantInput } from '@deepseek-ai/dsh-assistants/types'
-import { Button, SegmentedTabs, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import { Button, relativeTime, SegmentedTabs, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SnapshotSelectorHook, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import { AssistantAvatar } from './AssistantAvatar.tsx'
 import { IdentityFields, modelKey, modelOf, nameValid, PresetChoices, SubsetFields, type IdentityValue } from './AssistantFields.tsx'
-import type { AssistantsInjected, WizardOptions } from './assistants-source.ts'
+import { assistantSessions, type AssistantsInjected, type WizardOptions } from './assistants-source.ts'
 import type { AssistantsLocaleKey } from './locales.ts'
 import css from './AssistantDetail.module.css'
 import form from './form.module.css'
@@ -74,8 +76,17 @@ function sameSubsets(a: AssistantSubsets, b: AssistantSubsets): boolean {
   return key(a) === key(b)
 }
 
+/** Recent sessions the page lists; the count says how many more there are. */
+const RECENT = 10
+
+/** Copy key of each relative time unit. */
+const TIME_KEYS = {
+  now: 'timeNow', minutes: 'timeMinutes', hours: 'timeHours', days: 'timeDays', months: 'timeMonths', years: 'timeYears',
+} as const satisfies Record<ReturnType<typeof relativeTime>['unit'], AssistantsLocaleKey>
+
 /** Props of the detail page. */
-export interface AssistantDetailProps extends Pick<AssistantsInjected, 'onChat' | 'onRead' | 'onUpdate' | 'onLoadOptions' | 'squareAvatar'> {
+export interface AssistantDetailProps extends Pick<AssistantsInjected, 'onChat' | 'onRead' | 'onUpdate' | 'onLoadOptions' | 'squareAvatar' | 'onOpenSession'> {
+  readonly useSessions: SnapshotSelectorHook<SessionListState>
   readonly t: TranslateNS<'assistants'>
   readonly assistant: AssistantView
   readonly isDefault: boolean
@@ -186,6 +197,7 @@ export function AssistantDetailPage(props: AssistantDetailProps) {
               />
             </div>
           </section>
+          <RecentSessions {...props} />
           <footer className={css.footer}>
             {notice !== null && (
               <span className={notice.kind === 'saved' ? css.saved : form.error} role={notice.kind === 'saved' ? 'status' : 'alert'}>{notice.text}</span>
@@ -198,5 +210,38 @@ export function AssistantDetailPage(props: AssistantDetailProps) {
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * List the assistant's started sessions, most recent first; a click opens one.
+ * @param props - copy, the assistant, the session list hook, and the opener.
+ * @returns the section.
+ */
+function RecentSessions({ t, assistant, useSessions, onOpenSession }: Pick<AssistantDetailProps, 't' | 'assistant' | 'useSessions' | 'onOpenSession'>) {
+  const sessions = useSessions(list => assistantSessions(list, assistant.id), (a, b) => JSON.stringify(a) === JSON.stringify(b))
+  const now = Date.now()
+  const shown = sessions.slice(0, RECENT)
+  return (
+    <section className={css.section} aria-label={t('recentSessions')}>
+      <h2 className={css.heading}>{t('recentSessions')}</h2>
+      {sessions.length === 0 && <p className={form.hint}>{t('recentEmpty')}</p>}
+      {shown.length > 0 && (
+        <ul className={css.sessions}>
+          {shown.map((session) => {
+            const ago = relativeTime(session.updatedAt, now)
+            return (
+              <li key={session.id}>
+                <button type="button" className={css.session} onClick={() => { onOpenSession(session.id) }}>
+                  <span className={css.sessionTitle}>{session.title}</span>
+                  <span className={css.sessionTime}>{t(TIME_KEYS[ago.unit], { n: ago.n })}</span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {sessions.length > RECENT && <p className={form.hint}>{t('recentMore', { count: sessions.length, shown: RECENT })}</p>}
+    </section>
   )
 }

@@ -15,9 +15,10 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
-import { createAssistantsSource, type BlankSession, type WizardOptions } from './assistants-source.ts'
+import { assistantOf, assistantSessions, createAssistantsSource, type BlankSession, type WizardOptions } from './assistants-source.ts'
 import { squareAvatar } from './avatar-image.ts'
 import { AssistantSeat } from './AssistantSeat.tsx'
+import { SessionAssistantBadge, SessionAssistantHover } from './SessionAssistant.tsx'
 import { AssistantsPage } from './AssistantsPage.tsx'
 import { AssistantsPanelIcon } from './AssistantsPanelIcon.tsx'
 import { en, zh, type AssistantsLocaleKey } from './locales.ts'
@@ -84,8 +85,7 @@ export function apply(ctx: ClientContext): void {
       const summary = Object.values(scope.sessions.list.getSnapshot().byId)
         .find(session => session.blank && (session.retainedBy.mainView ?? 0) > 0)
       if (summary === undefined) return undefined
-      const bound = summary.projectionValues?.assistant
-      return { id: summary.id, assistantId: typeof bound === 'string' ? bound : null }
+      return { id: summary.id, assistantId: assistantOf(summary) }
     }
     const source = createAssistantsSource({
       select: (sessionId, assistantId) => remote.select(sessionId, assistantId),
@@ -99,8 +99,9 @@ export function apply(ctx: ClientContext): void {
       setDefault: assistantId => remote.setDefault(assistantId),
       duplicate: assistantId => remote.duplicateAssistant(assistantId),
       remove: assistantId => remote.deleteAssistant(assistantId),
-      sessionCount: assistantId => Object.values(scope.sessions.list.getSnapshot().byId)
-        .filter(session => !session.blank && session.projectionValues?.assistant === assistantId).length,
+      sessionCount: assistantId => assistantSessions(scope.sessions.list.getSnapshot(), assistantId).length,
+      sessionList: scope.sessions.list,
+      openSession: (sessionId) => { scope.uiWorkspace.openSession(sessionId) },
     })
     const assistants = scope.remote.$stream<AssistantsState>({
       name: 'assistants', open: signal => remote.watch(signal), ended: () => new Error('assistants stream ended'),
@@ -119,5 +120,11 @@ export function apply(ctx: ClientContext): void {
     scope.slots.inject('conversation.hero.assistant', () => scope.slots.register({
       name: 'conversation.hero.assistant', locale: NS, inject: () => source,
     }, AssistantSeat))
+    scope.slots.inject('sidebar.session.row.badge', () => scope.slots.register({
+      name: 'sidebar.session.row.badge', id: 'assistant-badge', order: 10, locale: NS, inject: () => source,
+    }, SessionAssistantBadge))
+    scope.slots.inject('sidebar.session.row.hover', () => scope.slots.register({
+      name: 'sidebar.session.row.hover', id: 'assistant-hover', order: 5, locale: NS, inject: () => source,
+    }, SessionAssistantHover))
   })
 }

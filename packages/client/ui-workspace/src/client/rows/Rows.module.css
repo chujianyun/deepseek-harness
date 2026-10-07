@@ -162,6 +162,17 @@
   gap: 2px;
 }
 
+.badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badge:empty {
+  display: none;
+}
+
 .title {
   min-width: 0;
   overflow: hidden;

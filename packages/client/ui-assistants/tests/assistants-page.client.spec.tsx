@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import type { AssistantDetail, AssistantsState, UpdateAssistantInput } from '@deepseek-ai/dsh-assistants/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { AssistantsSnapshot } from '../src/client/assistants-source.ts'
 import { AssistantsPage } from '../src/client/AssistantsPage.tsx'
 import { en, zh } from '../src/client/locales.ts'
@@ -21,8 +22,10 @@ const state: AssistantsState = {
 function mount(value: AssistantsState | undefined, extra: Partial<AssistantsSnapshot> = {}, copy: Record<string, string> = zh) {
   const initial: AssistantsSnapshot = { state: value, bound: null, staged: undefined, busy: false, failure: null }
   const store = createSnapshotStore<AssistantsSnapshot>({ ...initial, ...extra })
+  const sessions = createSnapshotStore<SessionListState>({ ids: [], byId: {}, phase: 'ready', projectionsBySession: {} } as never)
   const props = {
-    t: makeTranslate(copy), useAssistants: bindSnapshotSelector(store),
+    t: makeTranslate(copy), useAssistants: bindSnapshotSelector(store), useSessions: bindSnapshotSelector(sessions),
+    onOpenSession: vi.fn(),
     onPick: vi.fn(async (_id: string) => {}), onChat: vi.fn(async (_id: string) => {}), onDismiss: vi.fn(),
     onCreate: vi.fn(async () => undefined), onLoadOptions: vi.fn(async () => ({ models: [], presets: [] })),
     squareAvatar: vi.fn(async () => 'data:image/webp;base64,AA'),

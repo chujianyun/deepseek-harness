@@ -22,7 +22,7 @@ export type AssistantsPageProps = PropsLocale<'assistants'> & InjectFace<Assista
  * @returns the page.
  */
 export function AssistantsPage(props: AssistantsPageProps) {
-  const { t, useAssistants, onChat, onDismiss, onCreate, onLoadOptions, squareAvatar } = props
+  const { t, useAssistants, useSessions, onChat, onDismiss, onCreate, onLoadOptions, squareAvatar } = props
   const state = useAssistants(snapshot => snapshot.state)
   const failure = useAssistants(snapshot => snapshot.failure)
   const [query, setQuery] = useState('')
@@ -82,7 +82,7 @@ export function AssistantsPage(props: AssistantsPageProps) {
         <AssistantDetailPage
           key={opened.id} t={t} assistant={opened} isDefault={opened.id === state.defaultId} alerts={alerts}
           onBack={() => { setOpenId(null) }} onChat={onChat} onRead={props.onRead} onUpdate={props.onUpdate}
-          onLoadOptions={onLoadOptions} squareAvatar={squareAvatar}
+          onLoadOptions={onLoadOptions} squareAvatar={squareAvatar} useSessions={useSessions} onOpenSession={props.onOpenSession}
           onSetDefault={() => { void run(props.onSetDefault(opened.id)) }}
           onDuplicate={() => { void duplicate(opened.id, true) }}
           onDelete={() => { setDeleting(opened) }}

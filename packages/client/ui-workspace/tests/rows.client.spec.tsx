@@ -31,6 +31,7 @@ type RowSlotName =
   | 'sidebar.workspaces.session.row.action'
   | 'sidebar.session.row.leading'
   | 'sidebar.session.row.hover'
+  | 'sidebar.session.row.badge'
 type RowRenderSlot = PropsRenderSlots<RowSlotName>['renderSlot']
 type SessionNodeItemProps = ComponentProps<typeof SessionNodeItemComponent>
 
@@ -90,15 +91,18 @@ describe('workspace browser rows', () => {
     }
     const view = render(<SessionNodeItem node={idle} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />)
     // The cell is the row's first element and holds nothing while the row is
-    // idle without an occupant; the title follows it.
-    const cell = screen.getByText('Flat Session').previousElementSibling
+    // idle without an occupant; the badge cell, empty here, sits between it and the title.
+    const badges = screen.getByText('Flat Session').previousElementSibling
+    expect(badges?.className).toMatch(/badge/)
+    expect(badges?.children).toHaveLength(0)
+    const cell = badges?.previousElementSibling
     expect(cell?.className).toMatch(/slot/)
     expect(cell?.children).toHaveLength(0)
 
     view.rerender(<SessionNodeItem node={{ ...idle, running: true }} currentId={undefined} now={0}
       onOpen={vi.fn()} t={t} />)
     // A row that gains a state dot keeps that dot in the same cell.
-    expect(screen.getByText('Flat Session').previousElementSibling?.querySelector('[data-state="ongoing"]')).toBeTruthy()
+    expect(screen.getByText('Flat Session').previousElementSibling?.previousElementSibling?.querySelector('[data-state="ongoing"]')).toBeTruthy()
   })
 
   it('renders a selected content-search row and opens only its session', () => {
@@ -1007,13 +1011,14 @@ describe('session row schedule seats', () => {
     // Priority replacement: the idle row shows the clock seat INSTEAD of a dot.
     expect(row.querySelector('[data-state]')).toBeNull()
     // The seat sits in the leading 16px cell, before the clipped title: the
-    // cell is the row's first element, and the title follows the cell.
+    // cell is the row's first element, then the badge cell, then the title.
     const assertPlacement = (): void => {
       const cell = screen.getByRole('treeitem')
         .querySelector('[data-seat="sidebar.session.row.leading"]')?.parentElement
       expect(cell?.previousElementSibling ?? null).toBeNull()
-      expect(cell?.nextElementSibling?.textContent).toBe('Idle Session')
-      expect(cell?.nextElementSibling?.nextElementSibling?.textContent).toBe('刚刚')
+      expect(cell?.nextElementSibling?.querySelector('[data-seat="sidebar.session.row.badge"]')).toBeTruthy()
+      expect(cell?.nextElementSibling?.nextElementSibling?.textContent).toBe('Idle Session')
+      expect(cell?.nextElementSibling?.nextElementSibling?.nextElementSibling?.textContent).toBe('刚刚')
     }
     assertPlacement()
     // Rerender through the same row: the seat stays leading without the flat
@@ -1058,6 +1063,18 @@ describe('session row schedule seats', () => {
     const renderSlot = seatSpy()
     renderRow({ ...idle, blank: true }, renderSlot)
     expect(renderSlot).not.toHaveBeenCalledWith('sidebar.session.row.leading', expect.anything())
+  })
+
+  it('seats badges before the title on every non-blank row, running and archived included', () => {
+    const renderSlot = seatSpy()
+    renderRow({ ...idle, running: true, archived: true }, renderSlot)
+    expect(renderSlot).toHaveBeenCalledWith('sidebar.session.row.badge', { sessionId: idle.id })
+    const badge = document.querySelector('[data-seat="sidebar.session.row.badge"]')
+    expect(badge?.parentElement?.nextElementSibling?.textContent).toBe('Idle Session')
+    cleanup()
+    const blank = seatSpy()
+    renderRow({ ...idle, blank: true }, blank)
+    expect(blank).not.toHaveBeenCalledWith('sidebar.session.row.badge', expect.anything())
   })
 
   it('renders the schedule section between the relative time and the trailing status line', () => {

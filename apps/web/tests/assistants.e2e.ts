@@ -279,6 +279,17 @@ it('edits core files on the detail page, moves the default, copies, and deletes 
     await expect.poll(answers, { timeout: 30_000 }).toBe(2)
     expect(lastPrompt()).toContain('SOUL_FROM_PAGE')
     expect(lastPrompt()).toContain('You are the assistant \\"店铺复盘助手\\"')
+    // The session row carries the assistant's avatar, named on hover.
+    await expect.poll(() => shopSession.locator('[data-assistant-badge]').getAttribute('title')).toBe('智能体：店铺复盘助手')
+
+    // The detail page lists the session among the assistant's recent sessions, and opens it.
+    await openAssistants()
+    await page.getByRole('button', { name: '查看 店铺复盘助手 的详情' }).click()
+    const recent = page.getByRole('region', { name: '最近会话' })
+    await expect.poll(() => recent.getByRole('button').count()).toBe(1)
+    await recent.getByRole('button').click()
+    await expect.poll(answers, { timeout: 30_000 }).toBe(2)
+    expect(await page.locator('[role="treeitem"][aria-selected="true"]').getAttribute('data-row-key')).toBe(rowKey)
 
     // Make default: the new-session screen then starts with it.
     await openAssistants()
@@ -301,6 +312,8 @@ it('edits core files on the detail page, moves the default, copies, and deletes 
     // and the session continues without the deleted assistant's core files.
     await deleteCard(SHOP_ID, 1)
     await expect.poll(() => card(dailyId).textContent()).toContain('默认')
+    await expect.poll(() => shopSession.locator('[data-assistant-badge]').getAttribute('data-assistant-badge')).toBe('deleted')
+    expect(await shopSession.locator('[data-assistant-badge]').getAttribute('title')).toBe('已删除的智能体')
     await shopSession.click()
     await send('第三轮')
     await expect.poll(answers, { timeout: 30_000 }).toBe(3)

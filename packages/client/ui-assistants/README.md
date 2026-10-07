@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The Desktop surfaces of the [assistants](../../../docs/glossary.md#assistant): the **Assistants** entry of the sidebar, the page it opens with the signed-in tenant's assistants as cards and each assistant's detail page, and the picker that leads the new-session screen's workspace row. Both render the [`assistants`](../../assistant/assistants/README.md) Remote's state stream.
+The Desktop surfaces of the [assistants](../../../docs/glossary.md#assistant): the **Assistants** entry of the sidebar, the page it opens with the signed-in tenant's assistants as cards and each assistant's detail page, the assistant mark on session rows, and the picker that leads the new-session screen's workspace row. Both render the [`assistants`](../../assistant/assistants/README.md) Remote's state stream.
 
 ## Table of Contents
 
@@ -33,6 +33,8 @@ Clicking a card's avatar, name, or description opens its detail page, read throu
 
 The capability subsets show Skills, Connectors, and Knowledge bases, each **All (follow global)** or **Only selected**; Only selected lists what `assistants.capabilityOptions()` offers now as checkboxes, connectors named Feishu and DingTalk. An id the assistant allows that is no longer offered — uninstalled, switched off, or deleted — stays checked with an **Unavailable** tag, so it can be cleared. A template fills in its subsets, so the E-commerce Manager starts with only Feishu among the connectors; the detail page saves a subset only when the allowed items changed, whatever their order.
 
+Each session row of the sidebar shows, before its title, the avatar of the assistant its session is bound to, read from the session list's `assistant` projection; hovering names it, and the row's hover card adds an **Assistant: <name>** line. A session whose assistant is no longer in the signed-in tenant shows a gray **?** mark named **Deleted assistant** instead, and a session bound to none, or any row while signed out, shows nothing. The detail page ends with **Recent sessions**: the assistant's started main sessions, latest first, each with its title and age; clicking one opens it through `uiWorkspace.openSession()`. Up to ten are listed, with a line saying how many there are in all.
+
 The picker shows the assistant of the session about to start: a pick not yet bound, else the one the main view's blank session is bound to, else the tenant default. Its menu lists every assistant with its avatar and description. A pick binds the blank session the main view shows through `assistants.select()`; without one, the pick waits and binds the blank session the next session-list change brings. **Chat** on a card picks that assistant and opens the new-session screen through `uiWorkspace.startSession()`, so the session it brings starts bound to it. The picker renders nothing outside the main view or when the tenant has no assistants. A refused bind shows as a toast above the composer and as a message above the cards until dismissed.
 
 -----
@@ -49,7 +51,7 @@ No direct effect.
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>
 
-- **No recent sessions on the detail page** — the detail page lists none of the assistant's sessions; showing the assistant on sessions follows in a later ticket.
+- **Deleted or another company's** — the session list is shared by every tenant, while assistants belong to one; a session bound to another tenant's assistant shows the deleted-assistant mark while this tenant is signed in.
 - **Session count from the loaded list** — the delete confirmation counts the sessions the session list holds, whose assistant comes from the projection cache for sessions not open.
 
 <a id="dev-note"></a>
