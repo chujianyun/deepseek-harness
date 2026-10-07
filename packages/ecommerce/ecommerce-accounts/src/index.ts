@@ -12,25 +12,35 @@
  * account's Chrome keeps running with its windows minimized, and survives DSH: the next DSH
  * reattaches to it, or, when it is gone, starts it again minimized, restoring the last session.
  *
+ * The model and Skill scripts reach the accounts through the `dsh-ecommerce` command on the model
+ * shell's `PATH`, which calls a loopback endpoint with a token valid for its bash call only, and
+ * through the `ecommerce-accounts` Skill, which says how to pick a merchant account. Taking over an
+ * account's browser reserves it for that bash call, so two tasks never drive it together.
+ *
  * @module @deepseek-ai/dsh-ecommerce-accounts
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-hub-account'
+import type {} from '@deepseek-ai/dsh-shell-env'
+import type {} from '@deepseek-ai/dsh-skill'
+import type {} from '@deepseek-ai/dsh-tools'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
+import { Bridge, SCRIPT, type BridgeReply, type Grant } from './bridge.ts'
 import { Cdp, closeBlankTabs, hideWindows, pageTabs, probe, showSignIn, type ProbeResult } from './cdp.ts'
 import { alive, closeChrome, ensureTab, findChrome, launchChrome, profileHolder, readRecord, type ChromeInfo } from './chrome.ts'
 import { PLATFORMS, type PlatformSpec } from './platforms.ts'
+import { SKILL_CONTENT, SKILL_DESCRIPTION, SKILL_NAME } from './skill.ts'
 import type {
   AddEcommerceAccountInput, AddEcommerceAccountResult, ChromeView, EcommerceAccountsState, EcommerceAccountStatus, EcommerceAccountView,
-  EcommerceCheckProblem, RenameEcommerceAccountInput,
+  EcommerceCheckProblem, EcommercePlatform, RenameEcommerceAccountInput,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -95,6 +105,22 @@ type CheckResult = ProbeResult | { readonly kind: 'busy' }
 /** The problem each failed check shows. */
 const PROBLEMS = { 'no-response': 'timeout', 'network': 'network', 'busy': 'busy' } as const satisfies Record<Exclude<CheckResult['kind'], 'signed-in' | 'signed-out'>, EcommerceCheckProblem>
 
+/** The variable that gives a bash call the address of the e-commerce accounts. */
+const URL_KEY = 'DSH_ECOMMERCE_URL'
+
+/** Each platform's name in what the model reads. */
+const PLATFORM_NAMES = { tmall: 'Tmall', taobao: 'Taobao', pinduoduo: 'Pinduoduo', doudian: 'Douyin shop' } as const satisfies Record<EcommercePlatform, string>
+
+/** Each check problem in what the model reads. */
+const PROBLEM_TEXT = {
+  timeout: 'the platform did not answer in time', network: 'its page could not be reached', busy: 'its browser is in use by another program',
+} as const satisfies Record<EcommerceCheckProblem, string>
+
+const SIGNED_OUT_OF_HUB = 'DSH: DSH is signed out of the user center, so there are no e-commerce accounts.'
+
+/** A refusal the command prints to stderr. */
+const refused = (message: string): BridgeReply => ({ status: 409, body: message })
+
 /** What makes two accounts the same: platform, kind, and account name. */
 const identity = (item: Pick<EcommerceAccountView, 'platform' | 'kind' | 'account'>): string => `${item.platform}/${item.kind}/${item.account}`
 
@@ -119,7 +145,7 @@ type Entry = z.infer<typeof ledgerSchema>['accounts'][number]
 
 /** Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote namespace. */
 export class EcommerceAccountsService extends TypertRemoteService {
-  static inject = ['hubAccount']
+  static inject = ['hubAccount', 'skills', 'shellEnv']
   static Config = Config
 
   private readonly root: string
@@ -138,6 +164,13 @@ export class EcommerceAccountsService extends TypertRemoteService {
   private revision = Date.now()
   private readonly listeners = new Set<() => void>()
   private readonly lifetime = new AbortController()
+  /** Accounts whose browser a bash call of the model is using, by account, to that call. */
+  private readonly leases = new Map<string, string>()
+  private readonly bridge = new Bridge({
+    accounts: grant => this.modelAccounts(grant), browser: (grant, id) => this.modelBrowser(grant, id),
+  })
+  /** Unregisters the Skill while a tenant is signed in. */
+  private skill: (() => void) | undefined
 
   /** @param ctx - Host with the Hub sign-in. @param config - storage, Chrome, and timing options. */
   constructor(ctx: Context, config: Config = {}) {
@@ -149,12 +182,30 @@ export class EcommerceAccountsService extends TypertRemoteService {
     ctx.effect(() => () => {
       this.lifetime.abort()
       for (const controller of this.signIns.values()) controller.abort()
+      this.skill?.()
       this.changed()
     }, 'ecommerce-accounts: lifetime')
+    ctx.shellEnv.registerPath({ name: 'ecommerce-accounts', resolve: () => this.tenantId === null ? undefined : join(this.root, 'bin') })
+    ctx.shellEnv.register({
+      name: 'ecommerce-accounts',
+      variables: { [URL_KEY]: { description: 'The address the dsh-ecommerce command reaches the e-commerce accounts at, valid for this shell call only.' } },
+      resolve: exec => this.tenantId === null ? {} : { [URL_KEY]: this.bridge.urlFor({ callId: exec.callId, tenantId: this.tenantId }) },
+    })
+    // The call's token and its browser reservations end with the call.
+    ctx.on('tools/result', (exec) => {
+      this.bridge.revoke(exec.callId)
+      for (const [accountId, callId] of this.leases) if (callId === exec.callId) this.leases.delete(accountId)
+      this.changed()
+    })
   }
 
   async [Service.init](): Promise<void> {
     this.chrome = await findChrome(this.options.chromePath)
+    const stopBridge = await this.bridge.start()
+    this.ctx.effect(() => () => { void stopBridge() }, 'ecommerce-accounts: command endpoint')
+    await mkdir(join(this.root, 'bin'), { recursive: true })
+    await writeFile(join(this.root, 'bin', 'dsh-ecommerce'), SCRIPT)
+    await chmod(join(this.root, 'bin', 'dsh-ecommerce'), 0o755)
     await this.serialized(async () => this.switchTenant((await this.ctx.hubAccount.getState()).profile?.tenantId ?? null))
     void (async () => {
       for await (const state of this.ctx.hubAccount.watch(this.lifetime.signal)) {
@@ -245,6 +296,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
   @Remote
   async startSignIn(accountId: string): Promise<EcommerceAccountsState> {
     const entry = this.find(accountId)
+    this.requireIdle(entry)
     const chrome = await this.requireChrome()
     if (await this.heldElsewhere(entry)) {
       throw new RemoteError('ecommerce-accounts/browser-busy', 'Another Chrome is using this account\'s browser data', { accountId })
@@ -302,7 +354,9 @@ export class EcommerceAccountsService extends TypertRemoteService {
   async refresh(): Promise<EcommerceAccountsState> {
     this.chrome = await findChrome(this.options.chromePath)
     this.changed()
-    await Promise.all(this.entries.filter(entry => !this.signIns.has(entry.id)).map(entry => this.check(entry)))
+    // An account a task is using is checked by that task.
+    const idle = this.entries.filter(entry => !this.signIns.has(entry.id) && !this.leases.has(entry.id))
+    await Promise.all(idle.map(entry => this.check(entry)))
     return this.getState()
   }
 
@@ -340,6 +394,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
   @Remote
   async deleteAccount(accountId: string): Promise<EcommerceAccountsState> {
     const entry = this.find(accountId)
+    this.requireIdle(entry)
     this.signIns.get(entry.id)?.abort()
     this.signIns.delete(entry.id)
     const dir = this.dirOf(entry.id)
@@ -465,6 +520,55 @@ export class EcommerceAccountsService extends TypertRemoteService {
     }
   }
 
+  /** Answer `dsh-ecommerce accounts`: the tenant's accounts, without anything secret. */
+  private modelAccounts(grant: Grant): Promise<BridgeReply> {
+    if (grant.tenantId !== this.tenantId) return Promise.resolve(refused(SIGNED_OUT_OF_HUB))
+    const accounts = this.entries.map((entry) => {
+      const view = this.view(entry)
+      return {
+        id: view.id, platform: view.platform, store: view.storeName, account: view.account, kind: view.kind, status: view.status,
+        ...view.problem === undefined ? {} : { problem: view.problem },
+      }
+    })
+    return Promise.resolve({ status: 200, body: JSON.stringify(accounts, null, 2) })
+  }
+
+  /**
+   * Answer `dsh-ecommerce browser <id>`: reserve the account's browser for the call, check that it
+   * is still signed in, and hand over its DevTools address; a failed check ends the reservation.
+   */
+  private async modelBrowser(grant: Grant, accountId: string): Promise<BridgeReply> {
+    if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
+    const entry = this.entries.find(item => item.id === accountId)
+    if (entry === undefined) return refused(`DSH: there is no e-commerce account "${accountId}". Run dsh-ecommerce accounts to list them.`)
+    const name = `${PLATFORM_NAMES[entry.platform]} account "${entry.storeName}"`
+    if (this.signIns.has(entry.id)) return refused(`DSH: the ${name} is being signed in in DSH Settings. Tell the user and stop.`)
+    const holder = this.leases.get(entry.id)
+    if (holder !== undefined && holder !== grant.callId) {
+      return refused(`DSH: the ${name} is in use by another task. Tell the user and stop; do not switch to another account.`)
+    }
+    this.leases.set(entry.id, grant.callId)
+    this.changed()
+    const result = await this.check(entry)
+    // The tenant switched while the platform was asked: the account is not this tenant's any more.
+    if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
+    if (result.kind === 'signed-in') {
+      // A signed-in check leaves the account's Chrome running and recorded.
+      const { port } = await readRecord(this.dirOf(entry.id)) as { port: number }
+      return { status: 200, body: JSON.stringify({ id: entry.id, platform: entry.platform, store: entry.storeName, account: entry.account, cdpUrl: `http://127.0.0.1:${String(port)}` }, null, 2) }
+    }
+    if (holder === undefined) this.leases.delete(entry.id)
+    this.changed()
+    return refused(result.kind === 'signed-out'
+      ? `DSH: the ${name} is signed out. Stop, and ask the user to sign in again in DSH Settings → E-commerce accounts (设置 → 电商账号).`
+      : `DSH: the ${name} could not be checked: ${PROBLEM_TEXT[PROBLEMS[result.kind]]}. Stop, and tell the user; they can check it in DSH Settings → E-commerce accounts (设置 → 电商账号).`)
+  }
+
+  /** Refuse to sign in to or delete an account a task is using. */
+  private requireIdle(entry: Entry): void {
+    if (this.leases.has(entry.id)) throw new RemoteError('ecommerce-accounts/in-use', 'A task is using this account now', { accountId: entry.id })
+  }
+
   /** Whether a Chrome that DSH did not start holds the account's browser data. */
   private async heldElsewhere(entry: Entry): Promise<boolean> {
     const dir = this.dirOf(entry.id)
@@ -513,7 +617,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const status = this.statuses.get(entry.id) as EcommerceAccountStatus
     return {
       id: entry.id, platform: entry.platform, kind: entry.kind, storeName: entry.storeName, account: entry.account,
-      createdAt: entry.createdAt, status, expired: status === 'signed-out' && entry.everSignedIn === true,
+      createdAt: entry.createdAt, status, expired: status === 'signed-out' && entry.everSignedIn === true, inUse: this.leases.has(entry.id),
       ...status === 'check-failed' ? { problem: this.problems.get(entry.id) as EcommerceCheckProblem } : {},
       ...(entry.signedInAs === undefined ? {} : { signedInAs: entry.signedInAs }),
       ...(entry.signedInStore === undefined ? {} : { signedInStore: entry.signedInStore }),
@@ -531,6 +635,15 @@ export class EcommerceAccountsService extends TypertRemoteService {
   private async switchTenant(tenantId: string | null): Promise<void> {
     for (const controller of this.signIns.values()) controller.abort()
     this.signIns.clear()
+    this.leases.clear()
+    if (tenantId === null) {
+      this.skill?.()
+      this.skill = undefined
+    } else {
+      this.skill ??= this.ctx.skills.register({
+        name: SKILL_NAME, description: SKILL_DESCRIPTION, source: SKILL_NAME, content: SKILL_CONTENT,
+      })
+    }
     this.tenantId = tenantId
     this.entries = []
     this.statuses.clear()

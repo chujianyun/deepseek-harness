@@ -129,6 +129,7 @@
     "apps/web/tests/connectors-chat.e2e.ts",
     "apps/web/tests/connectors-dingtalk.e2e.ts",
     "apps/web/tests/ecommerce-accounts.e2e.ts",
+    "apps/web/tests/ecommerce-chat.e2e.ts",
     "apps/web/tests/assistants.e2e.ts",
     "apps/web/tests/models-custom-provider.e2e.ts",
     "apps/web/tests/skills-market.e2e.ts",

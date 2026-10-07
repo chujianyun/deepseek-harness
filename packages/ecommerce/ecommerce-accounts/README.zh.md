@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在 Desktop profile 中把本包作为 Loader 条目挂载在 `hub-account` 旁边，本包注入该服务。web-app bundle 在配置了用户中心的 `desktop` profile 中启用它，由 `ui-ecommerce-accounts` 渲染其设置分区。
+在 Desktop profile 中把本包作为 Loader 条目挂载在 `hub-account`、`skill` 和 `shell-env` 旁边，本包注入这些服务。web-app bundle 在配置了用户中心的 `desktop` profile 中启用它，由 `ui-ecommerce-accounts` 渲染其设置分区。
 
 账号属于当前 Hub 登录所在的租户，存放在 `<dshHome>/ecommerce/<tenantId>/` 下：`accounts.json` 按添加顺序列出账号，`browsers/<accountId>/` 存放每个账号的 Chrome 数据（`user-data/`）和其运行中 Chrome 的记录（`chrome.json`，即进程 id 与远程调试端口）。切换租户会停止进行中的登录并显示另一租户的账号；退出 Hub 登录后没有账号，所有方法都以 `hub-account/signed-out` 拒绝。
 
@@ -36,6 +36,8 @@ kind: "package-reference"
 一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的结果，失败时重试一次。天猫首页发出 `mtop.user.getusersimple`，带 nick 即为已登录；淘宝千牛工作台发出 `mtop.taobao.jdy.resource.shop.info.get`，成功即为已登录；拼多多后台首页发出 `janus/api/checkLogin`（看其 `result.login`）和给出店铺名的 `earth/api/mallInfo/querySimpleCredential`；抖店首页发出 `byteshop/menu/list/v2`（菜单非空即为已登录）和给出店铺名的 `center/qualification/shop/info`。已登录的答复会等店铺名到 `checkTimeoutMs` 为止，没等到也仍为已登录。业务页面被平台转到登录页时，立即判为未登录。之后关闭该标签页。已登录的账号为 `signed-in`，其 Chrome 窗口被最小化，Chrome 在看不见的地方继续运行（macOS 会让移到屏幕外的窗口始终露出一部分）。检查失败时保留上次的结果，状态为 `check-failed` 并附带 `problem`：在 `checkTimeoutMs` 内没有答复为 `timeout`；业务页面无法加载（Chrome 的导航错误）为 `network`；账号数据正被一个不是 DSH 启动的 Chrome 占用为 `busy`，此时 DSH 不启动 Chrome。同一账号的检查不会同时进行。租户的账号加载时、每隔 `checkIntervalMs`、以及调用 `refresh()` 时检查每个账号；设置分区打开时会调用 `refresh()`，它也会重新查找 Chrome。
 
 Chrome 的生命周期长于 DSH。下一次启动的 DSH 通过记录重新连上账号的 Chrome；该 Chrome 已不在时，曾经登录过的账号会重新启动 Chrome、将其最小化并恢复上次会话，从未登录过的账号保持 `signed-out`，不启动 Chrome。`deleteAccount(id)` 停止进行中的登录，通过 `Browser.close` 关闭该账号的 Chrome 让其写入 cookie（之后依次 `SIGTERM`、`SIGKILL`），再删除该账号的浏览器数据及其账本行。未知 id 以 `ecommerce-accounts/not-found` 拒绝。
+
+租户已登录时，模型和 Skill 脚本通过 `dsh-ecommerce` 命令使用这些账号：本包把它写到 `<dshHome>/ecommerce/bin/`，并通过 `ctx.shellEnv.registerPath()` 放在模型 shell 的 `PATH` 前面。该命令是一个用 `curl` 调用本地回环 HTTP 端点的 POSIX shell 脚本；每次 bash 调用都通过 `DSH_ECOMMERCE_URL` 拿到带有自己随机令牌的端点地址，令牌在该调用的 `tools/result` 时失效。`dsh-ecommerce accounts` 以 JSON 输出租户的账号——id、平台、店铺、账号、类型、状态以及检查失败的原因——从不输出路径、cookie 或浏览器地址。`dsh-ecommerce browser <id>` 为该调用占用账号的浏览器，立即检查账号，并输出账号及 `cdpUrl`，即其已登录 Chrome 的远程调试地址；新占用在检查失败时解除，占用随调用结束而结束。别的调用请求已被占用或正在登录的账号会被拒绝；任务使用账号期间，`startSignIn()` 和 `deleteAccount()` 也会被拒绝（`ecommerce-accounts/in-use`），`refresh()` 不检查被占用的账号。账号视图的 `inUse` 让设置分区知道这一点。租户登录期间通过 `ctx.skills.register()` 注册的 `ecommerce-accounts` Skill 向模型说明这些命令和挑选商家账号的规则。
 
 -----
 
@@ -60,11 +62,11 @@ Chrome 的生命周期长于 DSH。下一次启动的 DSH 通过记录重新连�
 <a id="model-experience"></a>
 ## 模型体验
 
-无，账号的添加、登录和检查都在任何会话之外进行；目前没有模型请求携带它们。
+间接影响，通过 skill registry 和 bash 工具。租户登录期间，Skill 目录列出 `ecommerce-accounts`，其描述为 `Read store data with the e-commerce accounts (Tmall, Taobao, Pinduoduo, Douyin shop) the user signed in to in DSH, through the dsh-ecommerce command: list the accounts, pick the merchant account, and take over its signed-in Chrome.`；其正文（`src/skill.ts` 中的 `SKILL_CONTENT`）说明这些命令以及挑选商家账号的规则：只有一个已登录的就直接用并说明用了哪家店，有多个时先问，一次任务只用一个账号，失败后不换店，没有已登录的就停止并引导到设置页，并且只读。`dsh-ecommerce` 把账号列表或浏览器地址输出到 stdout，由 bash 结果带给模型；或以退出码 1 在 stderr 输出以下之一：`DSH: the <platform> account "<store>" is signed out. Stop, and ask the user to sign in again in DSH Settings → E-commerce accounts (设置 → 电商账号).`、`DSH: the <platform> account "<store>" could not be checked: <reason>. Stop, and tell the user; they can check it in DSH Settings → E-commerce accounts (设置 → 电商账号).`、`DSH: the <platform> account "<store>" is in use by another task. Tell the user and stop; do not switch to another account.`、`DSH: the <platform> account "<store>" is being signed in in DSH Settings. Tell the user and stop.`、`DSH: there is no e-commerce account "<id>". Run dsh-ecommerce accounts to list them.`、`DSH: DSH is signed out of the user center, so there are no e-commerce accounts.`，或调用结束后的 `DSH: this shell call can no longer reach the e-commerce accounts.`。
 
 #### KV Cache 影响
 
-无影响。
+无直接影响；登录或退出用户中心使该 Skill 加入或离开目录时，Skill 目录的使用方会追加一条替换目录的消息。
 
 ## 已知限制与待办
 
@@ -73,7 +75,9 @@ Chrome 的生命周期长于 DSH。下一次启动的 DSH 通过记录重新连�
 - **仅支持商家账号** — 买家账号、京东和 1688 暂不能添加。
 - **平台报告的名称** — 只有天猫报告登录的账号名；拼多多和抖店报告店铺名，设置分区会把它与填写的店铺名比较；淘宝两者都不报告。
 - **检查依赖平台页面** — 每个检查都依赖平台的一个页面和接口；平台改版后，在检查更新之前，其账号会显示 `timeout` 或 `signed-out`。
-- **模型尚未使用** — 还没有工具通过已登录账号读取店铺数据。
+- **仅限 bash、仅限 POSIX** — `dsh-ecommerce` 是需要 `curl` 的 POSIX shell 脚本；PowerShell 和 Windows 没有该命令。
+- **占用只持续一次 bash 调用** — 需要在多次 bash 调用中使用同一账号的任务，每次都要重新占用；其间别的任务可能占用它。
+- **浏览器地址等于完全控制** — 拿到 `cdpUrl` 的脚本可以做该已登录账号能做的任何事；只有 Skill 的说明约束它只读。
 - **平台会话时长** — 登录态的有效期取决于平台保留会话的时长；电脑重启后，只有平台保留的会话 cookie 才会被 Chrome 恢复，否则账号显示 `signed-out`，需要重新登录。
 - **Chrome 持续运行** — DSH 退出后，已登录账号的 Chrome 仍以最小化状态运行，用户会在程序坞中看到它。
 - **本地调试端口** — 已登录账号的 Chrome 在 `127.0.0.1` 上监听远程调试端口，运行期间用户运行的任何程序都能操控它。

@@ -12,7 +12,7 @@ afterEach(() => { cleanup() })
 
 const CHROME = { status: 'ready', minVersion: 120, downloadUrl: 'https://www.google.com/chrome/' } as const
 const account = (over: Partial<EcommerceAccountView> = {}): EcommerceAccountView => ({
-  id: 'e1', platform: 'tmall', kind: 'merchant', storeName: '名流旗舰店', account: 'mingliu:运营', status: 'signed-out', expired: false, createdAt: '2026-10-07T00:00:00Z', ...over,
+  id: 'e1', platform: 'tmall', kind: 'merchant', storeName: '名流旗舰店', account: 'mingliu:运营', status: 'signed-out', expired: false, inUse: false, createdAt: '2026-10-07T00:00:00Z', ...over,
 })
 /** A buyer account, which has no store name. */
 const buyer = (over: Partial<EcommerceAccountView>): EcommerceAccountView => {
@@ -134,12 +134,12 @@ describe('e-commerce accounts section', () => {
 
   it('shows a refused delete, goes back to the list, and offers sign-in to a signed-out account', async () => {
     const props = mount({ ...base, accounts: [buyer({ account: '买家号' })] })
-    props.onDelete.mockResolvedValueOnce({ kind: 'other', message: 'busy' })
+    props.onDelete.mockResolvedValueOnce({ kind: 'in-use' })
     fireEvent.click(screen.getByRole('button', { name: '查看 买家号 的详情' }))
     expect(screen.getByRole('button', { name: '去登录' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '删除账号' }))
     await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '删除' })) })
-    expect(screen.getByRole('alert').textContent).toBe('操作失败：busy')
+    expect(screen.getByRole('alert').textContent).toBe('这个账号正被一个任务使用，请等任务结束后再操作。')
     fireEvent.click(screen.getByRole('button', { name: '← 返回账号列表' }))
     expect(screen.getByRole('button', { name: '查看 买家号 的详情' })).toBeTruthy()
   })
@@ -190,7 +190,13 @@ describe('e-commerce accounts section', () => {
       account({ id: 'e2', platform: 'doudian', storeName: '抖店一号', status: 'check-failed', problem: 'busy' }),
       account({ id: 'e3', platform: 'taobao', storeName: '淘宝店', status: 'check-failed', problem: 'timeout' }),
     ] })
-    for (const [group, problem] of [['拼多多', '网络不通'], ['抖店', '浏览器正被其他程序占用'], ['淘宝', '检查超时']] as const) {
+    props.set({ ...base, accounts: [
+      account({ platform: 'pinduoduo', status: 'check-failed', problem: 'network' }),
+      account({ id: 'e2', platform: 'doudian', storeName: '抖店一号', status: 'check-failed', problem: 'busy' }),
+      account({ id: 'e3', platform: 'taobao', storeName: '淘宝店', status: 'check-failed', problem: 'timeout' }),
+      account({ id: 'e4', storeName: '天猫店', status: 'signed-in', inUse: true }),
+    ] })
+    for (const [group, problem] of [['拼多多', '网络不通'], ['抖店', '浏览器正被其他程序占用'], ['淘宝', '检查超时'], ['天猫', '任务使用中']] as const) {
       expect(screen.getByText(group).closest('details')!.textContent).toContain(problem)
     }
     fireEvent.click(screen.getByRole('button', { name: '新增账号' }))

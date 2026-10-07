@@ -227,7 +227,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-knowledge': { kind: 'none', reason: 'The page only renders and edits knowledge bases.' },
   'packages/connector/connectors': { kind: 'indirect', reason: 'Connected connectors reach the model through the skill catalog and the bash tool.' },
   'packages/client/ui-connectors': { kind: 'none', reason: 'The page only installs and uninstalls connector CLIs.' },
-  'packages/ecommerce/ecommerce-accounts': { kind: 'none', reason: 'Accounts are added, signed in, and checked outside any Session; no model request carries them yet.' },
+  'packages/ecommerce/ecommerce-accounts': { kind: 'indirect', reason: 'The accounts reach the model through the skill catalog and the dsh-ecommerce command in bash.' },
   'packages/client/ui-ecommerce-accounts': { kind: 'none', reason: 'The section only adds, signs in, and deletes e-commerce accounts.' },
   'packages/client/ui-assistants': { kind: 'indirect', reason: 'A pick binds the session; dsh-assistants owns the prompt section the binding adds.' },
   'packages/api/workspace-controller': { kind: 'none', reason: 'Workspace API and state projection owner; it registers no prompt, tool, or session event.' },

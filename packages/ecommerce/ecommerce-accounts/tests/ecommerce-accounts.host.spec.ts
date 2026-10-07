@@ -3,12 +3,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
+import { execFile } from 'node:child_process'
 import { Context } from '@deepseek-ai/cordis'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
+import { Bridge } from '../src/bridge.ts'
+import { SKILL_CONTENT } from '../src/skill.ts'
 import EcommerceAccountsService, { DOUDIAN, matchesCheckApi, mtopUserNick, parseJsonOrJsonp, PINDUODUO, TAOBAO, TMALL } from '../src/index.ts'
 import { alive, closeChrome, ensureTab, findChrome, launchChrome, readRecord } from '../src/chrome.ts'
 import { Cdp, pageTabs } from '../src/cdp.ts'
 import type { EcommerceAccountsState } from '../src/types.ts'
+import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
+import SkillRegistry from '@deepseek-ai/dsh-skill'
 import { hubStub } from '../../../connector/connectors/tests/support.ts'
 
 const FAKE = fileURLToPath(new URL('./fake-chrome.mjs', import.meta.url))
@@ -52,6 +59,8 @@ async function setup(options: { home?: string; tenant?: string | null; config?: 
   cleanups.push(() => ctx.fiber.dispose())
   const hub = hubStub(options.tenant === undefined ? 't-a' : options.tenant)
   ctx.provide('hubAccount', hub.service as never)
+  await ctx.plugin(SkillRegistry)
+  await ctx.plugin(ShellEnv, { dshHome: home })
   await ctx.plugin(EcommerceAccountsService, { dshHome: home, chromePath: FAKE, ...TIMING, ...options.config })
   const service = ctx.get('ecommerceAccounts')!
   const settle = async (predicate: (state: EcommerceAccountsState) => boolean, timeoutMs = 8000) => {
@@ -526,5 +535,185 @@ describe('e-commerce account edge cases', () => {
     await env.signIn(accountId, 'nick')
     const first = (await env.settle(s => s.accounts[0]!.status === 'signed-in')).accounts[0]!.checkedAt
     await env.settle(s => s.accounts[0]!.checkedAt !== first && s.accounts[0]!.status === 'signed-in')
+  })
+})
+
+/** A bash call of the model. */
+const bashCall = (id: string): ToolExecution => ({
+  signal: new AbortController().signal, token: Symbol('ecommerce-test') as ToolExecution['token'],
+  callId: ToolCallId(id), rootCallId: ToolCallId(id), name: 'bash', arguments: { command: 'dsh-ecommerce' },
+})
+
+/** What the `dsh-ecommerce` command printed and how it exited. */
+interface Run { readonly code: number; readonly stdout: string; readonly stderr: string }
+
+/**
+ * Run `dsh-ecommerce` as one bash call would.
+ * @param env - the test service.
+ * @param vars - the call's variables, fixed when it starts.
+ * @param args - the command's arguments.
+ * @returns what it printed and its exit code.
+ */
+function runCommand(env: Awaited<ReturnType<typeof setup>>, vars: Readonly<Record<string, string>>, ...args: string[]): Promise<Run> {
+  const pathVar = [join(env.home, 'ecommerce', 'bin'), process.env.PATH ?? ''].join(':')
+  return new Promise((resolve) => {
+    execFile('dsh-ecommerce', args, { env: { PATH: pathVar, ...vars } }, (error, stdout, stderr) => {
+      resolve({ code: error === null ? 0 : Number(error.code), stdout, stderr })
+    })
+  })
+}
+
+/** The variables a bash call starts with. */
+const varsOf = (env: Awaited<ReturnType<typeof setup>>, exec: ToolExecution) => env.ctx.shellEnv.collect(exec)
+
+const endCall = (env: Awaited<ReturnType<typeof setup>>, exec: ToolExecution) => {
+  env.ctx.emit('tools/result', exec, { isError: false, value: { exitCode: 0 } } as object as ToolExecutionResult)
+}
+
+describe('e-commerce accounts for the model', () => {
+  it('gives the model the Skill and the command only while signed in to the user center', async () => {
+    const env = await setup()
+    const skill = await env.ctx.skills.get('ecommerce-accounts')
+    expect(skill?.content).toBe(SKILL_CONTENT)
+    expect(skill?.description).toContain('dsh-ecommerce')
+    const exec = bashCall('c-1')
+    expect(env.ctx.shellEnv.collectPath(exec)).toEqual([join(env.home, 'ecommerce', 'bin')])
+    expect(env.ctx.shellEnv.collect(exec).DSH_ECOMMERCE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{48}$/u)
+    // The same call keeps its address.
+    expect(env.ctx.shellEnv.collect(exec).DSH_ECOMMERCE_URL).toBe(env.ctx.shellEnv.collect(exec).DSH_ECOMMERCE_URL)
+    const started = env.ctx.shellEnv.collect(exec)
+    env.hub.set(null)
+    await env.settle(s => s.tenantId === null)
+    expect(await env.ctx.skills.get('ecommerce-accounts')).toBeUndefined()
+    expect(env.ctx.shellEnv.collectPath(exec)).toEqual([])
+    expect(env.ctx.shellEnv.collect(bashCall('c-2'))).not.toHaveProperty('DSH_ECOMMERCE_URL')
+    // A call that began before the sign-out reaches no accounts.
+    expect(await runCommand(env, started, 'accounts')).toMatchObject({ code: 1, stderr: 'DSH: DSH is signed out of the user center, so there are no e-commerce accounts.\n' })
+    expect(await runCommand(env, started, 'browser', 'x')).toMatchObject({ code: 1, stderr: 'DSH: DSH is signed out of the user center, so there are no e-commerce accounts.\n' })
+    env.hub.set('t-a')
+    await env.settle(s => s.tenantId === 't-a')
+    expect(await env.ctx.skills.get('ecommerce-accounts')).toBeDefined()
+  })
+
+  it('lists the accounts without anything secret, and explains how to call the command', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.addAccount({ ...merchant, platform: 'pinduoduo', account: 'pdd' })
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    await env.settle(s => s.accounts[0]!.status === 'signed-in')
+    process.env.FAKE_CHROME_OFFLINE = '1'
+    await closeChrome(env.browserDir(accountId), 2000)
+    expect((await env.service.refresh()).accounts[0]!.problem).toBe('network')
+    const exec = bashCall('c-1')
+    const listed = await runCommand(env, varsOf(env, exec), 'accounts')
+    expect(listed.code).toBe(0)
+    expect(JSON.parse(listed.stdout)).toEqual([
+      { id: accountId, platform: 'tmall', store: '名流旗舰店', account: 'mingliu:运营', kind: 'merchant', status: 'check-failed', problem: 'network' },
+      { id: expect.any(String) as string, platform: 'pinduoduo', store: '名流旗舰店', account: 'pdd', kind: 'merchant', status: 'signed-out' },
+    ])
+    expect(listed.stdout).not.toMatch(/cookie|user-data|ecommerce\//iu)
+    const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id>\n'
+    expect(await runCommand(env, varsOf(env, exec))).toMatchObject({ code: 2, stderr: usage })
+    expect(await runCommand(env, varsOf(env, exec), 'browser')).toMatchObject({ code: 2, stderr: usage })
+    expect((await runCommand(env, {}, 'accounts')).code).toBe(2)
+    const url = env.ctx.shellEnv.collect(exec).DSH_ECOMMERCE_URL!
+    expect(await (await fetch(`${url}/other`)).text()).toBe('DSH: unknown command "other".')
+    expect(await (await fetch(`${url}/browser`)).text()).toBe('DSH: there is no e-commerce account "". Run dsh-ecommerce accounts to list them.')
+    // Once the call ends, its address reaches nothing.
+    const vars = env.ctx.shellEnv.collect(exec)
+    endCall(env, exec)
+    endCall(env, exec)
+    expect(await runCommand(env, vars, 'accounts')).toMatchObject({ code: 1, stderr: 'DSH: this shell call can no longer reach the e-commerce accounts.\n' })
+  })
+
+  it('hands one call the signed-in browser, refuses a second task until the first call ends, and keeps sign-in and delete away meanwhile', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    await env.settle(s => s.accounts[0]!.status === 'signed-in')
+    const first = bashCall('c-1')
+    const taken = await runCommand(env, varsOf(env, first), 'browser', accountId)
+    expect(taken.code).toBe(0)
+    const { cdpUrl, ...rest } = JSON.parse(taken.stdout) as { cdpUrl: string }
+    expect(rest).toEqual({ id: accountId, platform: 'tmall', store: '名流旗舰店', account: 'mingliu:运营' })
+    // The address is the account's own signed-in Chrome.
+    expect((await readRecord(env.browserDir(accountId)))!.port).toBe(Number(new URL(cdpUrl).port))
+    expect((await (await fetch(`${cdpUrl}/json/version`)).json() as { webSocketDebuggerUrl: string }).webSocketDebuggerUrl).toMatch(/^ws:/u)
+    expect((await env.service.getState()).accounts[0]!.inUse).toBe(true)
+    // The same call may ask again; another task may not.
+    expect((await runCommand(env, varsOf(env, first), 'browser', accountId)).code).toBe(0)
+    const second = bashCall('c-2')
+    expect(await runCommand(env, varsOf(env, second), 'browser', accountId)).toMatchObject({
+      code: 1, stderr: 'DSH: the Tmall account "名流旗舰店" is in use by another task. Tell the user and stop; do not switch to another account.\n',
+    })
+    expect(await code(env.service.startSignIn(accountId))).toBe('ecommerce-accounts/in-use')
+    expect(await code(env.service.deleteAccount(accountId))).toBe('ecommerce-accounts/in-use')
+    // Settings checks leave the account to the task that uses it.
+    const checkedAt = (await env.service.getState()).accounts[0]!.checkedAt
+    expect((await env.service.refresh()).accounts[0]!.checkedAt).toBe(checkedAt)
+    // Another call ending leaves the reservation.
+    endCall(env, bashCall('c-3'))
+    expect((await env.service.getState()).accounts[0]!.inUse).toBe(true)
+    endCall(env, first)
+    expect((await env.service.getState()).accounts[0]!.inUse).toBe(false)
+    expect((await runCommand(env, varsOf(env, second), 'browser', accountId)).code).toBe(0)
+  })
+
+  it('stops a task whose account is signed out, cannot be checked, is being signed in, or does not exist', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    const exec = bashCall('c-1')
+    expect(await runCommand(env, varsOf(env, exec), 'browser', accountId)).toMatchObject({
+      code: 1, stderr: 'DSH: the Tmall account "名流旗舰店" is signed out. Stop, and ask the user to sign in again in DSH Settings → E-commerce accounts (设置 → 电商账号).\n',
+    })
+    expect((await env.service.getState()).accounts[0]!.inUse).toBe(false)
+    await env.service.startSignIn(accountId)
+    expect(await runCommand(env, varsOf(env, exec), 'browser', accountId)).toMatchObject({
+      code: 1, stderr: 'DSH: the Tmall account "名流旗舰店" is being signed in in DSH Settings. Tell the user and stop.\n',
+    })
+    await env.signIn(accountId, 'nick')
+    await env.settle(s => s.accounts[0]!.status === 'signed-in')
+    expect((await runCommand(env, varsOf(env, exec), 'browser', accountId)).code).toBe(0)
+    process.env.FAKE_CHROME_SILENT = '1'
+    await closeChrome(env.browserDir(accountId), 2000)
+    // The call that holds the browser keeps it when a later check of its own fails.
+    expect(await runCommand(env, varsOf(env, exec), 'browser', accountId)).toMatchObject({
+      code: 1,
+      stderr: 'DSH: the Tmall account "名流旗舰店" could not be checked: the platform did not answer in time. Stop, and tell the user; they can check it in DSH Settings → E-commerce accounts (设置 → 电商账号).\n',
+    })
+    expect((await env.service.getState()).accounts[0]!.inUse).toBe(true)
+    expect(await runCommand(env, varsOf(env, exec), 'browser', 'nope')).toMatchObject({
+      code: 1, stderr: 'DSH: there is no e-commerce account "nope". Run dsh-ecommerce accounts to list them.\n',
+    })
+  }, 15_000)
+
+  it('answers a call whose tenant switched while its account was checked as signed out of the user center', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    await env.settle(s => s.accounts[0]!.status === 'signed-in')
+    process.env.FAKE_CHROME_SILENT = '1'
+    await closeChrome(env.browserDir(accountId), 2000)
+    const asked = runCommand(env, varsOf(env, bashCall('c-1')), 'browser', accountId)
+    await env.settle(s => s.accounts[0]!.status === 'checking')
+    env.hub.set('t-b')
+    expect(await asked).toMatchObject({ code: 1, stderr: 'DSH: DSH is signed out of the user center, so there are no e-commerce accounts.\n' })
+  }, 15_000)
+
+  it('answers a command that fails instead of leaving the script waiting', async () => {
+    const bridge = new Bridge({ accounts: () => Promise.reject(new Error('broken')), browser: () => Promise.reject(new Error('broken')) })
+    const stop = await bridge.start()
+    try {
+      const url = bridge.urlFor({ callId: 'c-1', tenantId: 't-a' })
+      const response = await fetch(`${url}/accounts`)
+      expect([response.status, await response.text()]).toEqual([500, 'DSH: the e-commerce accounts could not answer: Error: broken'])
+      bridge.revoke('c-1')
+      bridge.revoke('c-1')
+    } finally {
+      await stop()
+    }
   })
 })

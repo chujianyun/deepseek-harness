@@ -20,6 +20,10 @@ A check opens the platform's business page in a background tab and reads the pla
 
 Chrome outlives DSH. A later DSH reattaches to the recorded Chrome; when it is gone, as after a computer restart, an account that was ever signed in has Chrome started again, minimized, with its last session restored, and the check tells whether the platform kept the sign-in. Deleting an account closes its Chrome so it writes its cookies, then deletes its data.
 
+## Use by the model
+
+While a tenant is signed in, the `ecommerce-accounts` Skill tells the model how to use the accounts and pick a merchant account, and the `dsh-ecommerce` command on the model shell's `PATH` reaches them through a loopback endpoint with a token valid for one bash call. `dsh-ecommerce accounts` lists the accounts without paths or cookies; `dsh-ecommerce browser <id>` checks the account, reserves its browser for the call, and hands over its remote-debugging address, which Skill scripts connect to. A signed-out account stops the task with the way to Settings; an account another task uses is refused until that call ends.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>

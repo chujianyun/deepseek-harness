@@ -20,6 +20,10 @@
 
 Chrome 的生命周期长于 DSH。之后启动的 DSH 会重新连上记录中的 Chrome；它已不在时（例如电脑重启后），曾经登录过的账号会重新启动 Chrome、将其最小化并恢复上次会话，再由检查判断平台是否保留了登录。删除账号会先关闭其 Chrome 让它写入 cookie，再删除其数据。
 
+## 模型使用
+
+租户登录期间，`ecommerce-accounts` Skill 告诉模型如何使用这些账号以及如何挑选商家账号；模型 shell 的 `PATH` 上的 `dsh-ecommerce` 命令通过一个本地回环端点访问它们，令牌只在一次 bash 调用内有效。`dsh-ecommerce accounts` 列出账号，不含路径和 cookie；`dsh-ecommerce browser <id>` 检查账号、为该调用占用其浏览器，并交出远程调试地址，供 Skill 脚本连接。账号未登录时任务停止并给出去设置页的指引；别的任务正在使用的账号会被拒绝，直到那次调用结束。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>

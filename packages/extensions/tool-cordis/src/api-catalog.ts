@@ -6045,7 +6045,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EcommerceAccountView',
-    declaration: 'export interface EcommerceAccountView {\n    readonly id: string;\n    readonly platform: EcommercePlatform;\n    readonly kind: EcommerceAccountKind;\n    readonly storeName?: string;\n    readonly account: string;\n    readonly status: EcommerceAccountStatus;\n    readonly problem?: EcommerceCheckProblem;\n    readonly signedInAs?: string;\n    readonly signedInStore?: string;\n    readonly expired: boolean;\n    readonly checkedAt?: string;\n    readonly createdAt: string;\n}',
+    declaration: 'export interface EcommerceAccountView {\n    readonly id: string;\n    readonly platform: EcommercePlatform;\n    readonly kind: EcommerceAccountKind;\n    readonly storeName?: string;\n    readonly account: string;\n    readonly status: EcommerceAccountStatus;\n    readonly problem?: EcommerceCheckProblem;\n    readonly signedInAs?: string;\n    readonly signedInStore?: string;\n    readonly expired: boolean;\n    readonly inUse: boolean;\n    readonly checkedAt?: string;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'EcommerceCheckProblem',

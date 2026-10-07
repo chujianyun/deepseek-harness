@@ -25,6 +25,15 @@
     },
     {
       "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../skill/skill"
+    },
+    {
+      "path": "../../shell/shell-env"
+    },
+    {
+      "path": "../../core/tools"
     }
   ]
 }

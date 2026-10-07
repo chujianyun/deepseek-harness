@@ -32,9 +32,11 @@ const STATUS_KEYS = {
 /** The name a row leads with: the store of a merchant account, else the account. */
 const titleOf = (account: EcommerceAccountView): string => account.storeName ?? account.account
 
-/** The status in words; a failed check says why. */
-const statusText = (t: T, account: EcommerceAccountView): string =>
-  account.problem === undefined ? t(STATUS_KEYS[account.status]) : t(PROBLEM_KEYS[account.problem])
+/** The status in words; a failed check says why, and an account a task is using says so. */
+function statusText(t: T, account: EcommerceAccountView): string {
+  if (account.problem !== undefined) return t(PROBLEM_KEYS[account.problem])
+  return account.inUse ? t('statusInUse') : t(STATUS_KEYS[account.status])
+}
 
 /**
  * Word a refusal.
@@ -48,6 +50,7 @@ function refusalText(t: T, refusal: Refusal): string {
     case 'chrome-outdated': return t('chromeOutdated', { version: refusal.version, min: refusal.minVersion })
     case 'duplicate': return t('duplicate')
     case 'browser-busy': return t('browserBusy')
+    case 'in-use': return t('inUse')
     case 'other': return t('failed', { message: refusal.message })
   }
 }

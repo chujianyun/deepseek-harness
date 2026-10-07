@@ -130,7 +130,7 @@ describe('ui-ecommerce-accounts browser plugin', () => {
     const [overlay] = b.slots.entries('shell.overlay')
     expect(overlay).toMatchObject({ component: ExpiredToast, options: { id: 'ecommerce-accounts.expired' } })
     const face: Pick<ExpiredToastProps, 'dismiss' | 'openAccounts'> & { hooks: { notice: { getSnapshot: () => ExpiredNotice | null } } } = overlay!.inject!() as never
-    const account = { id: 'e1', platform: 'tmall', kind: 'merchant', storeName: '名流旗舰店', account: 'a', createdAt: '', status: 'signed-out', expired: true } as const
+    const account = { id: 'e1', platform: 'tmall', kind: 'merchant', storeName: '名流旗舰店', account: 'a', createdAt: '', status: 'signed-out', expired: true, inUse: false } as const
     b.push({ ...signedIn, accounts: [account] })
     await vi.waitFor(() => { expect(face.hooks.notice.getSnapshot()?.name).toBe('名流旗舰店') })
     const opened = vi.fn()

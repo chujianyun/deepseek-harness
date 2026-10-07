@@ -18,6 +18,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'ecommerce-accounts/browser-failed': { readonly accountId: string; readonly reason: string }
     /** Another Chrome, not started by DSH, is using this account's browser data. */
     'ecommerce-accounts/browser-busy': { readonly accountId: string }
+    /** A task of the model is using this account's browser now. */
+    'ecommerce-accounts/in-use': { readonly accountId: string }
   }
 }
 
@@ -58,6 +60,8 @@ export interface EcommerceAccountView {
   readonly signedInStore?: string
   /** The account was signed in before and is signed out now: its sign-in expired or was ended. */
   readonly expired: boolean
+  /** A task of the model is using the account's browser now. */
+  readonly inUse: boolean
   /** ISO time of the last check that reached the platform. */
   readonly checkedAt?: string
   /** ISO time the account was added. */

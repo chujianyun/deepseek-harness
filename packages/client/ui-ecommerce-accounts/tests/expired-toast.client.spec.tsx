@@ -9,7 +9,7 @@ import { en, zh } from '../src/client/locales.ts'
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 const account = (over: Partial<EcommerceAccountView>): EcommerceAccountView => ({
-  id: 'e1', platform: 'tmall', kind: 'merchant', storeName: '名流旗舰店', account: 'a', createdAt: '', status: 'signed-out', expired: true, ...over,
+  id: 'e1', platform: 'tmall', kind: 'merchant', storeName: '名流旗舰店', account: 'a', createdAt: '', status: 'signed-out', expired: true, inUse: false, ...over,
 })
 /** A buyer account, which has no store name. */
 const buyer = (over: Partial<EcommerceAccountView>): EcommerceAccountView => {
