@@ -199,6 +199,8 @@ function mount(
       seatOwners.push({ key, owner })
     }
     if (key === 'conversation.hero.workspace') { pickerOwner = owner; return null }
+    // No brand occupant in this roster: the hero keeps its own fish and headline.
+    if (key === 'conversation.hero.brand.mark' || key === 'conversation.hero.brand.headline') return opts?.fallback ?? null
     if (key === 'conversation.session.header.lineage') {
       lineageOwners.push(owner as ConversationHeaderLineageOwnerProps)
       return opts?.fallback ?? null
@@ -381,13 +383,13 @@ function mount(
 }
 
 describe('Hero chrome', () => {
-  it('renders the English preview badge through the hero locale seat', () => {
-    const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
+  it('falls back to the fish and the English headline, with no preview badge', () => {
+    const renderSlot = vi.fn<HeroShellProps['renderSlot']>((_key, _owner, opts) => opts?.fallback ?? null)
     const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot} />)
     expect(view.getByText('Into the Unknown')).toBeTruthy()
-    expect(view.getByText('Preview')).toBeTruthy()
-    expect(renderSlot).toHaveBeenCalledOnce()
-    expect(renderSlot.mock.calls[0]?.[0]).toBe('conversation.hero.brand.mark')
+    expect(view.queryByText('Preview')).toBeNull()
+    expect(view.container.querySelector('svg')).not.toBeNull()
+    expect(renderSlot.mock.calls.map(call => call[0])).toEqual(['conversation.hero.brand.mark', 'conversation.hero.brand.headline'])
     const brandMarkOwner = renderSlot.mock.calls[0]?.[1]
     if (brandMarkOwner === undefined || !('size' in brandMarkOwner) || !('className' in brandMarkOwner)) {
       throw new Error('hero brand-mark owner must provide size and className')
@@ -395,6 +397,24 @@ describe('Hero chrome', () => {
     expect(brandMarkOwner.size).toBe(34)
     expect(brandMarkOwner.className).toBeTypeOf('string')
     expect(renderSlot.mock.calls[0]?.[2]?.fallback).toBeTruthy()
+    expect(renderSlot.mock.calls[1]?.[2]?.fallback).toBeTruthy()
+  })
+
+  it('shows what the brand occupants render, and an empty headline row when they render nothing', () => {
+    const occupied = vi.fn<HeroShellProps['renderSlot']>(key => (key === 'conversation.hero.brand.mark'
+      ? <img alt="甲公司" src="data:image/png;base64,AA==" />
+      : <span>让每位员工都有自己的 AI 助手</span>))
+    const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={occupied} />)
+    expect(view.getByAltText('甲公司')).toBeTruthy()
+    expect(view.getByText('让每位员工都有自己的 AI 助手')).toBeTruthy()
+    expect(view.queryByText('Into the Unknown')).toBeNull()
+    view.unmount()
+    const empty = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={() => null} />)
+    // The row stays to hold the composer in place; nothing shows in it.
+    const row = empty.container.querySelector('[data-hero-headline]')
+    expect(row).not.toBeNull()
+    expect(row?.textContent).toBe('')
+    expect(row?.querySelector('svg, img')).toBeNull()
   })
 })
 
@@ -549,7 +569,7 @@ describe('ConversationRoot resident composer', () => {
     expect(b.slotCalls).not.toContain('conversation.session.header.utilities')
     expect(b.slotCalls).not.toContain('conversation.session.header.actions')
     expect(b.view.getByText('探索未至之境')).toBeTruthy()
-    expect(b.view.getByText('预览版')).toBeTruthy()
+    expect(b.view.queryByText('预览版')).toBeNull()
     expect(b.view.queryByTestId('view-chat')).toBeNull()
     // The same machine-backed textarea is live in the hero, and the
     // persistence mirror stays bound (ConversationSession mounts chrome-hidden

@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for connectors.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/subsystems/connectors.md
+/connectors:
+  en: ec966b0a3e18e072
+  zh: c9547183e7bb4bc9
+/connectors/installing-a-cli:
+  en: d6dc946ffb162fa1
+  zh: e03ae4e867bf3acf
+/connectors/connecting:
+  en: 6ffb09d9301b007b
+  zh: e597a64bf2d7dca9
+/connectors/use-in-conversations:
+  en: 08c585d3bdb874b6
+  zh: b8df09408c4a0011

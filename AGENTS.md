@@ -31,6 +31,8 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   fs/                   filesystem access
   lsp/                  language servers
   skill/                skill loading
+  knowledge/            local knowledge bases
+  connector/            office platform connectors
   web/                  search/fetch tools
   computer-use/         computer interaction
   browser-use/          browser interaction
@@ -180,3 +182,17 @@ Docs accompany every code change: update affected README and JSDoc contracts tog
 ## Vendoring policy
 
 `vendor/` packages are pinned source copies (manifest with upstream SHAs in [vendor/README.md](vendor/README.md)). Update via the sync procedure there; re-apply or retire the logged local modifications; rerun `pnpm run test && pnpm run build`.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as GitHub issues on this repo; skills use the `gh` CLI. See [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md).
+
+### Triage labels
+
+The five canonical triage roles use identical label strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See [docs/agents/triage-labels.md](docs/agents/triage-labels.md).
+
+### Domain docs
+
+Single-context: the glossary is [docs/glossary.md](docs/glossary.md) and decision records are [Agent Notes](.agents/notes/README.md). See [docs/agents/domain.md](docs/agents/domain.md).

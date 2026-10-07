@@ -25,6 +25,7 @@ skill 家族让 agent 和用户仅在需要时发现并加载可复用的任务�
 | 包 | 职责 | ctx 键 |
 |---|---|---|
 | [`skill/`](skill/README.zh.md) | 合并任意提供方的 skill 目录、并按名称解析出胜出 skill 的注册表 | `ctx.skills` |
+| [`skill-controller/`](skill-controller/README.zh.md) | 本机已安装用户级 skill 的 Host Remote：带启用状态的列表、启用与停用、显示位置、编辑、移到废纸篓 | `ctx.skillController` |
 | [`skill-filesystem/`](skill-filesystem/README.zh.md) | 从项目、自定义与用户目录发现 skill，并监视其变更 | 注册到 `ctx.skills` |
 | [`skill-badge/`](skill-badge/README.zh.md) | 随包附带官方「powered by dsh」徽章 skill，默认禁用 | 注册到 `ctx.skills` |
 | [`skill-office/`](skill-office/README.zh.md) | 随包提供 Word、PowerPoint 和 Excel 工作流及文件结构检查 | 注册到 `ctx.skills` |

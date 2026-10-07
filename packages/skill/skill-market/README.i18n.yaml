@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/skill/skill-market/README.md
+/:
+  en: 9ea472d6ea3db63e
+  zh: 2dc8078716d323c8
+/skill-market:
+  en: 8b69ba558062903b
+  zh: 5c1838c791ef7238
+/skill-market/summary:
+  en: b55f4d9521500541
+  zh: 293aa2cdf6cedc84
+/skill-market/table-of-contents:
+  en: 3a654e12f423946b
+  zh: 4e3a19aaee58f8a7
+/skill-market/use-this-package:
+  en: ec53beb6a5ffbd28
+  zh: a87b32db4860546d
+/skill-market/configuration:
+  en: 5a2b88f269b220fc
+  zh: a18265b0c2b943c7
+/skill-market/model-experience:
+  en: b31a1c994dd58cc4
+  zh: 60594508ba47eb5c
+/skill-market/model-experience/kv-cache-effect:
+  en: f05344aa6895ef76
+  zh: abf4e37ac86552e6
+/skill-market/known-limitations-and-deferred-work:
+  en: e7e38ca1b35dbe5b
+  zh: 31182cb5f1266fc3
+/skill-market/known-limitations-and-deferred-work/dev-note:
+  en: 25eb8c2a121cc15f
+  zh: 4800363b10e83f33

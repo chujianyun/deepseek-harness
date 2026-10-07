@@ -267,6 +267,55 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Lists the Session composition\'s user-invocable skills without activating a cold Agent.',
   },
   {
+    key: 'hubAccount',
+    pkg: 'hub-account',
+    title: 'Hub sign-in Remote controller',
+    mode: 'core',
+    note: 'Signs Desktop in to the Skill Hub user center (OAuth2 + PKCE over a loopback callback), refreshes the token on the Host, and refuses new prompts while signed out.',
+  },
+  {
+    key: 'embedding',
+    pkg: 'embedding',
+    title: 'Embedding models',
+    mode: 'core',
+    note: 'Downloads and runs the local embedding model, adds API embedding models over configured provider routes, and embeds text for knowledge bases on the Host.',
+  },
+  {
+    key: 'knowledgeBases',
+    pkg: 'knowledge-base',
+    title: 'Knowledge bases',
+    mode: 'core',
+    note: 'Keeps the signed-in tenant\'s knowledge bases, processes added files into embedded chunks, and searches them with hybrid vector and keyword scoring.',
+  },
+  {
+    key: 'knowledgeSelection',
+    pkg: 'knowledge-selection',
+    title: 'Knowledge selection',
+    mode: 'core',
+    note: 'Logs the knowledge bases each session may search and offers the `knowledge_search` tool over them only while a session has selected any.',
+  },
+  {
+    key: 'connectors',
+    pkg: 'connectors',
+    title: 'Connectors',
+    mode: 'core',
+    note: 'Lists the built-in connectors and installs and uninstalls their official CLIs at the versions a release pins.',
+  },
+  {
+    key: 'skillMarket',
+    pkg: 'skill-market',
+    title: 'Skill Hub market',
+    mode: 'core',
+    note: 'Discovers the signed-in tenant\'s market Skills as the `market` source, browses the Skill Hub as the signed-in employee, and installs a validated package in one move.',
+  },
+  {
+    key: 'skillController',
+    pkg: 'skill-controller',
+    title: 'Installed-skill Remote controller',
+    mode: 'core',
+    note: 'Lists the user-level skills on this machine and applies the Desktop Skills page actions: switch, reveal, edit, and move to the trash.',
+  },
+  {
     key: 'jobController',
     pkg: 'api-job-controller',
     title: 'Host job Remote controller',
@@ -1033,7 +1082,7 @@ type CallSiteIndex = Map<ts.SignatureDeclaration | ts.JSDocSignature, ts.CallExp
  * must appear here — the prefilter drops non-members before any branch runs,
  * so a branch for an unlisted name is silently dead.
  */
-const EVENT_API_METHODS = new Set(['on', 'once', 'emit', 'parallel', 'serial', 'waterfall', 'dispatch'])
+const EVENT_API_METHODS = new Set(['on', 'once', 'emit', 'parallel', 'serial', 'waterfall', 'bail', 'dispatch'])
 
 /**
  * Collect event dispatch/listener relations from real cross-file receiver types.
@@ -1191,7 +1240,7 @@ export class EventRelationCollector {
             const eventNames = this.eventNamesFromCall(node, receiverKind)
             if (method === 'on' || method === 'once') {
               for (const event of eventNames) this.ensure(event).listeners.add(source.pkg)
-            } else if (method === 'emit' || method === 'parallel' || method === 'serial' || method === 'waterfall') {
+            } else if (method === 'emit' || method === 'parallel' || method === 'serial' || method === 'waterfall' || method === 'bail') {
               for (const event of eventNames) this.addDispatcher(event, source.pkg, method)
             }
           }

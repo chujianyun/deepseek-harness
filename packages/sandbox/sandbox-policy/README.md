@@ -53,6 +53,8 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 A session's mode can be switched at runtime through a UI policy control or an explicit switch; the switch is recorded in the session log and takes effect on the session's next confined call. The switch survives restart through replay, and each session keeps its own mode — two sessions never see each other's state. A switched session keeps its immutable workspace cwd as the writable boundary.
 
+A Host plugin whose own tools must write state from a confined process registers one more writable directory with `registerWritableRoot({ name, resolve })`, which returns its disposer; the registration ends with the plugin. Each `resolve()` call asks every contributor, in name order, and adds the absolute directories that apply now as the policy's `extraWritableRoots`; a relative one throws. The connectors service registers the current tenant's directory while a connected connector's CLI runs in the model shell, so the CLI can take its locks and refresh its tokens there.
+
 ### Failures and recovery
 
 An invalid configured mode is rejected when the plugin loads, so a typo fails loud instead of silently changing policy. A session without a cwd, and agentless calls, fall back to the configured workspace root; a call with an approved explicit mode uses that mode for exactly that call.
@@ -143,7 +145,8 @@ The stable system prompt remains byte-identical across mode changes. A changed f
 
 These limits define the policy surface this package provides. They are current package constraints, not a general sandbox comparison or a task backlog.
 
-- **One primary workspace root per session** — policy resolves `SessionHeader.cwd`; extra writable roots are not part of `SandboxExecutionPolicy`.
+- **One primary workspace root per session** — policy resolves `SessionHeader.cwd`; other writable directories come only from Host plugin registrations, not from the session.
+- **No per-session grants** — a registered root applies to every session of the process while it resolves; the current-context text names only the workspace.
 - **File-effect modes only** — `SandboxMode` governs file effects; network and process policy are outside its vocabulary, so no knob here restricts them.
 - **Temporary areas are deliberately summarized** — enforcing backends grant different platform temporary areas, which are selected after policy resolution and therefore cannot be enumerated truthfully in the current context.
 

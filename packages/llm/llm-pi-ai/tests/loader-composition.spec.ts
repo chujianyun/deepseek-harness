@@ -147,6 +147,40 @@ describe('llm-pi-ai real dormant composition', () => {
     expect(server.headers[0]?.['user-agent']).toBe(userAgent())
   })
 
+  it('resolves configured route endpoints for non-chat consumers, falling back to the installed catalog', async () => {
+    vi.stubEnv('PI_COMPOSITION_KEY', '')
+    const { ctx, settingsPath } = await loadComposition()
+    expect(ctx.llm.routeEndpoint('openai')).toBeUndefined()
+    await writeFile(settingsPath, [
+      '- id: llm-pi-ai',
+      '  config:',
+      '    providers:',
+      '      acme-gateway:',
+      '        apiKeyEnv: PI_COMPOSITION_KEY',
+      '        api: openai-completions',
+      '        baseURL: https://gateway.example/v1',
+      '        headers:',
+      '          X-Company-Code: private-tenant',
+      '        models:',
+      '          - id: acme-chat',
+      '      openai:',
+      '        apiKeyEnv: PI_COMPOSITION_KEY',
+      '      deepseek: {}',
+      '',
+    ].join('\n'))
+    await vi.waitFor(() => {
+      expect(ctx.llm.listProviders().map(provider => provider.id).sort()).toEqual(['acme-gateway', 'deepseek', 'openai'])
+    }, { timeout: 5000 })
+    // A catalog route without a credential reference authenticates only through pi-ai's chat path.
+    expect(ctx.llm.routeEndpoint('deepseek')).toBeUndefined()
+
+    const gateway = ctx.llm.routeEndpoint('acme-gateway')!
+    expect(gateway).toMatchObject({ baseURL: 'https://gateway.example/v1', api: 'openai-completions', headers: { 'X-Company-Code': 'private-tenant' } })
+    expect(await gateway.resolveApiKey()).toBe('key-from-store')
+    expect(ctx.llm.routeEndpoint('openai')).toMatchObject({ baseURL: 'https://api.openai.com/v1' })
+    expect(ctx.llm.routeEndpoint('anthropic')).toBeUndefined()
+  })
+
   it('continues natively after max-token assembly drops a tool call, with pruned replay metadata', async () => {
     vi.stubEnv('PI_COMPOSITION_KEY', '')
     const server = await mockServer([

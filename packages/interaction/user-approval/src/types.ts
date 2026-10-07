@@ -31,6 +31,19 @@ export function ApprovalRequestId(id: string): ApprovalRequestId {
  */
 export type ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
 
+/**
+ * A one-shot grant the user also asked the asker to remember, answerable only
+ * to a request that offered it ({@link ApprovalRequestEvent.remember}). The
+ * request still decides `'allowed-once'`; remembering is the asker's business.
+ */
+export interface ApprovalRememberedGrant {
+  readonly outcome: 'allowed-once'
+  readonly remember: true
+}
+
+/** What an answerer returns: an {@link ApprovalOutcome}, or a grant to remember. */
+export type ApprovalAnswer = ApprovalOutcome | ApprovalRememberedGrant
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
@@ -71,6 +84,11 @@ export interface ApprovalRequestEvent {
   readonly reason?: string
   /** Localized presentation only; never persisted in approval audit events. */
   readonly displayReason?: { readonly en: string; readonly [locale: string]: string }
+  /**
+   * The asker offers to remember a grant, so later identical asks need no answer; an answerer may
+   * then return an {@link ApprovalRememberedGrant}. Presentation only; never persisted.
+   */
+  readonly remember?: true
   /** Cancellation lifetime of the pending request. */
   readonly signal?: AbortSignal
 }
@@ -87,7 +105,7 @@ declare module '@deepseek-ai/cordis' {
     'approval/request'(
       this: Scoped<Agent>,
       req: ApprovalRequestEvent,
-      next: () => Promise<ApprovalOutcome>,
-    ): Promise<ApprovalOutcome>
+      next: () => Promise<ApprovalAnswer>,
+    ): Promise<ApprovalAnswer>
   }
 }

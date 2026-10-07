@@ -14,7 +14,7 @@
 import { FiberState } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { isAbsolute, sep } from 'node:path'
+import { delimiter, isAbsolute, sep } from 'node:path'
 import { defineTool, TOOL_ABORTED } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, TerminalCallView, ToolDefinition, ToolExecution, ToolResult, ToolResultView } from '@deepseek-ai/dsh-tools'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
@@ -490,10 +490,15 @@ export function apply(ctx: Context, config: Config = {}): void {
           : { ...(standingPolicy as SandboxExecutionPolicy), mode: approvedMode }
         const workdir = resolveWorkdir(args.workdir, exec, standingPolicy?.workspaceRoot)
         const dshEnv = ctx.shellEnv.collect(exec)
+        // Plugin executables come first on PATH, ahead of the Host's own search path.
+        const pathDirs = ctx.shellEnv.collectPath(exec)
         const request: ShellExecRequest = {
           command: args.command,
           ...workdir !== undefined ? { workdir } : {},
           ...args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {},
+          // A Host started without PATH keeps only the contributed directories.
+          /* v8 ignore next -- every supported Host process inherits a PATH; unsetting it would also hide bash itself. */
+          ...pathDirs.length > 0 ? { env: { PATH: [...pathDirs, process.env.PATH ?? ''].join(delimiter) } } : {},
           dshEnv,
           ...policy !== undefined ? { sandboxPolicy: policy } : {},
         }

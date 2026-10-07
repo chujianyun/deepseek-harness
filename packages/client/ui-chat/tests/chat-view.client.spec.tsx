@@ -306,6 +306,7 @@ function makeHarness(
     read: () => savedScroll,
   }
   const forkAt = vi.fn()
+  const openModelsSettings = vi.fn()
   // Rows and the harness must observe the same chat-store instance.
   const chat = createChatStore().create()
   const transcriptView = createSnapshotStore<TranscriptViewMode>('compact')
@@ -359,7 +360,7 @@ function makeHarness(
       case 'model-retry':
         return <RetryNodeView {...nodeProps} node={nodeOwner.node} />
       case 'turn-error':
-        return <TurnErrorNodeView {...nodeProps} node={nodeOwner.node} />
+        return <TurnErrorNodeView {...nodeProps} node={nodeOwner.node} openModelsSettings={openModelsSettings} />
       case 'turn-max-tokens':
         return <TurnMaxTokensNodeView {...nodeProps} node={nodeOwner.node} />
       case 'turn-process':
@@ -482,7 +483,7 @@ function makeHarness(
     set, setSession: session.set, setChat: chatSource.set, ChatView, props,
     openFile, openSkill, loadOlder, loadThrough, openView,
     setOutline: (value: unknown) => { outlineValue = value },
-    chatScroll, forkAt, toolOwners,
+    chatScroll, forkAt, toolOwners, openModelsSettings,
     setPerformanceUsage: (mode: 'compact' | 'detailed') => { performanceUsage.set(mode) },
     setGrouped: (value: ConversationGroupedView<ProcessGroupData> | undefined) => {
       grouped = value
@@ -2127,6 +2128,7 @@ describe('ChatView', () => {
   it('renders every terminal failure inline with neutral quota copy and no transient notice', () => {
     const h = makeHarness({ nodes: [
       user(1, 'try'), turnError(2, 'AUTH'), turnError(3), turnError(4, 'QUOTA'), turnError(5, 'ACCOUNT_QUOTA'),
+      turnError(6, 'MISSING_CREDENTIAL'),
     ] })
     const view = render(<h.ChatView {...h.props} />)
     const statuses = view.getAllByRole('status')
@@ -2135,12 +2137,22 @@ describe('ChatView', () => {
       '本轮运行失败plugin exploded',
       '本轮运行失败当前请求的额度已用尽QUOTA',
       '本轮运行失败当前请求的额度已用尽ACCOUNT_QUOTA',
+      '本轮运行失败当前模型还没有配置 API Key。请打开「设置 → 模型」填写 Key，或添加其他模型提供商后重试。去配置模型MISSING_CREDENTIAL',
     ])
     // The transient notice is the frame-wide host's job; the failure row keeps
     // neither a recharge affordance nor a toast of its own.
     expect(view.queryByRole('alert')).toBeNull()
     expect(view.queryByRole('dialog')).toBeNull()
     expect(view.queryByRole('button', { name: '去充值' })).toBeNull()
+  })
+
+  it('offers Configure models only on a missing key and asks for Models settings', () => {
+    const h = makeHarness({ nodes: [user(1, 'try'), turnError(2, 'MISSING_CREDENTIAL'), turnError(3, 'AUTH')] })
+    const view = render(<h.ChatView {...h.props} />)
+    const buttons = view.getAllByRole('button', { name: '去配置模型' })
+    expect(buttons).toHaveLength(1)
+    fireEvent.click(buttons[0]!)
+    expect(h.openModelsSettings).toHaveBeenCalledOnce()
   })
 
   it('renders the max-tokens notice with localized guidance, distinct from turn errors', () => {

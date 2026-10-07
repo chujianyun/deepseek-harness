@@ -100,7 +100,7 @@ The ladder is a closed table — `read-only` may escalate to `workspace-write` o
 
 ### Writable roots
 
-`workspace-write` means "the workspace root plus the host temp areas": `writableRoots` derives that allow-list canonically, resolving symlinks and deduplicating, so the Seatbelt profile and the in-process fs fence grant exactly the same roots.
+`workspace-write` means "the workspace root, the policy's `extraWritableRoots`, and the host temp areas": `writableRoots` derives that allow-list canonically, resolving symlinks and deduplicating, so the Seatbelt profile and the in-process fs fence grant exactly the same roots.
 
 </details>
 

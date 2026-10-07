@@ -114,6 +114,7 @@ export const en = {
   onboardingLater: 'Configure later',
   onboardingSave: 'Save and continue',
   onboardingSaving: 'Saving…',
+  onboardingOtherProvider: 'Use another model provider',
   keyRequired: 'Enter an API key to continue.',
 }
 
@@ -234,5 +235,6 @@ export const zh: { [Key in keyof typeof en]: string } = {
   onboardingLater: '稍后配置',
   onboardingSave: '保存并继续',
   onboardingSaving: '保存中…',
+  onboardingOtherProvider: '使用其他模型提供商',
   keyRequired: '请输入 API 密钥后继续。',
 }

@@ -611,7 +611,7 @@ export type OnboardingProcess = 'compact' | 'standard' | 'detailed'
 ```ts config-catalog
 /** Onboarding options after schema defaults are applied. */
 export interface Config {
-  /** Offer the browser API-key step when no native shell owns credential onboarding. */
+  /** Offer the first-run API-key step automatically (Web and Desktop); a native shell that owns credential onboarding sets false. */
   credentialOnboarding: boolean
 }
 ```
@@ -743,6 +743,70 @@ export interface ToolResultPruneConfig {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-compaction-tool-result-pruner -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-connectors -->
+<a id="deepseek-aidsh-connectors"></a>
+
+## `@deepseek-ai/dsh-connectors`
+
+- `inject`: `hubAccount` · `skills` · `shellEnv`
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/connector/connectors/src/index.ts:103`](../packages/connector/connectors/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** DeepSeek Harness home; connector CLIs live under `<dshHome>/connectors`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** The Feishu CLI. */
+  feishu?: CliSpec
+  /** The DingTalk CLI. */
+  dingtalk?: CliSpec
+  /** Time between periodic health checks of the connections, in milliseconds. */
+  checkIntervalMs?: number
+  /** Connectors switched off, as `<tenantId>/<id>`; edited live through `setEnabled()`. */
+  disabled?: Volatile<readonly string[]>
+  /** Write commands always allowed, as `<tenantId>/<id>/<command words>`; added from an approval, revoked by `revokeAlwaysAllowed()`. */
+  alwaysAllowed?: Volatile<readonly string[]>
+}
+
+/** A connector CLI pinned to one release. */
+export interface CliSpec {
+  /** Executable name inside the archive, without `.exe`. */
+  binary: string
+  /** Version installed; `--version` must report it. */
+  version: string
+  /** Archive URL templates tried in order; `{version}` and `{file}` are substituted. */
+  mirrors: string[]
+  /** One archive per supported platform. */
+  archives: CliArchive[]
+  /** The release's Skills archive, downloaded from the same mirrors, when the executable does not embed them. */
+  skills?: CliAsset
+}
+
+/** One platform's archive of a CLI release. */
+export interface CliArchive {
+  /** `<platform>-<arch>` of the process that runs it, as Node names them. */
+  platform: string
+  /** Archive file name; `.zip` or `.tar.gz`. */
+  file: string
+  /** Size in bytes. */
+  size: number
+  /** Lowercase hex sha256. */
+  sha256: string
+}
+
+/** A file a CLI release publishes for every platform. */
+export interface CliAsset {
+  /** File name; `.zip`. */
+  file: string
+  /** Size in bytes. */
+  size: number
+  /** Lowercase hex sha256. */
+  sha256: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-connectors -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-cordis-host-runner -->
 <a id="deepseek-aidsh-cordis-host-runner"></a>
 
@@ -824,6 +888,96 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-deepseek-account-platform -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-embedding -->
+<a id="deepseek-aidsh-embedding"></a>
+
+## `@deepseek-ai/dsh-embedding`
+
+- `inject`: `llm`
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/llm/embedding/src/index.ts:102`](../packages/llm/embedding/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** DeepSeek Harness home; models live under `<dshHome>/models`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** Download the local model at startup when it is missing. */
+  autoDownload?: boolean
+  /** Model file URL templates tried in order; `{repo}` and `{file}` are substituted. */
+  modelMirrors?: string[]
+  /** npm registry origins tried in order for the runtime tarballs. */
+  npmRegistries?: string[]
+  /** The local model. */
+  localModel?: LocalModelSpec
+  /** The runtime that runs it. */
+  runtime?: RuntimeSpec
+  /** API embedding models the user added; edited live through `addApiModel()` / `removeApiModel()`. */
+  apiModels?: Volatile<readonly StoredApiModel[]>
+  /** Deadline of each embedding API request. */
+  requestTimeoutMs?: number
+  /** Most texts in one embedding API request; Alibaba Cloud Model Studio refuses more than 10. */
+  apiBatchSize?: number
+}
+
+/** The local embedding model: a decoder-only ONNX export with a Hugging Face tokenizer. */
+export interface LocalModelSpec {
+  /** Embedding model id; starts with `local/`. */
+  id: string
+  /** Display name. */
+  name: string
+  /** Repository the mirrors serve it under. */
+  repo: string
+  /** Path of the ONNX weights among {@link files}. */
+  weights: string
+  /** Longest token sequence fed to the model. */
+  maxTokens: number
+  /** Every file the model needs, each verified by size and sha256. */
+  files: LocalModelFile[]
+}
+
+/** The onnxruntime-node runtime. */
+export interface RuntimeSpec {
+  /** Version shared by its packages. */
+  version: string
+  /** `<platform>-<arch>` keys it has native builds for. */
+  platforms: string[]
+  /** The npm tarballs to install. */
+  packages: RuntimePackage[]
+}
+
+/** An API embedding model as stored in the user's settings. */
+export interface StoredApiModel {
+  /** Provider route key. */
+  provider: string
+  /** Model id on the provider. */
+  model: string
+  /** Vector size measured when it was added. */
+  dimensions: number
+}
+
+/** One file of the local model. */
+export interface LocalModelFile {
+  /** Path inside the model repository and the install directory. */
+  path: string
+  /** Size in bytes. */
+  size: number
+  /** Lowercase hex sha256. */
+  sha256: string
+}
+
+/** One npm tarball of the runtime. */
+export interface RuntimePackage {
+  /** npm package name. */
+  name: string
+  /** Tarball size. */
+  size: number
+  /** Tarball sha256, lowercase hex. */
+  sha256: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-embedding -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-agent-team -->
 <a id="deepseek-aidsh-experimental-agent-team"></a>
@@ -1541,6 +1695,39 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-webserver -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-hub-account -->
+<a id="deepseek-aidsh-hub-account"></a>
+
+## `@deepseek-ai/dsh-hub-account`
+
+- `inject`: `credentials` · `authorization`
+- `source`: [`packages/credentials/hub-account/src/index.ts:39`](../packages/credentials/hub-account/src/index.ts)
+
+```ts config-catalog
+/** Deployment configuration: which user center, as which registered client. */
+export interface Config {
+  /** User-center origin serving `/oauth/*`. */
+  origin: string
+  /** client_id of the public client registered for DSH. */
+  clientId: string
+  /** Scopes requested at sign-in. */
+  scope?: string
+  /** Allow an HTTP origin, only on loopback, for development and tests. */
+  allowLoopbackHttp?: boolean
+  /** Deadline of each user-center HTTP request. */
+  requestTimeoutMs?: number
+  /** Upper bound of one browser sign-in attempt. */
+  attemptTimeoutMs?: number
+  /** Refresh the access token this long before it expires. */
+  refreshMarginMs?: number
+  /** Retry delay after a refresh that failed without a verdict (network, server error). */
+  refreshRetryMs?: number
+  /** DeepSeek Harness home; the branding cache lives under `<dshHome>/cache/hub-branding`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-hub-account -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-jobs-local -->
 <a id="deepseek-aidsh-jobs-local"></a>
 
@@ -1569,6 +1756,39 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-jobs-local -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-knowledge-base -->
+<a id="deepseek-aidsh-knowledge-base"></a>
+
+## `@deepseek-ai/dsh-knowledge-base`
+
+- `inject`: `embedding` · `hubAccount`
+- `source`: [`packages/knowledge/knowledge-base/src/index.ts:48`](../packages/knowledge/knowledge-base/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** DeepSeek Harness home; knowledge bases live under `<dshHome>/knowledge`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** Largest file accepted, in bytes. */
+  maxFileBytes?: number
+  /** Chunk size of a new knowledge base, in estimated tokens. */
+  chunkSize?: number
+  /** Tokens a new knowledge base's chunks carry over from the previous chunk. */
+  chunkOverlap?: number
+  /** Chunks embedded per embedding call. */
+  embedBatch?: number
+  /** Longest knowledge base name, in characters. */
+  maxNameLength?: number
+  /** Most files a folder contributes; the rest are skipped. */
+  maxFolderFiles?: number
+  /** Longest note title, in characters. */
+  maxNoteTitleLength?: number
+  /** Longest note body, in characters. */
+  maxNoteChars?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-knowledge-base -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-llm-deepseek-account -->
 <a id="deepseek-aidsh-llm-deepseek-account"></a>
@@ -2829,7 +3049,7 @@ export type Config = SessionTitleLlmConfig
 
 ## `@deepseek-ai/dsh-shell-env`
 
-- `source`: [`packages/shell/shell-env/src/index.ts:30`](../packages/shell/shell-env/src/index.ts)
+- `source`: [`packages/shell/shell-env/src/index.ts:32`](../packages/shell/shell-env/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config (all optional — the built-in facts resolve without defaults). */
@@ -2845,16 +3065,45 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-skill`
 
-- `source`: [`packages/skill/skill/src/index.ts:278`](../packages/skill/skill/src/index.ts)
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/skill/skill/src/index.ts:282`](../packages/skill/skill/src/index.ts)
 
 ```ts config-catalog
 /** Skill registry configuration. */
 export interface Config {
   /** Maximum number of completed cwd/provider catalogs kept in memory. */
   readonly collectCacheMaxEntries?: number
+  /** Skill names the user switched off; edited live through `setDisabled()`. */
+  readonly disabledSkills?: Volatile<readonly string[]>
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-skill-controller -->
+<a id="deepseek-aidsh-skill-controller"></a>
+
+## `@deepseek-ai/dsh-skill-controller`
+
+- `inject`: `skills`
+- `refs`: [`NativeCommandRunner`](../packages/util/native-command/src/index.ts)
+- `source`: [`packages/skill/skill-controller/src/index.ts:49`](../packages/skill/skill-controller/src/index.ts)
+
+```ts config-catalog
+/** Host integrations replaceable by direct unit tests. */
+export interface SkillControllerInternals {
+  /** Host platform; defaults to `process.platform`. */
+  readonly platform?: NodeJS.Platform
+  /** Home directory holding the platform trash; defaults to `os.homedir()`. */
+  readonly home?: string
+  /** Native command runner used by the Windows recycle-bin move. */
+  readonly run?: NativeCommandRunner
+  /** Reveal a path in the native file manager. */
+  readonly reveal?: (path: string, signal: AbortSignal) => Promise<void>
+  /** Open a text file in the native editor. */
+  readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill-controller -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-skill-filesystem -->
 <a id="deepseek-aidsh-skill-filesystem"></a>
@@ -2862,6 +3111,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-skill-filesystem`
 
 - `inject`: `skills`
+- `refs`: [`SkillSource`](../packages/skill/skill/src/index.ts)
 - `source`: [`packages/skill/skill-filesystem/src/index.ts:49`](../packages/skill/skill-filesystem/src/index.ts)
 
 ```ts config-catalog
@@ -2877,6 +3127,10 @@ export interface Config {
   agentsHome?: string
   /** Additional skill roots scanned after project roots and before user roots. */
   customSkillDirs?: string[]
+  /** Discovery source reported for skills under `customSkillDirs`. Defaults to `custom`. */
+  customSource?: SkillSource
+  /** Precedence rank of `customSkillDirs`; lower ranks win duplicate names. Defaults to 300. */
+  customRank?: number
   /** Whether host-local skill roots are watched for catalog changes. */
   watch?: boolean
   /** Whether Chokidar uses polling instead of native filesystem events. */
@@ -2894,6 +3148,30 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill-filesystem -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-skill-market -->
+<a id="deepseek-aidsh-skill-market"></a>
+
+## `@deepseek-ai/dsh-skill-market`
+
+- `inject`: `skills` · `hubAccount`
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/skill/skill-market/src/index.ts:59`](../packages/skill/skill-market/src/index.ts)
+
+```ts config-catalog
+/** Market configuration. */
+export interface Config {
+  /** DeepSeek Harness home; market Skills live under `<dshHome>/skills-market`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** Market Skills switched off, as `<tenantId>/<name>`; edited live through `setDisabled()`. */
+  disabledSkills?: Volatile<readonly string[]>
+  /** Watch the tenant directory for changes made outside DSH. */
+  watch?: boolean
+  /** Largest Skill package accepted for install, in bytes. */
+  maxPackageBytes?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-skill-market -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-skill-office -->
 <a id="deepseek-aidsh-skill-office"></a>
@@ -4017,7 +4295,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-tools`
 
 - `inject`: `systemPrompt`
-- `source`: [`packages/core/tools/src/index.ts:674`](../packages/core/tools/src/index.ts)
+- `source`: [`packages/core/tools/src/index.ts:681`](../packages/core/tools/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: how the registered tools are presented to the model. */
@@ -4070,7 +4348,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-user-approval`
 
-- `source`: [`packages/interaction/user-approval/src/index.ts:135`](../packages/interaction/user-approval/src/index.ts)
+- `source`: [`packages/interaction/user-approval/src/index.ts:153`](../packages/interaction/user-approval/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config. All optional — `static Config` supplies the defaults. */
@@ -4170,7 +4448,10 @@ export interface Config {
 export interface Config {
   /** Maximum response body size in bytes. */
   maxResponseBytes?: number
-  /** Maximum decoded body length in characters. */
+  /**
+   * Maximum decoded body length in characters. Whole pages are kept: knowledge bases extract the
+   * article from all of a page, while `dsh-tool-web` cuts what it shows the model to its own output cap.
+   */
   maxBodyChars?: number
   /** Default fetch timeout in milliseconds, within Node's timer range. */
   timeoutMs?: number
@@ -4361,14 +4642,17 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-brand-official` | — | [`packages/client/ui-brand-official/src/index.ts`](../packages/client/ui-brand-official/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-chat` | — | [`packages/client/ui-chat/src/index.ts`](../packages/client/ui-chat/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-commands` | — | [`packages/client/ui-commands/src/index.ts`](../packages/client/ui-commands/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-connectors` | — | [`packages/client/ui-connectors/src/index.ts`](../packages/client/ui-connectors/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-conversation` | — | [`packages/client/ui-conversation/src/index.ts`](../packages/client/ui-conversation/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-cordis` | — | [`packages/extensions/ui-cordis/src/index.ts`](../packages/extensions/ui-cordis/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-deliverables` | `systemPrompt` · `connection` · `sessionQuery` · `sessionController` · `workspaceFiles` · `fs` · `sandboxPolicy` · `workspaceChanges` | [`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-directory-picker-browse` | — | [`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-directory-picker-native` | — | [`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-goal` | — | [`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-hub-account` | — | [`packages/client/ui-hub-account/src/index.ts`](../packages/client/ui-hub-account/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-input-trigger` | — | [`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-jobs` | — | [`packages/client/ui-jobs/src/index.ts`](../packages/client/ui-jobs/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-knowledge` | — | [`packages/client/ui-knowledge/src/index.ts`](../packages/client/ui-knowledge/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-layout` | — | [`packages/client/ui-layout/src/index.ts`](../packages/client/ui-layout/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-message-feedback` | — | [`packages/client/ui-message-feedback/src/index.ts`](../packages/client/ui-message-feedback/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-model-selection` | — | [`packages/client/ui-model-selection/src/index.ts`](../packages/client/ui-model-selection/src/index.ts) |
@@ -4381,6 +4665,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-session` | — | [`packages/client/ui-session/src/index.ts`](../packages/client/ui-session/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings` | — | [`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-agent-loop` | — | [`packages/client/ui-settings-agent-loop/src/index.ts`](../packages/client/ui-settings-agent-loop/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-settings-embedding` | — | [`packages/client/ui-settings-embedding/src/index.ts`](../packages/client/ui-settings-embedding/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-general` | — | [`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-plugin-inventory` | — | [`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-plugins` | — | [`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts) |
@@ -4395,6 +4680,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-sidebar-right` | — | [`packages/client/ui-sidebar-right/src/index.ts`](../packages/client/ui-sidebar-right/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-sidebar-terminal` | — | [`packages/client/ui-sidebar-terminal/src/index.ts`](../packages/client/ui-sidebar-terminal/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-skill` | — | [`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-skills` | — | [`packages/client/ui-skills/src/index.ts`](../packages/client/ui-skills/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-subagent` | — | [`packages/client/ui-subagent/src/index.ts`](../packages/client/ui-subagent/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-tool` | — | [`packages/client/ui-tool/src/index.ts`](../packages/client/ui-tool/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-trajectory` | — | [`packages/client/ui-trajectory/src/index.ts`](../packages/client/ui-trajectory/src/index.ts) |
@@ -4422,6 +4708,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-host-directory-picker-auto` | `webServer` · `loader` | [`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts) |
 | `@deepseek-ai/dsh-host-directory-picker-native` | — | [`packages/host/directory-picker-native/src/index.ts`](../packages/host/directory-picker-native/src/index.ts) |
 | `@deepseek-ai/dsh-host-plugin-inventory` | `loader` | [`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts) |
+| `@deepseek-ai/dsh-knowledge-selection` | `agents` · `tools` · `sessionProjections` · `knowledgeBases` | [`packages/knowledge/knowledge-selection/src/index.ts`](../packages/knowledge/knowledge-selection/src/index.ts) |
 | `@deepseek-ai/dsh-llm` | — | [`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts) |
 | `@deepseek-ai/dsh-lsp` | — | [`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts) |
 | `@deepseek-ai/dsh-mcp-resources` | `tools` | [`packages/mcp/mcp-resources/src/index.ts`](../packages/mcp/mcp-resources/src/index.ts) |
@@ -4536,5 +4823,6 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 | `@deepseek-ai/dsh-util-time` | — | [`packages/util/time/src/index.ts`](../packages/util/time/src/index.ts) |
 | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
 | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
+| `@deepseek-ai/dsh-verified-download` | — | [`packages/util/verified-download/src/index.ts`](../packages/util/verified-download/src/index.ts) |
 | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
 <!-- END GENERATED config-catalog:library -->

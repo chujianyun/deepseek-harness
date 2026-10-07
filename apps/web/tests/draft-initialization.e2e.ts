@@ -14,6 +14,11 @@ const SCREENSHOTS = fileURLToPath(new URL('../../../.artifacts/screenshots', imp
 const FILE_NAME = 'notes 雪.md'
 const FILE_BODY = '# Draft reference preview\n\nUnsubmitted file reference: 雪 🧭.\n'
 const SETTLE = { timeout: 20_000 }
+// macOS Chromium moves the caret with Cmd+arrows; Home/End and Cmd+Home/End do not.
+const MAC = process.platform === 'darwin'
+const DOC_START = MAC ? 'Meta+ArrowUp' : 'Control+Home'
+const DOC_END = MAC ? 'Meta+ArrowDown' : 'Control+End'
+const LINE_END = MAC ? 'Meta+ArrowRight' : 'End'
 
 // This Host-plane spec cannot import the Client program's Cordis declarations.
 interface DraftSnapshot {
@@ -391,7 +396,7 @@ it('restores repeated file, folder and Session capsules across edits, Workspace 
       await openWorkspaceSession(page, item.workspace, item.id)
       await assertDraft(page, item.id, item.draft)
       await composer(page).click()
-      await page.keyboard.press('ControlOrMeta+End')
+      await page.keyboard.press(DOC_END)
       const suffix = ` · 编辑${round} 🧪`
       await page.keyboard.insertText(suffix)
       item.draft = { ...item.draft, text: item.draft.text + suffix }
@@ -435,7 +440,7 @@ it('reads a legacy string from the existing conversation key and saves ordinary 
     [...element.children].map(paragraph => paragraph.textContent).join('\n')), SETTLE).toBe(legacy)
   expect(await composer(page).locator('[data-composer-chip]').count()).toBe(0)
   await composer(page).click()
-  await page.keyboard.press('ControlOrMeta+End')
+  await page.keyboard.press(DOC_END)
   await page.keyboard.insertText('，继续编辑')
   await assertDraft(page, firstId, { text: `${legacy}，继续编辑`, references: [] })
   await assertUnsubmitted(scaffold, [firstId])
@@ -496,8 +501,8 @@ it('rematches the current draft after a delayed real skills catalog without repl
   await assertDraft(page, firstId, initial)
   expect(await composer(page).locator('[data-composer-text-ref]').count()).toBe(0)
   await composer(page).click()
-  await page.keyboard.press('ControlOrMeta+Home')
-  await page.keyboard.press('End')
+  await page.keyboard.press(DOC_START)
+  await page.keyboard.press(LINE_END)
   await expect.poll(() => captured?.request ?? '', SETTLE).toContain(firstId)
   expect(captured?.status).toBe(200)
   expect(captured?.body).toContain('draft-late-original')
@@ -506,15 +511,15 @@ it('rematches the current draft after a delayed real skills catalog without repl
   const chip = await composer(page).locator('[data-composer-chip]').elementHandle()
   if (chip === null) throw new Error('The initialized file capsule is missing')
   await composer(page).click()
-  await page.keyboard.press('ControlOrMeta+Home')
-  await page.keyboard.press('Shift+End')
+  await page.keyboard.press(DOC_START)
+  await page.keyboard.press(`Shift+${LINE_END}`)
   await page.keyboard.insertText(currentPrefix.trimEnd())
   const edited: DraftSnapshot = {
     text: `${currentPrefix}${file} abcdef`,
     references: [{ ...initial.references[0]!, offset: currentPrefix.length }],
   }
   await assertDraft(page, firstId, edited)
-  await page.keyboard.press('ControlOrMeta+End')
+  await page.keyboard.press(DOC_END)
   await page.keyboard.press('ArrowLeft')
   await page.keyboard.press('ArrowLeft')
   await page.keyboard.press('Shift+ArrowLeft')

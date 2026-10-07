@@ -841,6 +841,35 @@ describe('ToolRuntime', () => {
       expect(seen[0]?.signal).toBe(controller.signal)
     })
 
+    it('offers to remember the grant when the decision asks to, and reports a remembered grant before dispatch', async () => {
+      const ctx = await approvalSetup()
+      const seen: ApprovalRequest[] = []
+      const order: string[] = []
+      ctx.on('approval/request', (req) => {
+        seen.push(req)
+        return Promise.resolve({ outcome: 'allowed-once' as const, remember: true as const })
+      })
+      ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> =>
+        ({ kind: 'ask', reason: 'write', onRemember: () => { order.push('remembered') } }))
+      ctx.on('tools/result', () => { order.push('result') })
+
+      const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: { text: 'hi' }, agent: fakeAgent() })
+      expect(result).toMatchObject({ isError: false })
+      expect(seen[0]).toMatchObject({ remember: true })
+      // The callback never travels with the forwarded request.
+      expect(seen[0]).not.toHaveProperty('onRemember')
+      expect(order).toEqual(['remembered', 'result'])
+    })
+
+    it('offers nothing to remember when the decision has no callback', async () => {
+      const ctx = await approvalSetup()
+      const seen: ApprovalRequest[] = []
+      ctx.on('approval/request', (req) => { seen.push(req); return Promise.resolve<ApprovalOutcome>('allowed-once') })
+      ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> => ({ kind: 'ask' }))
+      await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: {}, agent: fakeAgent() })
+      expect(seen[0]).not.toHaveProperty('remember')
+    })
+
     it('denies with the user-rejection reason on rejected', async () => {
       const ctx = await approvalSetup()
       ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('rejected'))

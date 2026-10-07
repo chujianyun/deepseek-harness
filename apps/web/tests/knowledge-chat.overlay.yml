@@ -1,0 +1,13 @@
+# For the knowledge chat e2e (`knowledge-chat.e2e.ts`), beside the Hub sign-in and knowledge rows:
+# the Acme gateway's chat model authenticates with a credential the spec stores, as one the
+# Models page writes would.
+- id: llm-pi-ai
+  config:
+    providers:
+      acme-gateway:
+        displayName: Acme 网关
+        api: openai-completions
+        baseURL: !!js process.env.DSH_E2E_EMBEDDING_API
+        apiKeyEnv: DSH_E2E_ACME_KEY
+        models:
+          - id: acme-chat

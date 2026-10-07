@@ -120,6 +120,22 @@ describe('bash tool through the agent loop', () => {
     await handle.dispose()
   })
 
+  it.skipIf(process.platform === 'win32')('runs a plugin\'s executable ahead of the Host PATH', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-bash-path-'))
+    dirs.push(root)
+    writeFileSync(join(root, 'hello-path'), '#!/bin/sh\necho from-plugin-path\n', { mode: 0o755 })
+    const adapter = new MockAdapter([
+      toolCallResponse('call-1', 'bash', { command: 'hello-path && printf %s "$PATH" | cut -d: -f1', description: 'run the plugin tool' }),
+      textResponse('Done.'),
+    ])
+    const ctx = await harness(adapter)
+    ctx.shellEnv.registerPath({ name: 'test-plugin', resolve: () => root })
+    const agent = await ctx.agentLoop.create(SessionId('it-path'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'run the plugin tool' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+    expect(resultText(findEvent(events(agent), 'tool/result'))).toBe(`from-plugin-path\n${root}\n`)
+  })
+
   it('foreground: model calls bash, sees the result, replies', async () => {
     const adapter = new MockAdapter([
       toolCallResponse('call-1', 'bash', { command: 'echo integration-ok', description: 'test command' }, 'Running it.'),

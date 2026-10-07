@@ -2,7 +2,8 @@ import { Fragment, memo, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { fileExtension, FileTypeIcon, fileSizeText, JsonBlock, projectUserText, StateDot, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, fileExtension, FileTypeIcon, fileSizeText, JsonBlock, projectUserText, StateDot, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { ModelRetryNode, TurnErrorNode, UserMessageNode } from '../contract/snapshot.ts'
 import { CompactionItem } from './CompactionItem.tsx'
@@ -55,6 +56,7 @@ function failureMessage(
   if (code === 'ACCOUNT_SIGNED_OUT') return t('message.failure.accountSignedOut')
   if (code === 'ACCOUNT_SIGN_IN_REQUIRED') return t('message.failure.accountSignInRequired')
   if (code === 'QUOTA' || code === 'ACCOUNT_QUOTA') return t('message.failure.quota')
+  if (code === 'MISSING_CREDENTIAL') return t('message.failure.missingCredential')
   return code === 'AUTH' ? t('message.failure.auth') : message
 }
 
@@ -126,10 +128,11 @@ function ModelRetryItem({ node, active, t }: {
   )
 }
 
-/** Persistent, turn-positioned feedback for a terminal failure. */
-function TurnErrorItem({ node, t }: {
+/** Persistent, turn-positioned feedback for a terminal failure; a missing key offers the way to Models settings. */
+function TurnErrorItem({ node, t, openModelsSettings }: {
   node: TurnErrorNode
   t: ChatViewSlotProps['t']
+  openModelsSettings?: (() => void) | undefined
 }) {
   return (
     <div className={css.turnErrorRow} role="status">
@@ -137,6 +140,11 @@ function TurnErrorItem({ node, t }: {
       <div className={css.turnErrorCopy}>
         <span className={css.turnErrorTitle}>{node.code === 'ACCOUNT_SIGNED_OUT' ? t('message.accountStopped') : t('message.turnError')}</span>
         <span className={css.turnErrorMessage}>{failureMessage(node.message, node.code, t)}</span>
+        {node.code === 'MISSING_CREDENTIAL' && openModelsSettings !== undefined && (
+          <div className={css.turnErrorAction}>
+            <Button size="sm" variant="outline" onClick={openModelsSettings}>{t('message.failure.configureModels')}</Button>
+          </div>
+        )}
       </div>
       {node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
     </div>
@@ -367,9 +375,17 @@ export const RetryNodeView = memo(function RetryNodeView({ node, t }: ChatNodeVi
   return <ModelRetryItem node={data.current} active={data.current.retryState === 'scheduled'} t={t} />
 })
 
+/** Business face of the turn-error renderer. */
+export interface TurnErrorInjected {
+  /** Open Settings on the Models section, where a missing model key is configured. */
+  readonly openModelsSettings: () => void
+}
+
 /** Terminal turn-error keyed Chat renderer. */
-export const TurnErrorNodeView = memo(function TurnErrorNodeView({ node, t }: ChatNodeViewProps<'turn-error'>) {
-  return <TurnErrorItem node={node.data} t={t} />
+export const TurnErrorNodeView = memo(function TurnErrorNodeView(
+  { node, t, openModelsSettings }: ChatNodeViewProps<'turn-error'> & InjectFace<TurnErrorInjected>,
+) {
+  return <TurnErrorItem node={node.data} t={t} openModelsSettings={openModelsSettings} />
 })
 
 /** Max-tokens turn-end notice keyed Chat renderer. */

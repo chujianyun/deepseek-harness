@@ -9,6 +9,7 @@ import type { LlmAttemptId, MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { TextBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId, SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
+import type { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
@@ -616,6 +617,14 @@ declare module '@deepseek-ai/cordis' {
      * @param message - user-safe failure chain.
      */
     'api-session/error'(sessionId: SessionId, message: string): void
+    /**
+     * A user prompt is about to be admitted. A listener refuses it by returning the error the caller
+     * receives; prompts already admitted and turns already running are unaffected.
+     * @mode bail
+     * @param sessionId - addressed Session identity.
+     * @returns the refusal, or undefined to admit the prompt.
+     */
+    'api-session/prompt-admission'(sessionId: SessionId): RemoteError | undefined
   }
 }
 

@@ -1,0 +1,22 @@
+# Enables the Desktop-only Hub sign-in, market, and Skills page rows for the keyless Web e2e
+# (`skills-market.e2e.ts`) against the spec's mock user center. The shipped web-app bundle
+# enables them only for the `desktop` profile with a configured user center.
+- id: hub-account
+  disabled: false
+  config:
+    origin: !!js process.env.DSH_E2E_HUB_ORIGIN
+    clientId: dsh-desktop
+    allowLoopbackHttp: true
+- id: ui-hub-account
+  disabled: false
+- id: skill-market
+  disabled: false
+- id: skill-controller
+  disabled: false
+- id: ui-skills
+  disabled: false
+# Like the Desktop product, no DeepSeek account: the Hub launcher owns the sidebar account slot.
+- id: ui-settings-account
+  disabled: true
+- id: account-controller
+  disabled: true

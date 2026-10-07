@@ -10,7 +10,7 @@ Source: [`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/ind
 
 `ctx.skills` combines local, embedded, remote, or other providers. Registration is synchronous; remote initialization and discovery belong in awaited `list()`. Provider objects, options, and candidates are borrowed readonly, while semantic fields are validated.
 
-The registry is host+per-scope layered, the shape the [tools registry](tools.md) established over [dsh-scope](../../packages/core/scope): a registration files into the layer of its calling context's scope, so host rows and repository plugins land in the global layer while a plugin mounted by an agent preset's standing composition lands in that preset's layer, and provider names are unique per layer rather than process-wide. A read merges the global layer with the viewing scope's chain — the nearest layer's entry wins a duplicate skill name outright, and the rank order below decides duplicates only within one layer. Discovery caches are keyed by the resolved scope chain, so re-parenting a scope (a blank-session recompose) is visible to the next read without a registry mutation.
+The registry is host+per-scope layered, the shape the [tools registry](tools.md) established over [dsh-scope](../../packages/core/scope): a registration files into the layer of its calling context's scope, so host rows and repository plugins land in the global layer while a plugin mounted by an agent preset's standing composition lands in that preset's layer, and provider names are unique per layer rather than process-wide. A read merges the global layer with the viewing scope's chain — the nearest layer's entry wins a duplicate skill name outright, and the rank order below decides duplicates only within one layer, except that a global provider registered with `everyLayer: true` also joins each scoped layer's rank order (the connectors service registers so, keeping a connector's Skill ahead of the user's own copy inside a preset). Discovery caches are keyed by the resolved scope chain, so re-parenting a scope (a blank-session recompose) is visible to the next read without a registry mutation.
 
 Within one layer, duplicate names resolve by rank, provider order, then local order; summaries sort by name. A rejected `list()` is logged and omitted from an incomplete observation, while an explicit incomplete observation contributes usable candidates without making the result cacheable; malformed candidates fail fast. Each provider factory receives a registration-scoped control whose `invalidate()` clears completed catalogs only while that exact registration remains active and whose signal aborts on failed registration or disposal. An in-flight discovery retries once when its provider generation changes; a second change returns the latest candidates incomplete and uncached. Provider and runtime mutations emit the unfiltered `skills/change` invalidation event; it carries no diff, so consumers refetch `snapshot()` with their own lookup options.
 
@@ -72,6 +72,7 @@ The shipped local provider scans roots in rank order:
 | 300 | `custom` | `Config.customSkillDirs` |
 | 400 | `user-dsh` | `<dshHome>/skills` |
 | 500 | `user-agents` | `<agentsHome>/skills` |
+| 550 | `market` | `<dshHome>/skills-market/<tenantId>` of the signed-in Skill Hub tenant ([dsh-skill-market](../../packages/skill/skill-market), Desktop only) |
 | 600 | `bundled` | `Config.bundledSkillDir` when configured |
 
 The project root is the nearest ancestor containing `.git`; without one, the current cwd is used. When `ctx.fs` is available, the git-root walk probes `.git` through the filesystem service so remote or sandboxed workspaces do not fall back to the host filesystem boundary. The user DSH root skips its `.system` child. The local provider does not synthesize built-in system skills; deployments supply packaged skills through configured bundled roots or dedicated providers.
@@ -122,10 +123,14 @@ interface SkillSummary {
   readonly provider: string
   /** Provider-specific base for relative resources. */
   readonly resourceBase?: SkillResourceBase
+  /** Present when the user disabled this skill; its invocation policy is then forced closed. */
+  readonly disabled?: true
 }
 ```
 
 `ctx.skills.list()` preserves all four policy combinations. `isModelInvocable(skill)` and `isUserInvocable(skill)` read the corresponding required field. A model-only skill sets `{ modelInvocable: true, userInvocable: false }`, a user-only skill sets `{ modelInvocable: false, userInvocable: true }`, and setting both fields to `false` keeps the skill available only through trusted `ctx.skills.get()` callers. The local provider reads the exact kebab-case frontmatter keys `disable-model-invocation` and `user-invocable`, defaults omitted fields to `true`, and projects every parsed skill into this normalized policy.
+
+A user-level skill (`user-dsh` or `user-agents`) the user disabled stays in `list()` with `disabled: true`, but the registry forces its invocation policy to `{ modelInvocable: false, userInvocable: false }` before `list()`, `snapshot()`, and `get()` return, so the model catalog, the `skill` tool, and `/name` refuse it without any extra check. The disabled list is the registry's volatile `disabledSkills` config, which `ctx.skills.setDisabled(name, disabled)` persists to the profile through the settings service; a change emits `skills/change`. A project, bundled, or runtime skill that shares a disabled name is unaffected, and concurrent `setDisabled` calls are queued so none overwrites another.
 
 `SkillCatalogSnapshot` distinguishes authoritative absence from transient provider failure or a catalog that kept changing during discovery. `skills` contains the sorted invocation-neutral summaries collected in that observation; `complete` is true only when every registered provider completed without a concurrent catalog revision. Incomplete snapshots are not cached, allowing each consumer to retain its last-good filtered catalog and retry.
 
@@ -221,6 +226,8 @@ The registry owns only its discovery-cache bound. The local provider owns filesy
 interface Config {
   /** Maximum number of completed cwd/provider catalogs kept in memory. */
   readonly collectCacheMaxEntries?: number
+  /** Skill names the user switched off; edited live through `setDisabled()`. */
+  readonly disabledSkills?: Volatile<readonly string[]>
 }
 ```
 
@@ -235,6 +242,12 @@ The model-facing `skill({ name })` tool validates the kebab-case name, finds the
 ## Browser Session catalog
 
 `SkillListRequest` addresses one Session by `sessionId`; `SkillListValue` returns the user-invocable entries with name, description, optional usage guidance, and model-invocation availability. `SessionSkillCatalog` reads the Session cwd and recorded preset without activating an Agent. A live Agent may supply its scoped registry, while a cold Session uses the preset's standing scope.
+
+The Desktop Skills page reads installed user-level skills through the `installedSkills` namespace owned by [dsh-skill-controller](../../packages/skill/skill-controller). `list()` returns `InstalledSkillListValue`: one `InstalledSkillView` per skill from the `user-dsh` and `user-agents` sources (a `customSkillDirs` root is deployment configuration, not a user installation), carrying name, description, group, source, instruction-file path, and enabled state. `setEnabled(name, enabled)` answers the updated `InstalledSkillView`; `reveal`, `edit`, and `uninstall` answer `InstalledSkillActionValue` once the native file manager, the text editor, or the move to the trash accepted the request. Skills installed from the Skill Hub market join that list with `group: 'market'`; their switch is the market's per-tenant setting.
+
+The Desktop market reads the Skill Hub through the `skillMarket` namespace owned by [dsh-skill-market](../../packages/skill/skill-market): `list(query)` returns one `MarketSkillPage` of `MarketSkillCard`s with their install state and name conflict, `categories()` the tenant's `MarketCategory` list, `detail(id)` a `MarketSkillDetail` with the SKILL.md source and file list, `installSkill(id, options)` the card after a validated install or update (refusing local edits unless `overwriteLocalChanges`), and `installedStatus()` one `MarketInstalledStatus` per installed market Skill. Each market Skill directory keeps a `MarketInstallRecord` in `.hub-install.json`. Uploading goes the other way: `uploadSources()` lists the custom Skills as `MarketUploadSource`s, `inspectFolder(dir)` answers a `MarketUploadPreview` (files, `MarketFolderProblem`s, the employee's own Hub Skill, and the suggested version), `uploadOptions()` the `MarketUploadOptions` of the Hub's upload form, and `uploadSkill(request)` takes a `MarketUploadRequest` with a `MarketVisibility` and answers a `MarketUploadResult` that is pending review or published.
+
+Every `installedSkills` method refuses names outside that list.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -263,6 +276,179 @@ Host service backing `ctx.remote.skills` without activating a cold Agent.
 
 Source: [`packages/api/session-controller/src/skill-catalog.ts`](../../packages/api/session-controller/src/skill-catalog.ts)
 
+<a id="ctxskillcontroller--skillcontroller"></a>
+
+### `ctx.skillController` — `SkillController`
+
+Host service backing the generated `ctx.remote.installedSkills` namespace. Every action resolves the name against the current user-level catalog first, so project-level and bundled skills can never be toggled, revealed, or removed here.
+
+```ts cordis-catalog
+/**
+ * List the user-level skills installed on this machine, including disabled ones.
+ * @returns every custom skill sorted by name, with its enabled state.
+ * @throws RemoteError when skill discovery fails.
+ */
+@Remote async list(): Promise<InstalledSkillListValue>
+
+/**
+ * Switch one installed skill on or off for this user.
+ * @param name - installed skill name.
+ * @param enabled - whether the skill should be invocable.
+ * @returns the skill's view after the change.
+ * @throws RemoteError when the skill is not installed or the setting cannot be persisted.
+ */
+@Remote async setEnabled(name: string, enabled: boolean): Promise<InstalledSkillView>
+
+/**
+ * Reveal an installed skill's instruction file in the native file manager.
+ * @param name - installed skill name.
+ * @param signal - caller lifetime; abort terminates the native command.
+ * @returns confirmation after the file manager accepted the request.
+ * @throws RemoteError when the skill is not installed or the file manager fails.
+ */
+@Remote async reveal(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>
+
+/**
+ * Open an installed skill's instruction file in the native text editor.
+ * @param name - installed skill name.
+ * @param signal - caller lifetime; abort terminates the native command.
+ * @returns confirmation after the editor accepted the file.
+ * @throws RemoteError when the skill is not installed or the editor fails.
+ */
+@Remote async edit(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>
+
+/**
+ * Move an installed skill's folder (or flat file) to the platform trash and forget its disabled state.
+ * @param name - installed skill name.
+ * @param signal - caller lifetime; abort terminates the native command.
+ * @returns confirmation after the move.
+ * @throws RemoteError when the skill is not installed, the platform has no trash, or the move fails.
+ */
+@Remote async uninstall(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>
+```
+
+Source: [`packages/skill/skill-controller/src/index.ts`](../../packages/skill/skill-controller/src/index.ts)
+
+<a id="ctxskillmarket--skillmarket"></a>
+
+### `ctx.skillMarket` — `SkillMarket`
+
+Host owner of the market source and of the `skillMarket` Remote namespace.
+
+```ts cordis-catalog
+/**
+ * Directory holding one tenant's market Skills.
+ * @param tenantId - Skill Hub tenant.
+ * @returns `<dshHome>/skills-market/<tenantId>`.
+ */
+tenantDir(tenantId: string): string
+
+/**
+ * Whether the signed-in tenant switched this market Skill off.
+ * @param name - Skill name.
+ * @returns true when switched off.
+ */
+isDisabled(name: string): boolean
+
+/**
+ * Switch one market Skill of the signed-in tenant on or off, persisting the profile's list.
+ * @param name - Skill name.
+ * @param disabled - whether to switch it off.
+ * @throws when signed out, or when mounted without Settings or a profile entry.
+ */
+setDisabled(name: string, disabled: boolean): Promise<void>
+
+/**
+ * List the market as the signed-in employee sees it on the Skill Hub.
+ * @param query - search text, category, and page.
+ * @param signal - caller lifetime.
+ * @returns one page of cards with their install state.
+ */
+@Remote async list(query: MarketSkillQuery, signal: AbortSignal): Promise<MarketSkillPage>
+
+/**
+ * The signed-in tenant's Skill categories.
+ * @param signal - caller lifetime.
+ * @returns categories in Hub order.
+ */
+@Remote async categories(signal: AbortSignal): Promise<readonly MarketCategory[]>
+
+/**
+ * One market Skill with its SKILL.md and file list.
+ * @param id - Skill Hub Skill id.
+ * @param signal - caller lifetime.
+ * @returns the detail with its install state.
+ */
+@Remote async detail(id: string, signal: AbortSignal): Promise<MarketSkillDetail>
+
+/**
+ * Install the current version of a market Skill for the signed-in tenant. The package is
+ * downloaded and validated (layout and every file's sha256) in a staging directory beside the
+ * target, then moved into place in one rename; a failure leaves no partial Skill behind. An
+ * installed copy is replaced the same way (an update), unless its files differ from its install
+ * record and the caller did not ask to overwrite them.
+ * @param id - Skill Hub Skill id.
+ * @param options - whether local edits of an installed copy may be overwritten.
+ * @param signal - caller lifetime.
+ * @returns the card after install.
+ * @throws RemoteError on a name conflict with a user Skill, local edits that would be overwritten,
+ *   an invalid package, or an unreachable Hub.
+ */
+@Remote async installSkill(id: string, options: MarketInstallOptions, signal: AbortSignal): Promise<MarketSkillCard>
+
+/**
+ * The Skills the user placed on this machine (`~/.dsh/skills`, `~/.agents/skills`), offered for upload.
+ * @returns one source per Skill folder, sorted by name.
+ */
+@Remote async uploadSources(): Promise<readonly MarketUploadSource[]>
+
+/**
+ * Read a local folder as an upload would: its SKILL.md, the files that would be sent, and whether
+ * the employee already owns a Skill of that name on the Hub (then the upload is its new version).
+ * @param dir - absolute folder path.
+ * @param signal - caller lifetime.
+ * @returns the preview; `problems` lists what keeps it from being uploaded.
+ */
+@Remote async inspectFolder(dir: string, signal: AbortSignal): Promise<MarketUploadPreview>
+
+/**
+ * Visibility and category choices for an upload, from the signed-in tenant.
+ * @param signal - caller lifetime.
+ * @returns categories, departments, and active employees.
+ * @throws RemoteError `skill-market/upload-rejected` carrying the Hub's reason when the account
+ *   cannot upload at all (403), `skill-market/unavailable` for any other failure.
+ */
+@Remote async uploadOptions(signal: AbortSignal): Promise<MarketUploadOptions>
+
+/**
+ * Upload a local Skill folder to the Skill Hub as the signed-in employee: a new version of the
+ * employee's own Skill of that name, otherwise a new Skill. The folder is packed without junk and
+ * left untouched. Employees' uploads are submitted for review; tenant admins' are published.
+ * @param request - folder, version, and (for a new Skill) visibility and category.
+ * @param signal - caller lifetime.
+ * @returns the Hub's answer, with the review link for a pending upload.
+ * @throws RemoteError `skill-market/invalid-folder` for a folder that cannot be uploaded, and
+ *   `skill-market/upload-rejected` carrying the Hub's own reason when it refuses.
+ */
+@Remote async uploadSkill(request: MarketUploadRequest, signal: AbortSignal): Promise<MarketUploadResult>
+
+/**
+ * Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the
+ * Hub no longer shows the employee is `unavailable`; its local copy stays installed and usable.
+ * @param signal - caller lifetime.
+ * @returns one status per installed market Skill, sorted by name.
+ */
+@Remote async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]>
+
+/**
+ * Install records of the signed-in tenant's market Skills, keyed by Skill name.
+ * @returns the readable records; a directory without one is not a market install.
+ */
+async records(): Promise<Map<string, MarketInstallRecord>>
+```
+
+Source: [`packages/skill/skill-market/src/index.ts`](../../packages/skill/skill-market/src/index.ts)
+
 <a id="ctxskills--skillregistry"></a>
 
 ### `ctx.skills` — `SkillRegistry`
@@ -271,17 +457,30 @@ Layered registry of skill providers, the host+per-scope shape the tools registry
 
 ```ts cordis-catalog
 /**
+ * Switch one user-level skill on or off by persisting the profile's `disabledSkills` list.
+ * Writes are queued, so concurrent calls never overwrite each other's change; a request that
+ * matches the state committed by the previous write writes nothing.
+ * @param name - kebab-case skill name; it need not be currently discovered.
+ * @param disabled - whether the skill should be disabled.
+ * @throws when the registry was mounted without Settings or a profile entry.
+ */
+setDisabled(name: string, disabled: boolean): Promise<void>
+
+/**
  * Register a borrowed same-process provider synchronously during plugin
  * apply, into the calling context's layer: a scoped context (an agent
  * preset's standing mount) registers for that scope alone, an unscoped
  * context registers globally. Duplicate names within one layer and reserved
  * names throw; remote initialization belongs in `list()`. Fiber disposal
- * unregisters the provider and invalidates catalog caches.
+ * unregisters the provider and invalidates catalog caches. With
+ * `everyLayer`, a global provider's candidates also join each scoped
+ * layer's rank order; a scoped context that sets it throws.
  * @param create - synchronous factory receiving this registration's lifecycle and invalidation control.
+ * @param options - registration options.
  * @returns the exact Cordis effect disposer that unregisters this provider;
  *   composite effects may yield it directly to preserve teardown ordering.
  */
-registerProvider(create: (control: SkillProviderControl) => SkillProvider): () => void
+registerProvider(create: (control: SkillProviderControl) => SkillProvider, options: SkillProviderRegistrationOptions = {}): () => void
 
 /**
  * Register a borrowed readonly runtime skill into the calling context's

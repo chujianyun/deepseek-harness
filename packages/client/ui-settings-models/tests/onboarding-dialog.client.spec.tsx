@@ -229,6 +229,17 @@ describe('DeepSeekOnboardingDialog', () => {
     }
   })
 
+  it('leaves for the Models page to set up another provider without writing a credential', async () => {
+    const h = harness()
+    render(<DeepSeekOnboardingDialog {...h.props} />)
+    await screen.findByRole('dialog')
+    fireEvent.click(screen.getByRole('button', { name: en.onboardingOtherProvider }))
+    expect(h.complete).toHaveBeenCalledOnce()
+    expect(h.openSection).toHaveBeenCalledExactlyOnceWith('models')
+    expect(h.set).not.toHaveBeenCalled()
+    expect(h.mutate).not.toHaveBeenCalled()
+  })
+
   it('allows configure-later dismissal without opening settings', async () => {
     const h = harness()
     render(<DeepSeekOnboardingDialog {...h.props} />)

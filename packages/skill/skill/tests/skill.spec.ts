@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
+import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
 import SkillRegistry, {
   isModelInvocable,
   isUserInvocable,
@@ -1170,6 +1171,60 @@ describe('SkillRegistry scoped layers', () => {
     await preset.dispose()
   })
 
+  it('lets an everyLayer global provider compete by rank inside each scoped layer', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    ctx.skills.registerProvider(() => new MemoryProvider([
+      memorySkill('shared-name', 'Global ranked', 350), memorySkill('project-name', 'Global behind project', 350),
+    ]), { everyLayer: true })
+    const preset = createScope(ctx, { preset: 'ranked' })
+    const local = (name: string, description: string, rank: number): SkillCandidate => ({
+      name, description, invocation: { modelInvocable: true, userInvocable: true }, provider: 'preset-local', source: 'preset', rank,
+      locator: { content: `${description} body.` },
+    })
+    scopedSkills(preset.ctx).registerProvider(() => ({
+      name: 'preset-local',
+      async list() { return [local('shared-name', 'User copy', 500), local('project-name', 'Project copy', 100), local('local-only', 'Local', 500)] },
+      async get(candidate: SkillCandidate) { return { ...candidate, content: (candidate.locator as { content: string }).content } },
+    }))
+    // A scoped provider that cannot list leaves the scope's catalog uncached, so each read lists again.
+    const failing = { name: 'preset-failing', list: vi.fn(async () => { throw new Error('offline') }), get: async () => undefined }
+    scopedSkills(preset.ctx).registerProvider(() => failing)
+
+    const scoped = await ctx.skills.list({ scope: scopeOf(preset.ctx) })
+    await ctx.skills.list({ scope: scopeOf(preset.ctx) })
+    expect(failing.list).toHaveBeenCalledTimes(2)
+    expect(scoped.map(skill => [skill.name, skill.description])).toEqual([
+      ['local-only', 'Local'], ['project-name', 'Project copy'], ['shared-name', 'Global ranked'],
+    ])
+    expect((await ctx.skills.list()).map(skill => skill.description)).toEqual(['Global behind project', 'Global ranked'])
+    await preset.dispose()
+  })
+
+  it('keeps a farther layer\'s better-ranked winner when a nearer layer has no candidate of that name', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    ctx.skills.registerProvider(() => new MemoryProvider([memorySkill('shared-name', 'Global ranked', 350)]), { everyLayer: true })
+    const preset = createScope(ctx, { preset: 'project' })
+    scopedSkills(preset.ctx).register({ name: 'shared-name', description: 'Project copy', source: 'project-dsh', content: 'Project body.' })
+    const agent = createScope(ctx, { agent: 'nested' }, { parent: scopeOf(preset.ctx)! })
+    scopedSkills(agent.ctx).register({ name: 'agent-only', description: 'Agent', source: 'preset', content: 'Agent body.' })
+
+    const scoped = await ctx.skills.list({ scope: scopeOf(agent.ctx) })
+    expect(scoped.map(skill => [skill.name, skill.description])).toEqual([['agent-only', 'Agent'], ['shared-name', 'Project copy']])
+    await agent.dispose()
+    await preset.dispose()
+  })
+
+  it('refuses everyLayer from a scoped context', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    const preset = createScope(ctx, { preset: 'refused' })
+    expect(() => scopedSkills(preset.ctx).registerProvider(() => new MemoryProvider([]), { everyLayer: true }))
+      .toThrow('can compete in every layer only when registered globally')
+    await preset.dispose()
+  })
+
   it('resolves the scope chain so an agent key inherits its preset layer and recompose follows the new parent', async () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
@@ -1268,5 +1323,98 @@ describe('SkillRegistry scoped layers', () => {
     control?.invalidate()
     expect(await ctx.skills.list({ scope })).toEqual([])
     await preset.dispose()
+  })
+})
+
+describe('SkillRegistry disabled skills', () => {
+  const userSkill = (name: string, description: string): SkillCandidate => ({ ...memorySkill(name, description, 100), source: 'user-dsh' })
+
+  /** Mount the registry behind Loader with a settings stub that writes patches back into its live entry config. */
+  async function mounted(initial: object = {}, update?: (patch: Record<string, unknown>) => Promise<void>) {
+    const ctx = new Context()
+    const live = await liveConfig(ctx, SkillRegistry, initial)
+    const writes: object[] = []
+    ctx.provide('settings', { update: async (_entry: string, patch: Record<string, unknown>) => {
+      writes.push(patch)
+      await (update ?? (next => live.update(next)))(patch)
+    } } as never)
+    const skills = ctx.get('skills')!
+    skills.registerProvider(() => new MemoryProvider([userSkill('alpha', 'Alpha'), userSkill('beta', 'Beta')]))
+    return { ctx, skills, writes, live }
+  }
+
+  it('keeps a disabled skill listed but closes its invocation policy on list and get', async () => {
+    const { skills } = await mounted({ disabledSkills: ['beta'] })
+    const listed = await skills.list()
+    expect(listed.find(skill => skill.name === 'alpha')).not.toHaveProperty('disabled')
+    expect(listed.find(skill => skill.name === 'beta')).toMatchObject({ disabled: true, invocation: { modelInvocable: false, userInvocable: false } })
+    expect(listed.filter(isModelInvocable).map(skill => skill.name)).toEqual(['alpha'])
+    expect(listed.filter(isUserInvocable).map(skill => skill.name)).toEqual(['alpha'])
+    const loaded = await skills.get('beta')
+    expect(loaded).toMatchObject({ disabled: true, invocation: { modelInvocable: false, userInvocable: false }, content: 'beta body.' })
+  })
+
+  it('persists setDisabled through settings, notifies consumers, and re-enables', async () => {
+    const { ctx, skills, writes } = await mounted()
+    const changes = vi.fn()
+    ctx.on('skills/change', changes)
+    await skills.setDisabled('alpha', true)
+    expect(writes).toEqual([{ disabledSkills: ['alpha'] }])
+    expect(changes).toHaveBeenCalled()
+    expect((await skills.list()).find(skill => skill.name === 'alpha')).toMatchObject({ disabled: true })
+    await skills.setDisabled('alpha', true)
+    expect(writes).toHaveLength(1)
+    await skills.setDisabled('alpha', false)
+    expect(writes).toEqual([{ disabledSkills: ['alpha'] }, { disabledSkills: [] }])
+    expect((await skills.list()).find(skill => skill.name === 'alpha')).not.toHaveProperty('disabled')
+  })
+
+  it('applies the disabled list to user-level skills only, never to a same-named project or runtime skill', async () => {
+    const ctx = new Context()
+    await liveConfig(ctx, SkillRegistry, { disabledSkills: ['shared', 'runtime-one'] })
+    const skills = ctx.get('skills')!
+    skills.registerProvider(() => new MemoryProvider([{ ...memorySkill('shared', 'Project copy', 100), source: 'project-dsh' }]))
+    skills.register({ name: 'runtime-one', description: 'Runtime', source: 'runtime', content: 'x' })
+    for (const skill of await skills.list()) {
+      expect(skill).not.toHaveProperty('disabled')
+      expect(isModelInvocable(skill)).toBe(true)
+    }
+  })
+
+  it('queues concurrent switches so neither overwrites the other, and a failed write does not block the queue', async () => {
+    const { skills, writes, live } = await mounted()
+    await Promise.all([skills.setDisabled('alpha', true), skills.setDisabled('beta', true)])
+    expect(writes).toEqual([{ disabledSkills: ['alpha'] }, { disabledSkills: ['alpha', 'beta'] }])
+    expect((await skills.list()).every(skill => skill.disabled === true)).toBe(true)
+
+    let failNext = true
+    const flaky = await mounted({}, async (patch) => {
+      if (failNext) {
+        failNext = false
+        throw new Error('profile locked')
+      }
+      await flaky.live.update(patch)
+    })
+    const [first, second] = await Promise.allSettled([flaky.skills.setDisabled('alpha', true), flaky.skills.setDisabled('beta', true)])
+    expect(first).toMatchObject({ status: 'rejected', reason: new Error('profile locked') })
+    expect(second.status).toBe('fulfilled')
+    expect((await flaky.skills.list()).find(skill => skill.name === 'beta')).toMatchObject({ disabled: true })
+    void live
+  })
+
+  it('rejects invalid names and refuses to persist without settings or a profile entry', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    await expect(ctx.skills.setDisabled('Not A Name', true)).rejects.toThrow('invalid skill name')
+    await expect(ctx.skills.setDisabled('alpha', true)).rejects.toThrow('settings service')
+  })
+
+  it('treats every skill as enabled when constructed without config, and an unchanged request as a no-op', async () => {
+    const ctx = new Context()
+    const skills = new SkillRegistry(ctx)
+    skills.registerProvider(() => new MemoryProvider([{ ...memorySkill('alpha', 'Alpha', 100), source: 'user-dsh' }]))
+    expect((await skills.list())[0]).not.toHaveProperty('disabled')
+    await expect(skills.setDisabled('alpha', false)).resolves.toBeUndefined()
+    await ctx.fiber.dispose()
   })
 })

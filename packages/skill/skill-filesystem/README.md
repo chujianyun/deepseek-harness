@@ -49,7 +49,7 @@ Default roots are scanned in this provider's rank order:
 |---|---|---|
 | 100 | `project-dsh` | `<projectRoot>/.dsh/skills` |
 | 200 | `project-agents` | `<projectRoot>/.agents/skills` |
-| 300 | `custom` | `Config.customSkillDirs` |
+| 300 | `custom` | `Config.customSkillDirs` (source and rank configurable) |
 | 400 | `user-dsh` | `<dshHome>/skills` |
 | 500 | `user-agents` | `<agentsHome>/skills` |
 
@@ -71,6 +71,8 @@ Load the plugin alongside the skill registry; it requires `ctx.skills`.
 | `dshHome` | `$DSH_HOME` or `~/.dsh` | Harness config root; its `skills` subdirectory is scanned |
 | `agentsHome` | `$DSH_AGENTS_HOME` or `~/.agents` | Shared agent config root scanned for compatible skills |
 | `customSkillDirs` | `[]` | Additional local skill roots, after project roots and before user roots |
+| `customSource` | `custom` | Source reported for skills under `customSkillDirs`; a provider such as the Skill Hub market reports its own |
+| `customRank` | `300` | Precedence rank of `customSkillDirs`; lower ranks win duplicate names |
 | `watch` | `true` | Watch local roots and invalidate the provider when the catalog may have changed |
 | `bundledSkillDir` | — | Bundled skill root scanned at rank 600 when configured |
 

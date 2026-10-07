@@ -66,6 +66,7 @@ kind: "package-group"
 | [`ui-subagent/`](ui-subagent/README.zh.md) | 提供 subagent 导航、子级 transcript（文本记录）状态与内联引用 | — |
 | [`ui-jobs/`](ui-jobs/README.zh.md) | 列出本会话的后台任务，并提供按需展开的流式输出面板 | — |
 | [`ui-schedule/`](ui-schedule/README.zh.md) | 在只读标题栏目录中列出当前会话中生效的提醒 | — |
+| [`ui-skills/`](ui-skills/README.zh.md) | Desktop Skills 页面：以卡片展示已安装 skill，提供启用开关与去对话、编辑、打开文件夹、卸载操作 | — |
 | [`ui-model-selection/`](ui-model-selection/README.zh.md) | 在对话界面中提供模型选择 | — |
 | [`ui-permission-presets/`](ui-permission-presets/README.zh.md) | 配置默认权限并切换当前会话的访问模式 | — |
 | [`ui-plan/`](ui-plan/README.zh.md) | 展示生效中的 plan mode 状态及其退出控件 | — |

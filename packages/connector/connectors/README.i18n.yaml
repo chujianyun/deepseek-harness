@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/connector/connectors/README.md
+/:
+  en: e2cb3602d6dc7f02
+  zh: ba6237b3d7e905ce
+/connectors:
+  en: 558e804e2083d607
+  zh: 1202cba453be88f8
+/connectors/summary:
+  en: 4c319876fdcb2931
+  zh: 6c0ddcb2f96a31b3
+/connectors/table-of-contents:
+  en: 3a654e12f423946b
+  zh: 4e3a19aaee58f8a7
+/connectors/use-this-package:
+  en: 4eb9bac608479394
+  zh: 35ffd305f2824edb
+/connectors/configuration:
+  en: 550c1dee81aeeace
+  zh: b5cd661489ec54c2
+/connectors/model-experience:
+  en: 867072bbdc3f0cd0
+  zh: f0be1228dfa11ff5
+/connectors/model-experience/kv-cache-effect:
+  en: dc75a8ecb1024833
+  zh: 5da0bf9d3e4b327c
+/connectors/known-limitations-and-deferred-work:
+  en: 4f2df6a5e6e92fa8
+  zh: 7791f54c23055177
+/connectors/known-limitations-and-deferred-work/dev-note:
+  en: cfaa77394cd2bc26
+  zh: f897d5f6d15e9a74

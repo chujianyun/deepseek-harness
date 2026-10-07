@@ -33,6 +33,7 @@ Each package provides one primitive; open a package page for how to use it.
 | [`chunked-list/`](chunked-list/README.md) | Retains immutable list versions with bounded append copying and checkpoint validation |
 | [`values/`](values/README.md) | Validates, snapshots, compares, and freezes lossless JSON-compatible values |
 | [`home-paths/`](home-paths/README.md) | Resolves the single Harness home and joins shared user-data paths |
+| [`verified-download/`](verified-download/README.md) | Downloads a pinned file over ordered mirrors, resumable and verified by size and sha256 |
 | [`http-proxy/`](http-proxy/README.md) | Resolves one outbound proxy policy and installs it for `fetch`, SDK agents, and spawned children |
 | [`launch-environment/`](launch-environment/README.md) | Frozen launch environment that remembers which layer supplied each value |
 | [`atomic-write/`](atomic-write/README.md) | Atomic file replacement and cross-process writer locking |

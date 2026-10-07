@@ -85,6 +85,27 @@
       "path": "../settings-controller"
     },
     {
+      "path": "../../skill/skill-controller"
+    },
+    {
+      "path": "../../skill/skill-market"
+    },
+    {
+      "path": "../../credentials/hub-account"
+    },
+    {
+      "path": "../../llm/embedding"
+    },
+    {
+      "path": "../../knowledge/knowledge-base"
+    },
+    {
+      "path": "../../knowledge/knowledge-selection"
+    },
+    {
+      "path": "../../connector/connectors"
+    },
+    {
       "path": "../workspace-controller/tsconfig.client.json"
     },
     {

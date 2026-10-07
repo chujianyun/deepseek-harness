@@ -1,0 +1,5 @@
+# For the knowledge sources e2e (`knowledge-sources.e2e.ts`), beside the Hub sign-in and knowledge
+# rows: the local HTTP fetch provider is turned off so the spec can register a stand-in that serves
+# its pages without reaching the network.
+- id: web-fetch-http
+  disabled: true

@@ -424,7 +424,8 @@ export class SessionController extends TypertRemoteService {
   }
 
   /**
-   * Admit one prompt after explicitly resuming its Session.
+   * Admit one prompt after explicitly resuming its Session, unless an `api-session/prompt-admission`
+   * listener refuses it.
    * @param request - Session identity, prompt content, source metadata, and delivery mode.
    * @param signal - caller cancellation before prompt admission begins.
    * @returns acknowledgement that the Agent accepted the prompt.
@@ -432,6 +433,8 @@ export class SessionController extends TypertRemoteService {
   @Remote('prompt')
   prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue> {
     signal.throwIfAborted()
+    const refusal = this.ctx.bail('api-session/prompt-admission', request.sessionId)
+    if (refusal !== undefined) throw refusal
     return this.commands.prompt(request)
   }
 

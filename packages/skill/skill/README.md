@@ -33,7 +33,7 @@ Use `dsh-skill` when agents should load skills from more than one source through
 
 ### Mount and configure
 
-Load the plugin like any Cordis plugin. The only configuration limits how many completed provider catalogs are kept in memory; everything else is provider behavior.
+Load the plugin like any Cordis plugin. Configuration limits how many completed provider catalogs are kept in memory and holds the user's disabled skills; everything else is provider behavior.
 
 ```yaml
 - name: '@deepseek-ai/dsh-skill'
@@ -42,6 +42,7 @@ Load the plugin like any Cordis plugin. The only configuration limits how many c
 | Field | Default | Meaning |
 |---|---|---|
 | `collectCacheMaxEntries` | `128` | Completed cwd/provider catalogs kept in memory |
+| `disabledSkills` | `[]` | Volatile list of skill names the user switched off |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-skill) is the exhaustive source for every accepted field.
 
@@ -50,6 +51,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 - **One merged catalog.** A consumer asks for the current catalog of a workspace and receives every winning skill summary from every provider, sorted by name — no provider-specific ordering or deduplication to do.
 - **On-demand loading.** Asking for one skill by name returns the full instruction body from whichever provider owns the winning candidate; the registry re-validates the loaded definition and rejects a stale selection whose name changed between discovery and load.
 - **Embedded skills.** Plugins register an in-memory skill with `ctx.skills.register(...)`; the registry fills in a default invocation policy and the `runtime` provider label. Same-name runtime registrations in one layer are first-wins with a warning.
+- **Disabled skills.** `ctx.skills.setDisabled(name, disabled)` queues and persists the volatile `disabledSkills` list through the settings service. A disabled skill stays listed with `disabled: true`, but `list()`, `snapshot()`, and `get()` return it with both invocation controls forced to `false`, so every consumer refuses it; a change emits `skills/change`. Only user-level skills (`user-dsh`, `user-agents`) are affected; a same-named project, bundled, or runtime skill stays invocable. A request matching the current state writes nothing, and a real change without the settings service or a profile entry throws.
 - **Provider registration.** A provider contributes its catalog with `ctx.skills.registerProvider(...)`; registration is synchronous, and the returned disposer removes the provider. `runtime` is a reserved provider name.
 
 An invocation policy on every skill decides which surfaces may advertise and load it: `modelInvocable` for model-facing tools and catalogs, `userInvocable` for human-facing commands. The registry keeps all four combinations, so one discovery result can serve both surfaces without conflating their catalogs.
@@ -81,7 +83,7 @@ This section explains how the registry merges, caches, and invalidates provider 
 
 The package is built on one separation: the registry owns merging, winning resolution, and validation, while providers own where skills come from. A provider is a borrowed same-process object with a `list()` that returns candidates and a `get()` that loads a body; the registry never inspects skill content beyond validating its semantic fields.
 
-The registry is host+per-scope layered, the shape the tools registry established: a registration is filed into the layer of its calling context's scope — host rows and repository plugins land in the global layer, a plugin mounted by an agent preset's standing composition lands in that preset's layer. A read merges the global layer with the viewing scope's chain; the nearest layer wins a duplicate name outright, and within one layer duplicates resolve by rank, provider registration order, then provider-local order.
+The registry is host+per-scope layered, the shape the tools registry established: a registration is filed into the layer of its calling context's scope — host rows and repository plugins land in the global layer, a plugin mounted by an agent preset's standing composition lands in that preset's layer. A read merges the global layer with the viewing scope's chain; the nearest layer wins a duplicate name outright, and within one layer duplicates resolve by rank, provider registration order, then provider-local order. A global registration with `registerProvider(create, { everyLayer: true })` also joins the rank order of every scoped layer the read merges, so a scoped provider's same-name candidate wins only with a better rank; a scoped context that passes `everyLayer` throws. The connectors service registers this way, so a preset's local Skill discovery cannot replace a connector's Skill with the user's own copy.
 
 ### Source map
 
@@ -137,7 +139,7 @@ These limits define when the registry is a poor fit or needs special operational
 - **Invalidation is provider-driven** — the registry has no TTL and cannot infer that an arbitrary remote source changed; each mutable provider must retain and call its registration-scoped `invalidate()` capability from its own observation mechanism.
 - **Providers are queried sequentially** — one slow provider delays every provider registered after it; cancellation stops the caller's wait but cannot terminate work an uncooperative provider keeps running.
 - **Incomplete observations are not retained** — rejected providers are omitted and explicitly supplied candidates remain available only to the current lookup; the registry owns neither a last-good catalog nor per-provider diagnostics.
-- **Duplicate resolution is first-wins** — later lower-priority candidates within a layer are logged and hidden, and a nearer layer shadows a farther one silently; there is no API to inspect all shadowed definitions.
+- **Duplicate resolution is first-wins** — later lower-priority candidates within a layer are logged and hidden, and a nearer layer shadows a farther one silently, unless the farther one is an `everyLayer` provider with a better rank; there is no API to inspect all shadowed definitions.
 
 <a id="dev-note"></a>
 ### Dev Note

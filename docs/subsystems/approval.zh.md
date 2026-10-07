@@ -18,7 +18,7 @@
 type ApprovalRequestId = Branded<'ApprovalRequestId'>
 ```
 
-`ApprovalOutcome` 是闭合的，且失败时拒绝。`allowed-once` 仅授权所询问的那一个操作；调用方对 `rejected`、`cancelled` 和 `unavailable` 均执行拒绝。缺失、不负责该请求、抛异常或不合规的应答者会产生 `unavailable`，而非放行。
+`ApprovalOutcome` 是闭合的，且失败时拒绝。`allowed-once` 仅授权所询问的那一个操作；调用方对 `rejected`、`cancelled` 和 `unavailable` 均执行拒绝。缺失、不负责该请求、抛异常或不合规的应答者会产生 `unavailable`，而非放行。设置了 `remember` 的请求表示可以记住这次授权：应答者此时可以返回 `{ outcome: 'allowed-once', remember: true }`（`ApprovalRememberedGrant`），结果仍是 `allowed-once`，审计也记为 `allowed-once`，并在请求结束前调用请求方通过 `ctx.approval.request(req, options)` 传入的 `onRemember`。是否记住由请求方自己的策略决定，服务不保存任何授权。`PreToolDecision` 的 `ask` 通过其 `onRemember` 回调设置它。
 
 ```ts type-equiv
 /**
@@ -124,12 +124,15 @@ setPolicy(agent: Agent, policy: ApprovalPolicy): void
  * violate the pair. Session contains post-commit observer failures, so an
  * authoritative append cannot reject the request or suppress its matching
  * audit event.
+ * An answerer may answer a request that offers `remember` with a grant to remember: the request
+ * still resolves `'allowed-once'` and calls `options.onRemember` first; the audit pair is unchanged.
  * @param req - the pending decision (agent, tool identity, reason, signal).
+ * @param options - same-process hooks, such as remembering an offered grant.
  * @returns the closed outcome; `'allowed-once'` is the only grant.
  * @throws when no turn is open or either audit event fails before the session
  *   append commit point.
  */
-async request(req: ApprovalRequest): Promise<ApprovalOutcome>
+async request(req: ApprovalRequest, options: ApprovalRequestOptions = {}): Promise<ApprovalOutcome>
 
 /**
  * Read the session override without applying the configured default.
@@ -161,7 +164,7 @@ Ask composed answerers for one decision. Return an outcome to claim the request 
  * @param req - pending approval request.
  * @mode waterfall
  */
-'approval/request'( this: Scoped<Agent>, req: ApprovalRequestEvent, next: () => Promise<ApprovalOutcome>, ): Promise<ApprovalOutcome>
+'approval/request'( this: Scoped<Agent>, req: ApprovalRequestEvent, next: () => Promise<ApprovalAnswer>, ): Promise<ApprovalAnswer>
 ```
 
 Types: [Agent](core.zh.md) · [Scoped](scope.zh.md)

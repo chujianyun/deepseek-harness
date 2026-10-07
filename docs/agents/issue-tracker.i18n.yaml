@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for issue-tracker.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/agents/issue-tracker.md
+/issue-tracker-github:
+  en: 2a909f4f0fbe758e
+  zh: 297b415786c05b45
+/issue-tracker-github/conventions:
+  en: 363a1c74ae6460f0
+  zh: edd6710fc95f102f
+/issue-tracker-github/pull-requests-as-a-triage-surface:
+  en: bafc9f6d24146636
+  zh: eb10cfd922d3b0e4
+/issue-tracker-github/when-a-skill-says-publish-to-the-issue-tracker:
+  en: 8dba0ab042d4a015
+  zh: d3808013d76821f3
+/issue-tracker-github/when-a-skill-says-fetch-the-relevant-ticket:
+  en: b40a04430be1ec5c
+  zh: 000a04bb7e3029bc
+/issue-tracker-github/wayfinding-operations:
+  en: 6435a72c6413c30e
+  zh: 7ef1a1cd311e3e38

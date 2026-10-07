@@ -14,6 +14,8 @@ One page per subsystem of the DeepSeek Harness: what it is, the data structures 
 | [typert.md](typert.md) | Remote invocation descriptors, lookup/Context declarations, Typert registries, and the Host Gateway/Client API boundaries |
 | [goal.md](goal.md) | persisted goal identity, lifecycle snapshots, activation, change records, and round attribution |
 | [schedule.md](schedule.md) | Host-owned reminder records, durable transitions, active and ended views, and ordinary-conversation delivery |
+| [knowledge.md](knowledge.md) | local knowledge bases: per-tenant storage, the processing queue, and hybrid search |
+| [connectors.md](connectors.md) | connectors: office platforms through their official CLIs, installed at pinned versions |
 | [todo.md](todo.md) | the todo package's whole-list item type, durable event ownership, and projection |
 | [deliverables.md](deliverables.md) | what a turn hands to the user: `PresentedFile` deliveries from `present` and the Host-served `WorkspaceChangesSummary` of changed files from git snapshots |
 | [commands.md](commands.md) | the human-command registry service: definitions, adapter discovery, direct invocation, results, and parsing views |

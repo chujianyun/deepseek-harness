@@ -25,6 +25,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { QuotaNoticeInjected } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { PerformanceUsageRowInjected } from '../src/client/settings/PerformanceUsageRow.tsx'
+import type { TurnErrorInjected } from '../src/client/chat/MessageItem.tsx'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings.ts'
 import { ActivityPill, UsagePill } from '../src/client/chat/StatsPills.tsx'
 
@@ -111,10 +112,14 @@ describe('Chat apply wiring', () => {
       expect(notice.getSnapshot()).toBeNull()
       ;(face.dismissNotice as QuotaNoticeInjected['dismissNotice'])()
       expect(notice.getSnapshot()).toBeNull()
-      // The turn-error row carries neither a transient notice nor a chain child.
+      // The turn-error row carries neither a transient notice nor a chain child; its one action
+      // asks the settings shell for the Models section.
       const row = b.runtime.slots.entries('conversation.chat.node').find(entry => entry.options.key === 'turn-error')!
-      expect(row.inject).toBeUndefined()
       expect(row.children).toBeUndefined()
+      const openSection = vi.fn()
+      b.runtime.ctx.on('settings/open-section', openSection)
+      ;(row.inject!().openModelsSettings as TurnErrorInjected['openModelsSettings'])()
+      expect(openSection).toHaveBeenCalledExactlyOnceWith('models')
     } finally {
       await b.runtime.dispose()
     }

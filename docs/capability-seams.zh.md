@@ -72,6 +72,20 @@ flowchart LR
   svc_sessionController["ctx.sessionController<br/>Host Session Remote controller"]
   svc_sessionFileReferences["ctx.sessionFileReferences<br/>Session-addressed file-reference Remote adapter"]
   svc_sessionSkillCatalog["ctx.sessionSkillCatalog<br/>Session-addressed skill Remote adapter"]
+  pkg_hub_account["hub-account"]
+  svc_hubAccount["ctx.hubAccount<br/>Hub sign-in Remote controller"]
+  pkg_embedding["embedding"]
+  svc_embedding["ctx.embedding<br/>Embedding models"]
+  pkg_knowledge_base["knowledge-base"]
+  svc_knowledgeBases["ctx.knowledgeBases<br/>Knowledge bases"]
+  pkg_knowledge_selection["knowledge-selection"]
+  svc_knowledgeSelection["ctx.knowledgeSelection<br/>Knowledge selection"]
+  pkg_connectors["connectors"]
+  svc_connectors["ctx.connectors<br/>Connectors"]
+  pkg_skill_market["skill-market"]
+  svc_skillMarket["ctx.skillMarket<br/>Skill Hub market"]
+  pkg_skill_controller["skill-controller"]
+  svc_skillController["ctx.skillController<br/>Installed-skill Remote controller"]
   pkg_api_job_controller["api-job-controller"]
   svc_jobController["ctx.jobController<br/>Host job Remote controller"]
   pkg_api_settings_controller["api-settings-controller"]
@@ -311,6 +325,7 @@ flowchart LR
   pkg_compaction_tool_result_pruner --> svc_toolResultPruner
   pkg_computer_use --> svc_computerUse
   pkg_config_editor --> svc_configEditor
+  pkg_connectors --> svc_connectors
   pkg_cordis_host_runner --> svc_cordisInspect
   pkg_cordis_host_runner --> svc_dynamicCordisRunner
   pkg_credentials --> svc_credentials
@@ -318,6 +333,7 @@ flowchart LR
   pkg_deepseek_account --> svc_deepseekAccount
   pkg_deepseek_account_platform --> svc_deepseekAccount
   pkg_deepseek_llm_api_extensions --> svc_deepseekLlmApiExtensions
+  pkg_embedding --> svc_embedding
   pkg_experimental_agent_team --> svc_agentTeams
   pkg_experimental_api_speech_to_text --> svc_speechController
   pkg_experimental_browser_use_chrome_devtools_mcp --> svc_browserUse
@@ -342,9 +358,12 @@ flowchart LR
   pkg_host_directory_picker_native --> svc_directoryPicker
   pkg_host_product_telemetry_otel --> svc_productTelemetry
   pkg_host_webserver --> svc_webServer
+  pkg_hub_account --> svc_hubAccount
   pkg_inspector --> svc_inspector
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
+  pkg_knowledge_base --> svc_knowledgeBases
+  pkg_knowledge_selection --> svc_knowledgeSelection
   pkg_llm --> svc_llm
   pkg_llm_deepseek --> svc_llm
   pkg_llm_pi_ai --> svc_llm
@@ -388,7 +407,9 @@ flowchart LR
   pkg_shell_env --> svc_shellEnv
   pkg_skill --> svc_skills
   pkg_skill_badge --> svc_skills
+  pkg_skill_controller --> svc_skillController
   pkg_skill_filesystem --> svc_skills
+  pkg_skill_market --> svc_skillMarket
   pkg_skill_office --> svc_skills
   pkg_spill --> svc_spillStore
   pkg_spill_local --> svc_spillStore
@@ -593,6 +614,13 @@ flowchart LR
 | `ctx.sessionController` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | 负责 Session 命令、冷读取、持久事件跟随、实时控制状态、模型目录、workspace 打开与 Agent 激活策略。 |
 | `ctx.sessionFileReferences` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | 通过 Session Controller 的既有 Agent lookup 策略委托文件引用发现。 |
 | `ctx.sessionSkillCatalog` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | 在不激活冷 Agent 的前提下列出 Session 组合中允许用户调用的 skill。 |
+| `ctx.hubAccount` | `core` | [`hub-account`](../packages/credentials/hub-account) | - | - | - | 让 Desktop 登录 Skill Hub 的用户中心（经本机回环回调的 OAuth2 + PKCE），在 Host 上刷新令牌，未登录时拒绝新消息。 |
+| `ctx.embedding` | `core` | [`embedding`](../packages/llm/embedding) | - | - | - | 下载并运行本地嵌入模型，通过已配置的提供商路由添加 API 嵌入模型，并在 Host 上为知识库向量化文本。 |
+| `ctx.knowledgeBases` | `core` | [`knowledge-base`](../packages/knowledge/knowledge-base) | - | - | - | 保存当前登录租户的知识库，把加入的文件处理成向量化的分块，并以向量与关键词混合打分检索。 |
+| `ctx.knowledgeSelection` | `core` | [`knowledge-selection`](../packages/knowledge/knowledge-selection) | - | - | - | 记录每个会话可检索的知识库，只在会话选择了知识库时提供在其上检索的 `knowledge_search` 工具。 |
+| `ctx.connectors` | `core` | [`connectors`](../packages/connector/connectors) | - | - | - | 列出内置连接器，并按发行版固定的版本安装和卸载它们的官方 CLI。 |
+| `ctx.skillMarket` | `core` | [`skill-market`](../packages/skill/skill-market) | - | - | - | 把当前登录租户的市场 Skill 作为 `market` 来源发现，以登录员工身份浏览 Skill Hub，并把校验通过的安装包一次移到位。 |
+| `ctx.skillController` | `core` | [`skill-controller`](../packages/skill/skill-controller) | - | - | - | 列出本机的用户级 skill，并执行 Desktop Skills 页面的操作：启停、显示位置、编辑与移到废纸篓。 |
 | `ctx.jobController` | `core` | [`api-job-controller`](../packages/api/job-controller) | - | - | - | 经生成的 Remote namespace 流式发送一个后台任务的观测 record；名册仍在会话控制流上。 |
 | `ctx.credentialsController` | `core` | [`api-settings-controller`](../packages/api/settings-controller) | - | - | - | 把凭据引用 seam 投影到生成的 Remote namespace：批量扇出、视图投影与拒绝映射都在这里，而不在 seam Definition 上。 |
 | `ctx.settingsController` | `core` | [`api-settings-controller`](../packages/api/settings-controller) | - | - | - | 把用户设置 seam 投影到生成的 Remote namespace：读取一律脱敏，所有拒绝在这里分类，而不在 seam Definition 上。 |

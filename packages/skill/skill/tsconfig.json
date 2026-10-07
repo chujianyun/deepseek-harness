@@ -18,6 +18,9 @@
       "path": "../../../vendor/schemastery"
     },
     {
+      "path": "../../../vendor/loader"
+    },
+    {
       "path": "../../core/scope"
     },
     {
@@ -25,6 +28,9 @@
     },
     {
       "path": "../../util/values"
+    },
+    {
+      "path": "../../settings/settings"
     }
   ]
 }

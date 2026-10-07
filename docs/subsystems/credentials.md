@@ -61,6 +61,10 @@ AccountDetails.balance projects recharge wallets in value and promotional wallet
 
 Bonus notification queries return an AccountBonusBatch with the current Platform account id and eligible orders in server order. AccountBonusNotification retains the server message and expiry without projecting credentials. Acknowledgment carries the expected account id and order id; the Host refuses it after an account change. Both notification operations use the initiating UI language through x-client-locale, without a language query parameter.
 
+## Hub sign-in
+
+Desktop's Hub sign-in is a second, independent sign-in beside the model credentials: [`hub-account`](../../packages/credentials/hub-account/README.md) registers an authorization flow for the record `hub-account/default` that runs the user center's OAuth2 authorization code flow with PKCE as a public client over a loopback callback, and keeps the grant on the Host, refreshing it before it expires. A refresh the user center refuses removes the grant and emits `hub-account/session-expired`. While no grant is stored, the package refuses new prompts through `api-session/prompt-admission`; running turns continue. [`ui-hub-account`](../../packages/client/ui-hub-account/README.md) renders the full-screen gate and the Settings account section. Model credentials (`deepseek-account`, API keys) are never read or written by this chain.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -366,6 +370,80 @@ abstract getDeviceIdentity(): Promise<{ deviceId?: string; userId?: AccountUserI
 
 Source: [`packages/credentials/deepseek-account/src/index.ts`](../../packages/credentials/deepseek-account/src/index.ts)
 
+<a id="ctxhubaccount--hubaccount"></a>
+
+### `ctx.hubAccount` — `HubAccount`
+
+Host owner of Hub sign-in and of the `hubAccount` Remote namespace.
+
+```ts cordis-catalog
+/**
+ * Read the sign-in state.
+ * @returns status, profile, and the current attempt.
+ */
+@Remote async getState(): Promise<HubAccountView>
+
+/**
+ * Read the cached branding to show: signed in, the signed-in tenant's; signed out,
+ * the last-signed-in tenant's.
+ * @returns the branding, or null when there is none to show.
+ */
+@Remote async getBranding(): Promise<HubBrandingView | null>
+
+/**
+ * Start a browser sign-in, or join the one already running. The state stream carries the
+ * authorization page to open.
+ * @returns the state with the attempt.
+ */
+@Remote async signIn(): Promise<HubAccountView>
+
+/**
+ * Cancel the named sign-in attempt.
+ * @param attemptId - attempt to cancel.
+ * @returns the state after cancellation.
+ * @throws RemoteError when the attempt is not the current one.
+ */
+@Remote async cancelSignIn(attemptId: string): Promise<HubAccountView>
+
+/**
+ * Sign out: forget the local grant and revoke it at the user center in the background.
+ * Model credentials are untouched.
+ * @returns the signed-out state.
+ */
+@Remote async signOut(): Promise<HubAccountView>
+
+/**
+ * Switch tenant: sign out, then sign in again so the user center offers the tenant choice.
+ * @returns the state with the new attempt.
+ */
+@Remote async switchTenant(): Promise<HubAccountView>
+
+/**
+ * Stream the sign-in state.
+ * @param signal - stream lifetime.
+ * @returns the current state, then every change.
+ */
+@Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<HubAccountView>
+
+/**
+ * The current access token for user-center client APIs, refreshed first when it is due. Host only.
+ * @returns the token, or undefined while signed out.
+ */
+async accessToken(): Promise<string | undefined>
+
+/**
+ * Call a user-center client API (`/api/client/*`) as the signed-in employee. Host only: the token
+ * never leaves this process. A rejected token is refreshed once and the call retried.
+ * @param path - absolute path on the user center, with its query.
+ * @param init - fetch options; its signal cancels the call.
+ * @returns the user center's response, whatever its status.
+ * @throws RemoteError `hub-account/signed-out` when no sign-in is stored.
+ */
+async request(path: string, init: RequestInit = {}): Promise<Response>
+```
+
+Source: [`packages/credentials/hub-account/src/index.ts`](../../packages/credentials/hub-account/src/index.ts)
+
 <a id="authorization-events"></a>
 
 ### `authorization/*` events
@@ -485,6 +563,27 @@ Local grant removal has completed.
 ```
 
 Source: [`packages/credentials/deepseek-account/src/index.ts`](../../packages/credentials/deepseek-account/src/index.ts)
+
+<a id="hub-account-events"></a>
+
+### `hub-account/*` events
+
+<a id="hub-accountsession-expired--emit"></a>
+
+#### `hub-account/session-expired` — emit
+
+The user center refused to refresh the stored sign-in (employee or tenant disabled, grant revoked); the local grant is already removed.
+
+```ts cordis-catalog
+/**
+ * The user center refused to refresh the stored sign-in (employee or tenant disabled, grant
+ * revoked); the local grant is already removed.
+ * @mode emit
+ */
+'hub-account/session-expired'(): void
+```
+
+Source: [`packages/credentials/hub-account/src/types.ts`](../../packages/credentials/hub-account/src/types.ts)
 <!-- END GENERATED cordis-surface -->
 
 The account Service Definition exposes getState, getProfile, getBalance, getUnnotifiedBonuses, ackBonusNotified, startSignIn, cancelSignIn, signOut, watch, and Host-only resolveToken and getPlatformSession. The platform provider implements it with an AuthorizationFlow and a private GrantRecord. AccountView distinguishes stored presence from server validation; attempt IDs bind cancellation to one local flow. See [the account package](../../packages/credentials/deepseek-account/README.md).

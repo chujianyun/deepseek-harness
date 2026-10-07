@@ -33,7 +33,7 @@ None; approval request and response rendering does not alter a model request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **The panel exposes transient decisions only** — it supports allow-once and reject; persistent permission policy remains owned by Host-side approval packages. Requester-supplied localized presentation copy follows the UI language without changing the audit reason or translating model-generated text.
+- **The panel exposes transient decisions only** — it supports allow-once and reject, plus **Always allow** when the requester offers to remember the grant; what is remembered, and for how long, remains owned by the requester. Requester-supplied localized presentation copy follows the UI language without changing the audit reason or translating model-generated text.
 
 
 <a id="dev-note"></a>

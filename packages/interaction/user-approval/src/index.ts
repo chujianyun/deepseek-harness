@@ -46,10 +46,10 @@ declare module '@deepseek-ai/dsh-session/types' {
 }
 
 import { ApprovalRequestId } from './types.ts'
-import type { ApprovalOutcome, ApprovalRequestEvent } from './types.ts'
+import type { ApprovalAnswer, ApprovalOutcome, ApprovalRequestEvent } from './types.ts'
 
 export { ApprovalRequestId } from './types.ts'
-export type { ApprovalOutcome } from './types.ts'
+export type { ApprovalAnswer, ApprovalOutcome, ApprovalRememberedGrant } from './types.ts'
 
 /** Every {@link ApprovalOutcome}, for runtime normalization of answerer returns. */
 const OUTCOMES: readonly ApprovalOutcome[] = ['allowed-once', 'rejected', 'cancelled', 'unavailable']
@@ -131,6 +131,24 @@ export interface ApprovalRequest extends ApprovalRequestEvent {
   readonly signal?: AbortSignal
 }
 
+/** Same-process hooks of one {@link ApprovalService.request}, kept off the forwarded request. */
+export interface ApprovalRequestOptions {
+  /** Called once, before the request resolves, when an offered grant is to be remembered. */
+  readonly onRemember?: () => void
+}
+
+/**
+ * Normalize an answerer's return to the closed vocabulary.
+ * @param answer - what the answerer returned.
+ * @returns the outcome, and whether an `'allowed-once'` grant is to be remembered.
+ */
+function answerOf(answer: unknown): { outcome: ApprovalOutcome; remember: boolean } {
+  if (typeof answer === 'string') return { outcome: OUTCOMES.includes(answer as ApprovalOutcome) ? answer as ApprovalOutcome : 'unavailable', remember: false }
+  const grant = answer as Partial<Record<'outcome' | 'remember', unknown>> | null
+  if (grant?.outcome === 'allowed-once' && grant.remember === true) return { outcome: 'allowed-once', remember: true }
+  return { outcome: 'unavailable', remember: false }
+}
+
 /** Plugin config. All optional — `static Config` supplies the defaults. */
 export interface Config {
   /**
@@ -207,12 +225,15 @@ export class ApprovalService extends Service {
    * violate the pair. Session contains post-commit observer failures, so an
    * authoritative append cannot reject the request or suppress its matching
    * audit event.
+   * An answerer may answer a request that offers `remember` with a grant to remember: the request
+   * still resolves `'allowed-once'` and calls `options.onRemember` first; the audit pair is unchanged.
    * @param req - the pending decision (agent, tool identity, reason, signal).
+   * @param options - same-process hooks, such as remembering an offered grant.
    * @returns the closed outcome; `'allowed-once'` is the only grant.
    * @throws when no turn is open or either audit event fails before the session
    *   append commit point.
    */
-  async request(req: ApprovalRequest): Promise<ApprovalOutcome> {
+  async request(req: ApprovalRequest, options: ApprovalRequestOptions = {}): Promise<ApprovalOutcome> {
     const session = req.agent.session
     if (!hasOpenTurn(session)) {
       throw new Error(
@@ -228,8 +249,12 @@ export class ApprovalService extends Service {
       ...req.callId !== undefined ? { callId: req.callId } : {},
       ...req.reason !== undefined ? { reason: req.reason } : {},
     })
-    const outcome = await this.decide(req, session)
+    const { outcome, remember } = await this.decide(req, session)
     session.append('approval/decided', { id, outcome })
+    if (remember && req.remember === true) {
+      // The grant is already audited; a failing remember leaves it one-shot instead of failing the call.
+      try { options.onRemember?.() } catch (error) { this.ctx.logger.warn(`approval: remembering a grant failed: ${String(error)}`) }
+    }
     return outcome
   }
 
@@ -262,39 +287,40 @@ export class ApprovalService extends Service {
    * Dispatch the waterfall, contained and raced against the request signal.
    * @param req - the borrowed public request.
    * @param session - the request agent's session used for policy lookup.
-   * @returns the normalized closed outcome.
+   * @returns the normalized closed outcome, and whether its grant is to be remembered.
    */
-  private async decide(req: ApprovalRequest, session: Session): Promise<ApprovalOutcome> {
+  private async decide(req: ApprovalRequest, session: Session): Promise<{ outcome: ApprovalOutcome; remember: boolean }> {
+    const cancelled = { outcome: 'cancelled', remember: false } as const
     const signal = req.signal
-    if (signal?.aborted) return 'cancelled'
+    if (signal?.aborted) return cancelled
     // The 'never' policy is decided HERE, before any dispatch: a listener
     // registered with `prepend: true` after this service mounts would sit
     // ahead of any gate LISTENER, so a listener-shaped gate cannot keep the
     // documented promise that 'never' rejects deterministically regardless
     // of registration order — only the service's own request path can.
-    if (this.effectivePolicy(session) === 'never') return 'rejected'
+    if (this.effectivePolicy(session) === 'never') return { outcome: 'rejected', remember: false }
     // Enter the promise chain BEFORE dispatching: a listener that throws
     // SYNCHRONOUSLY (before its first await) must land in the same rejection
     // path as an async one — `Promise.resolve(call())` would let it escape
     // the containment into the caller.
-    const answer: Promise<ApprovalOutcome> = Promise.resolve().then(
+    const answer: Promise<{ outcome: ApprovalOutcome; remember: boolean }> = Promise.resolve().then(
       () => this.ctx.waterfall(
         scopeTarget(req.agent, req.agent), 'approval/request', req,
-        () => Promise.resolve<ApprovalOutcome>('unavailable'),
+        () => Promise.resolve<ApprovalAnswer>('unavailable'),
       ),
     ).then(
       // Normalize a rogue (non-vocabulary) answerer return to the fail-closed
       // outcome instead of leaking it into callers' closed-union switches.
-      outcome => OUTCOMES.includes(outcome) ? outcome : 'unavailable',
+      answerOf,
       // A throwing answerer must fail the QUESTION closed, not the caller's
       // tool call open — the seam contains its callbacks.
-      () => 'unavailable',
+      () => ({ outcome: 'unavailable', remember: false }),
     )
     if (signal === undefined) return answer
-    return await new Promise<ApprovalOutcome>((resolve) => {
+    return await new Promise<{ outcome: ApprovalOutcome; remember: boolean }>((resolve) => {
       const onAbort = () => {
         signal.removeEventListener('abort', onAbort)
-        resolve('cancelled')
+        resolve(cancelled)
       }
       signal.addEventListener('abort', onAbort, { once: true })
       void answer.then((outcome) => {

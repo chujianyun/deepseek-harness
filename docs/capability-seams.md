@@ -70,6 +70,20 @@ flowchart LR
   svc_sessionController["ctx.sessionController<br/>Host Session Remote controller"]
   svc_sessionFileReferences["ctx.sessionFileReferences<br/>Session-addressed file-reference Remote adapter"]
   svc_sessionSkillCatalog["ctx.sessionSkillCatalog<br/>Session-addressed skill Remote adapter"]
+  pkg_hub_account["hub-account"]
+  svc_hubAccount["ctx.hubAccount<br/>Hub sign-in Remote controller"]
+  pkg_embedding["embedding"]
+  svc_embedding["ctx.embedding<br/>Embedding models"]
+  pkg_knowledge_base["knowledge-base"]
+  svc_knowledgeBases["ctx.knowledgeBases<br/>Knowledge bases"]
+  pkg_knowledge_selection["knowledge-selection"]
+  svc_knowledgeSelection["ctx.knowledgeSelection<br/>Knowledge selection"]
+  pkg_connectors["connectors"]
+  svc_connectors["ctx.connectors<br/>Connectors"]
+  pkg_skill_market["skill-market"]
+  svc_skillMarket["ctx.skillMarket<br/>Skill Hub market"]
+  pkg_skill_controller["skill-controller"]
+  svc_skillController["ctx.skillController<br/>Installed-skill Remote controller"]
   pkg_api_job_controller["api-job-controller"]
   svc_jobController["ctx.jobController<br/>Host job Remote controller"]
   pkg_api_settings_controller["api-settings-controller"]
@@ -309,6 +323,7 @@ flowchart LR
   pkg_compaction_tool_result_pruner --> svc_toolResultPruner
   pkg_computer_use --> svc_computerUse
   pkg_config_editor --> svc_configEditor
+  pkg_connectors --> svc_connectors
   pkg_cordis_host_runner --> svc_cordisInspect
   pkg_cordis_host_runner --> svc_dynamicCordisRunner
   pkg_credentials --> svc_credentials
@@ -316,6 +331,7 @@ flowchart LR
   pkg_deepseek_account --> svc_deepseekAccount
   pkg_deepseek_account_platform --> svc_deepseekAccount
   pkg_deepseek_llm_api_extensions --> svc_deepseekLlmApiExtensions
+  pkg_embedding --> svc_embedding
   pkg_experimental_agent_team --> svc_agentTeams
   pkg_experimental_api_speech_to_text --> svc_speechController
   pkg_experimental_browser_use_chrome_devtools_mcp --> svc_browserUse
@@ -340,9 +356,12 @@ flowchart LR
   pkg_host_directory_picker_native --> svc_directoryPicker
   pkg_host_product_telemetry_otel --> svc_productTelemetry
   pkg_host_webserver --> svc_webServer
+  pkg_hub_account --> svc_hubAccount
   pkg_inspector --> svc_inspector
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
+  pkg_knowledge_base --> svc_knowledgeBases
+  pkg_knowledge_selection --> svc_knowledgeSelection
   pkg_llm --> svc_llm
   pkg_llm_deepseek --> svc_llm
   pkg_llm_pi_ai --> svc_llm
@@ -386,7 +405,9 @@ flowchart LR
   pkg_shell_env --> svc_shellEnv
   pkg_skill --> svc_skills
   pkg_skill_badge --> svc_skills
+  pkg_skill_controller --> svc_skillController
   pkg_skill_filesystem --> svc_skills
+  pkg_skill_market --> svc_skillMarket
   pkg_skill_office --> svc_skills
   pkg_spill --> svc_spillStore
   pkg_spill_local --> svc_spillStore
@@ -591,6 +612,13 @@ flowchart LR
 | `ctx.sessionController` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | Owns Session commands, cold reads, durable-event following, live control state, model catalogs, workspace opening, and Agent activation policy. |
 | `ctx.sessionFileReferences` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | Delegates file-reference discovery through the Session Controller's established Agent lookup policy. |
 | `ctx.sessionSkillCatalog` | `core` | [`api-session-controller`](../packages/api/session-controller) | - | - | - | Lists the Session composition's user-invocable skills without activating a cold Agent. |
+| `ctx.hubAccount` | `core` | [`hub-account`](../packages/credentials/hub-account) | - | - | - | Signs Desktop in to the Skill Hub user center (OAuth2 + PKCE over a loopback callback), refreshes the token on the Host, and refuses new prompts while signed out. |
+| `ctx.embedding` | `core` | [`embedding`](../packages/llm/embedding) | - | - | - | Downloads and runs the local embedding model, adds API embedding models over configured provider routes, and embeds text for knowledge bases on the Host. |
+| `ctx.knowledgeBases` | `core` | [`knowledge-base`](../packages/knowledge/knowledge-base) | - | - | - | Keeps the signed-in tenant's knowledge bases, processes added files into embedded chunks, and searches them with hybrid vector and keyword scoring. |
+| `ctx.knowledgeSelection` | `core` | [`knowledge-selection`](../packages/knowledge/knowledge-selection) | - | - | - | Logs the knowledge bases each session may search and offers the `knowledge_search` tool over them only while a session has selected any. |
+| `ctx.connectors` | `core` | [`connectors`](../packages/connector/connectors) | - | - | - | Lists the built-in connectors and installs and uninstalls their official CLIs at the versions a release pins. |
+| `ctx.skillMarket` | `core` | [`skill-market`](../packages/skill/skill-market) | - | - | - | Discovers the signed-in tenant's market Skills as the `market` source, browses the Skill Hub as the signed-in employee, and installs a validated package in one move. |
+| `ctx.skillController` | `core` | [`skill-controller`](../packages/skill/skill-controller) | - | - | - | Lists the user-level skills on this machine and applies the Desktop Skills page actions: switch, reveal, edit, and move to the trash. |
 | `ctx.jobController` | `core` | [`api-job-controller`](../packages/api/job-controller) | - | - | - | Streams one background job's observation record over the generated Remote namespace; the roster stays on the session control stream. |
 | `ctx.credentialsController` | `core` | [`api-settings-controller`](../packages/api/settings-controller) | - | - | - | Projects the credential-reference seam onto the generated Remote namespace: batch fan-out, view projection, and refusal mapping live here, not on the seam Definition. |
 | `ctx.settingsController` | `core` | [`api-settings-controller`](../packages/api/settings-controller) | - | - | - | Projects the user-settings seam onto the generated Remote namespace: the read is always redacted and every refusal is classified here, not on the seam Definition. |

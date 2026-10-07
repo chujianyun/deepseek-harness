@@ -75,6 +75,25 @@ describe('SandboxPolicyService', () => {
     })
   })
 
+  it('adds the writable roots plugins register, in name order, while they apply and until disposed', async () => {
+    const ctx = await mounted({ mode: 'workspace-write', workspaceRoot: '/fallback' })
+    let connected = true
+    const disposeB = ctx.sandboxPolicy.registerWritableRoot({ name: 'b-connector', resolve: () => connected ? '/home/u/.dsh/connectors/b' : undefined })
+    ctx.sandboxPolicy.registerWritableRoot({ name: 'a-connector', resolve: () => '/home/u/.dsh/connectors/a' })
+    expect(ctx.sandboxPolicy.resolve()).toEqual({
+      mode: 'workspace-write', workspaceRoot: '/fallback', extraWritableRoots: ['/home/u/.dsh/connectors/a', '/home/u/.dsh/connectors/b'],
+    })
+    connected = false
+    expect(ctx.sandboxPolicy.resolve().extraWritableRoots).toEqual(['/home/u/.dsh/connectors/a'])
+    disposeB()
+    connected = true
+    expect(ctx.sandboxPolicy.resolve().extraWritableRoots).toEqual(['/home/u/.dsh/connectors/a'])
+    expect(() => ctx.sandboxPolicy.registerWritableRoot({ name: 'a-connector', resolve: () => undefined })).toThrow('"a-connector" is already registered')
+    expect(() => ctx.sandboxPolicy.registerWritableRoot({ name: ' ', resolve: () => undefined })).toThrow('name must be non-empty')
+    ctx.sandboxPolicy.registerWritableRoot({ name: 'c-relative', resolve: () => 'relative/dir' })
+    expect(() => ctx.sandboxPolicy.resolve()).toThrow('sandbox writable-root contributor "c-relative" resolved a relative directory "relative/dir"')
+  })
+
   it('resolves each session mode and cwd together without changing the fallback', async () => {
     const ctx = await mounted({ mode: 'workspace-write', workspaceRoot: '/fallback' })
     const first = session('sess-first', '/projects/first')

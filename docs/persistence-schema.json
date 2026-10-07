@@ -6450,6 +6450,85 @@
       }
     },
     {
+      "key": "event:connectors/always-allowed",
+      "kind": "event",
+      "event": "connectors/always-allowed",
+      "surface": false,
+      "digest": "492954dcf5c71ab11312adacc10f9de45eed6bbe90549ec10c21c7e7386efa27",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "callId",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "commands",
+                "type": 3,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "array",
+            "element": 2
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "connectors/always-allowed"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:deliverables/presented",
       "kind": "event",
       "event": "deliverables/presented",
@@ -10301,6 +10380,96 @@
           {
             "kind": "literal",
             "value": "image/offload"
+          }
+        ]
+      }
+    },
+    {
+      "key": "event:knowledge/selection",
+      "kind": "event",
+      "event": "knowledge/selection",
+      "surface": false,
+      "digest": "3e931d3bb95ac1863f816b3cf3d5d4c6722d433d061e69f937a30f1ceb2b2b92",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 5,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "bases",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 3
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "id",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": 4,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "knowledge/selection"
           }
         ]
       }
@@ -21795,6 +21964,13 @@
   ],
   "types": [
     {
+      "digest": "000c1c285bf546d38b8d6713d53aad649f6aa8062c03ba23ad9259d7243ee218",
+      "names": [],
+      "sources": [
+        "packages/knowledge/knowledge-selection/src/types.ts:53"
+      ]
+    },
+    {
       "digest": "0116b1f89c05221d56b0ba35c83d302bf4857bc7277d247e9bbaf74b27d2c66e",
       "names": [],
       "sources": []
@@ -21868,6 +22044,11 @@
       "sources": []
     },
     {
+      "digest": "08019d166cdeb2620c50b42b194045f07eb848ed042b40acee6cb1270457e4a1",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "09655b34d7f3cf1e9005974de2357de2d4a60deea165d16dac1eadaa6ec539a8",
       "names": [],
       "sources": []
@@ -21904,7 +22085,7 @@
         "packages/llm/llm/src/types.ts#ReplayEnvelope"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:430"
+        "packages/llm/llm/src/types.ts:446"
       ]
     },
     {
@@ -21953,6 +22134,11 @@
       "sources": [
         "packages/subagent/tool-subagent/src/model-selection-state.ts:17"
       ]
+    },
+    {
+      "digest": "0d82af9d9795b1133202a64728f1dd7719ed4e9c1ff26bcf7ce19c0dc489b133",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "0e10d7c096b47e61defe372a5fc8bd37d835199410eac44367f95c45082498bd",
@@ -22457,13 +22643,20 @@
       "digest": "2abb711460e6238d851c30f3e4bdd87a2aa1887ee70575b3d3b7b25610673095",
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:455"
+        "packages/llm/llm/src/types.ts:471"
       ]
     },
     {
       "digest": "2aed07493b1c65b6d00de5586da1e743cf501684b9ad43a1765fb4007d4ea456",
       "names": [],
       "sources": []
+    },
+    {
+      "digest": "2bcf34ac7dc95d34676ac2da19c692bd1fb17a58c54164fb904c8cd1b83c243b",
+      "names": [],
+      "sources": [
+        "packages/connector/connectors/src/types.ts:17"
+      ]
     },
     {
       "digest": "2c4c21f19f426a58f2dac914e34313aa43f8408972de857a486d1f086d5adb6c",
@@ -22689,7 +22882,7 @@
       "digest": "3bec87f9e6ab3da03346f49923d3c51621debc0159df68605e543c3b2a026f90",
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:453"
+        "packages/llm/llm/src/types.ts:469"
       ]
     },
     {
@@ -22708,7 +22901,7 @@
         "packages/core/tools/src/index.ts#ToolRestriction"
       ],
       "sources": [
-        "packages/core/tools/src/index.ts:700"
+        "packages/core/tools/src/index.ts:707"
       ]
     },
     {
@@ -22736,6 +22929,11 @@
       "sources": [
         "packages/compaction/compaction/src/types.ts:24"
       ]
+    },
+    {
+      "digest": "3e931d3bb95ac1863f816b3cf3d5d4c6722d433d061e69f937a30f1ceb2b2b92",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "3ee93b06f3a125850337602bcdf155d2538c43a5c944ec55b1b3c365152d6796",
@@ -22809,7 +23007,7 @@
       "digest": "45f2a07ea94573123b6ae14db787a40062dec3834f36d8be92c523d40ba28448",
       "names": [],
       "sources": [
-        "packages/interaction/user-approval/src/types.ts:44"
+        "packages/interaction/user-approval/src/types.ts:57"
       ]
     },
     {
@@ -22830,7 +23028,7 @@
         "packages/llm/llm/src/types.ts#StreamChunk"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:452"
+        "packages/llm/llm/src/types.ts:468"
       ]
     },
     {
@@ -22847,6 +23045,11 @@
     },
     {
       "digest": "48f9c19417a1abbedfa59f4667bba36b93ac2db407adf5e84cb3ba0de30942cb",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "492954dcf5c71ab11312adacc10f9de45eed6bbe90549ec10c21c7e7386efa27",
       "names": [],
       "sources": []
     },
@@ -22937,7 +23140,7 @@
         "packages/workflow/workflow/src/types.ts#WorkflowRunId"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:398",
+        "packages/api/session-controller/src/types.ts:399",
         "packages/attachment/attachment/src/brand.ts:6",
         "packages/compaction/compaction/src/brand.ts:4",
         "packages/core/session/src/types.ts:20",
@@ -23084,6 +23287,11 @@
     },
     {
       "digest": "557e148d30b79ee48645850832b30c717d7c3b64641deb5d6133b8b4e91ee0b8",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "5623f8877326ca315ace5a7698518f812971fc9800fdab134a88a62883a0c04a",
       "names": [],
       "sources": []
     },
@@ -23323,7 +23531,7 @@
         "packages/llm/llm/src/types.ts#ToolSchema"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:473"
+        "packages/llm/llm/src/types.ts:489"
       ]
     },
     {
@@ -23332,7 +23540,7 @@
         "packages/skill/skill/src/index.ts#SkillInvocationSource"
       ],
       "sources": [
-        "packages/skill/skill/src/index.ts:146"
+        "packages/skill/skill/src/index.ts:150"
       ]
     },
     {
@@ -23380,7 +23588,7 @@
       "digest": "6a4f72e2e179e17b922f2a9392c0e1c8f8c707f32494372454850a3eb184a6e7",
       "names": [],
       "sources": [
-        "packages/api/session-controller/src/types.ts:403"
+        "packages/api/session-controller/src/types.ts:404"
       ]
     },
     {
@@ -23821,7 +24029,7 @@
       "digest": "88a610b831be6d92612a464be5c7d0b88ec24d97bd299837bf74bf7672183c9a",
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:456"
+        "packages/llm/llm/src/types.ts:472"
       ]
     },
     {
@@ -23962,7 +24170,7 @@
       "digest": "93cbbc5a7fd0b1aa1ff1b9a6bb5ec52b073f48e5a5200365c45c0cd54059e1b9",
       "names": [],
       "sources": [
-        "packages/interaction/user-approval/src/types.ts:55"
+        "packages/interaction/user-approval/src/types.ts:68"
       ]
     },
     {
@@ -23979,7 +24187,7 @@
       "digest": "95080295115fbd83544520ba247b68a03790131f6a2eac323d388758cb542f65",
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:454"
+        "packages/llm/llm/src/types.ts:470"
       ]
     },
     {
@@ -24162,7 +24370,7 @@
       "digest": "a2b49331716ba0a7078b026d145306a70eae64b7313c3e6204bd931e75ec3bb1",
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:459"
+        "packages/llm/llm/src/types.ts:475"
       ]
     },
     {
@@ -24414,6 +24622,15 @@
       ],
       "sources": [
         "packages/attachment/attachment/src/types.ts:11"
+      ]
+    },
+    {
+      "digest": "b0b7b7f4d127101c49bfd0128e6f37c4627ebbc8baddf5b2e9edff1dac8c84b8",
+      "names": [
+        "packages/knowledge/knowledge-selection/src/types.ts#KnowledgeSelectionBase"
+      ],
+      "sources": [
+        "packages/knowledge/knowledge-selection/src/types.ts:10"
       ]
     },
     {
@@ -24850,7 +25067,7 @@
       "digest": "d4b739491689cc6bb13d07ffac1a32239875abda364c0d5edd8f74faf5e9c00d",
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:457"
+        "packages/llm/llm/src/types.ts:473"
       ]
     },
     {
@@ -25182,7 +25399,7 @@
         "packages/api/session-controller/src/types.ts#ModelSelection"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:100"
+        "packages/api/session-controller/src/types.ts:101"
       ]
     },
     {
@@ -25212,7 +25429,7 @@
       "digest": "f1a96afe7503ac1817de769cd0ba13d9b80111c7034c50106b3344ecc14cc515",
       "names": [],
       "sources": [
-        "packages/llm/llm/src/types.ts:458"
+        "packages/llm/llm/src/types.ts:474"
       ]
     },
     {
@@ -25240,7 +25457,7 @@
         "packages/llm/llm/src/types.ts#SystemPromptUpdate"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:396"
+        "packages/llm/llm/src/types.ts:412"
       ]
     },
     {

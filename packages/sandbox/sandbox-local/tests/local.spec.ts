@@ -109,6 +109,15 @@ describe('profile dialects', () => {
     expect(seatbeltProfileArgs(WW)).toEqual(['-p', `${SEATBELT_RO_PROFILE} ${allow}`])
   })
 
+  it('grants the extra writable roots in every dialect, skipping a missing one where it would fail the run', () => {
+    const extra = mkdtempSync(join(tmpdir(), 'dsh-extra-root-'))
+    tempDirs.push(extra)
+    const policy = { ...WW, extraWritableRoots: [extra, '/missing/extra'] }
+    expect(bwrapProfileArgs(policy).slice(-6)).toEqual(['--bind-try', extra, extra, '--bind-try', '/missing/extra', '/missing/extra'])
+    expect(landlockProfileArgs(policy)).toEqual(['--ro', '/', '--rw', '/dev/null', '--rw', '/tmp', '--rw', '/ws', '--rw', extra])
+    expect(seatbeltProfileArgs(policy)[1]).toContain(`(subpath "${realpathSync(extra)}")`)
+  })
+
   it('seatbelt workspace-write dedups a workspace root that already IS the temp dir', () => {
     const profile = seatbeltProfileArgs({ mode: 'workspace-write', workspaceRoot: tmpdir() })[1] as string
     const grant = `(subpath "${realpathSync(tmpdir())}")`
@@ -138,6 +147,13 @@ describe('runnerCommand config', () => {
     expect(probeBwrap).not.toHaveBeenCalled()
     expect(probeLandlock).not.toHaveBeenCalled()
     expect(probeSeatbelt).not.toHaveBeenCalled()
+  })
+
+  it('canonicalizes the extra writable roots it binds', async () => {
+    const probes = { probeBwrap: () => false, probeLandlock: () => 'unusable' as const, probeSeatbelt: () => false }
+    const { sandbox } = await setup({ runnerCommand: ['fake-runner'], runnerFailureSignatures: ['fake-runner: failed'] }, probes)
+    const confined = await sandbox.confine(['true'], { ...WW, extraWritableRoots: [tmpdir()] })
+    expect(confined.argv).toEqual(expect.arrayContaining(['--bind-try', realpathSync.native(tmpdir()), realpathSync.native(tmpdir())]))
   })
 
   it('an EMPTY runnerCommand means unconfigured: the platform chain still gates the wrap', async () => {

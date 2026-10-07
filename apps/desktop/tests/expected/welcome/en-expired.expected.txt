@@ -1,1 +1,1 @@
-You have signed out of your account, please log in again.
+Your sign-in has ended (account or company disabled, or authorization revoked). Sign in again.

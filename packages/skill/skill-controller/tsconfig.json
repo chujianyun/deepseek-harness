@@ -1,0 +1,33 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../preset/agent-preset-registry"
+    },
+    {
+      "path": "../../util/native-command"
+    },
+    {
+      "path": "../../core/scope"
+    },
+    {
+      "path": "../skill"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../skill-market"
+    }
+  ]
+}

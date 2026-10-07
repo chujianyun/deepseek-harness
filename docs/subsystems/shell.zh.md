@@ -302,6 +302,21 @@ register(contributor: BashEnvContributor): () => void
 collect(execution: ToolExecution): DshEnvironment
 
 /**
+ * Register one `PATH` contributor; names are unique. Registration is disposed with the calling plugin fiber.
+ * @param contributor - the named per-execution directory resolver.
+ * @returns the disposer that unregisters the contribution.
+ */
+registerPath(contributor: ShellPathContributor): () => void
+
+/**
+ * Resolve the directories to put ahead of `PATH` for one shell tool execution.
+ * @param execution - the current tool execution.
+ * @returns absolute directories in contributor-name order, empty when none applies.
+ * @throws Error when a contributor resolves a relative directory.
+ */
+collectPath(execution: ToolExecution): string[]
+
+/**
  * Enumerate plugin-contributed variables without executing their resolvers.
  * @returns declarations sorted by environment variable name.
  */

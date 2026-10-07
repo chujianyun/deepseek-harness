@@ -29,6 +29,7 @@ import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import PlanModeController from '@deepseek-ai/dsh-plan-mode'
+import { knowledgeSearchTool } from '@deepseek-ai/dsh-knowledge-selection'
 import WebRuntime from '@deepseek-ai/dsh-web'
 import * as WebSearchExa from '@deepseek-ai/dsh-web-search-exa'
 import * as WebFetchLocal from '@deepseek-ai/dsh-web-fetch-http'
@@ -250,6 +251,27 @@ const TOOL_PACKAGES: ToolPackage[] = [
     async mount() {},
     note:
       'Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: ptc` / `mode: both` (see the PTC mode Agent Note). Under `ptc` it is the registry\'s only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime\'s language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-knowledge-selection',
+    dir: 'knowledge-selection',
+    source: 'packages/knowledge/knowledge-selection/src/tool.ts',
+    requires: ['ctx.tools', 'ctx.knowledgeBases (execution time)', 'a Session with selected knowledge bases'],
+    writes: ['knowledge/selection when the selection changes', 'tool/call', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(SessionStore)
+      const session = ctx.sessions.create(SessionId('tool-catalog-knowledge'))
+      const agent = { id: session.id, session } as Agent
+      await ctx.plugin(Object.assign((inner: Context) => {
+        const unreachable = () => Promise.reject(new Error('gen-tool-catalog: searches are unreachable during schema harvest'))
+        createScope(inner, agent).ctx.tools.register(knowledgeSearchTool(unreachable))
+      }, { inject: ['tools', 'systemPrompt'] }))
+      catalogChildScopes.set(ctx, agent)
+    },
+    scope: ctx => catalogChildScopes.get(ctx) as Agent,
+    note:
+      'Registered in an Agent scope only while its Session has selected knowledge bases, so a Session without a selection never offers it. '
+      + 'Searches each selected knowledge base under its own document count and threshold, and names the knowledge bases it could not search.',
   },
   {
     pkg: '@deepseek-ai/dsh-plan-mode',

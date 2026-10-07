@@ -13,6 +13,7 @@ import { SystemPromptNodeView } from './SystemPromptRow.tsx'
 import { TurnProcessNodeView } from './TurnProcessNodeView.tsx'
 import { TurnTailNodeView } from './TurnTailNodeView.tsx'
 import { TurnTriggerNodeView } from './TurnTriggerNodeView.tsx'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 
 /**
  * Register this package's business renderers behind the keyed Chat Node seat.
@@ -55,8 +56,12 @@ export function registerChatNodeRenderers(
     { name: 'conversation.chat.node', key: 'compaction', locale: NS }, CompactionNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'model-retry', locale: NS }, RetryNodeView))
-  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
-    { name: 'conversation.chat.node', key: 'turn-error', locale: NS }, TurnErrorNodeView))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node',
+    key: 'turn-error',
+    locale: NS,
+    inject: () => ({ openModelsSettings: () => { ctx.emit('settings/open-section', 'models') } }),
+  }, TurnErrorNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'turn-max-tokens', locale: NS }, TurnMaxTokensNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(

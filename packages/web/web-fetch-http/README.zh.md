@@ -43,7 +43,7 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `maxResponseBytes` | `5,000,000` | 响应主体最大字节数 |
-| `maxBodyChars` | `100,000` | 解码主体最大字符数 |
+| `maxBodyChars` | `2,000,000` | 解码主体最大字符数；保留整页，供知识库从完整网页中提取正文，`dsh-tool-web` 展示给模型时另按自己的输出上限截断 |
 | `timeoutMs` | `30,000` | 抓取超时——资源兜底，不是面向模型的工具预算 |
 | `maxRedirects` | `5` | 同源重定向最大跳数（`0` 表示不跟随） |
 | `userAgent` | `deepseek-harness/…` | 每次请求发送的 `User-Agent` 标头 |

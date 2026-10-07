@@ -66,7 +66,7 @@ import type {} from '@deepseek-ai/dsh-fs'
 import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { PiAiAdapter } from './adapter.ts'
 import { authContextFrom, credentialStoreFrom } from './auth.ts'
-import { catalogProviderIds } from './catalog.ts'
+import { catalogModels, catalogProviderIds } from './catalog.ts'
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
@@ -276,6 +276,22 @@ export function apply(ctx: Context, config: Config): void {
     { ...request, ...signal === undefined ? {} : { signal } },
     () => storedDiscoveryProfile(request.provider),
   ))
+  // A configured route's endpoint for non-chat consumers (embeddings): the
+  // route's own baseURL and protocol, else the installed catalog's for it. A
+  // catalog route that names no credential authenticates through pi-ai's own
+  // discovery (ambient keys, sign-ins), which only chat requests reach, so it
+  // offers no endpoint; a declared route without one is a keyless gateway.
+  ctx.llm.registerEndpointResolver(settingsNs, (provider) => {
+    const profile = profiles().get(provider)
+    const installed = catalogModels(provider).values().next().value
+    if (profile === undefined || (profile.apiKeyEnv === undefined && installed !== undefined)) return undefined
+    const baseURL = profile.baseURL ?? installed?.baseUrl
+    const api = profile.api ?? installed?.api
+    // Configuration refuses a declared route without a baseURL, and every catalog model names both.
+    /* v8 ignore next */
+    if (baseURL === undefined || api === undefined) return undefined
+    return { baseURL, api, headers: profile.headers, resolveApiKey: () => resolveApiKey(provider, profile) }
+  })
   // Route effects bind to this apply fiber via the stable `ctx` reference,
   // even when a swap runs inside the scoped settings callback below. A bare
   // mount (zero routes) is the dormant posture: nothing registers until a

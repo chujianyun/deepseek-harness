@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-06-knowledge-selection.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-06-knowledge-selection.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-06-knowledge-selection:
+  en: 258e6aed2191bb1d
+  zh: 9c741dbbd42915b9
+/2026-10-06-knowledge-selection/summary:
+  en: b5fd56512ea6281f
+  zh: 0248024bcddf3701
+/2026-10-06-knowledge-selection/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-06-knowledge-selection/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-06-knowledge-selection/compatibility:
+  en: 935231c437485f06
+  zh: eb66a6a0f2b199ea
+/2026-10-06-knowledge-selection/verification:
+  en: 8fa7a039bb974533
+  zh: 80950ace52a8ca1c
+/2026-10-06-knowledge-selection/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

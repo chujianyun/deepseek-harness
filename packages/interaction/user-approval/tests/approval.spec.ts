@@ -7,7 +7,7 @@ import type { Scope } from '@deepseek-ai/dsh-scope'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ApprovalService, { ApprovalOutcome, ApprovalRequest, setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
+import ApprovalService, { ApprovalAnswer, ApprovalOutcome, ApprovalRequest, setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 
 /**
  * A minimal Agent stand-in — the service only reaches `agent.session.append`
@@ -267,6 +267,64 @@ describe('ApprovalService.request', () => {
     ctx.on('approval/request', () => Promise.resolve('yolo' as ApprovalOutcome))
 
     await expect(ctx.approval.request(requestOf(agent))).resolves.toBe('unavailable')
+  })
+
+  it('offers to remember a grant only when the asker takes it, and still decides allowed-once', async () => {
+    const ctx = await mounted()
+    const { agent, appended } = fakeAgent()
+    const seen: Array<boolean | undefined> = []
+    ctx.on('approval/request', (req) => {
+      seen.push(req.remember)
+      return Promise.resolve<ApprovalAnswer>({ outcome: 'allowed-once', remember: true })
+    })
+    const onRemember = vi.fn()
+    await expect(ctx.approval.request(requestOf(agent, { remember: true }), { onRemember })).resolves.toBe('allowed-once')
+    expect(onRemember).toHaveBeenCalledOnce()
+    // The audit pair keeps the closed vocabulary; the offer is presentation only.
+    expect(appended.map(event => event.type)).toEqual(['approval/asked', 'approval/decided'])
+    expect(Object.keys(appended[0]!.data).sort()).toEqual(['id', 'toolName'])
+    expect(Object.keys(appended[1]!.data).sort()).toEqual(['id', 'outcome'])
+    expect(appended[1]!.data.outcome).toBe('allowed-once')
+    // Without the offer, a remembering answer is still a one-shot grant and nothing is remembered.
+    const unoffered = vi.fn()
+    await expect(ctx.approval.request(requestOf(agent), { onRemember: unoffered })).resolves.toBe('allowed-once')
+    expect(unoffered).not.toHaveBeenCalled()
+    expect(seen).toEqual([true, undefined])
+  })
+
+  it('treats a malformed remembering answer as unavailable and a plain grant as not remembered', async () => {
+    const ctx = await mounted()
+    const { agent } = fakeAgent()
+    const onRemember = vi.fn()
+    ctx.on('approval/request', () => Promise.resolve({ outcome: 'rejected', remember: true } as unknown as ApprovalAnswer))
+    await expect(ctx.approval.request(requestOf(agent, { remember: true }), { onRemember })).resolves.toBe('unavailable')
+    const plain = await mounted()
+    plain.on('approval/request', () => Promise.resolve<ApprovalAnswer>('allowed-once'))
+    await expect(plain.approval.request(requestOf(fakeAgent().agent, { remember: true }), { onRemember })).resolves.toBe('allowed-once')
+    expect(onRemember).not.toHaveBeenCalled()
+  })
+
+  it('still grants once when remembering throws', async () => {
+    const ctx = await mounted()
+    ctx.on('approval/request', () => Promise.resolve<ApprovalAnswer>({ outcome: 'allowed-once', remember: true }))
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    await expect(ctx.approval.request(requestOf(fakeAgent().agent, { remember: true }), { onRemember: () => { throw new Error('disk full') } })).resolves.toBe('allowed-once')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('disk full'))
+  })
+
+  it('does not remember a grant the signal withdrew first', async () => {
+    const ctx = await mounted()
+    const { agent } = fakeAgent()
+    const answer = Promise.withResolvers<ApprovalAnswer>()
+    ctx.on('approval/request', () => answer.promise)
+    const controller = new AbortController()
+    const onRemember = vi.fn()
+    const pending = ctx.approval.request(requestOf(agent, { remember: true, signal: controller.signal }), { onRemember })
+    controller.abort()
+    answer.resolve({ outcome: 'allowed-once', remember: true })
+    await expect(pending).resolves.toBe('cancelled')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(onRemember).not.toHaveBeenCalled()
   })
 
   it('settles cancelled immediately on an already-aborted signal without asking anyone', async () => {

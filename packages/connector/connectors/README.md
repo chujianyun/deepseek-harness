@@ -1,0 +1,96 @@
+---
+description: "Desktop connectors: office platforms reached through their official CLIs, installed at the versions a release pins, and the connectors Remote."
+kind: "package-reference"
+---
+# Connectors
+
+English | [中文](README.zh.md)
+
+## Summary
+
+`@deepseek-ai/dsh-connectors` owns the built-in [connectors](../../../docs/glossary.md#connector), as the Host service `ctx.connectors` and the `connectors` Remote namespace. A connector reaches an office platform through that platform's unmodified official CLI; this package lists the connectors, installs and uninstalls their CLIs, and signs the current Hub tenant in to the platform and checks that connection. Feishu installs [`lark-cli`](https://github.com/larksuite/cli) and DingTalk installs [`dws`](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli), each through a driver (`src/lark.ts`, `src/dingtalk.ts`) that says how its CLI isolates a tenant, signs in, reports health, ships Skills, and states a command's risk. Why connectors use the official CLIs is recorded in the [connectors Agent Note](../../../.agents/notes/proposed/feature/2026-10-06-connectors-over-official-clis.md).
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Configuration](#configuration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+Mount this package as a Loader entry in the Desktop profile beside `hub-account`, `skill`, and `shell-env`, which it injects. The web-app bundle enables it for the `desktop` profile with a configured user center, beside the knowledge bases, and `ui-connectors` renders its page.
+
+`getState()` and `watch()` return one view per connector, Feishu then DingTalk, with its status: `unsupported` when its CLI has no build for this platform, `not-installed`, `installing`, and, once its CLI is installed, the current tenant's [connection status](../../../docs/glossary.md#connector-status) — `disconnected` (red), `connecting`, `connected` (green), or `degraded` (yellow). A view carries the CLI name and the version this release installs, download progress while installing, the reason the last install failed, the sign-in under way, the reason the last sign-in failed, the signed-in account's name, and the reason the connection is degraded.
+
+`installConnector(id)` installs the connector's CLI in the background and returns at once; installing an installed or installing connector changes nothing. The install downloads this platform's archive of the pinned version from the configured mirrors in order (for `lark-cli`, npmmirror's binary mirror, then GitHub releases, as its own npm installer does; for `dws`, its GitHub release), resuming a partial download and verifying size and sha256 through [`dsh-verified-download`](../../util/verified-download/README.md). A release that ships its Skills as a separate archive (`dws-skills.zip`) has it downloaded and verified the same way, and its per-Skill tree `multi/<name>/` unpacked into `skills/`; an entry that would leave that directory fails the install with `storage`. It unpacks only the executable beside the version directory, runs it with `--version` and requires the pinned version in the output, and then renames it to `<dshHome>/connectors/<id>/<version>/`. A failed install leaves the connector `not-installed` with `error` set to `network` (no mirror served the archive), `verification` (the archive is not the pinned one), `storage` (it could not be written or has no executable), or `launch` (the executable did not run or reported another version); installing again clears it. One CLI serves every tenant of the machine, nothing is installed globally, and a CLI the user installed themselves — on `PATH` or with its own configuration directory — is never read or changed.
+
+The connection belongs to the tenant of the current [Hub sign-in](../../../docs/glossary.md#skill-hub). Every CLI run for a tenant gets that tenant's own configuration, data, and log directories under `<dshHome>/connectors/<id>/tenants/<tenantId>/` (for Feishu `LARKSUITE_CLI_CONFIG_DIR`, `LARKSUITE_CLI_DATA_DIR`, and `LARKSUITE_CLI_LOG_DIR`) and none of the caller's `LARKSUITE_CLI_*`, `OPENCLAW_HOME`, or `HERMES_HOME` variables, so the user's own `~/.lark-cli` is never read or changed. Each tenant creates its own Feishu app, so the tokens and app secret lark-cli keeps in the system keychain, keyed by app, never mix either. For DingTalk the tenant's directory holds `dws`'s configuration (`DWS_CONFIG_DIR`) and its encrypted credential store (`DWS_KEYCHAIN_DIR`), and every run drops the caller's `DWS_*` variables and sets `DWS_DISABLE_KEYCHAIN=1`: `dws` otherwise keeps the store's key in the system keychain under one name for every directory and sweeps that name when signing out, which would reach the user's own `~/.dws` sign-in.
+
+`connect(id)` starts the current tenant's sign-in in the background and returns at once; a sign-in under way or a connected connector changes nothing. For Feishu it follows lark-cli's agent flow: a tenant without an app first runs `config init --new`, where the user creates the app in the browser, then `auth login --recommend --json`, where the user authorizes their own identity. While a step waits, the view's `login` carries the step, the address the CLI printed, and a QR code of it drawn by `auth qrcode`. When the user finishes, a health check decides the connection; a step that fails sets `loginError` with the step and the CLI's message (an app the platform refused to create reads as `create-app`). DingTalk signs in in one step with DingTalk's own app: `auth login --device --no-browser --format json` prints a device-flow address with the user code, which works from this machine's browser and from a phone scanning the QR code DSH draws (an SVG, through [`uqr`](https://github.com/unjs/uqr)). The view's `login.steps` lists the steps the sign-in takes, so the dialog shows two for Feishu and none for DingTalk. `cancelConnect(id)` ends the step's process. A failed or cancelled sign-in that created the tenant's app runs `config remove` and deletes the tenant's directory, so nothing half done remains; a sign-in that only authorizes keeps the existing app.
+
+A health check runs `auth status --json --verify`, which asks the server whether the user's token still works: `ready` or `needs_refresh` is `connected` with the user's name, `missing` and an unconfigured tenant are `disconnected`, and anything else — `verify_failed`, `error`, output that cannot be read, or a CLI that does not run — is `degraded` with the reason. For DingTalk a check runs `auth status --readonly --format json`, which reads the local sign-in without refreshing it: `authenticated` is `connected` with the user and company, not authenticated without a reason is `disconnected`, and not authenticated with a `reason` (a credential store that cannot be read, a failed refresh) is `degraded` with its message, as is anything unreadable. Checks run for every installed connector at startup, after an install, when the tenant changes, every `checkIntervalMs`, and on `check()`, which the Connectors page calls when it opens; a check that a sign-in, disconnect, or tenant switch overtook is dropped. Signing in to another tenant stops a sign-in under way and shows that tenant's own connection.
+
+While a connector is installed and switched on for the current tenant, the model shell finds a script named after its CLI (`lark-cli`, `dws`) in `<dshHome>/connectors/<id>/bin/<tenantId>/`, which this package puts ahead of `PATH` through `ctx.shellEnv.registerPath()`. Connected or degraded, the script drops the caller's lark-cli variables and runs the installed CLI with the tenant's configuration and data directories, so a command reaches DSH's CLI and the tenant's sign-in rather than a CLI or `~/.lark-cli` the user set up. While the script runs the CLI, the service registers the tenant's directory with `ctx.sandboxPolicy.registerWritableRoot()`, so a CLI in a confined model shell can take its locks and refresh its tokens there (`dws` takes a lock for every call that reads its sign-in); lark-cli's logs go under the system temporary directory, which a sandboxed model shell may write, while `dws` keeps its logs in its configuration directory and carries on when a sandbox refuses them. Disconnected, the script refuses with a message that asks the user to connect on the Connectors page. When a command fails, the script adds that the Connectors page may help, and the service, which observes `tools/result`, runs a health check of each connector whose CLI a failed bash call ran. The script is rewritten whenever the tenant, the connection, or the switch changes.
+
+Before a bash call runs, the service's `tools/pre-execute` listener reads what the call does through each connected, switched-on connector. It splits the command into words and separators and finds each invocation of the connector's CLI; its risk is what `<cli> <command> --help` states, read once per command. lark-cli states `Risk: read | write | high-risk-write`; a high-risk write runs only with `--yes`. `dws` states `Safety: effect=… risk=… confirmation=…`: `effect=read` reads, `effect=destructive` or `risk=high` is a high-risk write, any other `effect=write` writes, and `confirmation=user_required` means it runs only with `--yes`; `auth status`, `version`, `schema`, `profile list`, `shortcut list`, and `config list`, which state no safety, read. `--help`, `--version`, `--dry-run`, or no arguments read. A command without a stated risk, an argument built from a variable, and a command that hides its lark-cli call — command substitution, `eval`, `sh -c`, `xargs` — count as `unknown` and are confirmed like a write. A call that only reads runs unasked; any other returns `ask` with the commands as the audit reason and a localized `displayReason`, so the user approves it once in the approval panel, and a rejection reaches the model as the tool's denial. A `high-risk-write` call's reason opens with a ⚠️ warning, and a call with a command the CLI runs only confirmed says DSH adds `--yes`; once the user allows it, the model shell gets `DSH_CONNECTOR_CONFIRMED` for that call only, naming those commands one per line as `<cli> <command words>`, and the CLI's script adds `--yes` to an invocation of them unless already confirmed (`--yes`, or `-y` for `dws`); the call's other invocations run unchanged. The call's `tools/result` ends that approval. Another listener's denial or ask stands unchanged. When every command a call asks about is a plain `write` its CLI runs unconfirmed, the ask also carries `onRemember`, so the approval panel offers **Always allow**: choosing it allows the call and saves each command's words for the signed-in tenant in `alwaysAllowed` as `<tenantId>/<id>/<command words>`. A later call whose asked commands are all saved runs unasked, whatever their arguments, and appends a log-only `connectors/always-allowed` event (`callId`, `commands`) to the session; without a session to record it in, the call asks. A call that holds a high-risk, confirm-only, or `unknown` command never offers it. `revokeAlwaysAllowed()` removes one; disconnecting removes the tenant's, uninstalling every tenant's, and signing out of the Hub the signed-out tenant's; switching tenants keeps each tenant's own.
+
+While a connector is connected or degraded and switched on, the Skills its CLI embeds reach the model through `ctx.skills`, from the `connectors` provider with source `connector-<id>` and rank 350 — ahead of the user's own Skill directories, so a stale copy there never shadows the Skill matching the installed CLI, and behind project Skills. The provider is registered with `everyLayer`, so this order also holds inside an agent preset that discovers local Skills in its own layer. For Feishu the list comes from `skills list`, read once per CLI version, and a Skill's instructions from `skills read <name>` without its frontmatter; its files are read with `lark-cli skills read <name> <path>`. For DingTalk they come from the installed `skills/<name>/SKILL.md` files, whose frontmatter `name` must match the directory, and the Skill's directory is its resource base. Each view lists the installed CLI's Skills for the card. `setEnabled(id, enabled)` switches a connector on or off for the current tenant in the volatile `disabled` list, through the Settings service: off, the connector stays signed in, but the model gets neither its Skills nor its CLI, and a user's own `lark-cli` is left as it is.
+
+`disconnect(id)` stops a sign-in under way, signs the tenant out — lark-cli's `config remove` clears its app configuration and tokens, keychain entries included; `dws auth logout` revokes its tokens — and deletes the tenant's directory; the CLI stays. `uninstallConnector(id)` stops a running install or sign-in, signs every tenant on the machine out the same way, and deletes `<dshHome>/connectors/<id>`, downloads included. Every method refuses an unknown id with `connectors/not-found` and a connector unsupported here with `connectors/unavailable`; `connect` also refuses a connector that is not installed with `connectors/not-installed`, and `connect` and `disconnect` refuse while signed out of the Hub with `hub-account/signed-out`.
+
+-----
+
+<a id="configuration"></a>
+## Configuration
+
+| Field | Default | Meaning |
+|---|---|---|
+| `dshHome` | `$DSH_HOME` or `~/.dsh` | Harness home; connector CLIs live under `<dshHome>/connectors`. |
+| `feishu` | `lark-cli` 1.0.97 | The Feishu CLI: `binary`, `version`, `mirrors` (URL templates with `{version}` and `{file}`), and one `archives` entry per platform with its `file`, `size`, and `sha256`. |
+| `dingtalk` | `dws` 1.0.63 | The DingTalk CLI, in the same fields, plus `skills`: the release's Skills archive with its `file`, `size`, and `sha256`. |
+| `checkIntervalMs` | `1800000` (30 minutes) | Time between periodic health checks of the connections. |
+| `disabled` | `[]` | Connectors switched off, as `<tenantId>/<id>`; volatile, written by `setEnabled()`. |
+| `alwaysAllowed` | `[]` | Write commands that run without asking, as `<tenantId>/<id>/<command words>`; volatile, added from the approval panel and removed by `revokeAlwaysAllowed()`. |
+
+-----
+
+<a id="model-experience"></a>
+## Model Experience
+
+Indirectly, through the skill registry and the bash tool: a connected, switched-on connector's Skills join the model's skill catalog, and its CLI runs in bash; disconnecting or switching it off takes the Skills out of the catalog. The script adds one of two lines to a command's stderr, which the bash result carries: `DSH: the Feishu connector is not connected for this company. Ask the user to connect Feishu on the DSH Connectors page (连接器), then try again.` when it refuses, and `DSH: lark-cli exited with status <n>. If signing in to Feishu or a missing permission is the cause, ask the user to check the Feishu connector on the DSH Connectors page (连接器).` after a failed command; the DingTalk script's lines are the same with DingTalk and `dws`. A connector command that writes stops for the user's approval first, unless the user always allowed it for the company; a rejection reaches the model as the tool's denial, `Error: the user rejected tool "bash"`.
+
+#### KV Cache effect
+
+No direct effect; the skill catalog consumer appends a replacement catalog message when the connector's Skills join or leave, as for any other Skill switched on or off.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- **No separate high-risk style** — the approval panel shows a high-risk command like any other approval; only the ⚠️ text of its reason sets it apart.
+- **Always allow ignores arguments** — a command always allowed runs unasked with any arguments, such as a message to any chat; there is no per-chat or per-document grant, and none for one session only.
+- **Credentials writable from the model shell** — while a connector is connected and switched on, its tenant directory is a sandbox writable root, so a confined command may change or delete the sign-in there, as it could already read it.
+- **Bash only, POSIX only** — the scripts are POSIX shell scripts on `PATH` for `dsh-tool-bash`; PowerShell and Windows get no script.
+- **DingTalk downloads from GitHub only** — npmmirror has no binary mirror of `dws`, and its npm package carries every platform's archive (about 105 MB) inside another; where GitHub is slow or blocked, installing DingTalk fails with `network`.
+- **No DingTalk on Windows** — there `dws` keeps sign-ins in the user's registry, which no per-tenant directory isolates, so the connector is `unsupported`.
+- **DingTalk credential key beside its data** — `DWS_DISABLE_KEYCHAIN` keeps the key of the tenant's encrypted credential store in the same directory rather than the system keychain, weaker at rest; the directory is under the user's own home.
+- **DingTalk health is local** — `auth status --readonly` does not ask the server, so a token revoked on the server still reads as connected; the failed command's message points the model to the Connectors page, where reconnecting signs in again.
+- **No install cancel** — a running install stops only through uninstalling.
+- **One app per tenant member** — the Feishu sign-in creates a self-built app per tenant on this machine; a company that forbids employees to create apps cannot connect until an administrator-provided tenant app is supported.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+**Runtime invariant:** No companion is published. The service is the only owner of each connector's install state, which it derives from its own directory at startup, and of the connection, which it reads from the CLI's own `auth status` on every check, so there is no second observation that could diverge.

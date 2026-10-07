@@ -8,6 +8,13 @@ import userQuestionsRemote from '@deepseek-ai/dsh-user-questions/remote'
 import commandsRemote from '@deepseek-ai/dsh-commands/remote'
 import accountRemote from '@deepseek-ai/dsh-api-account-controller/remote'
 import settingsControllerRemote from '@deepseek-ai/dsh-api-settings-controller/remote'
+import installedSkillsRemote from '@deepseek-ai/dsh-skill-controller/remote'
+import hubAccountRemote from '@deepseek-ai/dsh-hub-account/remote'
+import embeddingRemote from '@deepseek-ai/dsh-embedding/remote'
+import knowledgeBasesRemote from '@deepseek-ai/dsh-knowledge-base/remote'
+import knowledgeSelectionRemote from '@deepseek-ai/dsh-knowledge-selection/remote'
+import connectorsRemote from '@deepseek-ai/dsh-connectors/remote'
+import skillMarketRemote from '@deepseek-ai/dsh-skill-market/remote'
 import officeToPdfRemote from '@deepseek-ai/dsh-office-to-pdf/remote'
 import goalsRemote from '@deepseek-ai/dsh-goal/remote'
 import scheduleRemote from '@deepseek-ai/dsh-schedule/remote'
@@ -43,6 +50,13 @@ export type {} from '@deepseek-ai/dsh-agent-preset-registry/remote'
 export type {} from '@deepseek-ai/dsh-user-questions/remote'
 export type {} from '@deepseek-ai/dsh-commands/remote'
 export type {} from '@deepseek-ai/dsh-api-settings-controller/remote'
+export type {} from '@deepseek-ai/dsh-skill-controller/remote'
+export type {} from '@deepseek-ai/dsh-hub-account/remote'
+export type {} from '@deepseek-ai/dsh-embedding/remote'
+export type {} from '@deepseek-ai/dsh-knowledge-base/remote'
+export type {} from '@deepseek-ai/dsh-knowledge-selection/remote'
+export type {} from '@deepseek-ai/dsh-connectors/remote'
+export type {} from '@deepseek-ai/dsh-skill-market/remote'
 export type {} from '@deepseek-ai/dsh-api-account-controller/remote'
 export type {} from '@deepseek-ai/dsh-goal/remote'
 export type {} from '@deepseek-ai/dsh-schedule/remote'
@@ -184,7 +198,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       pluginInventoryRemote, pluginManagerRemote, pluginRegistryProbeRemote, messageFeedbackRemote, sessionFeedbackRemote,
       fileUploadsRemote, sessionReferencesRemote,
       permissionPresetsRemote, subagentsRemote, sessionRemote, jobRemote, workspaceRemote, workspaceFilesRemote, terminalRemote,
-      officeToPdfRemote, userQuestionsRemote,
+      officeToPdfRemote, userQuestionsRemote, installedSkillsRemote, hubAccountRemote, skillMarketRemote, embeddingRemote,
+      knowledgeBasesRemote,
+      knowledgeSelectionRemote,
+      connectorsRemote,
     ]) {
       disposers.push(await ctx.remote.$mount(contribution))
     }

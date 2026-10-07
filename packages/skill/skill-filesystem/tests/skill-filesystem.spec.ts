@@ -218,6 +218,21 @@ describe('FileSystemSkillProvider', () => {
     expect((await ctx.skills.list({ cwd: noGit })).map(skill => skill.name)).toContain('fallback-root')
   })
 
+  it('reports customSkillDirs under a configured source and rank', async () => {
+    const home = await tempDir('skill-custom-source')
+    const project = await tempDir('skill-custom-source-project')
+    const market = await tempDir('skill-custom-source-market')
+    await mkdir(join(project, '.git'), { recursive: true })
+    await writeSkill(market, 'market-only', 'Market skill')
+    await writeSkill(market, 'shared', 'Market loses to project')
+    await writeSkill(join(project, '.dsh/skills'), 'shared', 'Project wins')
+    const ctx = await setupLocal(home, { customSkillDirs: [market], customSource: 'market', customRank: 550 })
+
+    expect((await ctx.skills.list({ cwd: project })).find(skill => skill.name === 'market-only')).toMatchObject({ source: 'market' })
+    expect((await ctx.skills.get('shared', { cwd: project }))?.source).toBe('project-dsh')
+    expect((await ctx.skills.get('shared'))?.source).toBe('market')
+  })
+
   it('lets project skills override runtime while runtime overrides custom and user skills', async () => {
     const home = await tempDir('skill-runtime-priority')
     const project = await tempDir('skill-runtime-project')

@@ -10,6 +10,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import { inject } from '../src/client/index.ts'
 import type { SettingsRootInjected } from '../src/client/shell-contract.ts'
+import type { createSettingsShellStore } from '../src/client/shell-store.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
 import type { DesktopUpdatePresentation } from '../src/types.ts'
 
@@ -134,6 +135,15 @@ describe('ui-settings-general shell', () => {
     injected.reconnect()
     await c.mock.streams.opened('$events', 2)
     await vi.waitFor(() => { expect(c.connection.state.getSnapshot()).toBe('connected') })
+  })
+
+  it('opens the panel on the section a feature asks for', async ({ start }) => {
+    const c = await start()
+    const store = c.ctx.slots.entries('sidebar.settings')[0]!.store as ReturnType<typeof createSettingsShellStore>
+    const shell = store.create()
+    expect(shell.getSnapshot()).toEqual({ open: false, activeId: undefined })
+    c.ctx.emit('settings/open-section', 'models')
+    expect(shell.getSnapshot()).toEqual({ open: true, activeId: 'models' })
   })
 
   it('projects onboarding entries into stable coordinator order', async ({ start }) => {

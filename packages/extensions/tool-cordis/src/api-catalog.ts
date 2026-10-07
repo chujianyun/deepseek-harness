@@ -401,9 +401,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'agent', description: 'the live agent whose policy is changing.' }, { name: 'policy', description: 'the new effective policy.' }],
       },
       {
-        signature: 'async request(req: ApprovalRequest): Promise<ApprovalOutcome>',
-        description: 'Ask the composed answerers to decide one readonly same-process request. The service borrows the request, agent, session, and live signal directly. The request requires an open turn because the audit pair must be enclosed by the durable log\'s commit/replay boundary; an idle ask rejects before appending anything. The answerer phase always produces an outcome: an aborted signal yields `\'cancelled\'`, a missing or throwing answerer yields `\'unavailable\'` (fail closed), and a rogue non-vocabulary return value is normalized to `\'unavailable\'`. A failure that prevents either audit append from committing still rejects because returning an unlogged decision would violate the pair. Session contains post-commit observer failures, so an authoritative append cannot reject the request or suppress its matching audit event.',
-        parameters: [{ name: 'req', description: 'the pending decision (agent, tool identity, reason, signal).' }],
+        signature: 'async request(req: ApprovalRequest, options: ApprovalRequestOptions = {}): Promise<ApprovalOutcome>',
+        description: 'Ask the composed answerers to decide one readonly same-process request. The service borrows the request, agent, session, and live signal directly. The request requires an open turn because the audit pair must be enclosed by the durable log\'s commit/replay boundary; an idle ask rejects before appending anything. The answerer phase always produces an outcome: an aborted signal yields `\'cancelled\'`, a missing or throwing answerer yields `\'unavailable\'` (fail closed), and a rogue non-vocabulary return value is normalized to `\'unavailable\'`. A failure that prevents either audit append from committing still rejects because returning an unlogged decision would violate the pair. Session contains post-commit observer failures, so an authoritative append cannot reject the request or suppress its matching audit event. An answerer may answer a request that offers `remember` with a grant to remember: the request still resolves `\'allowed-once\'` and calls `options.onRemember` first; the audit pair is unchanged.',
+        parameters: [{ name: 'req', description: 'the pending decision (agent, tool identity, reason, signal).' }, { name: 'options', description: 'same-process hooks, such as remembering an offered grant.' }],
         returns: 'the closed outcome; `\'allowed-once\'` is the only grant.',
         throws: ['when no turn is open or either audit event fails before the session append commit point.'],
       },
@@ -791,6 +791,80 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'connectors',
+    summary: 'Host owner of the connectors and of the `connectors` Remote namespace.',
+    description: 'Host owner of the connectors and of the `connectors` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote getState(): Promise<ConnectorsState>',
+        description: 'Read every connector card.',
+        parameters: [],
+        returns: 'the connectors in display order.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<ConnectorsState>',
+        description: 'Stream the state.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change; download progress at most four times a second.',
+      },
+      {
+        signature: '@Remote async installConnector(id: string): Promise<ConnectorsState>',
+        description: 'Install a connector\'s CLI in the background; installing an installed, installing, or uninstalling connector changes nothing.',
+        parameters: [{ name: 'id', description: 'the connector.' }],
+        returns: 'the state with the install running.',
+        throws: ['RemoteError `connectors/not-found` for an unknown id, `connectors/unavailable` when it cannot be installed here.'],
+      },
+      {
+        signature: '@Remote async uninstallConnector(id: string): Promise<ConnectorsState>',
+        description: 'Stop a running install or sign-in, delete every tenant\'s sign-in, and delete the connector\'s CLI, downloads included.',
+        parameters: [{ name: 'id', description: 'the connector.' }],
+        returns: 'the state with the connector not installed.',
+        throws: ['RemoteError `connectors/not-found` for an unknown id, `connectors/unavailable` when it cannot be installed here.'],
+      },
+      {
+        signature: '@Remote async connect(id: string): Promise<ConnectorsState>',
+        description: 'Sign the current tenant in to the connector\'s platform in the background, through the CLI\'s own agent sign-in; a sign-in under way or a connected connector changes nothing. A tenant without an app first creates one, then the user authorizes; each step\'s address appears in the view\'s `login` until the step ends. A failed or cancelled sign-in leaves no app it created behind.',
+        parameters: [{ name: 'id', description: 'the connector.' }],
+        returns: 'the state with the sign-in started.',
+        throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, `connectors/not-installed`, or `hub-account/signed-out`.'],
+      },
+      {
+        signature: '@Remote async cancelConnect(id: string): Promise<ConnectorsState>',
+        description: 'Cancel the sign-in under way; an app it created is deleted.',
+        parameters: [{ name: 'id', description: 'the connector.' }],
+        returns: 'the state once the sign-in has stopped.',
+        throws: ['RemoteError `connectors/not-found` or `connectors/unavailable`.'],
+      },
+      {
+        signature: '@Remote async disconnect(id: string): Promise<ConnectorsState>',
+        description: 'Sign the current tenant out of the connector\'s platform and delete its sign-in; the CLI stays.',
+        parameters: [{ name: 'id', description: 'the connector.' }],
+        returns: 'the state with the connector disconnected.',
+        throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`.'],
+      },
+      {
+        signature: '@Remote async check(): Promise<ConnectorsState>',
+        description: 'Check every installed connector\'s connection now, as opening the Connectors page does.',
+        parameters: [],
+        returns: 'the state once the checks have finished.',
+      },
+      {
+        signature: '@Remote async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState>',
+        description: 'Switch a connector on or off for the current tenant, persisting the profile\'s list. A switched-off connector stays signed in, but the model gets neither its Skills nor its CLI.',
+        parameters: [{ name: 'id', description: 'the connector.' }, { name: 'enabled', description: 'whether the model may use it.' }],
+        returns: 'the state once the setting is saved.',
+        throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
+      },
+      {
+        signature: '@Remote async revokeAlwaysAllowed(id: string, command: string): Promise<ConnectorsState>',
+        description: 'Stop always allowing a write command for the current tenant: it asks again.',
+        parameters: [{ name: 'id', description: 'the connector.' }, { name: 'command', description: 'the command words, as the view lists them.' }],
+        returns: 'the state once the setting is saved.',
+        throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
+      },
+    ],
+  },
+  {
     key: 'credentials',
     summary: 'Abstract credential service over two key spaces that answer two questions.',
     description: 'Abstract credential service over two key spaces that answer two questions.\n\nA CredentialRef answers "what is behind this environment-variable name", layered over the process environment, the provider-managed store, and `.env` files. One seam-wide rule binds that half: an empty stored value is absent everywhere — `resolve` skips it, `describe` reports it unconfigured — so a blank never masquerades as a configured secret.\n\nA CredentialKey answers "what credential does this plugin hold for this id". Nothing can layer here — an authorization grant has no environment to be read from — so presence of the record is the whole fact, and modifyRecord is the only write path because a correct write depends on the current value (a token refresh is read-decide-replace under one lock).',
@@ -1013,6 +1087,76 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Create one child directory for a Remote caller\'s in-app browser.',
         parameters: [{ name: 'path', description: 'absolute existing parent directory.' }, { name: 'name', description: 'single non-blank path segment.' }],
         returns: 'the created directory\'s absolute path.',
+      },
+    ],
+  },
+  {
+    key: 'embedding',
+    summary: 'Host owner of the embedding models and of the `embedding` Remote namespace.',
+    description: 'Host owner of the embedding models and of the `embedding` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote getState(): Promise<EmbeddingState>',
+        description: 'Read the local model\'s install state and the API embedding models.',
+        parameters: [],
+        returns: 'the state Settings → Embedding models shows.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<EmbeddingState>',
+        description: 'Stream the state.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change; download progress at most four times a second.',
+      },
+      {
+        signature: '@Remote async pauseDownload(): Promise<EmbeddingState>',
+        description: 'Pause the local model download; partial files are kept.',
+        parameters: [],
+        returns: 'the state once the transfer has stopped.',
+      },
+      {
+        signature: '@Remote async startDownload(): Promise<EmbeddingState>',
+        description: 'Start, resume, retry, or repair the local model download. Repairing first checks every installed file\'s sha256 and downloads again the ones that do not match.',
+        parameters: [],
+        returns: 'the state with the download running.',
+        throws: ['RemoteError `embedding/local-model-unavailable` on a platform the runtime does not support.'],
+      },
+      {
+        signature: '@Remote async removeLocalModel(): Promise<EmbeddingState>',
+        description: 'Delete the local model\'s files; the next startup downloads them again. The runtime stays: once loaded, its native library cannot be deleted on Windows.',
+        parameters: [],
+        returns: 'the state.',
+      },
+      {
+        signature: '@Remote listProviders(): Promise<EmbeddingProviderView[]>',
+        description: 'Configured provider routes that can serve API embedding models: those with an OpenAI-protocol endpoint.',
+        parameters: [],
+        returns: 'the routes, in directory order.',
+      },
+      {
+        signature: '@Remote async addApiModel(provider: string, model: string): Promise<EmbeddingState>',
+        description: 'Add an API embedding model after measuring its vector size with one request.',
+        parameters: [{ name: 'provider', description: 'configured provider route.' }, { name: 'model', description: 'model id on the provider.' }],
+        returns: 'the state with the model added.',
+        throws: ['RemoteError `embedding/duplicate-model`, `embedding/provider-unavailable`, or `embedding/request-failed`.'],
+      },
+      {
+        signature: '@Remote async removeApiModel(id: string): Promise<EmbeddingState>',
+        description: 'Remove an API embedding model.',
+        parameters: [{ name: 'id', description: '`<provider>/<model>`.' }],
+        returns: 'the state without it.',
+        throws: ['RemoteError `embedding/model-not-found` when no API model has this id, `embedding/model-in-use` while something uses it.'],
+      },
+      {
+        signature: 'registerUsage(usage: (id: string) => Promise<readonly string[]>): void',
+        description: 'Declare a user of embedding models: while it names users of a model, that model cannot be removed. Host only; withdrawn with the caller\'s fiber.',
+        parameters: [{ name: 'usage', description: 'names of what uses an embedding model id, empty when nothing does.' }],
+      },
+      {
+        signature: 'async embed(id: string, texts: readonly string[], signal?: AbortSignal): Promise<number[][]>',
+        description: 'Embed texts with one embedding model. Host only.',
+        parameters: [{ name: 'id', description: 'the local model\'s id, or an API model\'s `<provider>/<model>`.' }, { name: 'texts', description: 'inputs, in order.' }, { name: 'signal', description: 'cancels the work.' }],
+        returns: 'one vector per text, in input order.',
+        throws: ['RemoteError `embedding/model-not-found`, `embedding/local-model-unavailable`, `embedding/provider-unavailable`, or `embedding/request-failed`.'],
       },
     ],
   },
@@ -1274,6 +1418,69 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'hubAccount',
+    summary: 'Host owner of Hub sign-in and of the `hubAccount` Remote namespace.',
+    description: 'Host owner of Hub sign-in and of the `hubAccount` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote async getState(): Promise<HubAccountView>',
+        description: 'Read the sign-in state.',
+        parameters: [],
+        returns: 'status, profile, and the current attempt.',
+      },
+      {
+        signature: '@Remote async getBranding(): Promise<HubBrandingView | null>',
+        description: 'Read the cached branding to show: signed in, the signed-in tenant\'s; signed out, the last-signed-in tenant\'s.',
+        parameters: [],
+        returns: 'the branding, or null when there is none to show.',
+      },
+      {
+        signature: '@Remote async signIn(): Promise<HubAccountView>',
+        description: 'Start a browser sign-in, or join the one already running. The state stream carries the authorization page to open.',
+        parameters: [],
+        returns: 'the state with the attempt.',
+      },
+      {
+        signature: '@Remote async cancelSignIn(attemptId: string): Promise<HubAccountView>',
+        description: 'Cancel the named sign-in attempt.',
+        parameters: [{ name: 'attemptId', description: 'attempt to cancel.' }],
+        returns: 'the state after cancellation.',
+        throws: ['RemoteError when the attempt is not the current one.'],
+      },
+      {
+        signature: '@Remote async signOut(): Promise<HubAccountView>',
+        description: 'Sign out: forget the local grant and revoke it at the user center in the background. Model credentials are untouched.',
+        parameters: [],
+        returns: 'the signed-out state.',
+      },
+      {
+        signature: '@Remote async switchTenant(): Promise<HubAccountView>',
+        description: 'Switch tenant: sign out, then sign in again so the user center offers the tenant choice.',
+        parameters: [],
+        returns: 'the state with the new attempt.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<HubAccountView>',
+        description: 'Stream the sign-in state.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change.',
+      },
+      {
+        signature: 'async accessToken(): Promise<string | undefined>',
+        description: 'The current access token for user-center client APIs, refreshed first when it is due. Host only.',
+        parameters: [],
+        returns: 'the token, or undefined while signed out.',
+      },
+      {
+        signature: 'async request(path: string, init: RequestInit = {}): Promise<Response>',
+        description: 'Call a user-center client API (`/api/client/*`) as the signed-in employee. Host only: the token never leaves this process. A rejected token is refreshed once and the call retried.',
+        parameters: [{ name: 'path', description: 'absolute path on the user center, with its query.' }, { name: 'init', description: 'fetch options; its signal cancels the call.' }],
+        returns: 'the user center\'s response, whatever its status.',
+        throws: ['RemoteError `hub-account/signed-out` when no sign-in is stored.'],
+      },
+    ],
+  },
+  {
     key: 'inspector',
     summary: 'Shared Host/Client service façade over the realm\'s source publisher.',
     description: 'Shared Host/Client service façade over the realm\'s source publisher.',
@@ -1381,6 +1588,150 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'knowledgeBases',
+    summary: 'Host owner of the knowledge bases and of the `knowledgeBases` Remote namespace.',
+    description: 'Host owner of the knowledge bases and of the `knowledgeBases` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote getState(): Promise<KnowledgeState>',
+        description: 'Read the signed-in tenant\'s knowledge bases with their items.',
+        parameters: [],
+        returns: 'the state the Knowledge page shows.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<KnowledgeState>',
+        description: 'Stream the state.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change.',
+      },
+      {
+        signature: '@Remote createBase(name: string, embeddingModelId: string): Promise<KnowledgeState>',
+        description: 'Create a knowledge base for the signed-in tenant.',
+        parameters: [{ name: 'name', description: 'display name, unique within the tenant.' }, { name: 'embeddingModelId', description: 'an embedding model Settings → Embedding models offers.' }],
+        returns: 'the state with the new knowledge base last.',
+        throws: ['RemoteError `hub-account/signed-out`, `knowledge/invalid-name`, `knowledge/duplicate-name`, or `knowledge/embedding-model-unavailable`.'],
+      },
+      {
+        signature: '@Remote renameBase(id: string, name: string): Promise<KnowledgeState>',
+        description: 'Rename a knowledge base.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'name', description: 'new name, unique within the tenant.' }],
+        returns: 'the state.',
+        throws: ['RemoteError `knowledge/not-found`, `knowledge/invalid-name`, or `knowledge/duplicate-name`.'],
+      },
+      {
+        signature: '@Remote updateSettings(id: string, patch: KnowledgeSettingsPatch): Promise<KnowledgeState>',
+        description: 'Change a knowledge base\'s embedding model, chunking, or retrieval settings. A new embedding model must embed a trial text first, which measures its vector length; with items present the knowledge base is then rebuilt in place: every chunk is dropped and every item processed again, and it cannot be searched until that ends. Chunking changes apply to items processed afterwards.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'patch', description: 'settings to change.' }],
+        returns: 'the state.',
+        throws: ['RemoteError `knowledge/not-found`, `knowledge/invalid-settings`, `knowledge/embedding-model-unavailable`, or `knowledge/embedding-probe-failed`.'],
+      },
+      {
+        signature: '@Remote reprocessAll(id: string): Promise<KnowledgeState>',
+        description: 'Process every item of a knowledge base again, as after a chunking change. Old chunks stay searchable until each item\'s new ones replace them.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }],
+        returns: 'the state with every item pending.',
+        throws: ['RemoteError `knowledge/not-found`.'],
+      },
+      {
+        signature: '@Remote async recall(id: string, query: string): Promise<KnowledgeRecallResult>',
+        description: 'Recall test: search a knowledge base under its own retrieval settings, outside any session.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'query', description: 'question or keywords.' }],
+        returns: 'the hits and how long the search took.',
+        throws: ['RemoteError `knowledge/not-found`, `knowledge/rebuilding`, or the embedding model\'s failure.'],
+      },
+      {
+        signature: '@Remote deleteBase(id: string): Promise<KnowledgeState>',
+        description: 'Delete a knowledge base with its files and index.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }],
+        returns: 'the state without it.',
+        throws: ['RemoteError `knowledge/not-found`.'],
+      },
+      {
+        signature: '@Remote addFiles(id: string, paths: readonly string[]): Promise<KnowledgeAddResult>',
+        description: 'Add files to a knowledge base: each supported file within the size limit is copied in and queued.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'paths', description: 'absolute paths of files on this machine.' }],
+        returns: 'how many were added and which were refused.',
+        throws: ['RemoteError `knowledge/not-found`.'],
+      },
+      {
+        signature: '@Remote addFolder(id: string, path: string): Promise<KnowledgeState>',
+        description: 'Add a folder: each supported file in it and its subfolders, up to `maxFolderFiles`, is copied in as a file item of the folder; unsupported files and those past the limit are listed as skipped. The folder is not watched; reprocessing it scans it again.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'path', description: 'absolute path of a folder on this machine.' }],
+        returns: 'the state with the folder last.',
+        throws: ['RemoteError `knowledge/not-found` or `knowledge/not-a-folder`.'],
+      },
+      {
+        signature: '@Remote addUrl(id: string, url: string): Promise<KnowledgeState>',
+        description: 'Add a web page, fetched on this machine when processed; only that page is read.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'url', description: 'an http or https address.' }],
+        returns: 'the state with the page last.',
+        throws: ['RemoteError `knowledge/not-found` or `knowledge/invalid-url`.'],
+      },
+      {
+        signature: '@Remote createNote(id: string, title: string, content: string): Promise<KnowledgeState>',
+        description: 'Write a new note.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'title', description: '1 to `maxNoteTitleLength` characters.' }, { name: 'content', description: 'Markdown body of at most `maxNoteChars` characters.' }],
+        returns: 'the state with the note last.',
+        throws: ['RemoteError `knowledge/not-found` or `knowledge/invalid-note`.'],
+      },
+      {
+        signature: '@Remote updateNote(id: string, itemId: string, title: string, content: string): Promise<KnowledgeState>',
+        description: 'Change a note; only that note is processed again.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'the note.' }, { name: 'title', description: '1 to `maxNoteTitleLength` characters.' }, { name: 'content', description: 'Markdown body of at most `maxNoteChars` characters.' }],
+        returns: 'the state.',
+        throws: ['RemoteError `knowledge/not-found` or `knowledge/invalid-note`.'],
+      },
+      {
+        signature: '@Remote async getNote(id: string, itemId: string): Promise<KnowledgeNote>',
+        description: 'Read a note for editing.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'the note.' }],
+        returns: 'its title and body.',
+        throws: ['RemoteError `knowledge/not-found`.'],
+      },
+      {
+        signature: '@Remote async openItem(id: string, itemId: string): Promise<void>',
+        description: 'Open an item\'s own copy with this machine\'s default application: a file\'s copy, a page\'s fetched Markdown, or a note. A page\'s address is the caller\'s to open in a browser.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'item id.' }],
+        throws: ['RemoteError `knowledge/not-found`, or `knowledge/cannot-open` for a folder, a page never fetched, or a Host that cannot open files.'],
+      },
+      {
+        signature: '@Remote reprocessItem(id: string, itemId: string): Promise<KnowledgeState>',
+        description: 'Process an item again from its stored copy.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'item id.' }],
+        returns: 'the state with the item pending.',
+        throws: ['RemoteError `knowledge/not-found`.'],
+      },
+      {
+        signature: '@Remote deleteItem(id: string, itemId: string): Promise<KnowledgeState>',
+        description: 'Delete an item with its copy and chunks.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'item id.' }],
+        returns: 'the state without it.',
+        throws: ['RemoteError `knowledge/not-found`.'],
+      },
+      {
+        signature: 'async search( id: string, query: string, options: { limit: number; threshold: number }, signal?: AbortSignal, ): Promise<KnowledgeSearchHit[]>',
+        description: 'Search one of the signed-in tenant\'s knowledge bases. Host only.',
+        parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'query', description: 'question or keywords.' }, { name: 'options', description: 'most hits, and least blended score (0–1).' }, { name: 'signal', description: 'cancels the query embedding.' }],
+        returns: 'hits, best first.',
+        throws: ['RemoteError `knowledge/not-found`, `knowledge/rebuilding`, or the embedding model\'s failure.'],
+      },
+    ],
+  },
+  {
+    key: 'knowledgeSelection',
+    summary: 'Host owner of the knowledge selection and of the `knowledgeSelection` Remote namespace.',
+    description: 'Host owner of the knowledge selection and of the `knowledgeSelection` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote async select(sessionId: SessionId, baseIds: readonly string[]): Promise<KnowledgeSelectionResult>',
+        description: 'Select the knowledge bases a session searches; an empty list selects none. Between turns the selection is logged at once; during a turn it applies from the turn\'s next step.',
+        parameters: [{ name: 'sessionId', description: 'the session.' }, { name: 'baseIds', description: 'knowledge bases of the signed-in tenant, in the order to show them.' }],
+        returns: 'the selection and when it applies.',
+        throws: ['RemoteError `knowledge-selection/unknown-base`, or the session\'s resolution failure.'],
+      },
+    ],
+  },
+  {
     key: 'llm',
     summary: 'The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.',
     description: 'The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.',
@@ -1414,6 +1765,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Offer to interrogate provider endpoints on behalf of the settings namespace this plugin owns. The namespace is the key because that is what a configuration surface already holds from the configurable-provider directory, and because a provider being *added* has no route to name yet. Disposed with the fiber.',
         parameters: [{ name: 'settingsNs', description: 'the namespace whose profiles this discovery serves.' }, { name: 'discover', description: 'interrogates one endpoint and must honor the supplied signal.' }],
         returns: 'the disposer that withdraws the offer.',
+      },
+      {
+        signature: 'registerEndpointResolver(settingsNs: string, resolve: (provider: string) => LlmRouteEndpoint | undefined): () => void',
+        description: 'Offer the endpoints of the configured routes behind one settings namespace, for Host consumers that call them for something other than chat. Disposed with the fiber.',
+        parameters: [{ name: 'settingsNs', description: 'the namespace whose routes this resolver describes.' }, { name: 'resolve', description: 'the configured endpoint of one route, or undefined when the route is not configured or has no endpoint to describe.' }],
+        returns: 'the disposer that withdraws the offer.',
+      },
+      {
+        signature: 'routeEndpoint(provider: string): LlmRouteEndpoint | undefined',
+        description: 'The configured endpoint of one route, through the resolver of the namespace that declares the route in the configurable-provider directory. Host only.',
+        parameters: [{ name: 'provider', description: 'provider route key.' }],
+        returns: 'the endpoint, or undefined when no declared and configured route has one.',
       },
       {
         signature: 'async discoverModels( settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal, ): Promise<LlmDiscoveredModel[]>',
@@ -1864,10 +2227,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'registerWritableRoot(contributor: WritableRootContributor): () => void',
+        description: 'Register one more directory every `workspace-write` execution may write under, for as long as the calling plugin lives. The grant reaches every enforcing capability alike, as the workspace does.',
+        parameters: [{ name: 'contributor', description: 'the named per-call directory resolver.' }],
+        returns: 'the disposer that unregisters the contribution.',
+        throws: ['Error for an empty or duplicate name.'],
+      },
+      {
         signature: 'resolve(request: SandboxPolicyRequest = {}): SandboxExecutionPolicy',
-        description: 'Resolve the complete policy for one capability call. An approved explicit mode outranks the session\'s last `sandbox/mode` event, which outranks the deployment default. A session cwd is its workspace-write boundary; the configured root is the fallback for agentless calls and sessions without a cwd.',
+        description: 'Resolve the complete policy for one capability call. An approved explicit mode outranks the session\'s last `sandbox/mode` event, which outranks the deployment default. A session cwd is its workspace-write boundary; the configured root is the fallback for agentless calls and sessions without a cwd. Registered writable roots that apply now join it as `extraWritableRoots`.',
         parameters: [{ name: 'request', description: 'optional session and approved mode override.' }],
-        returns: 'the fully resolved per-call mode and absolute workspace root.',
+        returns: 'the fully resolved per-call mode, absolute workspace root, and extra writable roots.',
+        throws: ['Error when a contributor resolves a relative directory.'],
       },
       {
         signature: 'overrideOf(session: Session): SandboxMode | undefined',
@@ -2014,7 +2385,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'prompt\') prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue>',
-        description: 'Admit one prompt after explicitly resuming its Session.',
+        description: 'Admit one prompt after explicitly resuming its Session, unless an `api-session/prompt-admission` listener refuses it.',
         parameters: [{ name: 'request', description: 'Session identity, prompt content, source metadata, and delivery mode.' }, { name: 'signal', description: 'caller cancellation before prompt admission begins.' }],
         returns: 'acknowledgement that the Agent accepted the prompt.',
       },
@@ -2630,10 +3001,163 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'an immutable environment overlay containing built-ins and current contributions.',
       },
       {
+        signature: 'registerPath(contributor: ShellPathContributor): () => void',
+        description: 'Register one `PATH` contributor; names are unique. Registration is disposed with the calling plugin fiber.',
+        parameters: [{ name: 'contributor', description: 'the named per-execution directory resolver.' }],
+        returns: 'the disposer that unregisters the contribution.',
+      },
+      {
+        signature: 'collectPath(execution: ToolExecution): string[]',
+        description: 'Resolve the directories to put ahead of `PATH` for one shell tool execution.',
+        parameters: [{ name: 'execution', description: 'the current tool execution.' }],
+        returns: 'absolute directories in contributor-name order, empty when none applies.',
+        throws: ['Error when a contributor resolves a relative directory.'],
+      },
+      {
         signature: 'list(): BashEnvVariableInfo[]',
         description: 'Enumerate plugin-contributed variables without executing their resolvers.',
         parameters: [],
         returns: 'declarations sorted by environment variable name.',
+      },
+    ],
+  },
+  {
+    key: 'skillController',
+    summary: 'Host service backing the generated `ctx.remote.installedSkills` namespace.',
+    description: 'Host service backing the generated `ctx.remote.installedSkills` namespace. Every action resolves the name against the current user-level catalog first, so project-level and bundled skills can never be toggled, revealed, or removed here.',
+    methods: [
+      {
+        signature: '@Remote async list(): Promise<InstalledSkillListValue>',
+        description: 'List the user-level skills installed on this machine, including disabled ones.',
+        parameters: [],
+        returns: 'every custom skill sorted by name, with its enabled state.',
+        throws: ['RemoteError when skill discovery fails.'],
+      },
+      {
+        signature: '@Remote async setEnabled(name: string, enabled: boolean): Promise<InstalledSkillView>',
+        description: 'Switch one installed skill on or off for this user.',
+        parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'enabled', description: 'whether the skill should be invocable.' }],
+        returns: 'the skill\'s view after the change.',
+        throws: ['RemoteError when the skill is not installed or the setting cannot be persisted.'],
+      },
+      {
+        signature: '@Remote async reveal(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>',
+        description: 'Reveal an installed skill\'s instruction file in the native file manager.',
+        parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
+        returns: 'confirmation after the file manager accepted the request.',
+        throws: ['RemoteError when the skill is not installed or the file manager fails.'],
+      },
+      {
+        signature: '@Remote async edit(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>',
+        description: 'Open an installed skill\'s instruction file in the native text editor.',
+        parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
+        returns: 'confirmation after the editor accepted the file.',
+        throws: ['RemoteError when the skill is not installed or the editor fails.'],
+      },
+      {
+        signature: '@Remote async uninstall(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>',
+        description: 'Move an installed skill\'s folder (or flat file) to the platform trash and forget its disabled state.',
+        parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
+        returns: 'confirmation after the move.',
+        throws: ['RemoteError when the skill is not installed, the platform has no trash, or the move fails.'],
+      },
+    ],
+  },
+  {
+    key: 'skillMarket',
+    summary: 'Host owner of the market source and of the `skillMarket` Remote namespace.',
+    description: 'Host owner of the market source and of the `skillMarket` Remote namespace.',
+    methods: [
+      {
+        signature: 'tenantId: string | undefined',
+        description: 'Tenant of the current Hub sign-in; undefined while signed out.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly watch: boolean',
+        description: 'Whether the tenant directory is watched for changes made outside DSH.',
+        parameters: [],
+      },
+      {
+        signature: 'tenantDir(tenantId: string): string',
+        description: 'Directory holding one tenant\'s market Skills.',
+        parameters: [{ name: 'tenantId', description: 'Skill Hub tenant.' }],
+        returns: '`<dshHome>/skills-market/<tenantId>`.',
+      },
+      {
+        signature: 'isDisabled(name: string): boolean',
+        description: 'Whether the signed-in tenant switched this market Skill off.',
+        parameters: [{ name: 'name', description: 'Skill name.' }],
+        returns: 'true when switched off.',
+      },
+      {
+        signature: 'setDisabled(name: string, disabled: boolean): Promise<void>',
+        description: 'Switch one market Skill of the signed-in tenant on or off, persisting the profile\'s list.',
+        parameters: [{ name: 'name', description: 'Skill name.' }, { name: 'disabled', description: 'whether to switch it off.' }],
+        throws: ['when signed out, or when mounted without Settings or a profile entry.'],
+      },
+      {
+        signature: '@Remote async list(query: MarketSkillQuery, signal: AbortSignal): Promise<MarketSkillPage>',
+        description: 'List the market as the signed-in employee sees it on the Skill Hub.',
+        parameters: [{ name: 'query', description: 'search text, category, and page.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'one page of cards with their install state.',
+      },
+      {
+        signature: '@Remote async categories(signal: AbortSignal): Promise<readonly MarketCategory[]>',
+        description: 'The signed-in tenant\'s Skill categories.',
+        parameters: [{ name: 'signal', description: 'caller lifetime.' }],
+        returns: 'categories in Hub order.',
+      },
+      {
+        signature: '@Remote async detail(id: string, signal: AbortSignal): Promise<MarketSkillDetail>',
+        description: 'One market Skill with its SKILL.md and file list.',
+        parameters: [{ name: 'id', description: 'Skill Hub Skill id.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'the detail with its install state.',
+      },
+      {
+        signature: '@Remote async installSkill(id: string, options: MarketInstallOptions, signal: AbortSignal): Promise<MarketSkillCard>',
+        description: 'Install the current version of a market Skill for the signed-in tenant. The package is downloaded and validated (layout and every file\'s sha256) in a staging directory beside the target, then moved into place in one rename; a failure leaves no partial Skill behind. An installed copy is replaced the same way (an update), unless its files differ from its install record and the caller did not ask to overwrite them.',
+        parameters: [{ name: 'id', description: 'Skill Hub Skill id.' }, { name: 'options', description: 'whether local edits of an installed copy may be overwritten.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'the card after install.',
+        throws: ['RemoteError on a name conflict with a user Skill, local edits that would be overwritten, an invalid package, or an unreachable Hub.'],
+      },
+      {
+        signature: '@Remote async uploadSources(): Promise<readonly MarketUploadSource[]>',
+        description: 'The Skills the user placed on this machine (`~/.dsh/skills`, `~/.agents/skills`), offered for upload.',
+        parameters: [],
+        returns: 'one source per Skill folder, sorted by name.',
+      },
+      {
+        signature: '@Remote async inspectFolder(dir: string, signal: AbortSignal): Promise<MarketUploadPreview>',
+        description: 'Read a local folder as an upload would: its SKILL.md, the files that would be sent, and whether the employee already owns a Skill of that name on the Hub (then the upload is its new version).',
+        parameters: [{ name: 'dir', description: 'absolute folder path.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'the preview; `problems` lists what keeps it from being uploaded.',
+      },
+      {
+        signature: '@Remote async uploadOptions(signal: AbortSignal): Promise<MarketUploadOptions>',
+        description: 'Visibility and category choices for an upload, from the signed-in tenant.',
+        parameters: [{ name: 'signal', description: 'caller lifetime.' }],
+        returns: 'categories, departments, and active employees.',
+        throws: ['RemoteError `skill-market/upload-rejected` carrying the Hub\'s reason when the account cannot upload at all (403), `skill-market/unavailable` for any other failure.'],
+      },
+      {
+        signature: '@Remote async uploadSkill(request: MarketUploadRequest, signal: AbortSignal): Promise<MarketUploadResult>',
+        description: 'Upload a local Skill folder to the Skill Hub as the signed-in employee: a new version of the employee\'s own Skill of that name, otherwise a new Skill. The folder is packed without junk and left untouched. Employees\' uploads are submitted for review; tenant admins\' are published.',
+        parameters: [{ name: 'request', description: 'folder, version, and (for a new Skill) visibility and category.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'the Hub\'s answer, with the review link for a pending upload.',
+        throws: ['RemoteError `skill-market/invalid-folder` for a folder that cannot be uploaded, and `skill-market/upload-rejected` carrying the Hub\'s own reason when it refuses.'],
+      },
+      {
+        signature: '@Remote async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]>',
+        description: 'Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the Hub no longer shows the employee is `unavailable`; its local copy stays installed and usable.',
+        parameters: [{ name: 'signal', description: 'caller lifetime.' }],
+        returns: 'one status per installed market Skill, sorted by name.',
+      },
+      {
+        signature: 'async records(): Promise<Map<string, MarketInstallRecord>>',
+        description: 'Install records of the signed-in tenant\'s market Skills, keyed by Skill name.',
+        parameters: [],
+        returns: 'the readable records; a directory without one is not a market install.',
       },
     ],
   },
@@ -2643,9 +3167,15 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Layered registry of skill providers, the host+per-scope shape the tools registry established. A registration files into the layer of its calling context\'s scope (scopeOf): host rows and repository plugins land in the global layer, while a plugin mounted by an agent preset\'s standing composition lands in that preset\'s layer. A read merges the global layer with the viewing scope\'s chain — the nearest layer\'s entry wins a duplicate name outright, and the rank order decides duplicates only within one layer. It exposes sorted invocation-neutral summaries and loads full skill bodies on demand.',
     methods: [
       {
-        signature: 'registerProvider(create: (control: SkillProviderControl) => SkillProvider): () => void',
-        description: 'Register a borrowed same-process provider synchronously during plugin apply, into the calling context\'s layer: a scoped context (an agent preset\'s standing mount) registers for that scope alone, an unscoped context registers globally. Duplicate names within one layer and reserved names throw; remote initialization belongs in `list()`. Fiber disposal unregisters the provider and invalidates catalog caches.',
-        parameters: [{ name: 'create', description: 'synchronous factory receiving this registration\'s lifecycle and invalidation control.' }],
+        signature: 'setDisabled(name: string, disabled: boolean): Promise<void>',
+        description: 'Switch one user-level skill on or off by persisting the profile\'s `disabledSkills` list. Writes are queued, so concurrent calls never overwrite each other\'s change; a request that matches the state committed by the previous write writes nothing.',
+        parameters: [{ name: 'name', description: 'kebab-case skill name; it need not be currently discovered.' }, { name: 'disabled', description: 'whether the skill should be disabled.' }],
+        throws: ['when the registry was mounted without Settings or a profile entry.'],
+      },
+      {
+        signature: 'registerProvider(create: (control: SkillProviderControl) => SkillProvider, options: SkillProviderRegistrationOptions = {}): () => void',
+        description: 'Register a borrowed same-process provider synchronously during plugin apply, into the calling context\'s layer: a scoped context (an agent preset\'s standing mount) registers for that scope alone, an unscoped context registers globally. Duplicate names within one layer and reserved names throw; remote initialization belongs in `list()`. Fiber disposal unregisters the provider and invalidates catalog caches. With `everyLayer`, a global provider\'s candidates also join each scoped layer\'s rank order; a scoped context that sets it throws.',
+        parameters: [{ name: 'create', description: 'synchronous factory receiving this registration\'s lifecycle and invalidation control.' }, { name: 'options', description: 'registration options.' }],
         returns: 'the exact Cordis effect disposer that unregisters this provider; composite effects may yield it directly to preserve teardown ordering.',
       },
       {
@@ -3913,6 +4443,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'sessionId', description: 'Agent and Session identity.' }, { name: 'message', description: 'user-safe failure chain.' }],
   },
   {
+    name: 'api-session/prompt-admission',
+    mode: 'bail',
+    signature: '\'api-session/prompt-admission\'(sessionId: SessionId): RemoteError | undefined',
+    summary: 'A user prompt is about to be admitted.',
+    description: 'A user prompt is about to be admitted. A listener refuses it by returning the error the caller receives; prompts already admitted and turns already running are unaffected.',
+    parameters: [{ name: 'sessionId', description: 'addressed Session identity.' }],
+  },
+  {
     name: 'api-session/removed',
     mode: 'emit',
     signature: '\'api-session/removed\'(sessionId: SessionId): void',
@@ -3939,7 +4477,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
   {
     name: 'approval/request',
     mode: 'waterfall',
-    signature: '\'approval/request\'( this: Scoped<Agent>, req: ApprovalRequestEvent, next: () => Promise<ApprovalOutcome>, ): Promise<ApprovalOutcome>',
+    signature: '\'approval/request\'( this: Scoped<Agent>, req: ApprovalRequestEvent, next: () => Promise<ApprovalAnswer>, ): Promise<ApprovalAnswer>',
     summary: 'Ask composed answerers for one decision.',
     description: 'Ask composed answerers for one decision. Return an outcome to claim the request or call `next()` to delegate. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.',
     parameters: [{ name: 'req', description: 'pending approval request.' }],
@@ -4135,6 +4673,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Module replacements have finished loading.',
     description: 'Module replacements have finished loading.',
     parameters: [{ name: 'reloads', description: 'Replaced plugins and their module locations.' }],
+  },
+  {
+    name: 'hub-account/session-expired',
+    mode: 'emit',
+    signature: '\'hub-account/session-expired\'(): void',
+    summary: 'The user center refused to refresh the stored sign-in (employee or tenant disabled, grant revoked); the local grant is already removed.',
+    description: 'The user center refused to refresh the stored sign-in (employee or tenant disabled, grant revoked); the local grant is already removed.',
+    parameters: [],
   },
   {
     name: 'llm/adapters-updated',
@@ -4545,6 +5091,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AnyHook = ModHook<unknown, unknown>;',
   },
   {
+    name: 'ApiEmbeddingModelView',
+    declaration: 'export interface ApiEmbeddingModelView {\n    readonly id: string;\n    readonly provider: string;\n    readonly providerName: string;\n    readonly model: string;\n    readonly dimensions: number;\n    readonly available: boolean;\n}',
+  },
+  {
     name: 'ApiKeyRecord',
     declaration: 'export interface ApiKeyRecord {\n    readonly kind: \'api-key\';\n    readonly key?: string;\n    readonly env?: Readonly<Record<string, string>>;\n}',
   },
@@ -4557,6 +5107,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ApiSessionAgentResult = {\n    readonly agent: Agent;\n} | {\n    readonly error: ApiSessionAgentError;\n};',
   },
   {
+    name: 'ApprovalAnswer',
+    declaration: 'export type ApprovalAnswer = ApprovalOutcome | ApprovalRememberedGrant;',
+  },
+  {
     name: 'ApprovalOutcome',
     declaration: 'export type ApprovalOutcome = \'allowed-once\' | \'rejected\' | \'cancelled\' | \'unavailable\';',
   },
@@ -4565,12 +5119,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ApprovalPolicy = \'ask\' | \'never\';',
   },
   {
+    name: 'ApprovalRememberedGrant',
+    declaration: 'export interface ApprovalRememberedGrant {\n    readonly outcome: \'allowed-once\';\n    readonly remember: true;\n}',
+  },
+  {
     name: 'ApprovalRequest',
     declaration: 'export interface ApprovalRequest extends ApprovalRequestEvent {\n    readonly agent: Agent;\n    readonly toolName: string;\n    readonly callId?: ToolCallId;\n    readonly reason?: string;\n    readonly signal?: AbortSignal;\n}',
   },
   {
     name: 'ApprovalRequestEvent',
-    declaration: 'export interface ApprovalRequestEvent {\n    readonly agent: Agent;\n    readonly toolName: string;\n    readonly callId?: ToolCallId;\n    readonly reason?: string;\n    readonly displayReason?: {\n        readonly en: string;\n        readonly [locale: string]: string;\n    };\n    readonly signal?: AbortSignal;\n}',
+    declaration: 'export interface ApprovalRequestEvent {\n    readonly agent: Agent;\n    readonly toolName: string;\n    readonly callId?: ToolCallId;\n    readonly reason?: string;\n    readonly displayReason?: {\n        readonly en: string;\n        readonly [locale: string]: string;\n    };\n    readonly remember?: true;\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'ApprovalRequestOptions',
+    declaration: 'export interface ApprovalRequestOptions {\n    readonly onRemember?: () => void;\n}',
   },
   {
     name: 'ArchiveSessionOptions',
@@ -4909,6 +5471,42 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ConnectionTrustRequest {\n    readonly headers: Headers | Readonly<Record<string, string | readonly string[] | undefined>>;\n}',
   },
   {
+    name: 'ConnectorId',
+    declaration: 'export type ConnectorId = \'feishu\' | \'dingtalk\';',
+  },
+  {
+    name: 'ConnectorInstallError',
+    declaration: 'export type ConnectorInstallError = \'network\' | \'verification\' | \'storage\' | \'launch\';',
+  },
+  {
+    name: 'ConnectorLoginError',
+    declaration: 'export interface ConnectorLoginError {\n    readonly step: ConnectorLoginStep;\n    readonly message: string;\n}',
+  },
+  {
+    name: 'ConnectorLoginStep',
+    declaration: 'export type ConnectorLoginStep = \'create-app\' | \'authorize\';',
+  },
+  {
+    name: 'ConnectorLoginView',
+    declaration: 'export interface ConnectorLoginView {\n    readonly steps: readonly ConnectorLoginStep[];\n    readonly step: ConnectorLoginStep;\n    readonly url: string | null;\n    readonly qrCode: string | null;\n}',
+  },
+  {
+    name: 'ConnectorSkillView',
+    declaration: 'export interface ConnectorSkillView {\n    readonly name: string;\n    readonly description: string;\n}',
+  },
+  {
+    name: 'ConnectorsState',
+    declaration: 'export interface ConnectorsState {\n    readonly connectors: readonly ConnectorView[];\n}',
+  },
+  {
+    name: 'ConnectorStatus',
+    declaration: 'export type ConnectorStatus = \'unsupported\' | \'not-installed\' | \'installing\' | \'disconnected\' | \'connecting\' | \'connected\' | \'degraded\';',
+  },
+  {
+    name: 'ConnectorView',
+    declaration: 'export interface ConnectorView {\n    readonly id: ConnectorId;\n    readonly status: ConnectorStatus;\n    readonly cli: string;\n    readonly version: string;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly error: ConnectorInstallError | null;\n    readonly login: ConnectorLoginView | null;\n    readonly loginError: ConnectorLoginError | null;\n    readonly account: string | null;\n    readonly problem: string | null;\n    readonly enabled: boolean;\n    readonly skills: readonly ConnectorSkillView[];\n    readonly alwaysAllowed: readonly string[];\n}',
+  },
+  {
     name: 'ContentBlockMap',
     declaration: 'export interface ContentBlockMap {\n    \'text\': TextBlock;\n    \'reasoning\': ReasoningBlock;\n    \'image\': ImageBlock;\n    \'file\': FileBlock;\n    \'tool-call\': ToolCallBlock;\n    \'tool-addition\': ToolAdditionBlock;\n    \'tool-removal\': ToolRemovalBlock;\n}',
   },
@@ -5197,6 +5795,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EditGoalRequest {\n    readonly objective?: string;\n    readonly maxGoalRounds?: number;\n}',
   },
   {
+    name: 'EmbeddingProviderView',
+    declaration: 'export interface EmbeddingProviderView {\n    readonly provider: string;\n    readonly displayName: string;\n}',
+  },
+  {
+    name: 'EmbeddingState',
+    declaration: 'export interface EmbeddingState {\n    readonly local: LocalModelView;\n    readonly apiModels: readonly ApiEmbeddingModelView[];\n}',
+  },
+  {
     name: 'EncodedFileAttachment',
     declaration: 'export interface EncodedFileAttachment {\n    data: string;\n    name?: string;\n}',
   },
@@ -5405,6 +6011,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface HostConnectionRpc {\n    handle(channel: string, handler: ConnectionRpcHandler): () => Promise<void>;\n    intercept(channel: \'/api\', matches: ConnectionRpcEndpointMatcher, handler: ConnectionRpcHandler): () => Promise<void>;\n}',
   },
   {
+    name: 'HubAccountView',
+    declaration: 'export interface HubAccountView {\n    readonly status: \'signed-out\' | \'signed-in\';\n    readonly profile: HubProfile | null;\n    readonly reason: \'expired\' | null;\n    readonly attempt: HubSignInAttemptView | null;\n    readonly branding: HubBrandingStamp | null;\n}',
+  },
+  {
+    name: 'HubBrandingStamp',
+    declaration: 'export interface HubBrandingStamp {\n    readonly tenantId: string;\n    readonly title: string | null;\n    readonly slogan: string | null;\n    readonly logoSha256: string | null;\n}',
+  },
+  {
+    name: 'HubBrandingView',
+    declaration: 'export interface HubBrandingView {\n    readonly tenantId: string;\n    readonly title: string | null;\n    readonly slogan: string | null;\n    readonly logo: string | null;\n}',
+  },
+  {
+    name: 'HubProfile',
+    declaration: 'export interface HubProfile {\n    readonly nickname: string;\n    readonly phone: string;\n    readonly tenantId: string | null;\n    readonly tenantName: string | null;\n    readonly isTenantAdmin: boolean | null;\n}',
+  },
+  {
+    name: 'HubSignInAttemptView',
+    declaration: 'export interface HubSignInAttemptView {\n    readonly id: string;\n    readonly phase: HubSignInPhase;\n    readonly authorizeUrl?: string;\n    readonly error?: HubSignInError;\n}',
+  },
+  {
+    name: 'HubSignInError',
+    declaration: 'export type HubSignInError = \'denied\' | \'expired\' | \'protocol\' | \'network\' | \'storage\';',
+  },
+  {
+    name: 'HubSignInPhase',
+    declaration: 'export type HubSignInPhase = \'waiting-browser\' | \'exchanging\' | \'succeeded\' | \'cancelled\' | \'failed\';',
+  },
+  {
     name: 'ImageAttachmentLimits',
     declaration: 'export interface ImageAttachmentLimits {\n    maxImageBytes: number;\n    maxImagesPerMessage: number;\n    maxMessageImageBytes: number;\n    maxImagePixels: number;\n    maxImageDimension: number;\n    mediaTypes: readonly ImageMediaType[];\n}',
   },
@@ -5463,6 +6097,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'InstallBundleOptions',
     declaration: 'export interface InstallBundleOptions {\n    enabled?: boolean;\n    requestId?: PluginInstallRequestId;\n    approvedBuilds?: string[];\n    registry?: Registry;\n}',
+  },
+  {
+    name: 'InstalledSkillActionValue',
+    declaration: 'export interface InstalledSkillActionValue {\n    readonly done: true;\n}',
+  },
+  {
+    name: 'InstalledSkillGroup',
+    declaration: 'export type InstalledSkillGroup = \'custom\' | \'market\';',
+  },
+  {
+    name: 'InstalledSkillListValue',
+    declaration: 'export interface InstalledSkillListValue {\n    readonly skills: readonly InstalledSkillView[];\n}',
+  },
+  {
+    name: 'InstalledSkillView',
+    declaration: 'export interface InstalledSkillView {\n    readonly name: string;\n    readonly description: string;\n    readonly group: InstalledSkillGroup;\n    readonly source: string;\n    readonly path: string;\n    readonly enabled: boolean;\n}',
   },
   {
     name: 'InstallSpecKind',
@@ -5629,6 +6279,74 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type JsonValue = null | boolean | number | string | JsonValue[] | {\n    [key: string]: JsonValue;\n};',
   },
   {
+    name: 'KnowledgeAddResult',
+    declaration: 'export interface KnowledgeAddResult {\n    readonly added: number;\n    readonly rejected: readonly {\n        readonly name: string;\n        readonly reason: KnowledgeRejectReason;\n    }[];\n}',
+  },
+  {
+    name: 'KnowledgeBaseSettings',
+    declaration: 'export interface KnowledgeBaseSettings {\n    readonly chunkStrategy: KnowledgeChunkStrategy;\n    readonly chunkSeparator: string;\n    readonly chunkSize: number;\n    readonly chunkOverlap: number;\n    readonly documentCount: number;\n    readonly threshold: number;\n}',
+  },
+  {
+    name: 'KnowledgeBaseView',
+    declaration: 'export interface KnowledgeBaseView {\n    readonly id: string;\n    readonly name: string;\n    readonly embeddingModelId: string;\n    readonly embeddingModelName: string;\n    readonly dimensions: number | null;\n    readonly status: \'ready\' | \'rebuilding\' | \'unavailable\';\n    readonly settings: KnowledgeBaseSettings;\n    readonly items: readonly KnowledgeItemView[];\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'KnowledgeChunkStrategy',
+    declaration: 'export type KnowledgeChunkStrategy = \'structured\' | \'delimiter\';',
+  },
+  {
+    name: 'KnowledgeItemError',
+    declaration: 'export type KnowledgeItemError = \'unreadable\' | \'empty\' | \'embedding\' | \'interrupted\' | \'storage\' | \'folder-missing\' | \'unreachable\';',
+  },
+  {
+    name: 'KnowledgeItemKind',
+    declaration: 'export type KnowledgeItemKind = \'file\' | \'folder\' | \'url\' | \'note\';',
+  },
+  {
+    name: 'KnowledgeItemStatus',
+    declaration: 'export type KnowledgeItemStatus = \'pending\' | \'processing\' | \'completed\' | \'failed\';',
+  },
+  {
+    name: 'KnowledgeItemView',
+    declaration: 'export interface KnowledgeItemView {\n    readonly id: string;\n    readonly kind: KnowledgeItemKind;\n    readonly parentId: string | null;\n    readonly name: string;\n    readonly source: string | null;\n    readonly size: number;\n    readonly skipped: readonly KnowledgeSkippedFile[];\n    readonly skippedCount: number;\n    readonly status: KnowledgeItemStatus;\n    readonly error: KnowledgeItemError | null;\n    readonly chunkCount: number;\n    readonly addedAt: string;\n}',
+  },
+  {
+    name: 'KnowledgeNote',
+    declaration: 'export interface KnowledgeNote {\n    readonly title: string;\n    readonly content: string;\n}',
+  },
+  {
+    name: 'KnowledgeRecallResult',
+    declaration: 'export interface KnowledgeRecallResult {\n    readonly hits: readonly KnowledgeSearchHit[];\n    readonly durationMs: number;\n}',
+  },
+  {
+    name: 'KnowledgeRejectReason',
+    declaration: 'export type KnowledgeRejectReason = \'unsupported\' | \'too-large\' | \'unreadable\';',
+  },
+  {
+    name: 'KnowledgeSearchHit',
+    declaration: 'export interface KnowledgeSearchHit {\n    readonly itemId: string;\n    readonly itemName: string;\n    readonly itemKind: KnowledgeItemKind;\n    readonly source: string | null;\n    readonly ordinal: number;\n    readonly text: string;\n    readonly score: number;\n}',
+  },
+  {
+    name: 'KnowledgeSelectionBase',
+    declaration: 'export interface KnowledgeSelectionBase {\n    readonly id: string;\n    readonly name: string;\n}',
+  },
+  {
+    name: 'KnowledgeSelectionResult',
+    declaration: 'export interface KnowledgeSelectionResult {\n    readonly bases: readonly KnowledgeSelectionBase[];\n    readonly applies: \'now\' | \'next-step\';\n}',
+  },
+  {
+    name: 'KnowledgeSettingsPatch',
+    declaration: 'export type KnowledgeSettingsPatch = Partial<KnowledgeBaseSettings> & {\n    readonly embeddingModelId?: string;\n};',
+  },
+  {
+    name: 'KnowledgeSkippedFile',
+    declaration: 'export interface KnowledgeSkippedFile {\n    readonly path: string;\n    readonly reason: \'unsupported\' | \'limit\';\n}',
+  },
+  {
+    name: 'KnowledgeState',
+    declaration: 'export interface KnowledgeState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly bases: readonly KnowledgeBaseView[];\n}',
+  },
+  {
     name: 'KvFacet',
     declaration: 'export interface KvFacet {\n    open(descriptor: KvUnitDescriptor): Promise<KvUnit>;\n}',
   },
@@ -5709,8 +6427,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface LlmResolvedModelInfo extends LlmModelInfo {\n    context?: LlmModelContext;\n    defaultMaxTokens?: number;\n    reasoning?: LlmModelReasoningInfo;\n    systemPromptUpdate?: SystemPromptUpdate;\n    toolUpdate?: ToolUpdate;\n}',
   },
   {
+    name: 'LlmRouteEndpoint',
+    declaration: 'export interface LlmRouteEndpoint {\n    baseURL: string;\n    api: string;\n    headers: Readonly<Record<string, string>> | undefined;\n    resolveApiKey: () => Promise<string | undefined>;\n}',
+  },
+  {
     name: 'LlmRuntime',
-    declaration: 'export class LlmRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    @Remote\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    @Remote\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    @Remote(\'discoverModels\')\n    async remoteDiscoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;\n    fileRequestText(ref: FileAttachmentRef): string;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions) /* …truncated — full shape in source */',
+    declaration: 'export class LlmRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    @Remote\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    @Remote\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    registerEndpointResolver(settingsNs: string, resolve: (provider: string) => LlmRouteEndpoint | undefined): () => void;\n    routeEndpoint(provider: string): LlmRouteEndpoint | undefined;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    @Remote(\'discoverModels\')\n    async remoteDiscoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;\n    fileRequestText(ref: FileAttachmentRef): string;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: Ll /* …truncated — full shape in source */',
   },
   {
     name: 'LocalAtInput',
@@ -5719,6 +6441,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LocalizedText',
     declaration: 'export type LocalizedText = string | {\n    readonly en: string;\n    readonly [locale: string]: string;\n};',
+  },
+  {
+    name: 'LocalModelError',
+    declaration: 'export type LocalModelError = \'network\' | \'verification\' | \'storage\';',
+  },
+  {
+    name: 'LocalModelStatus',
+    declaration: 'export type LocalModelStatus = \'unsupported\' | \'missing\' | \'downloading\' | \'paused\' | \'installed\' | \'failed\' | \'damaged\';',
+  },
+  {
+    name: 'LocalModelView',
+    declaration: 'export interface LocalModelView {\n    readonly id: string;\n    readonly name: string;\n    readonly status: LocalModelStatus;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly dimensions: number | null;\n    readonly error: LocalModelError | null;\n}',
   },
   {
     name: 'LspHover',
@@ -5767,6 +6501,74 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'MarketCategory',
+    declaration: 'export interface MarketCategory {\n    readonly id: string;\n    readonly name: string;\n}',
+  },
+  {
+    name: 'MarketFolderProblem',
+    declaration: 'export type MarketFolderProblem = \'unreadable\' | \'no-skill-md\' | \'no-frontmatter\' | \'invalid-yaml\' | \'invalid-name\' | \'no-description\';',
+  },
+  {
+    name: 'MarketInstalledState',
+    declaration: 'export type MarketInstalledState = \'current\' | \'update\' | \'unavailable\' | \'unknown\';',
+  },
+  {
+    name: 'MarketInstalledStatus',
+    declaration: 'export interface MarketInstalledStatus {\n    readonly name: string;\n    readonly hubSkillId: string;\n    readonly installedVersion: string;\n    readonly latestVersion: string | null;\n    readonly state: MarketInstalledState;\n}',
+  },
+  {
+    name: 'MarketInstallOptions',
+    declaration: 'export interface MarketInstallOptions {\n    readonly overwriteLocalChanges?: boolean;\n}',
+  },
+  {
+    name: 'MarketInstallRecord',
+    declaration: 'export interface MarketInstallRecord {\n    readonly hubSkillId: string;\n    readonly name: string;\n    readonly version: string;\n    readonly installedAt: string;\n    readonly files: readonly {\n        readonly path: string;\n        readonly sha256: string;\n    }[];\n}',
+  },
+  {
+    name: 'MarketSkillCard',
+    declaration: 'export interface MarketSkillCard {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly category: MarketCategory | null;\n    readonly version: string;\n    readonly updatedAt: string;\n    readonly installedVersion: string | null;\n    readonly updateAvailable: boolean;\n    readonly conflict: boolean;\n}',
+  },
+  {
+    name: 'MarketSkillDetail',
+    declaration: 'export interface MarketSkillDetail extends MarketSkillCard {\n    readonly ownerName: string;\n    readonly skillMd: string;\n    readonly files: readonly MarketSkillFile[];\n}',
+  },
+  {
+    name: 'MarketSkillFile',
+    declaration: 'export interface MarketSkillFile {\n    readonly path: string;\n    readonly size: number;\n}',
+  },
+  {
+    name: 'MarketSkillPage',
+    declaration: 'export interface MarketSkillPage {\n    readonly items: readonly MarketSkillCard[];\n    readonly total: number;\n    readonly page: number;\n    readonly pageSize: number;\n}',
+  },
+  {
+    name: 'MarketSkillQuery',
+    declaration: 'export interface MarketSkillQuery {\n    readonly q?: string;\n    readonly categoryId?: string;\n    readonly page?: number;\n    readonly pageSize?: number;\n}',
+  },
+  {
+    name: 'MarketUploadOptions',
+    declaration: 'export interface MarketUploadOptions {\n    readonly categories: readonly MarketCategory[];\n    readonly departments: readonly {\n        readonly id: string;\n        readonly parentId: string | null;\n        readonly name: string;\n    }[];\n    readonly employees: readonly {\n        readonly id: string;\n        readonly name: string;\n        readonly departmentName: string;\n    }[];\n}',
+  },
+  {
+    name: 'MarketUploadPreview',
+    declaration: 'export interface MarketUploadPreview {\n    readonly dir: string;\n    readonly name: string | null;\n    readonly description: string | null;\n    readonly fileCount: number;\n    readonly sizeBytes: number;\n    readonly problems: readonly MarketFolderProblem[];\n    readonly existing: {\n        readonly skillId: string;\n        readonly highestVersion: string;\n        readonly currentVersion: string | null;\n        readonly workingStatus: \'draft\' | \'pending\' | null;\n    } | null;\n    readonly suggestedVersion: string;\n}',
+  },
+  {
+    name: 'MarketUploadRequest',
+    declaration: 'export interface MarketUploadRequest {\n    readonly dir: string;\n    readonly version: string;\n    readonly visibility?: MarketVisibility;\n    readonly departmentIds?: readonly string[];\n    readonly employeeIds?: readonly string[];\n    readonly categoryId?: string;\n}',
+  },
+  {
+    name: 'MarketUploadResult',
+    declaration: 'export interface MarketUploadResult {\n    readonly skillId: string;\n    readonly name: string;\n    readonly version: string;\n    readonly mode: \'create\' | \'version\';\n    readonly status: \'pending\' | \'published\';\n    readonly reviewUrl: string | null;\n}',
+  },
+  {
+    name: 'MarketUploadSource',
+    declaration: 'export interface MarketUploadSource {\n    readonly name: string;\n    readonly description: string;\n    readonly dir: string;\n    readonly source: string;\n}',
+  },
+  {
+    name: 'MarketVisibility',
+    declaration: 'export type MarketVisibility = \'tenant\' | \'departments\' | \'employees\' | \'private\';',
   },
   {
     name: 'MatcherValue',
@@ -6142,7 +6944,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PreToolDecision',
-    declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n    info?: ToolErrorInfo;\n} | {\n    kind: \'cancel\';\n} | {\n    kind: \'ask\';\n    reason?: string;\n    displayReason?: {\n        readonly en: string;\n        readonly [locale: string]: string;\n    };\n};',
+    declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n    info?: ToolErrorInfo;\n} | {\n    kind: \'cancel\';\n} | {\n    kind: \'ask\';\n    reason?: string;\n    displayReason?: {\n        readonly en: string;\n        readonly [locale: string]: string;\n    };\n    onRemember?: () => void;\n};',
   },
   {
     name: 'ProductEvent',
@@ -6410,7 +7212,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SandboxExecutionPolicy',
-    declaration: 'export interface SandboxExecutionPolicy {\n    mode: SandboxMode;\n    workspaceRoot: string;\n    sessionId?: SessionId;\n}',
+    declaration: 'export interface SandboxExecutionPolicy {\n    mode: SandboxMode;\n    workspaceRoot: string;\n    extraWritableRoots?: readonly string[];\n    sessionId?: SessionId;\n}',
   },
   {
     name: 'SandboxMode',
@@ -7173,6 +7975,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ShellObservedStreams {\n    stdout: SubprocessOutputReader;\n    stderr: SubprocessOutputReader;\n}',
   },
   {
+    name: 'ShellPathContributor',
+    declaration: 'export interface ShellPathContributor {\n    name: string;\n    resolve(execution: ToolExecution): string | undefined;\n}',
+  },
+  {
     name: 'ShellProcess',
     declaration: 'export interface ShellProcess {\n    status: ShellProcessStatus;\n    exitCode: number | null;\n    signal: NodeJS.Signals | null;\n    readonly done: Promise<void>;\n    sandbox?: ShellSandboxInfo;\n    readOutput(): ShellProcessRead;\n    observed: ShellObservedStreams;\n    kill(): boolean;\n}',
   },
@@ -7249,6 +8055,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SkillProviderObservation {\n    readonly candidates: readonly SkillCandidate[];\n    readonly complete: boolean;\n}',
   },
   {
+    name: 'SkillProviderRegistrationOptions',
+    declaration: 'export interface SkillProviderRegistrationOptions {\n    readonly everyLayer?: boolean;\n}',
+  },
+  {
     name: 'SkillRegistration',
     declaration: 'export type SkillRegistration = Omit<SkillDefinition, \'invocation\' | \'provider\'> & {\n    readonly invocation?: SkillInvocationPolicy;\n    readonly provider?: string;\n};',
   },
@@ -7257,12 +8067,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SkillResourceBase = {\n    readonly kind: \'directory\';\n    readonly path: string;\n} | {\n    readonly kind: \'url\';\n    readonly url: string;\n} | {\n    readonly kind: \'opaque\';\n    readonly description: string;\n};',
   },
   {
-    name: 'SkillSource',
-    declaration: 'export type SkillSource = \'project-dsh\' | \'project-agents\' | \'runtime\' | \'user-dsh\' | \'user-agents\' | \'custom\' | \'bundled\' | (string & {});',
-  },
-  {
     name: 'SkillSummary',
-    declaration: 'export interface SkillSummary {\n    readonly path?: string;\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly invocation: SkillInvocationPolicy;\n    readonly source: SkillSource;\n    readonly provider: string;\n    readonly resourceBase?: SkillResourceBase;\n}',
+    declaration: 'export interface SkillSummary {\n    readonly path?: string;\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly invocation: SkillInvocationPolicy;\n    readonly source: SkillSource;\n    readonly provider: string;\n    readonly resourceBase?: SkillResourceBase;\n    readonly disabled?: true;\n}',
   },
   {
     name: 'SkillViewOptions',
@@ -7575,6 +8381,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SystemPromptUpdate',
     declaration: 'export type SystemPromptUpdate = \'in-history\';',
+  },
+  {
+    name: 'T',
+    declaration: 'export type T = TranslateNS<\'knowledge\'>;',
   },
   {
     name: 'TableKeyOf',
@@ -8395,6 +9205,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceView',
     declaration: 'export interface WorkspaceView {\n    readonly workspaceId: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'WritableRootContributor',
+    declaration: 'export interface WritableRootContributor {\n    readonly name: string;\n    resolve(): string | undefined;\n}',
   },
 ]
 

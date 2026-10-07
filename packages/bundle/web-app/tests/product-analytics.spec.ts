@@ -37,7 +37,12 @@ it.each(['desktop', 'web'])('limits collection and its shutdown to the Desktop l
   ctx.loader.builtins.analytics = Analytics
   const rows = loadOverlayPatches('analytics', fileURLToPath(new URL('../cordis.patch.yml', import.meta.url)))
     .flatMap(patch => patch.insert ?? []).filter(row => row.id === 'desktop-product-telemetry' || row.id === 'product-analytics')
-  const entries = rows.map(row => ({ ...row, name: row.id === 'desktop-product-telemetry' ? 'cordis:telemetry' : 'cordis:analytics' }))
+  // The shipped composition mounts no product analytics: its device identity came from the DeepSeek account (new-dsh-ms #34).
+  expect(rows.find(row => row.id === 'product-analytics')?.disabled).toBe(true)
+  // The analytics/telemetry pairing below enables the row explicitly, as a deployment that restores it would.
+  const entries = rows.map(row => row.id === 'desktop-product-telemetry'
+    ? { ...row, name: 'cordis:telemetry' }
+    : { ...row, name: 'cordis:analytics', disabled: profile !== 'desktop' })
   await ctx.loader.root.update(entries)
   await ctx.loader.await()
   const entry = ctx.loader.resolve('desktop-product-telemetry')

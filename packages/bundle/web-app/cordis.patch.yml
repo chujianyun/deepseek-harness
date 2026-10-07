@@ -56,7 +56,8 @@
 
     - id: product-analytics
       name: '@deepseek-ai/dsh-client-product-analytics'
-      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
+      # Its device identity comes from the DeepSeek account, which the Desktop product no longer mounts.
+      disabled: true
       config:
         enabled: true
         appVersion: !!js process.env.DSH_CLIENT_VERSION
@@ -143,12 +144,68 @@
     # reports an actionable error when its settings-domain provider is absent.
     - id: ui-settings-account
       name: '@deepseek-ai/dsh-client-ui-settings-account'
+      # The Desktop product signs in with the company user center only (new-dsh-ms #34): the
+      # DeepSeek account and the rows built on it stay in source but are not mounted there.
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop'"
 
     - id: account-controller
       name: '@deepseek-ai/dsh-api-account-controller'
+      # The Desktop product signs in with the company user center only (new-dsh-ms #34): the
+      # DeepSeek account and the rows built on it stay in source but are not mounted there.
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop'"
 
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'
+
+    # Installed user-level skills for the Desktop Skills page: list, switch on
+    # and off, reveal, edit, and move to the trash.
+    - id: skill-controller
+      name: '@deepseek-ai/dsh-skill-controller'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
+
+    # Hub sign-in for Desktop: the user center's OAuth2 code flow with PKCE
+    # over a loopback callback, token refresh, and the prompt gate. The user
+    # center is deployment configuration (DSH_HUB_ORIGIN, DSH_HUB_CLIENT_ID, or
+    # a private patch restating this row); without one the row stays off and
+    # Desktop runs ungated.
+    - id: hub-account
+      name: '@deepseek-ai/dsh-hub-account'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+      config:
+        origin: !!js process.env.DSH_HUB_ORIGIN
+        clientId: !!js process.env.DSH_HUB_CLIENT_ID
+        allowLoopbackHttp: !!js process.env.DSH_HUB_ALLOW_LOOPBACK_HTTP === '1'
+
+    # Skill Hub market for Desktop: the per-tenant `market` skill source and
+    # one-click install over the Hub sign-in; mounted exactly when hub-account is.
+    - id: skill-market
+      name: '@deepseek-ai/dsh-skill-market'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # Embedding models for Desktop knowledge bases: the local model downloaded at
+    # startup and API embedding models over configured provider routes.
+    - id: embedding
+      name: '@deepseek-ai/dsh-embedding'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
+
+    # Local knowledge bases for Desktop, per tenant of the Hub sign-in: files are
+    # chunked and embedded with the embedding row's models and indexed for search.
+    - id: knowledge-base
+      name: '@deepseek-ai/dsh-knowledge-base'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # The knowledge bases each session may search and the knowledge_search tool
+    # over them; mounted exactly when the knowledge-base row is.
+    - id: knowledge-selection
+      name: '@deepseek-ai/dsh-knowledge-selection'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # Connectors for Desktop: office platforms reached through their official
+    # CLIs, installed at the versions this release pins; offered beside the
+    # knowledge bases, where the user center is configured.
+    - id: connectors
+      name: '@deepseek-ai/dsh-connectors'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
@@ -313,6 +370,38 @@
     - id: ui-plugin-manager
       name: '@deepseek-ai/dsh-client-ui-plugin-manager'
 
+    # Desktop Skills page: the sidebar entry and the installed-skill cards over
+    # the `installedSkills` Remote.
+    - id: ui-skills
+      name: '@deepseek-ai/dsh-client-ui-skills'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
+
+    # Desktop Hub sign-in gate, the sidebar brand row (tenant logo or name),
+    # and the Settings account section over the `hubAccount` Remote; mounted
+    # exactly when the hub-account row is.
+    - id: ui-hub-account
+      name: '@deepseek-ai/dsh-client-ui-hub-account'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # Knowledge page: the sidebar entry below Skills and the knowledge bases with
+    # their files over the `knowledgeBases` Remote; mounted exactly when the
+    # knowledge-base row is.
+    - id: ui-knowledge
+      name: '@deepseek-ai/dsh-client-ui-knowledge'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # Connectors page: the sidebar entry below Knowledge and the connector cards
+    # over the `connectors` Remote; mounted exactly when the connectors row is.
+    - id: ui-connectors
+      name: '@deepseek-ai/dsh-client-ui-connectors'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # Settings → Embedding models over the `embedding` Remote; mounted exactly
+    # when the embedding row is.
+    - id: ui-settings-embedding
+      name: '@deepseek-ai/dsh-client-ui-settings-embedding'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
+
     # Read-only Plugin list tab in the Settings Plugins section; the built-in
     # bundles the sidebar page leaves out are inspected here.
     - id: ui-settings-plugin-inventory
@@ -327,9 +416,11 @@
     - id: ui-chat
       name: '@deepseek-ai/dsh-client-ui-chat'
 
-    # Official occupants for the generic sidebar and conversation brand slots.
+    # Official occupants for the generic sidebar and conversation brand slots. Desktop signed in to
+    # a user center shows the tenant's brand there instead (ui-hub-account).
     - id: ui-brand-official
       name: '@deepseek-ai/dsh-client-ui-brand-official'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     - id: ui-attachment
       name: '@deepseek-ai/dsh-client-ui-attachment'

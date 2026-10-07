@@ -39,6 +39,7 @@ import { serveWebDocument, authenticateWebHost, forwardWebRequest } from './web-
 import { DesktopFatalRecovery } from './fatal-recovery.ts'
 import { pruneCrashReports, RendererConsoleTail, writeCrashReport, type CrashReportSource } from './crash-report.ts'
 import { openWelcomeWindow } from './welcome-window.ts'
+import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
 import { WELCOME_IPC, needsWelcome, type WelcomeNotice } from './welcome-api.ts'
 import { connectDesktopWelcome, type DesktopWelcomeBackend } from './welcome-backend.ts'
 import { DesktopUpdateJournal } from './update-journal.ts'
@@ -187,20 +188,6 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
  */
 function chromeFallbackFill(): string {
   return nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb'
-}
-
-/**
- * Add the effective Desktop palette to a Platform authorization URL so the
- * login page opens in the application's theme. `system` resolves through
- * `nativeTheme.shouldUseDarkColors`, which follows the theme source the
- * application preload publishes.
- * @param authorizeUrl - validated Platform authorization URL.
- * @returns the authorization URL carrying `theme=light` or `theme=dark`.
- */
-function platformLoginUrl(authorizeUrl: string): string {
-  const url = new URL(authorizeUrl)
-  url.searchParams.set('theme', nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
-  return url.href
 }
 
 function createWindow(preload: string, show = false, primary = false): BrowserWindow {
@@ -410,11 +397,24 @@ async function main(): Promise<void> {
       if (analyticsEnabled) await welcomeBackend?.report(event)
     } catch (_error) { /* Analytics cannot interrupt native actions. */ }
   }
-  let stopAccount: (() => void) | undefined
+  let stopHub: (() => void) | undefined
+  /** The welcome window started a sign-in whose attempt the Host has not named yet. */
+  let welcomeStarting = false
+  /** The sign-in attempt the welcome window started. */
+  let welcomeAttempt: string | undefined
   let openedAttempt: string | undefined
   let returnedAttempt: string | undefined
   let pendingWelcomeNotice: WelcomeNotice | undefined
-  let previousAccountStatus: string | undefined
+  /** Open the welcome window's own attempt in the system browser once; the workspace opens the attempts it starts. */
+  const openWelcomeAttempt = (state: HubAccountView): void => {
+    const attempt = state.attempt
+    if (attempt?.phase !== 'waiting-browser' || attempt.authorizeUrl === undefined || openedAttempt === attempt.id) return
+    if (!welcomeStarting && welcomeAttempt !== attempt.id) return
+    welcomeStarting = false
+    welcomeAttempt = attempt.id
+    openedAttempt = attempt.id
+    void shell.openExternal(attempt.authorizeUrl).catch(() => undefined)
+  }
   const assertProductSender = (event: IpcMainInvokeEvent): void => {
     assertDesktopSender(event, ['app'])
     if (mainWindow === undefined || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
@@ -455,48 +455,33 @@ async function main(): Promise<void> {
         welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
         analyticsEnabled = await welcomeBackend.analyticsEnabled().catch(() => false)
         if (!reportedLaunch) { reportedLaunch = true; void track('desktop_app_launch', {}) }
-        stopAccount?.()
-        const accountBackend = welcomeBackend.account
-        stopAccount = accountBackend.watch((state) => {
+        stopHub?.()
+        stopHub = welcomeBackend.hub.watch((state) => {
           if (quitting) return
           if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
+          openWelcomeAttempt(state)
           const attempt = state.attempt
-          if (attempt?.phase === 'waiting-browser' && attempt.authorizeUrl !== undefined && openedAttempt !== attempt.id) {
-            openedAttempt = attempt.id
-            void shell.openExternal(platformLoginUrl(attempt.authorizeUrl)).catch(() => undefined)
-          }
-          if ((attempt?.phase === 'failed' || attempt?.phase === 'expired') && returnedAttempt !== attempt.id) {
+          // A failed attempt shown in Welcome, its own or a tenant switch started in the workspace, comes back to the front once.
+          if (attempt?.phase === 'failed' && welcomeWindow !== undefined && returnedAttempt !== attempt.id) {
             returnedAttempt = attempt.id
             focusPrimaryWindow()
           }
-          if (state.status === 'credential-stored' && attempt?.phase === 'succeeded' && welcomeWindow !== undefined) void enterWorkspace({ activate: false }).catch(() => undefined)
-          if (previousAccountStatus === 'credential-stored' && state.status === 'signed-out') {
-            void readWelcomeState().then(async (value) => {
-              if (needsWelcome(value) && !quitting) {
-                enteredWorkspace = false
-                await showWelcome()
-                if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
-              }
-              return undefined
-            }).catch(() => undefined)
-          }
-          previousAccountStatus = state.status
-        }, () => {
-          // The stream reconnects; a transport failure does not change account state.
-        }, () => {
-          void readWelcomeState().then(async (value) => {
-            if (!needsWelcome(value) || quitting) return
-            pendingWelcomeNotice = 'session-expired'
+          if (state.status === 'signed-in' && welcomeWindow !== undefined) void enterWorkspace({ activate: false }).catch(() => undefined)
+          if (state.status === 'signed-out' && enteredWorkspace) {
+            // Signing out, a refused refresh, or a tenant switch leaves the workspace for the welcome window.
+            if (state.reason === 'expired') pendingWelcomeNotice = 'session-expired'
             enteredWorkspace = false
-            await showWelcome()
-            const state = await accountBackend.state()
-            if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
-          }).catch(() => undefined)
+            void showWelcome().then(() => {
+              if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
+            }).catch((error: unknown) => { reportFatal(error, 'main') })
+          }
+        }, () => {
+          // The stream reconnects; a transport failure does not change sign-in state.
         }, (enabled) => { analyticsEnabled = enabled })
       },
       stop: async () => {
         analyticsEnabled = false
-        stopAccount?.()
+        stopHub?.()
         try { await host.stop(requireCleanStop) }
         catch (error) {
           if (!requireCleanStop || !(error instanceof DesktopHostUncleanExitError)) throw error
@@ -774,7 +759,8 @@ async function main(): Promise<void> {
   })
   ipcMain.handle(DESKTOP_IPC.onboardingApiKey, async (event) => {
     assertProductSender(event)
-    return (await readWelcomeState()).hasApiKey
+    if (backend.host === undefined || welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
+    return welcomeBackend.hasApiKey()
   })
   ipcMain.on(DESKTOP_IPC.onboardingActive, (event, active: unknown) => {
     const window = mainWindow
@@ -1152,32 +1138,36 @@ async function main(): Promise<void> {
         },
         startSignIn: async () => {
           if (welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
-          return welcomeBackend.account.start(desktopClientMetadata(locale.id))
+          welcomeStarting = true
+          let state: HubAccountView | undefined
+          try { state = await welcomeBackend.hub.start() }
+          finally {
+            // A stream frame may have named the attempt first; a failed start names none.
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- The stream listener may clear it during start().
+            if (welcomeStarting) { welcomeStarting = false; welcomeAttempt = state?.attempt?.id }
+          }
+          openWelcomeAttempt(state)
+          return state
         },
         cancelSignIn: async (id) => {
           if (welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
-          return welcomeBackend.account.cancel(id)
+          return welcomeBackend.hub.cancel(id)
         },
         copySignInLink: async (id) => {
-          const state = await welcomeBackend?.account.state()
+          const state = await welcomeBackend?.hub.state()
           if (state?.attempt?.id !== id || state.attempt.phase !== 'waiting-browser' || state.attempt.authorizeUrl === undefined) {
             throw new Error('desktop welcome: login link is unavailable')
           }
-          await clipboard.writeText(platformLoginUrl(state.attempt.authorizeUrl))
+          await clipboard.writeText(state.attempt.authorizeUrl)
         },
-        saveApiKey: async (apiKey) => {
-          if (backend.host === undefined || welcomeBackend === undefined) return { ok: false }
-          const saved = await welcomeBackend.save(apiKey)
-          if (!saved.ok) return saved
-          await enterWorkspace()
-          return { ok: true }
-        },
-        skip: enterWorkspace,
+        // Branding only decorates the page: an unreachable Host or a refused value shows none.
+        branding: async () => welcomeBackend === undefined ? null : welcomeBackend.branding().catch(() => null),
       })
       const window = welcomeWindow
       window.once('closed', () => {
-        void welcomeBackend?.account.state().then((state) => {
-          if (state.attempt !== null && !enteredWorkspace) return welcomeBackend?.account.cancel(state.attempt.id)
+        void welcomeBackend?.hub.state().then((state) => {
+          const attempt = state.attempt
+          if (attempt !== null && !enteredWorkspace && (attempt.phase === 'waiting-browser' || attempt.phase === 'exchanging')) return welcomeBackend?.hub.cancel(attempt.id)
           return undefined
         }).catch(() => undefined)
       })
@@ -1201,7 +1191,7 @@ async function main(): Promise<void> {
     locale = resolveDesktopStartupLocale(state.localePreference, systemLanguages)
     windowsLanguage = locale.id
     refreshApplicationMenu()
-    if (!enteredWorkspace && needsWelcome({ loggedIn: state.loggedIn, hasApiKey: state.hasApiKey })) {
+    if (!enteredWorkspace && needsWelcome(state.hub)) {
       // A later login must retain its own activation policy instead of replaying startup focus.
       raiseAfterUpdate = false
       await showWelcome()
@@ -1245,7 +1235,7 @@ async function main(): Promise<void> {
     quitConfirmation.dispose()
     backgroundNotice?.dispose()
     tray?.dispose()
-    stopAccount?.()
+    stopHub?.()
     if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.hide()
     if (mainWindow !== undefined && !mainWindow.isDestroyed()) mainWindow.hide()
     updateSchedule.dispose()

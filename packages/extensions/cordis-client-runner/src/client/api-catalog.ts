@@ -1008,6 +1008,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SubmissionHandle {\n    readonly requestId: SessionRequestId;\n    abandon(): void;\n}',
   },
   {
+    name: 'T',
+    declaration: 'export type T = TranslateNS<\'knowledge\'>;',
+  },
+  {
     name: 'ThemeDefinition',
     declaration: 'export interface ThemeDefinition {\n    id: string;\n    colorScheme: \'light\' | \'dark\';\n    tokens: ThemeTokens;\n}',
   },

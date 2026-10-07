@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for 2026-10-06-connectors-over-official-clis.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-10-06-connectors-over-official-clis.md
+/agent-note-connectors-over-the-platforms-official-clis:
+  en: 836044e9de943f60
+  zh: 7afbca16f1812f55
+/agent-note-connectors-over-the-platforms-official-clis/problem:
+  en: 6f9ed01c6f251110
+  zh: 7db4a07054b79e10
+/agent-note-connectors-over-the-platforms-official-clis/proposal:
+  en: 251773eb8adb8678
+  zh: 1b63cdac903b1da1
+/agent-note-connectors-over-the-platforms-official-clis/alternatives-considered:
+  en: 6119e2aff3b6be5a
+  zh: 4237c596c10e1ee9
+/agent-note-connectors-over-the-platforms-official-clis/alternatives-considered/why-not-dedicated-tools-per-operation:
+  en: 07d96af434491a01
+  zh: bad739f5e3e06bb9
+/agent-note-connectors-over-the-platforms-official-clis/alternatives-considered/why-not-mcp:
+  en: 3ffc81059d7d4e89
+  zh: 6b94ebcce5b83bb8
+/agent-note-connectors-over-the-platforms-official-clis/alternatives-considered/why-not-a-custom-built-feishu-cli:
+  en: df08542ffd2deba7
+  zh: 82e302d746b7fe89
+/agent-note-connectors-over-the-platforms-official-clis/alternatives-considered/why-not-a-tenant-app-configured-in-the-user-center:
+  en: 26f148c119a5b845
+  zh: 17cdaf148b6b3c80
+/agent-note-connectors-over-the-platforms-official-clis/acceptance-criteria:
+  en: 87555f3937440450
+  zh: 27621fe747a9e204
+/agent-note-connectors-over-the-platforms-official-clis/risks:
+  en: 1d4c292dd6511afa
+  zh: 7e57352d2d43e42e

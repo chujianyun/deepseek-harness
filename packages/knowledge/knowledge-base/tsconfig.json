@@ -1,0 +1,36 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../llm/embedding"
+    },
+    {
+      "path": "../../credentials/hub-account"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../web/web"
+    },
+    {
+      "path": "../../util/home-paths"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../util/native-command"
+    }
+  ]
+}

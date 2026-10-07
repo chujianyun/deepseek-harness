@@ -1,7 +1,7 @@
 /** Composer takeover for one pending approval waterfall. */
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Button, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ApprovalComposerProps, PendingApproval } from './contract/slots.ts'
+import type { ApprovalComposerProps, ApprovalDecision, PendingApproval } from './contract/slots.ts'
 import css from './ApprovalPanel.module.css'
 
 /**
@@ -33,7 +33,7 @@ function ApprovalFlow({ pending, reason, detail, t }: {
     active.current = true
     return () => { active.current = false }
   }, [])
-  const answer = (outcome: 'allowed-once' | 'rejected'): void => {
+  const answer = (outcome: ApprovalDecision): void => {
     if (waiting.current || !pending.answerable) return
     waiting.current = true
     setAnswered(true)
@@ -78,6 +78,11 @@ function ApprovalFlow({ pending, reason, detail, t }: {
           <Button variant="outline" className={css.reject} disabled={answered} onClick={() => { answer('rejected') }}>
             {t('reject')}
           </Button>
+          {pending.remember && (
+            <Button variant="outline" disabled={answered} onClick={() => { answer('allowed-always') }}>
+              {t('allowAlways')}
+            </Button>
+          )}
           <Button variant="primary" disabled={answered} onClick={() => { answer('allowed-once') }}>
             {t('allowOnce')}
           </Button>
