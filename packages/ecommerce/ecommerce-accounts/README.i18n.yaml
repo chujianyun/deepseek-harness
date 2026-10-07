@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/ecommerce/ecommerce-accounts/README.md
+/:
+  en: c24a9aa53ffe5707
+  zh: 5bf71dc3c0cdc0a5
+/e-commerce-accounts:
+  en: d3ea489b9b673d42
+  zh: 39d746bd2ba4c019
+/e-commerce-accounts/summary:
+  en: f839cfa2fb80aaf5
+  zh: 08b9e431faeb5ee2
+/e-commerce-accounts/table-of-contents:
+  en: 3a654e12f423946b
+  zh: ae4376247712201f
+/e-commerce-accounts/use-this-package:
+  en: 40fda1aad2af189d
+  zh: 9cec1596011fed68
+/e-commerce-accounts/configuration:
+  en: 826216b8f9c8e0fc
+  zh: c46df8c0d036a5b9
+/e-commerce-accounts/model-experience:
+  en: 8ce82f9926d39e1a
+  zh: 17d8eebf40c88969
+/e-commerce-accounts/model-experience/kv-cache-effect:
+  en: e277b74f9b721f5e
+  zh: 014c91db5c8570d0
+/e-commerce-accounts/known-limitations-and-deferred-work:
+  en: 7531cb87d5c0f77e
+  zh: 2911c1c3ff0e0d50
+/e-commerce-accounts/known-limitations-and-deferred-work/dev-note:
+  en: 1693ef98ea159206
+  zh: 68487791e0eafbbf

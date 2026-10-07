@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/client/ui-ecommerce-accounts/README.md
+/:
+  en: a76160bee26ca9cb
+  zh: c62c765627a36176
+/deepseek-ai-dsh-client-ui-ecommerce-accounts:
+  en: b5dc9a5a17de50fd
+  zh: c75357ffc645e9f4
+/deepseek-ai-dsh-client-ui-ecommerce-accounts/summary:
+  en: 6602e3d4007e7c07
+  zh: 2d6156c2e591dfe0
+/deepseek-ai-dsh-client-ui-ecommerce-accounts/table-of-contents:
+  en: 4e53164159b5ce41
+  zh: 1e7d2e37b6eba4ea
+/deepseek-ai-dsh-client-ui-ecommerce-accounts/use-this-package:
+  en: d0c92cb7060bd784
+  zh: c9f15ef90ef04143
+/deepseek-ai-dsh-client-ui-ecommerce-accounts/model-experience:
+  en: 083c28f4e617c972
+  zh: 775fc94cc259d7a3
+/deepseek-ai-dsh-client-ui-ecommerce-accounts/model-experience/kv-cache-effect:
+  en: e277b74f9b721f5e
+  zh: 014c91db5c8570d0
+/deepseek-ai-dsh-client-ui-ecommerce-accounts/known-limitations-and-deferred-work:
+  en: 9666d5cfa8d1452d
+  zh: e644d9188065e32b
+/deepseek-ai-dsh-client-ui-ecommerce-accounts/known-limitations-and-deferred-work/dev-note:
+  en: d040539def4a4676
+  zh: 6e4637d66fcff163

@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/ecommerce/README.md
+/:
+  en: df7f03e1ca53467a
+  zh: 4a82b9060d13f6fc
+/ecommerce-e-commerce-accounts:
+  en: a61573ef94a53855
+  zh: f562365bbca7fcfc
+/ecommerce-e-commerce-accounts/summary:
+  en: a105db0408166a5e
+  zh: fe98c6c34efc1ac3
+/ecommerce-e-commerce-accounts/table-of-contents:
+  en: 1eb35b015a6c423f
+  zh: a8a3dceee2c9e943
+/ecommerce-e-commerce-accounts/packages:
+  en: 3efb7b8995db20a7
+  zh: 1daf0102379f4ca5
+/ecommerce-e-commerce-accounts/related-documentation:
+  en: 96791efcc6d5723b
+  zh: b049633c6d7505fc
+/ecommerce-e-commerce-accounts/dev-note:
+  en: 5de1d6304e00c58f
+  zh: 53ec8ea7bc51dde7

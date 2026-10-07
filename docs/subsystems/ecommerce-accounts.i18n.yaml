@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for ecommerce-accounts.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/subsystems/ecommerce-accounts.md
+/e-commerce-accounts:
+  en: 804a06364607b98d
+  zh: de31e01d1a2496a9
+/e-commerce-accounts/storage:
+  en: fb553a1673450c48
+  zh: 52955b0a5a89c0b7
+/e-commerce-accounts/signing-in:
+  en: 65c244b6c221dc76
+  zh: 01a8b19b335df112
+/e-commerce-accounts/checking:
+  en: fae2677f7a48356c
+  zh: 38cf8bfcb2f88949
+/e-commerce-accounts/across-restarts:
+  en: d112e1ad8ac17ad0
+  zh: 72fe61ab294b058e

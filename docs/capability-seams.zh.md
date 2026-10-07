@@ -84,6 +84,8 @@ flowchart LR
   svc_connectors["ctx.connectors<br/>Connectors"]
   pkg_assistants["assistants"]
   svc_assistants["ctx.assistants<br/>Assistants"]
+  pkg_ecommerce_accounts["ecommerce-accounts"]
+  svc_ecommerceAccounts["ctx.ecommerceAccounts<br/>E-commerce accounts"]
   pkg_skill_market["skill-market"]
   svc_skillMarket["ctx.skillMarket<br/>Skill Hub market"]
   pkg_skill_controller["skill-controller"]
@@ -336,6 +338,7 @@ flowchart LR
   pkg_deepseek_account --> svc_deepseekAccount
   pkg_deepseek_account_platform --> svc_deepseekAccount
   pkg_deepseek_llm_api_extensions --> svc_deepseekLlmApiExtensions
+  pkg_ecommerce_accounts --> svc_ecommerceAccounts
   pkg_embedding --> svc_embedding
   pkg_experimental_agent_team --> svc_agentTeams
   pkg_experimental_api_speech_to_text --> svc_speechController
@@ -623,6 +626,7 @@ flowchart LR
 | `ctx.knowledgeSelection` | `core` | [`knowledge-selection`](../packages/knowledge/knowledge-selection) | - | - | - | 记录每个会话可检索的知识库，只在会话选择了知识库时提供在其上检索的 `knowledge_search` 工具。 |
 | `ctx.connectors` | `core` | [`connectors`](../packages/connector/connectors) | - | - | - | 列出内置连接器，并按发行版固定的版本安装和卸载它们的官方 CLI。 |
 | `ctx.assistants` | `core` | [`assistants`](../packages/assistant/assistants) | - | - | - | 保存已登录租户的智能体及其核心文件，把每个空白主会话绑定到一个智能体，并为其提示词段落记录所绑定智能体的核心文件。 |
+| `ctx.ecommerceAccounts` | `core` | [`ecommerce-accounts`](../packages/ecommerce/ecommerce-accounts) | - | - | - | 保存已登录租户的电商账号，在每个账号自己的系统 Chrome 中登录其平台，并通过平台自己的响应检查登录态。 |
 | `ctx.skillMarket` | `core` | [`skill-market`](../packages/skill/skill-market) | - | - | - | 把当前登录租户的市场 Skill 作为 `market` 来源发现，以登录员工身份浏览 Skill Hub，并把校验通过的安装包一次移到位。 |
 | `ctx.skillController` | `core` | [`skill-controller`](../packages/skill/skill-controller) | - | - | - | 列出本机的用户级 skill，并执行 Desktop Skills 页面的操作：启停、显示位置、编辑与移到废纸篓。 |
 | `ctx.jobController` | `core` | [`api-job-controller`](../packages/api/job-controller) | - | - | - | 经生成的 Remote namespace 流式发送一个后台任务的观测 record；名册仍在会话控制流上。 |

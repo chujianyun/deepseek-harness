@@ -1171,6 +1171,59 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'ecommerceAccounts',
+    summary: 'Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote namespace.',
+    description: 'Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote getState(): Promise<EcommerceAccountsState>',
+        description: 'Read the signed-in tenant\'s accounts and whether Chrome can run them.',
+        parameters: [],
+        returns: 'the state the settings page shows.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<EcommerceAccountsState>',
+        description: 'Stream the state.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change.',
+      },
+      {
+        signature: '@Remote addAccount(input: AddEcommerceAccountInput): Promise<AddEcommerceAccountResult>',
+        description: 'Add an account for the signed-in tenant; it starts signed out.',
+        parameters: [{ name: 'input', description: 'platform, kind, store name, and account.' }],
+        returns: 'the new account\'s id and the state with it last.',
+        throws: ['RemoteError `hub-account/signed-out`, `ecommerce-accounts/unsupported`, `ecommerce-accounts/invalid-field`, or `ecommerce-accounts/duplicate`.'],
+      },
+      {
+        signature: '@Remote async startSignIn(accountId: string): Promise<EcommerceAccountsState>',
+        description: 'Open the platform\'s sign-in page in the account\'s own Chrome and wait for the user to sign in; the account turns signed in by itself once the platform says so.',
+        parameters: [{ name: 'accountId', description: 'the account.' }],
+        returns: 'the state with the account signing in.',
+        throws: ['RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`, `ecommerce-accounts/chrome-missing`, `ecommerce-accounts/chrome-outdated`, or `ecommerce-accounts/browser-failed`.'],
+      },
+      {
+        signature: '@Remote async confirmSignIn(accountId: string): Promise<EcommerceAccountsState>',
+        description: 'Check now whether the user finished signing in, as the "I have signed in" button asks.',
+        parameters: [{ name: 'accountId', description: 'the account.' }],
+        returns: 'the state after the check.',
+        throws: ['RemoteError `hub-account/signed-out` or `ecommerce-accounts/not-found`.'],
+      },
+      {
+        signature: '@Remote async refresh(): Promise<EcommerceAccountsState>',
+        description: 'Check every account that is not signing in, and look for Chrome again.',
+        parameters: [],
+        returns: 'the state after the checks.',
+      },
+      {
+        signature: '@Remote async deleteAccount(accountId: string): Promise<EcommerceAccountsState>',
+        description: 'Delete an account and its browser data, closing its Chrome first.',
+        parameters: [{ name: 'accountId', description: 'the account.' }],
+        returns: 'the state without it.',
+        throws: ['RemoteError `hub-account/signed-out` or `ecommerce-accounts/not-found`.'],
+      },
+    ],
+  },
+  {
     key: 'embedding',
     summary: 'Host owner of the embedding models and of the `embedding` Remote namespace.',
     description: 'Host owner of the embedding models and of the `embedding` Remote namespace.',
@@ -5124,6 +5177,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
   {
+    name: 'AddEcommerceAccountInput',
+    declaration: 'export interface AddEcommerceAccountInput {\n    readonly platform: EcommercePlatform;\n    readonly kind: EcommerceAccountKind;\n    readonly storeName?: string;\n    readonly account: string;\n}',
+  },
+  {
+    name: 'AddEcommerceAccountResult',
+    declaration: 'export interface AddEcommerceAccountResult {\n    readonly accountId: string;\n    readonly state: EcommerceAccountsState;\n}',
+  },
+  {
     name: 'AdmittedPromptContentPart',
     declaration: 'export type AdmittedPromptContentPart = {\n    readonly type: \'text\';\n    readonly text: string;\n} | {\n    readonly type: \'image\';\n    readonly attachment: ImageAttachmentRef;\n} | {\n    readonly type: \'file\';\n    readonly attachment: FileAttachmentRef;\n};',
   },
@@ -5470,6 +5531,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ChangeResult',
     declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\' | \'cancelled\';\n    stage: \'install\' | \'enable\' | \'remove\';\n    target: string;\n    enabled?: boolean;\n    error?: ManagementError;\n    warnings?: string[];\n    packageResult?: PackageResult;\n    bundle?: string;\n    version?: string;\n    pendingBuilds?: string[];\n    approvedBuilds?: string[];\n    registries?: Registry[];\n    failedAt?: \'registry\' | \'spec-host\';\n}',
+  },
+  {
+    name: 'ChromeView',
+    declaration: 'export interface ChromeView {\n    readonly status: \'ready\' | \'missing\' | \'outdated\';\n    readonly version?: string;\n    readonly minVersion: number;\n    readonly downloadUrl: string;\n}',
   },
   {
     name: 'ClientArtifactBaseline',
@@ -5958,6 +6023,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DynamicCordisRunRequest',
     declaration: 'export interface DynamicCordisRunRequest {\n    requestId: ApprovalRequestId;\n    agentId: SessionId;\n    pluginId: CordisDynamicPluginId;\n    packageId: CordisDynamicPackageId;\n    mode: CordisDynamicRunMode;\n    name: string;\n    purpose: string;\n    requiresApproval: boolean;\n}',
+  },
+  {
+    name: 'EcommerceAccountKind',
+    declaration: 'export type EcommerceAccountKind = \'merchant\' | \'buyer\';',
+  },
+  {
+    name: 'EcommerceAccountsState',
+    declaration: 'export interface EcommerceAccountsState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly chrome: ChromeView;\n    readonly accounts: readonly EcommerceAccountView[];\n}',
+  },
+  {
+    name: 'EcommerceAccountStatus',
+    declaration: 'export type EcommerceAccountStatus = \'signed-in\' | \'signed-out\' | \'signing-in\' | \'checking\' | \'check-failed\';',
+  },
+  {
+    name: 'EcommerceAccountView',
+    declaration: 'export interface EcommerceAccountView {\n    readonly id: string;\n    readonly platform: EcommercePlatform;\n    readonly kind: EcommerceAccountKind;\n    readonly storeName?: string;\n    readonly account: string;\n    readonly status: EcommerceAccountStatus;\n    readonly signedInAs?: string;\n    readonly checkedAt?: string;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'EcommercePlatform',
+    declaration: 'export type EcommercePlatform = \'tmall\';',
   },
   {
     name: 'EditGoalRequest',

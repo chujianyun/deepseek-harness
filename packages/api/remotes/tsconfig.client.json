@@ -109,6 +109,9 @@
       "path": "../../assistant/assistants"
     },
     {
+      "path": "../../ecommerce/ecommerce-accounts"
+    },
+    {
       "path": "../workspace-controller/tsconfig.client.json"
     },
     {

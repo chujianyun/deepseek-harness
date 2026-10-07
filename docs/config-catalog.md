@@ -914,6 +914,39 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-deepseek-account-platform -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-ecommerce-accounts -->
+<a id="deepseek-aidsh-ecommerce-accounts"></a>
+
+## `@deepseek-ai/dsh-ecommerce-accounts`
+
+- `inject`: `hubAccount`
+- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:46`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** DeepSeek Harness home; accounts live under `<dshHome>/ecommerce`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** Chrome executable to use instead of the platform's standard Google Chrome install. */
+  chromePath?: string
+  /** Oldest Chrome major version accounts run on. */
+  minChromeVersion?: number
+  /** How long a sign-in waits for the user before giving up, in milliseconds. */
+  signInTimeoutMs?: number
+  /** How long one check waits for the platform's response, in milliseconds. */
+  checkTimeoutMs?: number
+  /** How long DSH waits for Chrome to start or close, in milliseconds. */
+  chromeTimeoutMs?: number
+  /** Time between looks at the sign-in tab, in milliseconds. */
+  signInPollMs?: number
+  /** Time after which a sign-in is checked even before its tab leaves the sign-in page, in milliseconds. */
+  signInCheckEveryMs?: number
+  /** Longest store or account name, in characters. */
+  maxNameLength?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-ecommerce-accounts -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-embedding -->
 <a id="deepseek-aidsh-embedding"></a>
 
@@ -4674,6 +4707,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-deliverables` | `systemPrompt` · `connection` · `sessionQuery` · `sessionController` · `workspaceFiles` · `fs` · `sandboxPolicy` · `workspaceChanges` | [`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-directory-picker-browse` | — | [`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-directory-picker-native` | — | [`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-ecommerce-accounts` | — | [`packages/client/ui-ecommerce-accounts/src/index.ts`](../packages/client/ui-ecommerce-accounts/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-goal` | — | [`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-hub-account` | — | [`packages/client/ui-hub-account/src/index.ts`](../packages/client/ui-hub-account/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-input-trigger` | — | [`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts) |

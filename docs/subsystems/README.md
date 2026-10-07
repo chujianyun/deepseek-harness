@@ -16,6 +16,7 @@ One page per subsystem of the DeepSeek Harness: what it is, the data structures 
 | [schedule.md](schedule.md) | Host-owned reminder records, durable transitions, active and ended views, and ordinary-conversation delivery |
 | [knowledge.md](knowledge.md) | local knowledge bases: per-tenant storage, the processing queue, and hybrid search |
 | [connectors.md](connectors.md) | connectors: office platforms through their official CLIs, installed at pinned versions |
+| [ecommerce-accounts.md](ecommerce-accounts.md) | e-commerce accounts: platform sign-ins kept by the system Google Chrome, per account and tenant |
 | [assistants.md](assistants.md) | assistants: per-tenant named roles whose core files reach the sessions bound to them |
 | [todo.md](todo.md) | the todo package's whole-list item type, durable event ownership, and projection |
 | [deliverables.md](deliverables.md) | what a turn hands to the user: `PresentedFile` deliveries from `present` and the Host-served `WorkspaceChangesSummary` of changed files from git snapshots |
