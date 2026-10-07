@@ -190,6 +190,7 @@ function AccountDetail(props: EcommerceAccountsSectionProps & {
     ['kind', t(account.kind === 'merchant' ? 'kindMerchant' : 'kindBuyer')],
     ['status', statusText(t, account)],
     ...account.signedInAs === undefined ? [] : [['signedInAs', account.signedInAs] as const],
+    ...account.signedInStore === undefined ? [] : [['signedInStore', account.signedInStore] as const],
     ...account.checkedAt === undefined ? [] : [['checkedAt', ago(t, account.checkedAt)] as const],
   ]
   return (
@@ -335,7 +336,7 @@ function SignInDialog(props: EcommerceAccountsSectionProps & {
       <div className={css.signIn} role="status">
         {refusal !== undefined && <p className={css.error}>{refusalText(t, refusal)}</p>}
         {refusal === undefined && done && (
-          <p>{account.signedInAs === undefined ? t('signInDoneUnnamed') : t('signInDone', { name: account.signedInAs })}</p>
+          <p>{doneText(t, account)}</p>
         )}
         {refusal === undefined && done && (
           <ActualAccount {...props} account={account} onSignIn={() => { void props.onStartSignIn(account.id) }} />
@@ -348,29 +349,53 @@ function SignInDialog(props: EcommerceAccountsSectionProps & {
   )
 }
 
+/** What the sign-in dialog says once signed in: the account or store the platform shows, when it shows one. */
+function doneText(t: T, account: EcommerceAccountView): string {
+  if (account.signedInAs !== undefined) return t('signInDone', { name: account.signedInAs })
+  if (account.signedInStore !== undefined) return t('signInDoneStore', { name: account.signedInStore })
+  return t('signInDoneUnnamed')
+}
+
+/** One name the platform reports differently from the one entered, and how to adopt it. */
+interface Mismatch {
+  readonly key: 'account' | 'storeName'
+  readonly text: string
+  readonly action: string
+  readonly name: string
+}
+
 /**
- * When the platform reports another account name than the one entered: says so, and offers to use
- * the reported name or to sign in again.
+ * When the platform reports another account or store name than the one entered: says so, and
+ * offers to use the reported name or to sign in again.
  */
 function ActualAccount(props: EcommerceAccountsSectionProps & { readonly account: EcommerceAccountView; readonly onSignIn: () => void }) {
   const { t, account, onSignIn } = props
   const [failure, setFailure] = useState<string | null>(null)
-  const actual = account.signedInAs
-  if (account.status !== 'signed-in' || actual === undefined || actual === account.account) return null
+  if (account.status !== 'signed-in') return null
+  const mismatches: Mismatch[] = []
+  if (account.signedInAs !== undefined && account.signedInAs !== account.account) {
+    mismatches.push({ key: 'account', text: t('actualAccount', { name: account.signedInAs }), action: t('useActual'), name: account.signedInAs })
+  }
+  if (account.signedInStore !== undefined && account.storeName !== undefined && account.signedInStore !== account.storeName) {
+    mismatches.push({ key: 'storeName', text: t('actualStore', { name: account.signedInStore }), action: t('useActualStore'), name: account.signedInStore })
+  }
+  if (mismatches.length === 0) return null
   return (
     <div className={css.mismatch} role="note">
-      <p>{t('actualAccount', { name: actual })}</p>
+      {mismatches.map(mismatch => <p key={mismatch.key}>{mismatch.text}</p>)}
       <div className={css.actions}>
-        <Button
-          variant="outline" size="sm"
-          onClick={() => {
-            void props.onRename(account.id, actual).then((refusal) => {
-              setFailure(refusal === undefined ? null : refusalText(t, refusal))
-            })
-          }}
-        >
-          {t('useActual')}
-        </Button>
+        {mismatches.map(mismatch => (
+          <Button
+            key={mismatch.key} variant="outline" size="sm"
+            onClick={() => {
+              void props.onRename(account.id, { [mismatch.key]: mismatch.name }).then((refusal) => {
+                setFailure(refusal === undefined ? null : refusalText(t, refusal))
+              })
+            }}
+          >
+            {mismatch.action}
+          </Button>
+        ))}
         <Button variant="ghost" size="sm" onClick={onSignIn}>{t('relogin')}</Button>
       </div>
       {failure !== null && <p className={css.error} role="alert">{failure}</p>}

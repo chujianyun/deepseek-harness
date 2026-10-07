@@ -30,7 +30,7 @@ import { alive, closeChrome, ensureTab, findChrome, launchChrome, profileHolder,
 import { PLATFORMS, type PlatformSpec } from './platforms.ts'
 import type {
   AddEcommerceAccountInput, AddEcommerceAccountResult, ChromeView, EcommerceAccountsState, EcommerceAccountStatus, EcommerceAccountView,
-  EcommerceCheckProblem,
+  EcommerceCheckProblem, RenameEcommerceAccountInput,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -108,6 +108,7 @@ const ledgerSchema = z.object({
     account: z.string().min(1),
     createdAt: z.string(),
     signedInAs: z.string().optional(),
+    signedInStore: z.string().optional(),
     checkedAt: z.string().optional(),
     /** Whether a sign-in ever succeeded; a Chrome gone since then is started again to restore it. */
     everSignedIn: z.boolean().optional(),
@@ -306,22 +307,24 @@ export class EcommerceAccountsService extends TypertRemoteService {
   }
 
   /**
-   * Change the account name the user entered, such as to the name the platform reports.
+   * Change the account or store name the user entered, such as to the name the platform reports.
    * @param accountId - the account.
-   * @param account - the new account name.
+   * @param changes - the new account name, store name, or both; a field left out stays.
    * @returns the state with the account renamed.
    * @throws RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`,
    *   `ecommerce-accounts/invalid-field`, or `ecommerce-accounts/duplicate`.
    */
   @Remote
-  renameAccount(accountId: string, account: string): Promise<EcommerceAccountsState> {
+  renameAccount(accountId: string, changes: RenameEcommerceAccountInput): Promise<EcommerceAccountsState> {
     return this.serialized(async () => {
       const tenantId = this.requireTenant()
       const entry = this.find(accountId)
-      const name = checkName('account', account, this.options.maxNameLength)
-      const existing = this.entries.find(item => item.id !== entry.id && identity(item) === identity({ ...entry, account: name }))
+      const max = this.options.maxNameLength
+      const account = changes.account === undefined ? entry.account : checkName('account', changes.account, max)
+      const storeName = changes.storeName === undefined ? entry.storeName : checkName('storeName', changes.storeName, max)
+      const existing = this.entries.find(item => item.id !== entry.id && identity(item) === identity({ ...entry, account }))
       if (existing !== undefined) throw new RemoteError('ecommerce-accounts/duplicate', 'This account is already added', { accountId: existing.id })
-      this.entries = this.entries.map(item => item.id === entry.id ? { ...item, account: name } : item)
+      this.entries = this.entries.map(item => item.id === entry.id ? { ...item, account, storeName } : item)
       await this.saveLedger(tenantId)
       this.changed()
       return this.getState()
@@ -417,10 +420,16 @@ export class EcommerceAccountsService extends TypertRemoteService {
           this.changed()
           return result
         }
-        const { signedInAs: _old, ...rest } = current
+        const { signedInAs: _name, signedInStore: _store, ...rest } = current
         const next: Entry = {
           ...rest, checkedAt: new Date().toISOString(),
-          ...result.kind === 'signed-in' ? { everSignedIn: true, ...result.name === undefined ? {} : { signedInAs: result.name } } : {},
+          ...result.kind === 'signed-in'
+            ? {
+              everSignedIn: true,
+              ...result.name === undefined ? {} : { signedInAs: result.name },
+              ...result.store === undefined ? {} : { signedInStore: result.store },
+            }
+            : {},
         }
         this.entries = this.entries.map(item => item.id === entry.id ? next : item)
         await this.saveLedger(this.requireTenant())
@@ -507,6 +516,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
       createdAt: entry.createdAt, status, expired: status === 'signed-out' && entry.everSignedIn === true,
       ...status === 'check-failed' ? { problem: this.problems.get(entry.id) as EcommerceCheckProblem } : {},
       ...(entry.signedInAs === undefined ? {} : { signedInAs: entry.signedInAs }),
+      ...(entry.signedInStore === undefined ? {} : { signedInStore: entry.signedInStore }),
       ...(entry.checkedAt === undefined ? {} : { checkedAt: entry.checkedAt }),
     }
   }

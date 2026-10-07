@@ -46,7 +46,7 @@ export function apply(ctx: ClientContext): void {
     add: input => remote.addAccount(input),
     startSignIn: accountId => remote.startSignIn(accountId),
     confirmSignIn: accountId => remote.confirmSignIn(accountId),
-    rename: (accountId, account) => remote.renameAccount(accountId, account),
+    rename: (accountId, changes) => remote.renameAccount(accountId, changes),
     refresh: () => remote.refresh(),
     remove: accountId => remote.deleteAccount(accountId),
     // The Desktop shell sends a new window's http(s) address to the default browser.

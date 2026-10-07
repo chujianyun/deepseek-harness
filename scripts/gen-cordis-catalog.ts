@@ -378,6 +378,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   EcommerceAccountsState: 'ecommerce-accounts.md',
   AddEcommerceAccountInput: 'ecommerce-accounts.md',
   AddEcommerceAccountResult: 'ecommerce-accounts.md',
+  RenameEcommerceAccountInput: 'ecommerce-accounts.md',
   ResolvedRetryPolicy: 'llm-streaming.md',
   Message: 'llm-streaming.md',
   MessageSource: 'llm-streaming.md',

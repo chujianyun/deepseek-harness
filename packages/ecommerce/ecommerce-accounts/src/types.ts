@@ -54,6 +54,8 @@ export interface EcommerceAccountView {
   readonly problem?: EcommerceCheckProblem
   /** Name the platform reported for the signed-in account at the last successful check, when it reports one. */
   readonly signedInAs?: string
+  /** Name the platform reported for the signed-in store at the last successful check, when it reports one. */
+  readonly signedInStore?: string
   /** The account was signed in before and is signed out now: its sign-in expired or was ended. */
   readonly expired: boolean
   /** ISO time of the last check that reached the platform. */
@@ -91,6 +93,12 @@ export interface AddEcommerceAccountInput {
   /** Store name; required for a merchant account. */
   readonly storeName?: string
   readonly account: string
+}
+
+/** What `renameAccount` changes: the account name, the store name, or both. */
+export interface RenameEcommerceAccountInput {
+  readonly account?: string
+  readonly storeName?: string
 }
 
 /** The result of adding an account. */

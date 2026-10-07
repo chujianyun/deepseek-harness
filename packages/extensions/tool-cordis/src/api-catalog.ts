@@ -1215,9 +1215,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the state after the checks.',
       },
       {
-        signature: '@Remote renameAccount(accountId: string, account: string): Promise<EcommerceAccountsState>',
-        description: 'Change the account name the user entered, such as to the name the platform reports.',
-        parameters: [{ name: 'accountId', description: 'the account.' }, { name: 'account', description: 'the new account name.' }],
+        signature: '@Remote renameAccount(accountId: string, changes: RenameEcommerceAccountInput): Promise<EcommerceAccountsState>',
+        description: 'Change the account or store name the user entered, such as to the name the platform reports.',
+        parameters: [{ name: 'accountId', description: 'the account.' }, { name: 'changes', description: 'the new account name, store name, or both; a field left out stays.' }],
         returns: 'the state with the account renamed.',
         throws: ['RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`, `ecommerce-accounts/invalid-field`, or `ecommerce-accounts/duplicate`.'],
       },
@@ -6045,7 +6045,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EcommerceAccountView',
-    declaration: 'export interface EcommerceAccountView {\n    readonly id: string;\n    readonly platform: EcommercePlatform;\n    readonly kind: EcommerceAccountKind;\n    readonly storeName?: string;\n    readonly account: string;\n    readonly status: EcommerceAccountStatus;\n    readonly problem?: EcommerceCheckProblem;\n    readonly signedInAs?: string;\n    readonly expired: boolean;\n    readonly checkedAt?: string;\n    readonly createdAt: string;\n}',
+    declaration: 'export interface EcommerceAccountView {\n    readonly id: string;\n    readonly platform: EcommercePlatform;\n    readonly kind: EcommerceAccountKind;\n    readonly storeName?: string;\n    readonly account: string;\n    readonly status: EcommerceAccountStatus;\n    readonly problem?: EcommerceCheckProblem;\n    readonly signedInAs?: string;\n    readonly signedInStore?: string;\n    readonly expired: boolean;\n    readonly checkedAt?: string;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'EcommerceCheckProblem',
@@ -7398,6 +7398,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RemoteEventHostInfo',
     declaration: 'export interface RemoteEventHostInfo {\n    readonly home: string;\n}',
+  },
+  {
+    name: 'RenameEcommerceAccountInput',
+    declaration: 'export interface RenameEcommerceAccountInput {\n    readonly account?: string;\n    readonly storeName?: string;\n}',
   },
   {
     name: 'RenderedDocumentBytes',

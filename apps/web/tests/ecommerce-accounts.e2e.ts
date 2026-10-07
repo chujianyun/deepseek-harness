@@ -96,7 +96,7 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     await section.getByRole('note').waitFor({ state: 'detached' })
     await section.getByRole('button', { name: '返回账号列表', exact: false }).click()
 
-    // A Pinduoduo shop signs in the same way; Pinduoduo reports no account name.
+    // A Pinduoduo shop signs in the same way; Pinduoduo names the store, not the account.
     await section.getByRole('button', { name: '新增账号' }).click()
     await add.getByRole('combobox', { name: '平台' }).selectOption('pinduoduo')
     await add.getByPlaceholder('例如：名流旗舰店', { exact: true }).fill('拼多多小店')
@@ -106,8 +106,10 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     await pddSignIn.waitFor()
     pddDir = join(harnessHome, 'ecommerce', tenantId, 'browsers', (await scaffold.ctx.ecommerceAccounts.getState()).accounts[1]!.id)
     await expect.poll(() => access(join(pddDir!, 'user-data', 'fake-args.json')).then(() => true, () => false), { timeout: 10_000 }).toBe(true)
-    await writeFile(join(pddDir, 'user-data', 'fake-signed-in'), 'pdd')
-    await pddSignIn.getByText('登录成功。这个 Chrome 会在后台保持登录。').waitFor({ timeout: 15_000 })
+    // The stand-in Pinduoduo names the store after the signed-in user: 拼多多小 + 店.
+    await writeFile(join(pddDir, 'user-data', 'fake-signed-in'), '拼多多小')
+    await pddSignIn.getByText('登录成功，平台显示的店铺是「拼多多小店」', { exact: false }).waitFor({ timeout: 15_000 })
+    expect(await pddSignIn.getByRole('note').count()).toBe(0)
     await pddSignIn.getByRole('button', { name: '完成' }).click()
     const pddRow = section.getByRole('button', { name: '查看 拼多多小店 的详情' })
     await expect.poll(() => pddRow.textContent()).toContain('已登录')

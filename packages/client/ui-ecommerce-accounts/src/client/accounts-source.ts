@@ -2,7 +2,7 @@
 
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
-  AddEcommerceAccountInput, AddEcommerceAccountResult, EcommerceAccountsState,
+  AddEcommerceAccountInput, AddEcommerceAccountResult, EcommerceAccountsState, RenameEcommerceAccountInput,
 } from '@deepseek-ai/dsh-ecommerce-accounts/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
@@ -25,7 +25,7 @@ export interface AccountsDependencies {
   readonly add: (input: AddEcommerceAccountInput) => Promise<RemoteResult<AddEcommerceAccountResult>>
   readonly startSignIn: (accountId: string) => Promise<RemoteResult<EcommerceAccountsState>>
   readonly confirmSignIn: (accountId: string) => Promise<RemoteResult<EcommerceAccountsState>>
-  readonly rename: (accountId: string, account: string) => Promise<RemoteResult<EcommerceAccountsState>>
+  readonly rename: (accountId: string, changes: RenameEcommerceAccountInput) => Promise<RemoteResult<EcommerceAccountsState>>
   readonly refresh: () => Promise<RemoteResult<EcommerceAccountsState>>
   readonly remove: (accountId: string) => Promise<RemoteResult<EcommerceAccountsState>>
   /** Open an address in the default browser. */
@@ -40,8 +40,8 @@ export interface AccountsInjected {
   /** Open the sign-in page; resolves to the refusal, or undefined once it is open. */
   readonly onStartSignIn: (accountId: string) => Promise<Refusal | undefined>
   readonly onConfirmSignIn: (accountId: string) => Promise<Refusal | undefined>
-  /** Change the account name, such as to the one the platform reports; resolves to the refusal, or undefined. */
-  readonly onRename: (accountId: string, account: string) => Promise<Refusal | undefined>
+  /** Change the account or store name, such as to the one the platform reports; resolves to the refusal, or undefined. */
+  readonly onRename: (accountId: string, changes: RenameEcommerceAccountInput) => Promise<Refusal | undefined>
   /** Check every account again, as the section does when it opens. */
   readonly onRefresh: () => Promise<void>
   readonly onDelete: (accountId: string) => Promise<Refusal | undefined>
@@ -97,7 +97,7 @@ export function createAccountsSource(deps: AccountsDependencies): AccountsSource
     },
     onStartSignIn: accountId => settle(deps.startSignIn(accountId)),
     onConfirmSignIn: accountId => settle(deps.confirmSignIn(accountId)),
-    onRename: (accountId, account) => settle(deps.rename(accountId, account)),
+    onRename: (accountId, changes) => settle(deps.rename(accountId, changes)),
     onRefresh: async () => { await settle(deps.refresh()) },
     onDelete: accountId => settle(deps.remove(accountId)),
     onOpenUrl: (url) => { deps.openUrl(url) },

@@ -14,7 +14,7 @@ Signing in starts the system Google Chrome detached on the account's data, with 
 
 ## Checking
 
-A check opens the platform's business page in a background tab and reads the platform's own sign-in response there, retrying once: Tmall's `mtop.user.getusersimple` (which names the account), Taobao Qianniu's `mtop.taobao.jdy.resource.shop.info.get`, Pinduoduo's `janus/api/checkLogin`, or a Douyin shop's `byteshop/menu/list/v2`. A page the platform sends to sign in is signed out at once. A check that gets no answer in time, cannot load the page, or finds the account's browser data held by a Chrome DSH did not start fails with that problem — timeout, network, or busy — and keeps the last answer. Accounts are checked when they load, when the Settings section opens, and every 30 minutes; an account that was signed in and is now signed out is expired, which the Desktop announces with a notice that opens the section. Once signed in, the account's Chrome windows are minimized and Chrome keeps running. Every account is checked when the tenant's accounts load and when the Settings section opens.
+A check opens the platform's business page in a background tab and reads the platform's own sign-in response there, retrying once: Tmall's `mtop.user.getusersimple` (which names the account), Taobao Qianniu's `mtop.taobao.jdy.resource.shop.info.get`, Pinduoduo's `janus/api/checkLogin`, or a Douyin shop's `byteshop/menu/list/v2`; Pinduoduo and Douyin shop pages also name the store, which the Settings section compares with the store name entered. A page the platform sends to sign in is signed out at once. A check that gets no answer in time, cannot load the page, or finds the account's browser data held by a Chrome DSH did not start fails with that problem — timeout, network, or busy — and keeps the last answer. Accounts are checked when they load, when the Settings section opens, and every 30 minutes; an account that was signed in and is now signed out is expired, which the Desktop announces with a notice that opens the section. Once signed in, the account's Chrome windows are minimized and Chrome keeps running. Every account is checked when the tenant's accounts load and when the Settings section opens.
 
 ## Across restarts
 
@@ -83,14 +83,14 @@ Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote name
 @Remote async refresh(): Promise<EcommerceAccountsState>
 
 /**
- * Change the account name the user entered, such as to the name the platform reports.
+ * Change the account or store name the user entered, such as to the name the platform reports.
  * @param accountId - the account.
- * @param account - the new account name.
+ * @param changes - the new account name, store name, or both; a field left out stays.
  * @returns the state with the account renamed.
  * @throws RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`,
  *   `ecommerce-accounts/invalid-field`, or `ecommerce-accounts/duplicate`.
  */
-@Remote renameAccount(accountId: string, account: string): Promise<EcommerceAccountsState>
+@Remote renameAccount(accountId: string, changes: RenameEcommerceAccountInput): Promise<EcommerceAccountsState>
 
 /**
  * Delete an account and its browser data, closing its Chrome first.

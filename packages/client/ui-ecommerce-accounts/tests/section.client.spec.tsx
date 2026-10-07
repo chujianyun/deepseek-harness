@@ -28,7 +28,7 @@ function mount(state: EcommerceAccountsState | undefined, copy: Record<string, s
     onAdd: vi.fn(async (): Promise<{ accountId: string } | Refusal> => ({ accountId: 'e1' })),
     onStartSignIn: vi.fn(async (_id: string): Promise<Refusal | undefined> => undefined),
     onConfirmSignIn: vi.fn(async (_id: string): Promise<Refusal | undefined> => undefined),
-    onRename: vi.fn(async (_id: string, _account: string): Promise<Refusal | undefined> => undefined),
+    onRename: vi.fn(async (_id: string, _changes: { account?: string; storeName?: string }): Promise<Refusal | undefined> => undefined),
     onRefresh: vi.fn(async () => {}),
     onDelete: vi.fn(async (_id: string): Promise<Refusal | undefined> => undefined),
     onOpenUrl: vi.fn(),
@@ -109,7 +109,7 @@ describe('e-commerce accounts section', () => {
     expect(note.textContent).toContain('实际登录的是「nick」，与填写的账号不一致。')
     props.onRename.mockResolvedValueOnce({ kind: 'duplicate' })
     await act(async () => { fireEvent.click(within(note).getByRole('button', { name: '改为实际账号名' })) })
-    expect(props.onRename).toHaveBeenCalledWith('e1', 'nick')
+    expect(props.onRename).toHaveBeenCalledWith('e1', { account: 'nick' })
     expect(within(note).getByRole('alert').textContent).toBe('当前账号已添加')
     await act(async () => { fireEvent.click(within(note).getByRole('button', { name: '改为实际账号名' })) })
     expect(within(note).queryByRole('alert')).toBeNull()
@@ -218,6 +218,25 @@ describe('e-commerce accounts section', () => {
     // Once the names agree there is nothing to say.
     props.set({ ...base, accounts: [account({ status: 'signed-in', account: 'x', signedInAs: 'x' })] })
     expect(within(dialog).queryByRole('note')).toBeNull()
+  })
+
+  it('offers the actual store name of a platform that names the store, and says which store signed in', async () => {
+    const props = mount({ ...base, accounts: [account({ platform: 'pinduoduo', storeName: '名流保健', status: 'signing-in' })] })
+    fireEvent.click(screen.getByRole('button', { name: '查看 名流保健 的详情' }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '去登录' })) })
+    props.set({ ...base, accounts: [account({ platform: 'pinduoduo', storeName: '名流保健', status: 'signed-in', signedInStore: '名流保健用品官方旗舰店' })] })
+    const dialog = screen.getByRole('dialog', { name: '登录拼多多' })
+    expect(dialog.textContent).toContain('登录成功，平台显示的店铺是「名流保健用品官方旗舰店」')
+    const note = within(dialog).getByRole('note')
+    expect(note.textContent).toContain('实际登录的店铺是「名流保健用品官方旗舰店」，与填写的店铺名不一致。')
+    expect(within(note).queryByRole('button', { name: '改为实际账号名' })).toBeNull()
+    await act(async () => { fireEvent.click(within(note).getByRole('button', { name: '改为实际店铺名' })) })
+    expect(props.onRename).toHaveBeenCalledWith('e1', { storeName: '名流保健用品官方旗舰店' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '完成' }))
+    expect(screen.getByText('平台显示的店铺').nextSibling?.textContent).toBe('名流保健用品官方旗舰店')
+    // A matching store, or a store reported for an account without one, says nothing.
+    props.set({ ...base, accounts: [account({ platform: 'pinduoduo', storeName: 'x', status: 'signed-in', signedInStore: 'x' })] })
+    expect(screen.queryByRole('note')).toBeNull()
   })
 
   it('renders nothing but the intro before the first state, and follows an account that disappears', () => {

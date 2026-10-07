@@ -3,7 +3,9 @@
 // and the browser WebSocket on --remote-debugging-port, and plays the Tmall check: the home page
 // sends `mtop.user.getusersimple`, signed in while `<user-data-dir>/fake-signed-in` holds a nick; the
 // Taobao, Pinduoduo, and Douyin shop pages answer their own checks, and the Taobao and Douyin shop
-// pages go to sign in while signed out. FAKE_CHROME_OFFLINE fails every navigation.
+// pages go to sign in while signed out; the Pinduoduo and Douyin shop pages also name the store, which
+// FAKE_CHROME_NO_STORE leaves out and FAKE_CHROME_NO_STORE_BODY loses. FAKE_CHROME_OFFLINE fails every
+// navigation.
 // FAKE_CHROME_VERSION sets the reported version (empty prints none); FAKE_CHROME_SILENT never sends
 // the check response; FAKE_CHROME_BASE64 encodes bodies; FAKE_CHROME_STUBBORN ignores Browser.close;
 // FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs. Its tabs are
@@ -54,28 +56,39 @@ const urlOf = (target) => {
   return home !== undefined && signedInAs() !== undefined ? home : target.url
 }
 /**
- * What a business page sends while it loads: the check response's address and body, or the sign-in
- * page it goes to instead.
+ * What a business page sends while it loads: its responses in order, the check among them, or the
+ * sign-in page it goes to instead.
  */
 const pageLoad = (url, nick) => {
+  const store = name => process.env.FAKE_CHROME_NO_STORE === undefined ? [{ ...name, store: true }] : []
   if (url.startsWith('https://qn.taobao.com/')) {
     return nick === undefined
       ? { redirect: 'https://loginmyseller.taobao.com/?from=taobaoindex&sub=true' }
-      : { check: 'https://h5api.m.taobao.com/h5/mtop.taobao.jdy.resource.shop.info.get/1.0/', body: `mtopjsonp2(${JSON.stringify({ ret: ['SUCCESS::调用成功'], data: { shopName: nick } })})` }
+      : { responses: [{ url: 'https://h5api.m.taobao.com/h5/mtop.taobao.jdy.resource.shop.info.get/1.0/', body: `mtopjsonp2(${JSON.stringify({ ret: ['SUCCESS::调用成功'], data: { shopName: nick } })})` }] }
   }
-  if (url.startsWith('https://mms.pinduoduo.com/janus/api/checkLogin')) {
-    return { check: url, body: JSON.stringify({ success: true, result: { login: nick !== undefined } }) }
+  if (url.startsWith('https://mms.pinduoduo.com/')) {
+    return nick === undefined
+      ? { redirect: 'https://mms.pinduoduo.com/login/?redirectUrl=x' }
+      : { responses: [
+        ...store({ url: 'https://mms.pinduoduo.com/earth/api/mallInfo/querySimpleCredential', body: JSON.stringify({ success: true, result: { merchantMainSimpleVO: { mallName: `${nick}店` } } }) }),
+        { url: 'https://mms.pinduoduo.com/janus/api/checkLogin', body: JSON.stringify({ success: true, result: { login: true } }) },
+      ] }
   }
   if (url.startsWith('https://fxg.jinritemai.com/')) {
     return nick === undefined
       ? { redirect: 'https://fxg.jinritemai.com/login/common' }
-      : { check: 'https://fxg.jinritemai.com/byteshop/menu/list/v2', body: JSON.stringify({ code: 0, data: { menu_list: [{ name: '首页' }] } }) }
+      : { responses: [
+        { url: 'https://fxg.jinritemai.com/byteshop/menu/list/v2', body: JSON.stringify({ code: 0, data: { menu_list: [{ name: '首页' }] } }) },
+        ...store({ url: 'https://fxg.jinritemai.com/center/qualification/shop/info', body: JSON.stringify({ code: 0, data: { shop_name: `${nick}店` } }) }),
+      ] }
   }
   return {
-    check: CHECK,
-    body: nick === undefined
-      ? 'mtopjsonp1({"ret":["FAIL_SYS_SESSION_EXPIRED::Session过期"],"data":{}})'
-      : `mtopjsonp1(${JSON.stringify({ ret: ['SUCCESS::调用成功'], data: { nick, userNumId: '1' } })})`,
+    responses: [{
+      url: CHECK,
+      body: nick === undefined
+        ? 'mtopjsonp1({"ret":["FAIL_SYS_SESSION_EXPIRED::Session过期"],"data":{}})'
+        : `mtopjsonp1(${JSON.stringify({ ret: ['SUCCESS::调用成功'], data: { nick, userNumId: '1' } })})`,
+    }],
   }
 }
 
@@ -127,12 +140,17 @@ wss.on('connection', (socket) => {
           emit('Network.requestWillBeSent', { requestId: 'r3', type: 'Document', frameId, request: { url: load.redirect } }, sessionId)
           return
         }
-        if (process.env.FAKE_CHROME_NO_BODY === undefined) bodies.set('r2', load.body)
         emit('Network.responseReceived', { requestId: 'r1', response: { url: 'https://www.tmall.com/other.js' } }, sessionId)
         emit('Network.loadingFinished', { requestId: 'r1' }, sessionId)
-        emit('Network.responseReceived', { requestId: 'r2', response: { url: `${load.check}?t=1&sign=x` } }, 'other-session')
-        emit('Network.responseReceived', { requestId: 'r2', response: { url: `${load.check}?t=1&sign=x` } }, sessionId)
-        emit('Network.loadingFinished', { requestId: 'r2' }, sessionId)
+        load.responses.forEach((response, index) => {
+          const requestId = `r2-${String(index)}`
+          const lost = process.env.FAKE_CHROME_NO_BODY !== undefined || (response.store === true && process.env.FAKE_CHROME_NO_STORE_BODY !== undefined)
+          if (!lost) bodies.set(requestId, response.body)
+          emit('Network.responseReceived', { requestId, response: { url: `${response.url}?t=1&sign=x` } }, 'other-session')
+          emit('Network.responseReceived', { requestId, response: { url: `${response.url}?t=1&sign=x` } }, sessionId)
+          emit('Network.loadingFinished', { requestId }, 'other-session')
+          emit('Network.loadingFinished', { requestId }, sessionId)
+        })
         return
       }
       case 'Network.getResponseBody': {

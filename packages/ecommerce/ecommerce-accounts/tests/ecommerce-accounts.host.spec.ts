@@ -15,7 +15,7 @@ const FAKE = fileURLToPath(new URL('./fake-chrome.mjs', import.meta.url))
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
-  for (const key of ['FAKE_CHROME_VERSION', 'FAKE_CHROME_SILENT', 'FAKE_CHROME_BASE64', 'FAKE_CHROME_STUBBORN', 'FAKE_CHROME_NO_BODY', 'FAKE_CHROME_NO_CLOSE']) {
+  for (const key of ['FAKE_CHROME_VERSION', 'FAKE_CHROME_SILENT', 'FAKE_CHROME_BASE64', 'FAKE_CHROME_STUBBORN', 'FAKE_CHROME_NO_BODY', 'FAKE_CHROME_NO_CLOSE', 'FAKE_CHROME_OFFLINE', 'FAKE_CHROME_NO_STORE', 'FAKE_CHROME_NO_STORE_BODY']) {
     Reflect.deleteProperty(process.env, key)
   }
 })
@@ -423,6 +423,12 @@ describe('e-commerce account edge cases', () => {
     expect(DOUDIAN.read('{"code":0,"data":{"menu_list":[]}}')).toEqual({ signedIn: false })
     expect(DOUDIAN.read('{"code":10008,"data":null}')).toEqual({ signedIn: false })
     expect(DOUDIAN.read('[]')).toEqual({ signedIn: false })
+    expect(PINDUODUO.store!.read('{"result":{"merchantMainSimpleVO":{"mallName":"名流保健"}}}')).toBe('名流保健')
+    expect(PINDUODUO.store!.read('{"result":{"merchantMainSimpleVO":null}}')).toBeUndefined()
+    expect(PINDUODUO.store!.read('{"result":null}')).toBeUndefined()
+    expect(DOUDIAN.store!.read('{"data":{"shop_name":"名流欣屹"}}')).toBe('名流欣屹')
+    expect(DOUDIAN.store!.read('{"data":{"shop_name":""}}')).toBeUndefined()
+    expect(DOUDIAN.store!.read('{"data":null}')).toBeUndefined()
     expect(TAOBAO.isLoginPage('https://login.taobao.com/havanaone/login/login.htm')).toBe(true)
     // Signed out, the Qianniu workbench goes to its seller sign-in.
     expect(TAOBAO.isLoginPage('https://loginmyseller.taobao.com/?from=taobaoindex&redirect_url=x')).toBe(true)
@@ -442,8 +448,8 @@ describe('e-commerce account edge cases', () => {
       await env.signIn(accountId, '小美')
     }
     const signedIn = await env.settle(s => s.accounts.every(account => account.status === 'signed-in'))
-    // These platforms answer only whether the account is signed in.
-    expect(signedIn.accounts.map(account => account.signedInAs)).toEqual([undefined, undefined, undefined])
+    // These platforms name no account; Pinduoduo and Douyin shop pages name the store.
+    expect(signedIn.accounts.map(account => [account.signedInAs, account.signedInStore])).toEqual([[undefined, undefined], [undefined, '小美店'], [undefined, '小美店']])
     for (const account of signedIn.accounts) await rm(join(env.browserDir(account.id), 'user-data', 'fake-signed-in'))
     // Signed out, the Taobao and Douyin shop pages go to sign in, and Pinduoduo says so.
     const lost = await env.service.refresh()
@@ -483,17 +489,34 @@ describe('e-commerce account edge cases', () => {
     }
   }, 20_000)
 
+  it('stays signed in without a store name when the page does not name the store in time, or loses its body', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount({ ...merchant, platform: 'doudian' })
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, '小美')
+    expect((await env.settle(s => s.accounts[0]!.status === 'signed-in')).accounts[0]!.signedInStore).toBe('小美店')
+    for (const flag of ['FAKE_CHROME_NO_STORE', 'FAKE_CHROME_NO_STORE_BODY']) {
+      process.env[flag] = '1'
+      await closeChrome(env.browserDir(accountId), 2000)
+      expect((await env.service.refresh()).accounts[0]).toMatchObject({ status: 'signed-in' })
+      expect((await env.service.getState()).accounts[0]!.signedInStore).toBeUndefined()
+      Reflect.deleteProperty(process.env, flag)
+    }
+  }, 15_000)
+
   it('renames an account, refusing a name another account has or an invalid one', async () => {
     const env = await setup()
     const { accountId } = await env.service.addAccount(merchant)
     await env.service.addAccount({ ...merchant, account: 'other' })
-    expect((await env.service.renameAccount(accountId, ' 名流:小美 ')).accounts[0]!.account).toBe('名流:小美')
-    expect((await env.service.renameAccount(accountId, '名流:小美')).accounts[0]!.account).toBe('名流:小美')
-    expect(await code(env.service.renameAccount(accountId, 'other'))).toBe('ecommerce-accounts/duplicate')
-    expect(await code(env.service.renameAccount(accountId, ' '))).toBe('ecommerce-accounts/invalid-field')
-    expect(await code(env.service.renameAccount('nope', 'x'))).toBe('ecommerce-accounts/not-found')
-    const ledger = JSON.parse(await readFile(join(env.home, 'ecommerce', 't-a', 'accounts.json'), 'utf8')) as { accounts: { account: string }[] }
-    expect(ledger.accounts.map(account => account.account)).toEqual(['名流:小美', 'other'])
+    expect((await env.service.renameAccount(accountId, { account: ' 名流:小美 ' })).accounts[0]).toMatchObject({ account: '名流:小美', storeName: '名流旗舰店' })
+    expect((await env.service.renameAccount(accountId, { account: '名流:小美' })).accounts[0]!.account).toBe('名流:小美')
+    expect((await env.service.renameAccount(accountId, { storeName: ' 名流成人用品旗舰店 ' })).accounts[0]).toMatchObject({ account: '名流:小美', storeName: '名流成人用品旗舰店' })
+    expect(await code(env.service.renameAccount(accountId, { account: 'other' }))).toBe('ecommerce-accounts/duplicate')
+    expect(await code(env.service.renameAccount(accountId, { account: ' ' }))).toBe('ecommerce-accounts/invalid-field')
+    expect(await code(env.service.renameAccount(accountId, { storeName: '' }))).toBe('ecommerce-accounts/invalid-field')
+    expect(await code(env.service.renameAccount('nope', { account: 'x' }))).toBe('ecommerce-accounts/not-found')
+    const ledger = JSON.parse(await readFile(join(env.home, 'ecommerce', 't-a', 'accounts.json'), 'utf8')) as { accounts: { account: string; storeName: string }[] }
+    expect(ledger.accounts.map(account => [account.account, account.storeName])).toEqual([['名流:小美', '名流成人用品旗舰店'], ['other', '名流旗舰店']])
   })
 
   it('checks every account in the background', async () => {

@@ -29,6 +29,11 @@ export interface PlatformSpec {
    * @returns whether the account is signed in, and its name on the platform when reported.
    */
   readonly read: (body: string) => CheckAnswer
+  /**
+   * Another response of the business page that names the signed-in store, for platforms that do
+   * not name the account: its address prefix, and how to read the store name from it.
+   */
+  readonly store?: { readonly api: string; readonly read: (body: string) => string | undefined }
 }
 
 /**
@@ -107,20 +112,36 @@ export const TAOBAO: PlatformSpec = {
   },
 }
 
-/** Pinduoduo merchants: the check API is the page itself, and says `result.login`. */
+/** A non-empty string, or undefined. */
+const text = (value: unknown): string | undefined => typeof value === 'string' && value !== '' ? value : undefined
+
+/**
+ * Pinduoduo merchants: the backend home page asks `janus/api/checkLogin`, which says `result.login`,
+ * and `querySimpleCredential`, which names the store; signed out, it sends the page to sign in.
+ */
 export const PINDUODUO: PlatformSpec = {
   id: 'pinduoduo',
   loginUrl: 'https://mms.pinduoduo.com/login/',
   isLoginPage: url => url.startsWith('https://mms.pinduoduo.com/login'),
-  pageUrl: 'https://mms.pinduoduo.com/janus/api/checkLogin',
+  pageUrl: 'https://mms.pinduoduo.com/home/',
   checkApi: 'https://mms.pinduoduo.com/janus/api/checkLogin',
   read: (body) => {
     const result = objectOf(body)?.result as { login?: unknown } | null | undefined
     return result?.login === true ? { signedIn: true } : { signedIn: false }
   },
+  store: {
+    api: 'https://mms.pinduoduo.com/earth/api/mallInfo/querySimpleCredential',
+    read: (body) => {
+      const result = objectOf(body)?.result as { merchantMainSimpleVO?: { mallName?: unknown } | null } | null | undefined
+      return text(result?.merchantMainSimpleVO?.mallName)
+    },
+  },
 }
 
-/** Douyin shops (抖店): the shop home page asks for its menu, which is empty or refused while signed out. */
+/**
+ * Douyin shops (抖店): the shop home page asks for its menu, which is empty or refused while signed
+ * out, and for the shop's qualification, which names the store.
+ */
 export const DOUDIAN: PlatformSpec = {
   id: 'doudian',
   loginUrl: 'https://fxg.jinritemai.com/login/common',
@@ -131,6 +152,10 @@ export const DOUDIAN: PlatformSpec = {
     const value = objectOf(body)
     const menu = (value?.data as { menu_list?: unknown } | null | undefined)?.menu_list
     return value?.code === 0 && Array.isArray(menu) && menu.length > 0 ? { signedIn: true } : { signedIn: false }
+  },
+  store: {
+    api: 'https://fxg.jinritemai.com/center/qualification/shop/info',
+    read: body => text((objectOf(body)?.data as { shop_name?: unknown } | null | undefined)?.shop_name),
   },
 }
 

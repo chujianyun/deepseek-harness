@@ -14,7 +14,7 @@
 
 ## 检查
 
-一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的登录响应，失败时重试一次：天猫的 `mtop.user.getusersimple`（会给出账号名）、淘宝千牛的 `mtop.taobao.jdy.resource.shop.info.get`、拼多多的 `janus/api/checkLogin`，或抖店的 `byteshop/menu/list/v2`。页面被平台转到登录页时立即判为未登录。在规定时间内没有答复、页面无法加载，或账号的浏览器数据正被一个不是 DSH 启动的 Chrome 占用时，检查以对应的问题（超时、网络、占用）失败，并保留上次的结果。账号在加载时、设置分区打开时以及每隔 30 分钟检查一次；曾经登录、现在未登录的账号为登录过期，桌面版会弹出提示，可直接打开该分区。登录后，该账号的 Chrome 窗口被最小化，Chrome 继续运行。租户的账号加载时以及设置分区打开时，都会检查每个账号。
+一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的登录响应，失败时重试一次：天猫的 `mtop.user.getusersimple`（会给出账号名）、淘宝千牛的 `mtop.taobao.jdy.resource.shop.info.get`、拼多多的 `janus/api/checkLogin`，或抖店的 `byteshop/menu/list/v2`；拼多多和抖店的页面还会给出店铺名，设置分区会把它与填写的店铺名比较。页面被平台转到登录页时立即判为未登录。在规定时间内没有答复、页面无法加载，或账号的浏览器数据正被一个不是 DSH 启动的 Chrome 占用时，检查以对应的问题（超时、网络、占用）失败，并保留上次的结果。账号在加载时、设置分区打开时以及每隔 30 分钟检查一次；曾经登录、现在未登录的账号为登录过期，桌面版会弹出提示，可直接打开该分区。登录后，该账号的 Chrome 窗口被最小化，Chrome 继续运行。租户的账号加载时以及设置分区打开时，都会检查每个账号。
 
 ## 重启之后
 
@@ -83,14 +83,14 @@ Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote name
 @Remote async refresh(): Promise<EcommerceAccountsState>
 
 /**
- * Change the account name the user entered, such as to the name the platform reports.
+ * Change the account or store name the user entered, such as to the name the platform reports.
  * @param accountId - the account.
- * @param account - the new account name.
+ * @param changes - the new account name, store name, or both; a field left out stays.
  * @returns the state with the account renamed.
  * @throws RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`,
  *   `ecommerce-accounts/invalid-field`, or `ecommerce-accounts/duplicate`.
  */
-@Remote renameAccount(accountId: string, account: string): Promise<EcommerceAccountsState>
+@Remote renameAccount(accountId: string, changes: RenameEcommerceAccountInput): Promise<EcommerceAccountsState>
 
 /**
  * Delete an account and its browser data, closing its Chrome first.
