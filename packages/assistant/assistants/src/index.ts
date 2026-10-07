@@ -30,7 +30,7 @@ import type {} from '@deepseek-ai/dsh-hub-account'
 import type {} from '@deepseek-ai/dsh-connectors'
 import type {} from '@deepseek-ai/dsh-knowledge-base'
 import type {} from '@deepseek-ai/dsh-knowledge-selection'
-import type {} from '@deepseek-ai/dsh-skill'
+import { RUNTIME_PROVIDER } from '@deepseek-ai/dsh-skill'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -228,6 +228,14 @@ const NOT_INSTALLED: ReadonlySet<string> = new Set(['unsupported', 'not-installe
 /** Skill sources that belong to a connector, which the connector subset governs. */
 const CONNECTOR_SKILL_SOURCE = /^connector-/u
 
+/**
+ * Whether a Skill belongs to DSH itself rather than to the user: a connector's, which the connector
+ * subset governs, or one a plugin registers at runtime, such as `ecommerce-accounts`, which every
+ * session gets like an account-wide Skill. Skill subsets never name either.
+ */
+const systemSkill = (skill: { readonly source: string; readonly provider: string }): boolean =>
+  CONNECTOR_SKILL_SOURCE.test(skill.source) || skill.provider === RUNTIME_PROVIDER
+
 const TEMPLATE_VIEWS: readonly AssistantTemplateView[] = [...TEMPLATES.values()]
   .map(({ id, name, description, avatar, subsets }) => ({ id, name, description, avatar, ...(subsets === undefined ? {} : { subsets }) }))
 
@@ -368,7 +376,7 @@ export class AssistantsService extends TypertRemoteService {
     // Skill discovery mounts with an Agent preset, so read through the default preset's scope, as a new session sees it.
     await using lease = await this.ctx.get('agentPresets')?.acquireScope()
     const skills = (await this.ctx.get('skills')?.list(lease === undefined ? {} : { scope: lease.key }) ?? [])
-      .filter(skill => skill.invocation.modelInvocable && !CONNECTOR_SKILL_SOURCE.test(skill.source))
+      .filter(skill => skill.invocation.modelInvocable && !systemSkill(skill))
       .map(skill => ({ id: skill.name, name: skill.name, description: skill.description }))
     // The client names each connector in its own language.
     const connectors = (await this.ctx.get('connectors')?.getState())?.connectors
@@ -616,7 +624,7 @@ export class AssistantsService extends TypertRemoteService {
   private installSubsets(): void {
     this.ctx.inject(['skills'], (scope) => {
       scope.effect(() => scope.skills.addViewFilter((skill, viewer) => {
-        if (CONNECTOR_SKILL_SOURCE.test(skill.source)) return true
+        if (systemSkill(skill)) return true
         const agent = this.ctx.agents.list().find(item => item === viewer)
         return agent === undefined || this.permits(agent, 'skills', skill.name)
       }), 'assistants: Skill subsets')

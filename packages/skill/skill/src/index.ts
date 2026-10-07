@@ -23,7 +23,8 @@ import z from '@deepseek-ai/schemastery'
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const DEFAULT_COLLECT_CACHE_ENTRIES = 128
 const MAX_COLLECT_ATTEMPTS = 2
-const RUNTIME_PROVIDER = 'runtime'
+/** Provider of the skills plugins register through `ctx.skills.register()` without naming one. */
+export const RUNTIME_PROVIDER = 'runtime'
 const RUNTIME_RANK = 250
 
 /** Standard precedence rank for packaged skill providers and local bundled roots. */

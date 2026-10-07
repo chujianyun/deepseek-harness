@@ -689,25 +689,27 @@ describe('capability subsets', () => {
   it('shows a session only the Skills its assistant allows, leaves connector Skills to the connector subset, and limits subagents too', async () => {
     const env = await setup({ before: withSkills(memorySkill('alpha'), memorySkill('beta'), memorySkill('lark-im', 'connector-feishu')) })
     const daily = (await env.settle(s => s.assistants.length === 1)).defaultId!
+    // A Skill DSH registers at runtime reaches every session, like an account-wide Skill.
+    env.ctx.skills.register({ name: 'ecommerce-accounts', description: 'shop data', source: 'ecommerce-accounts', content: 'body' })
     const { assistantId: narrow } = await env.service.createAssistant(input({ subsets: { skills: ['alpha'] } }))
     const names = async (scope: object) => (await env.ctx.skills.list({ scope })).map(skill => skill.name)
     const free = await env.agent('free')
-    expect(await names(free)).toEqual(['alpha', 'beta', 'lark-im'])
+    expect(await names(free)).toEqual(['alpha', 'beta', 'ecommerce-accounts', 'lark-im'])
     const agent = await env.agent('narrow')
     await env.service.select(agent, narrow)
-    expect(await names(agent)).toEqual(['alpha', 'lark-im'])
+    expect(await names(agent)).toEqual(['alpha', 'ecommerce-accounts', 'lark-im'])
     expect(await env.ctx.skills.get('beta', { scope: agent })).toBeUndefined()
     const child = (await env.ctx.agents.create({ sessionId: SessionId('narrow-child'), parentAgent: agent, meta: { parentSession: agent.session.id } })).agent
-    expect(await names(child)).toEqual(['alpha', 'lark-im'])
+    expect(await names(child)).toEqual(['alpha', 'ecommerce-accounts', 'lark-im'])
     const orphan = (await env.ctx.agents.create({ sessionId: SessionId('orphan'), meta: { parentSession: SessionId('gone') } })).agent
-    expect(await names(orphan)).toEqual(['alpha', 'beta', 'lark-im'])
-    expect(await names({})).toEqual(['alpha', 'beta', 'lark-im'])
+    expect(await names(orphan)).toEqual(['alpha', 'beta', 'ecommerce-accounts', 'lark-im'])
+    expect(await names({})).toEqual(['alpha', 'beta', 'ecommerce-accounts', 'lark-im'])
     // Editing the subset reaches the session's next read; deleting the assistant lifts it.
     await env.service.updateAssistant(narrow, { subsets: { skills: [] } })
-    expect(await names(agent)).toEqual(['lark-im'])
+    expect(await names(agent)).toEqual(['ecommerce-accounts', 'lark-im'])
     await env.service.select(free, daily)
     await env.service.deleteAssistant(narrow)
-    expect(await names(agent)).toEqual(['alpha', 'beta', 'lark-im'])
+    expect(await names(agent)).toEqual(['alpha', 'beta', 'ecommerce-accounts', 'lark-im'])
   })
 
   it('limits the connectors and knowledge bases of a session through their services', async () => {
@@ -746,6 +748,8 @@ describe('capability subsets', () => {
       ctx.provide('agentPresets', { acquireScope: async () => ({ key: {}, [Symbol.asyncDispose]: async () => { released += 1 } }) } as never)
     } })
     await env.settle(s => s.assistants.length === 1)
+    // DSH's own runtime Skills reach every session, so subsets never offer them.
+    env.ctx.skills.register({ name: 'ecommerce-accounts', description: 'shop data', source: 'ecommerce-accounts', content: 'body' })
     expect(await env.service.capabilityOptions()).toEqual({
       skills: [{ id: 'alpha', name: 'alpha', description: 'alpha 说明' }],
       connectors: [{ id: 'feishu', name: 'feishu' }],
