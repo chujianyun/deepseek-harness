@@ -920,7 +920,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-ecommerce-accounts`
 
 - `inject`: `hubAccount`
-- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:46`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
+- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:49`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -941,6 +941,8 @@ export interface Config {
   signInPollMs?: number
   /** Time after which a sign-in is checked even before its tab leaves the sign-in page, in milliseconds. */
   signInCheckEveryMs?: number
+  /** Time between background checks of every account, in milliseconds. */
+  checkIntervalMs?: number
   /** Longest store or account name, in characters. */
   maxNameLength?: number
 }

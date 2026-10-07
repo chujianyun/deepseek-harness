@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The ecommerce family links Desktop to the e-commerce platforms a company sells on — Tmall now — through accounts the user signs in to in the system Google Chrome, one browser data directory per account. Desktop renders it as the E-commerce accounts section of Settings.
+The ecommerce family links Desktop to the e-commerce platforms a company sells on — Tmall, Taobao, Pinduoduo, and Douyin shops — through accounts the user signs in to in the system Google Chrome, one browser data directory per account. Desktop renders it as the E-commerce accounts section of Settings.
 
 ## Table of Contents
 

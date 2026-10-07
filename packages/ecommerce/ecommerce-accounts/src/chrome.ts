@@ -6,7 +6,7 @@
  */
 
 import { execFile, spawn } from 'node:child_process'
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, readlink, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -81,6 +81,32 @@ export async function alive(port: number): Promise<boolean> {
   } catch {
     // Nothing listens there any more.
     return false
+  }
+}
+
+/**
+ * The Chrome that holds an account's browser data, from the `SingletonLock` link Chrome keeps in
+ * it on macOS and Linux (`<host>-<pid>`). A second Chrome on the same data only hands its page to
+ * that one and exits, so DSH must not start one while it runs.
+ * @param dir - the account's browser directory.
+ * @returns the process id of the running Chrome that holds the data, or undefined when none does.
+ */
+export async function profileHolder(dir: string): Promise<number | undefined> {
+  let target: string
+  try {
+    target = await readlink(join(dir, 'user-data', 'SingletonLock'))
+  } catch {
+    // No lock: no Chrome holds the data, or this platform keeps no such link.
+    return undefined
+  }
+  const pid = Number(/-(\d+)$/u.exec(target)?.[1])
+  if (!Number.isInteger(pid) || pid <= 0) return undefined
+  try {
+    process.kill(pid, 0)
+    return pid
+  } catch {
+    // A lock left behind by a Chrome that is gone.
+    return undefined
   }
 }
 

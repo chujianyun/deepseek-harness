@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // A stand-in for Google Chrome in tests: it answers `--version`, serves the DevTools HTTP endpoints
 // and the browser WebSocket on --remote-debugging-port, and plays the Tmall check: the home page
-// sends `mtop.user.getusersimple`, signed in while `<user-data-dir>/fake-signed-in` holds a nick.
+// sends `mtop.user.getusersimple`, signed in while `<user-data-dir>/fake-signed-in` holds a nick; the
+// Taobao, Pinduoduo, and Douyin shop pages answer their own checks, and the Taobao and Douyin shop
+// pages go to sign in while signed out. FAKE_CHROME_OFFLINE fails every navigation.
 // FAKE_CHROME_VERSION sets the reported version (empty prints none); FAKE_CHROME_SILENT never sends
 // the check response; FAKE_CHROME_BASE64 encodes bodies; FAKE_CHROME_STUBBORN ignores Browser.close;
 // FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs. Its tabs are
@@ -40,8 +42,42 @@ const addTarget = (url) => {
 }
 if (args.includes('--restore-last-session') && existsSync(tabsFile)) for (const url of JSON.parse(readFileSync(tabsFile, 'utf8'))) addTarget(url)
 addTarget(args.at(-1)?.startsWith('-') ? 'about:blank' : args.at(-1))
-// A sign-in tab moves on to the home page once the user has signed in.
-const urlOf = target => target.url.startsWith('https://login.') && signedInAs() !== undefined ? 'https://www.tmall.com/' : target.url
+/** Each platform's sign-in page and the page a sign-in tab moves on to once the user has signed in. */
+const LOGINS = [
+  ['https://login.tmall.com/', 'https://www.tmall.com/'],
+  ['https://login.taobao.com/', 'https://qn.taobao.com/home.htm/QnworkbenchHome/'],
+  ['https://mms.pinduoduo.com/login', 'https://mms.pinduoduo.com/home/'],
+  ['https://fxg.jinritemai.com/login', 'https://fxg.jinritemai.com/ffa/mshop/homepage/index'],
+]
+const urlOf = (target) => {
+  const home = LOGINS.find(([login]) => target.url.startsWith(login))?.[1]
+  return home !== undefined && signedInAs() !== undefined ? home : target.url
+}
+/**
+ * What a business page sends while it loads: the check response's address and body, or the sign-in
+ * page it goes to instead.
+ */
+const pageLoad = (url, nick) => {
+  if (url.startsWith('https://qn.taobao.com/')) {
+    return nick === undefined
+      ? { redirect: 'https://loginmyseller.taobao.com/?from=taobaoindex&sub=true' }
+      : { check: 'https://h5api.m.taobao.com/h5/mtop.taobao.jdy.resource.shop.info.get/1.0/', body: `mtopjsonp2(${JSON.stringify({ ret: ['SUCCESS::调用成功'], data: { shopName: nick } })})` }
+  }
+  if (url.startsWith('https://mms.pinduoduo.com/janus/api/checkLogin')) {
+    return { check: url, body: JSON.stringify({ success: true, result: { login: nick !== undefined } }) }
+  }
+  if (url.startsWith('https://fxg.jinritemai.com/')) {
+    return nick === undefined
+      ? { redirect: 'https://fxg.jinritemai.com/login/common' }
+      : { check: 'https://fxg.jinritemai.com/byteshop/menu/list/v2', body: JSON.stringify({ code: 0, data: { menu_list: [{ name: '首页' }] } }) }
+  }
+  return {
+    check: CHECK,
+    body: nick === undefined
+      ? 'mtopjsonp1({"ret":["FAIL_SYS_SESSION_EXPIRED::Session过期"],"data":{}})'
+      : `mtopjsonp1(${JSON.stringify({ ret: ['SUCCESS::调用成功'], data: { nick, userNumId: '1' } })})`,
+  }
+}
 
 const server = createServer((req, res) => {
   const url = new URL(req.url, 'http://x')
@@ -78,17 +114,24 @@ wss.on('connection', (socket) => {
       case 'Network.enable': return reply({})
       case 'Page.navigate': {
         target.url = params.url
+        if (process.env.FAKE_CHROME_OFFLINE !== undefined) return reply({ frameId: 'f', errorText: 'net::ERR_INTERNET_DISCONNECTED' })
         reply({ frameId: 'f' })
         if (process.env.FAKE_CHROME_SILENT !== undefined) return
-        const nick = signedInAs()
-        const body = nick === undefined
-          ? 'mtopjsonp1({"ret":["FAIL_SYS_SESSION_EXPIRED::Session过期"],"data":{}})'
-          : `mtopjsonp1(${JSON.stringify({ ret: ['SUCCESS::调用成功'], data: { nick, userNumId: '1' } })})`
-        if (process.env.FAKE_CHROME_NO_BODY === undefined) bodies.set('r2', body)
+        const load = pageLoad(params.url, signedInAs())
+        emit('Network.requestWillBeSent', { requestId: 'r0', type: 'Script', request: { url: 'https://login.taobao.com/x.js' } }, sessionId)
+        // A page embeds a sign-in frame whether or not the user is signed in.
+        emit('Network.requestWillBeSent', { requestId: 'r4', type: 'Document', frameId: 'child', request: { url: 'https://login.taobao.com/frame.htm' } }, sessionId)
+        if (load.redirect !== undefined) {
+          const frameId = sessionId.slice(2)
+          emit('Network.requestWillBeSent', { requestId: 'r3', type: 'Document', frameId, request: { url: load.redirect } }, 'other-session')
+          emit('Network.requestWillBeSent', { requestId: 'r3', type: 'Document', frameId, request: { url: load.redirect } }, sessionId)
+          return
+        }
+        if (process.env.FAKE_CHROME_NO_BODY === undefined) bodies.set('r2', load.body)
         emit('Network.responseReceived', { requestId: 'r1', response: { url: 'https://www.tmall.com/other.js' } }, sessionId)
         emit('Network.loadingFinished', { requestId: 'r1' }, sessionId)
-        emit('Network.responseReceived', { requestId: 'r2', response: { url: `${CHECK}?t=1&sign=x` } }, 'other-session')
-        emit('Network.responseReceived', { requestId: 'r2', response: { url: `${CHECK}?t=1&sign=x` } }, sessionId)
+        emit('Network.responseReceived', { requestId: 'r2', response: { url: `${load.check}?t=1&sign=x` } }, 'other-session')
+        emit('Network.responseReceived', { requestId: 'r2', response: { url: `${load.check}?t=1&sign=x` } }, sessionId)
         emit('Network.loadingFinished', { requestId: 'r2' }, sessionId)
         return
       }

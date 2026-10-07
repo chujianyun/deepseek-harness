@@ -10,6 +10,7 @@ import { apply, inject } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
 import type { AccountsInjected } from '../src/client/accounts-source.ts'
 import { EcommerceAccountsSection } from '../src/client/EcommerceAccountsSection.tsx'
+import { ExpiredToast, type ExpiredNotice, type ExpiredToastProps } from '../src/client/ExpiredToast.tsx'
 
 usePinnedBrowserLanguages('zh-CN')
 
@@ -33,6 +34,7 @@ async function bench() {
     addAccount: vi.fn(() => ok({ accountId: 'e1', state: signedIn })),
     startSignIn: vi.fn(() => ok(signedIn)),
     confirmSignIn: vi.fn(() => ok(signedIn)),
+    renameAccount: vi.fn(() => ok(signedIn)),
     refresh: vi.fn(() => ok(signedIn)),
     deleteAccount: vi.fn(() => ok(signedIn)),
     watch: vi.fn(),
@@ -59,7 +61,7 @@ async function bench() {
     },
   })
   const slots = ctx.get('slots') as SlotRegistry
-  const removeRoot = slots.register({ name: 'root', children: { 'settings.section': { kind: 'list', scope: 'root' } } } as never, () => null)
+  const removeRoot = slots.register({ name: 'root', children: { 'settings.section': { kind: 'list', scope: 'root' }, 'shell.overlay': { kind: 'list', scope: 'root' } } } as never, () => null)
   onTestFinished(removeRoot)
   return {
     ctx, slots, ecommerceAccounts, options, dispose,
@@ -103,6 +105,8 @@ describe('ui-ecommerce-accounts browser plugin', () => {
     expect(b.ecommerceAccounts.startSignIn).toHaveBeenCalledWith('e1')
     await injected.onConfirmSignIn('e1')
     expect(b.ecommerceAccounts.confirmSignIn).toHaveBeenCalledWith('e1')
+    await injected.onRename('e1', 'nick')
+    expect(b.ecommerceAccounts.renameAccount).toHaveBeenCalledWith('e1', 'nick')
     await injected.onRefresh()
     expect(b.ecommerceAccounts.refresh).toHaveBeenCalledOnce()
     await injected.onDelete('e1')
@@ -117,6 +121,26 @@ describe('ui-ecommerce-accounts browser plugin', () => {
     b.fail(new Error('gone'))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(b.slots.entries('settings.section')).toHaveLength(1)
+  })
+
+  it('announces an expired sign-in in the overlay, whose action opens the accounts in Settings', async () => {
+    const b = await bench()
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const [overlay] = b.slots.entries('shell.overlay')
+    expect(overlay).toMatchObject({ component: ExpiredToast, options: { id: 'ecommerce-accounts.expired' } })
+    const face: Pick<ExpiredToastProps, 'dismiss' | 'openAccounts'> & { hooks: { notice: { getSnapshot: () => ExpiredNotice | null } } } = overlay!.inject!() as never
+    const account = { id: 'e1', platform: 'tmall', kind: 'merchant', storeName: '名流旗舰店', account: 'a', createdAt: '', status: 'signed-out', expired: true } as const
+    b.push({ ...signedIn, accounts: [account] })
+    await vi.waitFor(() => { expect(face.hooks.notice.getSnapshot()?.name).toBe('名流旗舰店') })
+    const opened = vi.fn()
+    b.ctx.on('settings/open-section', opened)
+    face.openAccounts()
+    expect(opened).toHaveBeenCalledWith('ecommerce-accounts')
+    face.dismiss()
+    expect(face.hooks.notice.getSnapshot()).toBeNull()
+    await fiber.dispose()
+    expect(b.slots.entries('shell.overlay')).toEqual([])
   })
 
   it('stays out of a non-Desktop renderer, and the node half does nothing', async () => {

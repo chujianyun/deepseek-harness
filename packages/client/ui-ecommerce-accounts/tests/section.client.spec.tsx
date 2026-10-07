@@ -12,7 +12,7 @@ afterEach(() => { cleanup() })
 
 const CHROME = { status: 'ready', minVersion: 120, downloadUrl: 'https://www.google.com/chrome/' } as const
 const account = (over: Partial<EcommerceAccountView> = {}): EcommerceAccountView => ({
-  id: 'e1', platform: 'tmall', kind: 'merchant', storeName: '名流旗舰店', account: 'mingliu:运营', status: 'signed-out', createdAt: '2026-10-07T00:00:00Z', ...over,
+  id: 'e1', platform: 'tmall', kind: 'merchant', storeName: '名流旗舰店', account: 'mingliu:运营', status: 'signed-out', expired: false, createdAt: '2026-10-07T00:00:00Z', ...over,
 })
 /** A buyer account, which has no store name. */
 const buyer = (over: Partial<EcommerceAccountView>): EcommerceAccountView => {
@@ -28,6 +28,7 @@ function mount(state: EcommerceAccountsState | undefined, copy: Record<string, s
     onAdd: vi.fn(async (): Promise<{ accountId: string } | Refusal> => ({ accountId: 'e1' })),
     onStartSignIn: vi.fn(async (_id: string): Promise<Refusal | undefined> => undefined),
     onConfirmSignIn: vi.fn(async (_id: string): Promise<Refusal | undefined> => undefined),
+    onRename: vi.fn(async (_id: string, _account: string): Promise<Refusal | undefined> => undefined),
     onRefresh: vi.fn(async () => {}),
     onDelete: vi.fn(async (_id: string): Promise<Refusal | undefined> => undefined),
     onOpenUrl: vi.fn(),
@@ -103,8 +104,20 @@ describe('e-commerce accounts section', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看 名流旗舰店 的详情' }))
     const detail = screen.getByRole('heading', { name: '名流旗舰店' }).parentElement!
     for (const text of ['平台天猫', '店铺名名流旗舰店', '账号mingliu:运营', '账号类型商家账号', '登录状态已登录', '平台显示的账号nick', '上次检查5 分钟前']) expect(detail.textContent).toContain(text)
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重新登录' })) })
+    // The platform reports another account than the one entered: use its name, or sign in again.
+    const note = screen.getByRole('note')
+    expect(note.textContent).toContain('实际登录的是「nick」，与填写的账号不一致。')
+    props.onRename.mockResolvedValueOnce({ kind: 'duplicate' })
+    await act(async () => { fireEvent.click(within(note).getByRole('button', { name: '改为实际账号名' })) })
+    expect(props.onRename).toHaveBeenCalledWith('e1', 'nick')
+    expect(within(note).getByRole('alert').textContent).toBe('当前账号已添加')
+    await act(async () => { fireEvent.click(within(note).getByRole('button', { name: '改为实际账号名' })) })
+    expect(within(note).queryByRole('alert')).toBeNull()
+    await act(async () => { fireEvent.click(within(note).getByRole('button', { name: '重新登录' })) })
     expect(props.onStartSignIn).toHaveBeenCalledWith('e1')
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '完成' }))
+    await act(async () => { fireEvent.click(screen.getAllByRole('button', { name: '重新登录' }).at(-1)!) })
+    expect(props.onStartSignIn).toHaveBeenCalledTimes(2)
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '完成' }))
     fireEvent.click(screen.getByRole('button', { name: '删除账号' }))
     const confirm = screen.getByRole('dialog', { name: '删除电商账号' })
@@ -168,7 +181,43 @@ describe('e-commerce accounts section', () => {
     fireEvent.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Close' }).at(-1)!)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sign in' })) })
     props.set({ ...base, accounts: [account({ status: 'signed-in' })] })
-    expect(screen.getByRole('dialog').textContent).toContain('mingliu:运营')
+    expect(screen.getByRole('dialog').textContent).toContain('Signed in. This Chrome stays signed in in the background.')
+  })
+
+  it('adds an account on another platform, and shows why a check failed', async () => {
+    const props = mount({ ...base, accounts: [
+      account({ platform: 'pinduoduo', status: 'check-failed', problem: 'network' }),
+      account({ id: 'e2', platform: 'doudian', storeName: '抖店一号', status: 'check-failed', problem: 'busy' }),
+      account({ id: 'e3', platform: 'taobao', storeName: '淘宝店', status: 'check-failed', problem: 'timeout' }),
+    ] })
+    for (const [group, problem] of [['拼多多', '网络不通'], ['抖店', '浏览器正被其他程序占用'], ['淘宝', '检查超时']] as const) {
+      expect(screen.getByText(group).closest('details')!.textContent).toContain(problem)
+    }
+    fireEvent.click(screen.getByRole('button', { name: '新增账号' }))
+    const dialog = screen.getByRole('dialog', { name: '新增账号' })
+    const platform = within(dialog).getByRole<HTMLSelectElement>('combobox', { name: '平台' })
+    expect([...platform.options].map(option => option.text)).toEqual(['天猫', '淘宝', '拼多多', '抖店'])
+    fireEvent.change(platform, { target: { value: 'doudian' } })
+    fireEvent.change(within(dialog).getByPlaceholderText('例如：名流旗舰店'), { target: { value: '抖店二号' } })
+    fireEvent.change(within(dialog).getByPlaceholderText('例如：名流旗舰店:运营'), { target: { value: 'b' } })
+    props.onStartSignIn.mockResolvedValueOnce({ kind: 'browser-busy' })
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '去登录' })) })
+    expect(props.onAdd).toHaveBeenCalledWith({ platform: 'doudian', kind: 'merchant', storeName: '抖店二号', account: 'b' })
+    expect(screen.getByRole('dialog', { name: '登录拼多多' }).textContent).toContain('这个账号的浏览器数据正被另一个 Chrome 使用')
+  })
+
+  it('offers the actual account name, or signing in again, once the sign-in shows another account', async () => {
+    const props = mount({ ...base, accounts: [account({ status: 'signing-in' })] })
+    fireEvent.click(screen.getByRole('button', { name: '查看 名流旗舰店 的详情' }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '去登录' })) })
+    props.set({ ...base, accounts: [account({ status: 'signed-in', signedInAs: '名流成人用品旗舰店:小美' })] })
+    const dialog = screen.getByRole('dialog', { name: '登录天猫' })
+    expect(within(dialog).getByRole('note').textContent).toContain('实际登录的是「名流成人用品旗舰店:小美」')
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '重新登录' })) })
+    expect(props.onStartSignIn).toHaveBeenCalledTimes(2)
+    // Once the names agree there is nothing to say.
+    props.set({ ...base, accounts: [account({ status: 'signed-in', account: 'x', signedInAs: 'x' })] })
+    expect(within(dialog).queryByRole('note')).toBeNull()
   })
 
   it('renders nothing but the intro before the first state, and follows an account that disappears', () => {

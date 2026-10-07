@@ -26,14 +26,17 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Cdp, closeBlankTabs, hideWindows, pageTabs, probe, showSignIn, type ProbeResult } from './cdp.ts'
-import { alive, closeChrome, ensureTab, findChrome, launchChrome, readRecord, type ChromeInfo } from './chrome.ts'
+import { alive, closeChrome, ensureTab, findChrome, launchChrome, profileHolder, readRecord, type ChromeInfo } from './chrome.ts'
 import { PLATFORMS, type PlatformSpec } from './platforms.ts'
 import type {
   AddEcommerceAccountInput, AddEcommerceAccountResult, ChromeView, EcommerceAccountsState, EcommerceAccountStatus, EcommerceAccountView,
+  EcommerceCheckProblem,
 } from './types.ts'
 
 export type * from './types.ts'
-export { mtopUserNick, matchesCheckApi, parseJsonOrJsonp, PLATFORMS, TMALL, type PlatformSpec } from './platforms.ts'
+export {
+  DOUDIAN, mtopUserNick, matchesCheckApi, parseJsonOrJsonp, PINDUODUO, PLATFORMS, TAOBAO, TMALL, type CheckAnswer, type PlatformSpec,
+} from './platforms.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -60,6 +63,8 @@ export interface Config {
   signInPollMs?: number
   /** Time after which a sign-in is checked even before its tab leaves the sign-in page, in milliseconds. */
   signInCheckEveryMs?: number
+  /** Time between background checks of every account, in milliseconds. */
+  checkIntervalMs?: number
   /** Longest store or account name, in characters. */
   maxNameLength?: number
 }
@@ -74,6 +79,7 @@ export const Config: Schema<Config> = Schema.object({
   chromeTimeoutMs: Schema.natural().min(1).default(20_000).description('How long DSH waits for Chrome to start or close, in milliseconds.'),
   signInPollMs: Schema.natural().min(1).default(3000).description('Time between looks at the sign-in tab, in milliseconds.'),
   signInCheckEveryMs: Schema.natural().min(1).default(30_000).description('Time after which a sign-in is checked even before its tab leaves the sign-in page, in milliseconds.'),
+  checkIntervalMs: Schema.natural().min(1).default(30 * 60_000).description('Time between background checks of every account, in milliseconds.'),
   maxNameLength: Schema.natural().min(1).default(64).description('Longest store or account name, in characters.'),
 })
 
@@ -81,7 +87,13 @@ export const Config: Schema<Config> = Schema.object({
 export const CHROME_DOWNLOAD_URL = 'https://www.google.com/chrome/'
 
 /** Which platforms and kinds can be added now, as `<platform>/<kind>`. */
-const ADDABLE: ReadonlySet<string> = new Set(['tmall/merchant'])
+const ADDABLE: ReadonlySet<string> = new Set(['tmall/merchant', 'taobao/merchant', 'pinduoduo/merchant', 'doudian/merchant'])
+
+/** The outcome of one check: the platform's answer, or the account's browser data held by another Chrome. */
+type CheckResult = ProbeResult | { readonly kind: 'busy' }
+
+/** The problem each failed check shows. */
+const PROBLEMS = { 'no-response': 'timeout', 'network': 'network', 'busy': 'busy' } as const satisfies Record<Exclude<CheckResult['kind'], 'signed-in' | 'signed-out'>, EcommerceCheckProblem>
 
 /** What makes two accounts the same: platform, kind, and account name. */
 const identity = (item: Pick<EcommerceAccountView, 'platform' | 'kind' | 'account'>): string => `${item.platform}/${item.kind}/${item.account}`
@@ -90,7 +102,7 @@ const ledgerSchema = z.object({
   version: z.literal(1),
   accounts: z.array(z.object({
     id: z.string().min(1),
-    platform: z.enum(['tmall']),
+    platform: z.enum(['tmall', 'taobao', 'pinduoduo', 'doudian']),
     kind: z.enum(['merchant', 'buyer']),
     storeName: z.string(),
     account: z.string().min(1),
@@ -114,6 +126,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
   private tenantId: string | null = null
   private entries: Entry[] = []
   private readonly statuses = new Map<string, EcommerceAccountStatus>()
+  /** Why the last check of an account failed, while it is `check-failed`. */
+  private readonly problems = new Map<string, EcommerceCheckProblem>()
   /** Sign-ins waiting for the user, by account. */
   private readonly signIns = new Map<string, AbortController>()
   /** One operation at a time per account, so two never drive its Chrome together. */
@@ -147,6 +161,9 @@ export class EcommerceAccountsService extends TypertRemoteService {
         if (tenantId !== this.tenantId) await this.serialized(() => this.switchTenant(tenantId))
       }
     })()
+    const timer = setInterval(() => { void this.refresh() }, this.options.checkIntervalMs)
+    timer.unref()
+    this.ctx.effect(() => () => { clearInterval(timer) }, 'ecommerce-accounts: periodic check')
   }
 
   /**
@@ -221,12 +238,16 @@ export class EcommerceAccountsService extends TypertRemoteService {
    * @param accountId - the account.
    * @returns the state with the account signing in.
    * @throws RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`,
-   *   `ecommerce-accounts/chrome-missing`, `ecommerce-accounts/chrome-outdated`, or `ecommerce-accounts/browser-failed`.
+   *   `ecommerce-accounts/chrome-missing`, `ecommerce-accounts/chrome-outdated`, `ecommerce-accounts/browser-busy`,
+   *   or `ecommerce-accounts/browser-failed`.
    */
   @Remote
   async startSignIn(accountId: string): Promise<EcommerceAccountsState> {
     const entry = this.find(accountId)
     const chrome = await this.requireChrome()
+    if (await this.heldElsewhere(entry)) {
+      throw new RemoteError('ecommerce-accounts/browser-busy', 'Another Chrome is using this account\'s browser data', { accountId })
+    }
     this.signIns.get(entry.id)?.abort()
     const controller = new AbortController()
     this.signIns.set(entry.id, controller)
@@ -285,6 +306,29 @@ export class EcommerceAccountsService extends TypertRemoteService {
   }
 
   /**
+   * Change the account name the user entered, such as to the name the platform reports.
+   * @param accountId - the account.
+   * @param account - the new account name.
+   * @returns the state with the account renamed.
+   * @throws RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`,
+   *   `ecommerce-accounts/invalid-field`, or `ecommerce-accounts/duplicate`.
+   */
+  @Remote
+  renameAccount(accountId: string, account: string): Promise<EcommerceAccountsState> {
+    return this.serialized(async () => {
+      const tenantId = this.requireTenant()
+      const entry = this.find(accountId)
+      const name = checkName('account', account, this.options.maxNameLength)
+      const existing = this.entries.find(item => item.id !== entry.id && identity(item) === identity({ ...entry, account: name }))
+      if (existing !== undefined) throw new RemoteError('ecommerce-accounts/duplicate', 'This account is already added', { accountId: existing.id })
+      this.entries = this.entries.map(item => item.id === entry.id ? { ...item, account: name } : item)
+      await this.saveLedger(tenantId)
+      this.changed()
+      return this.getState()
+    })
+  }
+
+  /**
    * Delete an account and its browser data, closing its Chrome first.
    * @param accountId - the account.
    * @returns the state without it.
@@ -303,6 +347,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
         const tenantId = this.requireTenant()
         this.entries = this.entries.filter(item => item.id !== entry.id)
         this.statuses.delete(entry.id)
+        this.problems.delete(entry.id)
         await this.saveLedger(tenantId)
         this.changed()
         return this.getState()
@@ -348,12 +393,14 @@ export class EcommerceAccountsService extends TypertRemoteService {
   /**
    * Ask the platform whether the account is signed in, retrying once, and record the answer. A
    * signed-in account's Chrome is minimized. A Chrome gone since an earlier sign-in is started
-   * again minimized, restoring its last session; an account never signed in starts no Chrome.
+   * again minimized, restoring its last session; an account never signed in starts no Chrome. A
+   * check that gets no answer, cannot reach the page, or finds the browser data held by another
+   * Chrome fails with that problem and keeps the last answer.
    */
-  private check(entry: Entry): Promise<ProbeResult> {
+  private check(entry: Entry): Promise<CheckResult> {
     this.setStatus(entry.id, 'checking')
     return this.queued(entry.id, async () => {
-      let result: ProbeResult
+      let result: CheckResult
       try {
         result = await this.probeAccount(entry)
       } catch (error) {
@@ -364,24 +411,28 @@ export class EcommerceAccountsService extends TypertRemoteService {
         const current = this.entries.find(item => item.id === entry.id)
         // The account was deleted, or the tenant switched, while the platform was asked.
         if (current === undefined) return result
-        if (result.kind === 'no-response') {
-          this.setStatus(entry.id, 'check-failed')
+        if (result.kind !== 'signed-in' && result.kind !== 'signed-out') {
+          this.problems.set(entry.id, PROBLEMS[result.kind])
+          this.statuses.set(entry.id, 'check-failed')
+          this.changed()
           return result
         }
         const { signedInAs: _old, ...rest } = current
         const next: Entry = {
           ...rest, checkedAt: new Date().toISOString(),
-          ...(result.kind === 'signed-in' ? { signedInAs: result.nick, everSignedIn: true } : {}),
+          ...result.kind === 'signed-in' ? { everSignedIn: true, ...result.name === undefined ? {} : { signedInAs: result.name } } : {},
         }
         this.entries = this.entries.map(item => item.id === entry.id ? next : item)
         await this.saveLedger(this.requireTenant())
-        this.setStatus(entry.id, result.kind)
+        // The check time changed even when the status did not.
+        this.statuses.set(entry.id, result.kind)
+        this.changed()
         return result
       })
     })
   }
 
-  private async probeAccount(entry: Entry): Promise<ProbeResult> {
+  private async probeAccount(entry: Entry): Promise<CheckResult> {
     const dir = this.dirOf(entry.id)
     const record = await readRecord(dir)
     let port = record !== undefined && await alive(record.port) ? record.port : undefined
@@ -389,6 +440,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const started = port === undefined
     if (port === undefined) {
       if (entry.everSignedIn !== true || this.chrome === undefined) return { kind: 'signed-out' }
+      if (await profileHolder(dir) !== undefined) return { kind: 'busy' }
       port = await this.ensureChrome(entry, this.chrome, true, 'about:blank')
     }
     await ensureTab(port)
@@ -402,6 +454,14 @@ export class EcommerceAccountsService extends TypertRemoteService {
     } finally {
       cdp.close()
     }
+  }
+
+  /** Whether a Chrome that DSH did not start holds the account's browser data. */
+  private async heldElsewhere(entry: Entry): Promise<boolean> {
+    const dir = this.dirOf(entry.id)
+    const record = await readRecord(dir)
+    if (record !== undefined && await alive(record.port)) return false
+    return await profileHolder(dir) !== undefined
   }
 
   /** Reattach to the account's running Chrome, or start one; returns its port. */
@@ -440,11 +500,12 @@ export class EcommerceAccountsService extends TypertRemoteService {
   }
 
   private view(entry: Entry): EcommerceAccountView {
+    // Every listed account gets a status when it is added or loaded, and a problem whenever a check fails.
+    const status = this.statuses.get(entry.id) as EcommerceAccountStatus
     return {
       id: entry.id, platform: entry.platform, kind: entry.kind, storeName: entry.storeName, account: entry.account,
-      createdAt: entry.createdAt,
-      // Every listed account gets a status when it is added or loaded.
-      status: this.statuses.get(entry.id) as EcommerceAccountStatus,
+      createdAt: entry.createdAt, status, expired: status === 'signed-out' && entry.everSignedIn === true,
+      ...status === 'check-failed' ? { problem: this.problems.get(entry.id) as EcommerceCheckProblem } : {},
       ...(entry.signedInAs === undefined ? {} : { signedInAs: entry.signedInAs }),
       ...(entry.checkedAt === undefined ? {} : { checkedAt: entry.checkedAt }),
     }
@@ -463,6 +524,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     this.tenantId = tenantId
     this.entries = []
     this.statuses.clear()
+    this.problems.clear()
     if (tenantId !== null) {
       // A tenant that never added an account has no ledger yet.
       const raw = await readFile(join(this.root, tenantId, 'accounts.json'), 'utf8').catch(() => undefined)

@@ -3,8 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/ecommerce-accounts.md
 /e-commerce-accounts:
-  en: 804a06364607b98d
-  zh: de31e01d1a2496a9
+  en: 97cbcf095694b895
+  zh: a33995e4fbec0550
 /e-commerce-accounts/storage:
   en: fb553a1673450c48
   zh: 52955b0a5a89c0b7
@@ -12,8 +12,8 @@
   en: 65c244b6c221dc76
   zh: 01a8b19b335df112
 /e-commerce-accounts/checking:
-  en: d0e0e9e38da58e50
-  zh: fe7f1a4c2aca0e27
+  en: fbdea07a5817c0ee
+  zh: 39dc0366e03a1369
 /e-commerce-accounts/across-restarts:
   en: 83db057fe6752820
   zh: 83271fc2f41c6eec

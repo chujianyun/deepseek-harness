@@ -97,15 +97,18 @@ export class Cdp {
 
 /** The outcome of asking the platform whether the account is signed in. */
 export type ProbeResult =
-  | { readonly kind: 'signed-in'; readonly nick: string }
+  /** `name` is the account name the platform reports, when it reports one. */
+  | { readonly kind: 'signed-in'; readonly name?: string }
   | { readonly kind: 'signed-out' }
   /** The page never sent the check response in time. */
   | { readonly kind: 'no-response' }
+  /** The business page could not be loaded; `reason` is Chrome's error, such as `net::ERR_INTERNET_DISCONNECTED`. */
+  | { readonly kind: 'network'; readonly reason: string }
 
 /**
- * Open the platform's business page in a background tab and read its own sign-in response.
- * The listener is attached before navigating, so the response is never missed; the tab closes
- * afterwards whatever happens.
+ * Open the platform's business page in a background tab and read its own sign-in response. The
+ * listeners are attached before navigating, so the response is never missed; a page sent to the
+ * sign-in page is signed out without waiting. The tab closes afterwards whatever happens.
  * @param cdp - the browser connection.
  * @param spec - the platform.
  * @param timeoutMs - how long to wait for the response.
@@ -117,27 +120,36 @@ export async function probe(cdp: Cdp, spec: PlatformSpec, timeoutMs: number): Pr
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     const { sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId, flatten: true })
-    const body = new Promise<string | undefined>((resolve) => {
-      let requestId: unknown
-      disposers.push(cdp.on('Network.responseReceived', (params, from) => {
-        const url = (params.response as { url: string }).url
-        if (from === sessionId && requestId === undefined && matchesCheckApi(url, spec.checkApi)) requestId = params.requestId
-      }))
-      disposers.push(cdp.on('Network.loadingFinished', (params, from) => {
-        if (from !== sessionId || params.requestId !== requestId) return
-        cdp.send<{ body: string; base64Encoded: boolean }>('Network.getResponseBody', { requestId }, sessionId)
-          .then(({ body: text, base64Encoded }) => { resolve(base64Encoded ? Buffer.from(text, 'base64').toString('utf8') : text) })
-          // A body Chrome no longer holds counts as no answer.
-          .catch(() => { resolve(undefined) })
-      }))
-      timer = setTimeout(() => { resolve(undefined) }, timeoutMs)
-    })
+    let settle!: (result: ProbeResult) => void
+    const outcome = new Promise<ProbeResult>((resolve) => { settle = resolve })
+    const answer = (text: string | undefined): void => {
+      if (text === undefined) { settle({ kind: 'no-response' }); return }
+      const read = spec.read(text)
+      settle(read.signedIn ? { kind: 'signed-in', ...read.name === undefined ? {} : { name: read.name } } : { kind: 'signed-out' })
+    }
+    let requestId: unknown
+    disposers.push(cdp.on('Network.requestWillBeSent', (params, from) => {
+      const request = params.request as { url: string }
+      // Only the tab itself going to sign in counts, not a sign-in frame the page embeds; a tab's main frame has the tab's id.
+      if (from === sessionId && params.type === 'Document' && params.frameId === targetId && spec.isLoginPage(request.url)) settle({ kind: 'signed-out' })
+    }))
+    disposers.push(cdp.on('Network.responseReceived', (params, from) => {
+      const url = (params.response as { url: string }).url
+      if (from === sessionId && requestId === undefined && matchesCheckApi(url, spec.checkApi)) requestId = params.requestId
+    }))
+    disposers.push(cdp.on('Network.loadingFinished', (params, from) => {
+      if (from !== sessionId || params.requestId !== requestId) return
+      cdp.send<{ body: string; base64Encoded: boolean }>('Network.getResponseBody', { requestId }, sessionId)
+        .then(({ body, base64Encoded }) => { answer(base64Encoded ? Buffer.from(body, 'base64').toString('utf8') : body) })
+        // A body Chrome no longer holds counts as no answer.
+        .catch(() => { answer(undefined) })
+    }))
+    timer = setTimeout(() => { answer(undefined) }, timeoutMs)
     await cdp.send('Network.enable', {}, sessionId)
-    await cdp.send('Page.navigate', { url: spec.pageUrl }, sessionId)
-    const text = await body
-    if (text === undefined) return { kind: 'no-response' }
-    const nick = spec.signedInAs(text)
-    return nick === undefined ? { kind: 'signed-out' } : { kind: 'signed-in', nick }
+    const { errorText } = await cdp.send<{ errorText?: string }>('Page.navigate', { url: spec.pageUrl }, sessionId)
+    // An aborted navigation was replaced by another one, such as a redirect to sign in.
+    if (errorText !== undefined && errorText !== 'net::ERR_ABORTED') settle({ kind: 'network', reason: errorText })
+    return await outcome
   } finally {
     clearTimeout(timer)
     for (const dispose of disposers) dispose()

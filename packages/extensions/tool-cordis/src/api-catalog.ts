@@ -1199,7 +1199,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Open the platform\'s sign-in page in the account\'s own Chrome and wait for the user to sign in; the account turns signed in by itself once the platform says so.',
         parameters: [{ name: 'accountId', description: 'the account.' }],
         returns: 'the state with the account signing in.',
-        throws: ['RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`, `ecommerce-accounts/chrome-missing`, `ecommerce-accounts/chrome-outdated`, or `ecommerce-accounts/browser-failed`.'],
+        throws: ['RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`, `ecommerce-accounts/chrome-missing`, `ecommerce-accounts/chrome-outdated`, `ecommerce-accounts/browser-busy`, or `ecommerce-accounts/browser-failed`.'],
       },
       {
         signature: '@Remote async confirmSignIn(accountId: string): Promise<EcommerceAccountsState>',
@@ -1213,6 +1213,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Check every account that is not signing in, and look for Chrome again.',
         parameters: [],
         returns: 'the state after the checks.',
+      },
+      {
+        signature: '@Remote renameAccount(accountId: string, account: string): Promise<EcommerceAccountsState>',
+        description: 'Change the account name the user entered, such as to the name the platform reports.',
+        parameters: [{ name: 'accountId', description: 'the account.' }, { name: 'account', description: 'the new account name.' }],
+        returns: 'the state with the account renamed.',
+        throws: ['RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`, `ecommerce-accounts/invalid-field`, or `ecommerce-accounts/duplicate`.'],
       },
       {
         signature: '@Remote async deleteAccount(accountId: string): Promise<EcommerceAccountsState>',
@@ -6038,11 +6045,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EcommerceAccountView',
-    declaration: 'export interface EcommerceAccountView {\n    readonly id: string;\n    readonly platform: EcommercePlatform;\n    readonly kind: EcommerceAccountKind;\n    readonly storeName?: string;\n    readonly account: string;\n    readonly status: EcommerceAccountStatus;\n    readonly signedInAs?: string;\n    readonly checkedAt?: string;\n    readonly createdAt: string;\n}',
+    declaration: 'export interface EcommerceAccountView {\n    readonly id: string;\n    readonly platform: EcommercePlatform;\n    readonly kind: EcommerceAccountKind;\n    readonly storeName?: string;\n    readonly account: string;\n    readonly status: EcommerceAccountStatus;\n    readonly problem?: EcommerceCheckProblem;\n    readonly signedInAs?: string;\n    readonly expired: boolean;\n    readonly checkedAt?: string;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'EcommerceCheckProblem',
+    declaration: 'export type EcommerceCheckProblem = \'timeout\' | \'network\' | \'busy\';',
   },
   {
     name: 'EcommercePlatform',
-    declaration: 'export type EcommercePlatform = \'tmall\';',
+    declaration: 'export type EcommercePlatform = \'tmall\' | \'taobao\' | \'pinduoduo\' | \'doudian\';',
   },
   {
     name: 'EditGoalRequest',

@@ -2,7 +2,7 @@
 
 English | [中文](ecommerce-accounts.zh.md)
 
-E-commerce accounts let a Desktop user sign DSH in to the e-commerce platforms their company sells on, starting with Tmall merchant accounts. The vocabulary — e-commerce account, merchant account, buyer account — is defined in the [glossary](../glossary.md#ecommerce-account), and why each account is a sign-in kept by the system Google Chrome is recorded in the [e-commerce accounts Agent Note](../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.md). [`@deepseek-ai/dsh-ecommerce-accounts`](../../packages/ecommerce/ecommerce-accounts/README.md) owns the accounts and their Chrome processes; [`@deepseek-ai/dsh-client-ui-ecommerce-accounts`](../../packages/client/ui-ecommerce-accounts/README.md) renders the Settings section.
+E-commerce accounts let a Desktop user sign DSH in to the e-commerce platforms their company sells on, with merchant accounts on Tmall, Taobao, Pinduoduo, and Douyin shops (抖店). The vocabulary — e-commerce account, merchant account, buyer account — is defined in the [glossary](../glossary.md#ecommerce-account), and why each account is a sign-in kept by the system Google Chrome is recorded in the [e-commerce accounts Agent Note](../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.md). [`@deepseek-ai/dsh-ecommerce-accounts`](../../packages/ecommerce/ecommerce-accounts/README.md) owns the accounts and their Chrome processes; [`@deepseek-ai/dsh-client-ui-ecommerce-accounts`](../../packages/client/ui-ecommerce-accounts/README.md) renders the Settings section.
 
 ## Storage
 
@@ -14,7 +14,7 @@ Signing in starts the system Google Chrome detached on the account's data, with 
 
 ## Checking
 
-A check opens the platform's business page in a background tab and reads the platform's own sign-in response there — for Tmall, `mtop.user.getusersimple` — retrying once. A response with the account's nick is signed in; one without is signed out; none in time is a failed check. Once signed in, the account's Chrome windows are minimized and Chrome keeps running. Every account is checked when the tenant's accounts load and when the Settings section opens.
+A check opens the platform's business page in a background tab and reads the platform's own sign-in response there, retrying once: Tmall's `mtop.user.getusersimple` (which names the account), Taobao Qianniu's `mtop.taobao.jdy.resource.shop.info.get`, Pinduoduo's `janus/api/checkLogin`, or a Douyin shop's `byteshop/menu/list/v2`. A page the platform sends to sign in is signed out at once. A check that gets no answer in time, cannot load the page, or finds the account's browser data held by a Chrome DSH did not start fails with that problem — timeout, network, or busy — and keeps the last answer. Accounts are checked when they load, when the Settings section opens, and every 30 minutes; an account that was signed in and is now signed out is expired, which the Desktop announces with a notice that opens the section. Once signed in, the account's Chrome windows are minimized and Chrome keeps running. Every account is checked when the tenant's accounts load and when the Settings section opens.
 
 ## Across restarts
 
@@ -63,7 +63,8 @@ Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote name
  * @param accountId - the account.
  * @returns the state with the account signing in.
  * @throws RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`,
- *   `ecommerce-accounts/chrome-missing`, `ecommerce-accounts/chrome-outdated`, or `ecommerce-accounts/browser-failed`.
+ *   `ecommerce-accounts/chrome-missing`, `ecommerce-accounts/chrome-outdated`, `ecommerce-accounts/browser-busy`,
+ *   or `ecommerce-accounts/browser-failed`.
  */
 @Remote async startSignIn(accountId: string): Promise<EcommerceAccountsState>
 
@@ -80,6 +81,16 @@ Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote name
  * @returns the state after the checks.
  */
 @Remote async refresh(): Promise<EcommerceAccountsState>
+
+/**
+ * Change the account name the user entered, such as to the name the platform reports.
+ * @param accountId - the account.
+ * @param account - the new account name.
+ * @returns the state with the account renamed.
+ * @throws RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`,
+ *   `ecommerce-accounts/invalid-field`, or `ecommerce-accounts/duplicate`.
+ */
+@Remote renameAccount(accountId: string, account: string): Promise<EcommerceAccountsState>
 
 /**
  * Delete an account and its browser data, closing its Chrome first.

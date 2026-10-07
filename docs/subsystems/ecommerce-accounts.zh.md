@@ -2,7 +2,7 @@
 
 [English](ecommerce-accounts.md) | 中文
 
-电商账号让桌面版用户把 DSH 登录到公司经营的电商平台，首先支持天猫商家账号。电商账号、商家账号、买家账号等术语定义在[术语表](../glossary.zh.md#ecommerce-account)中；每个账号为何是一份由系统 Google Chrome 保存的登录，记录在[电商账号 Agent Note](../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.zh.md) 中。[`@deepseek-ai/dsh-ecommerce-accounts`](../../packages/ecommerce/ecommerce-accounts/README.zh.md) 管理账号及其 Chrome 进程；[`@deepseek-ai/dsh-client-ui-ecommerce-accounts`](../../packages/client/ui-ecommerce-accounts/README.zh.md) 渲染设置分区。
+电商账号让桌面版用户把 DSH 登录到公司经营的电商平台，支持天猫、淘宝、拼多多和抖店的商家账号。电商账号、商家账号、买家账号等术语定义在[术语表](../glossary.zh.md#ecommerce-account)中；每个账号为何是一份由系统 Google Chrome 保存的登录，记录在[电商账号 Agent Note](../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.zh.md) 中。[`@deepseek-ai/dsh-ecommerce-accounts`](../../packages/ecommerce/ecommerce-accounts/README.zh.md) 管理账号及其 Chrome 进程；[`@deepseek-ai/dsh-client-ui-ecommerce-accounts`](../../packages/client/ui-ecommerce-accounts/README.zh.md) 渲染设置分区。
 
 ## 存储
 
@@ -14,7 +14,7 @@
 
 ## 检查
 
-一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的登录响应（天猫为 `mtop.user.getusersimple`），失败时重试一次。响应中带有账号 nick 即为已登录；没有 nick 为未登录；超时没有响应为检查失败。登录后，该账号的 Chrome 窗口被最小化，Chrome 继续运行。租户的账号加载时以及设置分区打开时，都会检查每个账号。
+一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的登录响应，失败时重试一次：天猫的 `mtop.user.getusersimple`（会给出账号名）、淘宝千牛的 `mtop.taobao.jdy.resource.shop.info.get`、拼多多的 `janus/api/checkLogin`，或抖店的 `byteshop/menu/list/v2`。页面被平台转到登录页时立即判为未登录。在规定时间内没有答复、页面无法加载，或账号的浏览器数据正被一个不是 DSH 启动的 Chrome 占用时，检查以对应的问题（超时、网络、占用）失败，并保留上次的结果。账号在加载时、设置分区打开时以及每隔 30 分钟检查一次；曾经登录、现在未登录的账号为登录过期，桌面版会弹出提示，可直接打开该分区。登录后，该账号的 Chrome 窗口被最小化，Chrome 继续运行。租户的账号加载时以及设置分区打开时，都会检查每个账号。
 
 ## 重启之后
 
@@ -63,7 +63,8 @@ Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote name
  * @param accountId - the account.
  * @returns the state with the account signing in.
  * @throws RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`,
- *   `ecommerce-accounts/chrome-missing`, `ecommerce-accounts/chrome-outdated`, or `ecommerce-accounts/browser-failed`.
+ *   `ecommerce-accounts/chrome-missing`, `ecommerce-accounts/chrome-outdated`, `ecommerce-accounts/browser-busy`,
+ *   or `ecommerce-accounts/browser-failed`.
  */
 @Remote async startSignIn(accountId: string): Promise<EcommerceAccountsState>
 
@@ -80,6 +81,16 @@ Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote name
  * @returns the state after the checks.
  */
 @Remote async refresh(): Promise<EcommerceAccountsState>
+
+/**
+ * Change the account name the user entered, such as to the name the platform reports.
+ * @param accountId - the account.
+ * @param account - the new account name.
+ * @returns the state with the account renamed.
+ * @throws RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`,
+ *   `ecommerce-accounts/invalid-field`, or `ecommerce-accounts/duplicate`.
+ */
+@Remote renameAccount(accountId: string, account: string): Promise<EcommerceAccountsState>
 
 /**
  * Delete an account and its browser data, closing its Chrome first.

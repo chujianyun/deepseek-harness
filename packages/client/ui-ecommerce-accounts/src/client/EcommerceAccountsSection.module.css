@@ -217,3 +217,18 @@
 .signIn p {
   margin: 0 0 8px;
 }
+
+.mismatch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--dsw-radius-md);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary) 35%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 8%, transparent);
+  font-size: 13px;
+}
+
+.mismatch p {
+  margin: 0;
+}

@@ -2,8 +2,9 @@
 // stand-in Google Chrome: the section appears once the Desktop signs in to a mock user center; the
 // employee adds a Tmall merchant account, which opens the sign-in page in that account's own
 // Chrome, and the dialog turns to success once the platform answers with the account's nick. A
-// second add of the same account is refused; the details show the platform's name, and deleting
-// the account closes its Chrome and removes its browser data.
+// second add of the same account is refused, and the account name is corrected to the one Tmall
+// reports. A Pinduoduo shop signs in the same way; when its sign-in ends, an app-wide notice leads
+// back to Settings. Deleting an account closes its Chrome and removes its browser data.
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -31,6 +32,7 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
   const browser = await chromium.launch()
   let failurePage: Page | undefined
   let accountDir: string | undefined
+  let pddDir: string | undefined
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
     failurePage = page
@@ -72,6 +74,7 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     // The user scans the QR code in Chrome: the tab moves on, the platform answers, and the dialog turns to success.
     await writeFile(join(accountDir, 'user-data', 'fake-signed-in'), '名流旗舰店:运营')
     await signIn.getByText('登录成功，平台显示的账号是「名流旗舰店:运营」', { exact: false }).waitFor({ timeout: 15_000 })
+    await signIn.getByRole('note').getByText('实际登录的是「名流旗舰店:运营」，与填写的账号不一致。').waitFor()
     await signIn.getByRole('button', { name: '完成' }).click()
     const row = section.getByRole('button', { name: '查看 名流旗舰店 的详情' })
     await expect.poll(() => row.textContent()).toContain('已登录')
@@ -86,13 +89,49 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     await add.getByRole('alert').getByText('当前账号已添加').waitFor()
     await add.getByRole('button', { name: '取消' }).click()
 
-    // Details, then delete: the account's Chrome closes and its browser data goes.
+    // The details offer the account name Tmall reports instead of the one entered.
     await row.click()
-    await section.getByText('名流旗舰店:运营').first().waitFor()
-    await section.getByRole('button', { name: '删除账号' }).click()
-    await page.getByRole('dialog', { name: '删除电商账号' }).getByRole('button', { name: '删除', exact: true }).click()
+    await section.getByRole('note').getByRole('button', { name: '改为实际账号名' }).click()
+    await expect.poll(async () => (await scaffold.ctx.ecommerceAccounts.getState()).accounts[0]!.account).toBe('名流旗舰店:运营')
+    await section.getByRole('note').waitFor({ state: 'detached' })
+    await section.getByRole('button', { name: '返回账号列表', exact: false }).click()
+
+    // A Pinduoduo shop signs in the same way; Pinduoduo reports no account name.
+    await section.getByRole('button', { name: '新增账号' }).click()
+    await add.getByRole('combobox', { name: '平台' }).selectOption('pinduoduo')
+    await add.getByPlaceholder('例如：名流旗舰店', { exact: true }).fill('拼多多小店')
+    await add.getByPlaceholder('例如：名流旗舰店:运营').fill('pdd:运营')
+    await add.getByRole('button', { name: '去登录' }).click()
+    const pddSignIn = page.getByRole('dialog', { name: '登录拼多多' })
+    await pddSignIn.waitFor()
+    pddDir = join(harnessHome, 'ecommerce', tenantId, 'browsers', (await scaffold.ctx.ecommerceAccounts.getState()).accounts[1]!.id)
+    await expect.poll(() => access(join(pddDir!, 'user-data', 'fake-args.json')).then(() => true, () => false), { timeout: 10_000 }).toBe(true)
+    await writeFile(join(pddDir, 'user-data', 'fake-signed-in'), 'pdd')
+    await pddSignIn.getByText('登录成功。这个 Chrome 会在后台保持登录。').waitFor({ timeout: 15_000 })
+    await pddSignIn.getByRole('button', { name: '完成' }).click()
+    const pddRow = section.getByRole('button', { name: '查看 拼多多小店 的详情' })
+    await expect.poll(() => pddRow.textContent()).toContain('已登录')
+
+    // Its sign-in ends: the next check finds it signed out, and a notice leads back to Settings.
+    await rm(join(pddDir, 'user-data', 'fake-signed-in'))
+    await scaffold.ctx.ecommerceAccounts.refresh()
+    const notice = page.getByRole('alert').filter({ hasText: '电商账号「拼多多小店」的登录已失效' })
+    await notice.waitFor({ timeout: 10_000 })
+    await page.keyboard.press('Escape')
+    await settings.waitFor({ state: 'detached' })
+    await notice.getByText('去重新登录').click()
+    await settings.getByRole('region', { name: '电商账号' }).getByText('未登录或登录过期').waitFor({ timeout: 10_000 })
+
+    // Delete both: each account's Chrome closes and its browser data goes.
+    for (const name of ['名流旗舰店', '拼多多小店']) {
+      await section.getByRole('button', { name: `查看 ${name} 的详情` }).click()
+      await section.getByRole('button', { name: '删除账号' }).click()
+      await page.getByRole('dialog', { name: '删除电商账号' }).getByRole('button', { name: '删除', exact: true }).click()
+      await section.getByRole('button', { name: `查看 ${name} 的详情` }).waitFor({ state: 'detached', timeout: 15_000 })
+    }
     await section.getByText('还没有电商账号。').waitFor({ timeout: 15_000 })
     await expect(access(accountDir)).rejects.toThrow()
+    await expect(access(pddDir)).rejects.toThrow()
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
     if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-ecommerce-accounts')
@@ -100,8 +139,9 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
   } finally {
     await browser.close()
     // A failed run may leave the stand-in Chrome running; deleting the account would have closed it.
-    if (accountDir !== undefined) {
-      const record = await readFile(join(accountDir, 'chrome.json'), 'utf8').catch(() => undefined)
+    for (const dir of [accountDir, pddDir]) {
+      if (dir === undefined) continue
+      const record = await readFile(join(dir, 'chrome.json'), 'utf8').catch(() => undefined)
       if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
     }
     await scaffold.close()

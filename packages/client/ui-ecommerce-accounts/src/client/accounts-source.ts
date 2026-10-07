@@ -17,6 +17,7 @@ export type Refusal =
   | { readonly kind: 'chrome-missing' }
   | { readonly kind: 'chrome-outdated'; readonly version: string; readonly minVersion: number }
   | { readonly kind: 'duplicate' }
+  | { readonly kind: 'browser-busy' }
   | { readonly kind: 'other'; readonly message: string }
 
 /** Remote calls the source drives. */
@@ -24,6 +25,7 @@ export interface AccountsDependencies {
   readonly add: (input: AddEcommerceAccountInput) => Promise<RemoteResult<AddEcommerceAccountResult>>
   readonly startSignIn: (accountId: string) => Promise<RemoteResult<EcommerceAccountsState>>
   readonly confirmSignIn: (accountId: string) => Promise<RemoteResult<EcommerceAccountsState>>
+  readonly rename: (accountId: string, account: string) => Promise<RemoteResult<EcommerceAccountsState>>
   readonly refresh: () => Promise<RemoteResult<EcommerceAccountsState>>
   readonly remove: (accountId: string) => Promise<RemoteResult<EcommerceAccountsState>>
   /** Open an address in the default browser. */
@@ -38,6 +40,8 @@ export interface AccountsInjected {
   /** Open the sign-in page; resolves to the refusal, or undefined once it is open. */
   readonly onStartSignIn: (accountId: string) => Promise<Refusal | undefined>
   readonly onConfirmSignIn: (accountId: string) => Promise<Refusal | undefined>
+  /** Change the account name, such as to the one the platform reports; resolves to the refusal, or undefined. */
+  readonly onRename: (accountId: string, account: string) => Promise<Refusal | undefined>
   /** Check every account again, as the section does when it opens. */
   readonly onRefresh: () => Promise<void>
   readonly onDelete: (accountId: string) => Promise<Refusal | undefined>
@@ -59,6 +63,7 @@ function refusalOf(error: Extract<RemoteResult<unknown>, { ok: false }>['error']
     case 'ecommerce-accounts/chrome-missing': return { kind: 'chrome-missing' }
     case 'ecommerce-accounts/chrome-outdated': return { kind: 'chrome-outdated', version: error.details.version, minVersion: error.details.minVersion }
     case 'ecommerce-accounts/duplicate': return { kind: 'duplicate' }
+    case 'ecommerce-accounts/browser-busy': return { kind: 'browser-busy' }
     default: return { kind: 'other', message: error.message }
   }
 }
@@ -92,6 +97,7 @@ export function createAccountsSource(deps: AccountsDependencies): AccountsSource
     },
     onStartSignIn: accountId => settle(deps.startSignIn(accountId)),
     onConfirmSignIn: accountId => settle(deps.confirmSignIn(accountId)),
+    onRename: (accountId, account) => settle(deps.rename(accountId, account)),
     onRefresh: async () => { await settle(deps.refresh()) },
     onDelete: accountId => settle(deps.remove(accountId)),
     onOpenUrl: (url) => { deps.openUrl(url) },

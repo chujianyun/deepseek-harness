@@ -23,13 +23,13 @@ Adds an **E-commerce accounts** section to Desktop Settings: the current tenant'
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the browser row beside the Host `ecommerce-accounts` row with the same `disabled` condition; the web-app bundle enables both for the `desktop` profile with a configured user center. The plugin contributes only in the Desktop renderer (`dshDesktop` present). It injects `remote.ecommerceAccounts` and registers the section into `settings.section` as `ecommerce-accounts` at order -10 while the Desktop is signed in to the user center, removing it on sign-out.
+Mount the browser row beside the Host `ecommerce-accounts` row with the same `disabled` condition; the web-app bundle enables both for the `desktop` profile with a configured user center. The plugin contributes only in the Desktop renderer (`dshDesktop` present). It injects `remote.ecommerceAccounts` and registers the section into `settings.section` as `ecommerce-accounts` at order -10 while the Desktop is signed in to the user center, removing it on sign-out. It also adds `ecommerce-accounts.expired` to `shell.overlay`: when an account's sign-in expires, a banner names it (or counts several) for 15 seconds, and its **Sign in again** action opens Settings at the section through `settings/open-section`. Each expiry is announced once, and an account is announced again only after it was signed in; accounts that expire while the banner shows join it.
 
-Opening the section checks every account. Without accounts it shows an **Add the first account** button; otherwise accounts are grouped by platform in collapsible groups with their count, each row showing the store name, the account, the kind, and the status with a colored dot. A search box filters by store name or account. When Google Chrome is missing or older than the version DSH needs, a banner above the list says so with a **Get Google Chrome** button.
+Opening the section checks every account. Without accounts it shows an **Add the first account** button; otherwise accounts are grouped by platform in collapsible groups with their count, each row showing the store name, the account, the kind, and the status with a colored dot: green signed in, red signed out or expired, yellow when the check timed out, the network was unreachable, or another program holds the account's browser. A search box filters by store name or account. When Google Chrome is missing or older than the version DSH needs, a banner above the list says so with a **Get Google Chrome** button.
 
-**Add account** opens a form whose description says the feature works with Google Chrome. Platform (Tmall) and kind (Merchant account) are fixed for now; the store name and account are required. **Sign in** adds the account and opens its sign-in dialog; an account already added is refused with **This account is already added**. The sign-in dialog says the platform's sign-in page opened in Google Chrome, updates by itself once the account is signed in, and offers **I have signed in** to check at once; it reports a missing or outdated Chrome with **Get Google Chrome**, a timed-out sign-in, and a failed check.
+**Add account** opens a form whose description says the feature works with Google Chrome. The platform is Tmall, Taobao, Pinduoduo, or Douyin shop, and the kind is Merchant account for now; the store name and account are required. **Sign in** adds the account and opens its sign-in dialog; an account already added is refused with **This account is already added**. The sign-in dialog says the platform's sign-in page opened in Google Chrome, updates by itself once the account is signed in, and offers **I have signed in** to check at once; it reports a missing or outdated Chrome with **Get Google Chrome**, a browser held by another Chrome, a timed-out sign-in, and a failed check. Once signed in, it shows the account name the platform reports, when it reports one.
 
-Selecting an account opens its details — platform, store name, account, kind, status, the name the platform reported, and the last check — with **Sign in again** (or **Sign in**) and **Delete account**, which asks for confirmation and says the account's browser data goes with it.
+Selecting an account opens its details — platform, store name, account, kind, status, the name the platform reported, and the last check — with **Sign in again** (or **Sign in**) and **Delete account**, which asks for confirmation and says the account's browser data goes with it. When the platform reports another account name than the one entered, the sign-in dialog and the details say which account is actually signed in and offer **Use the actual account name** or **Sign in again**.
 
 -----
 
@@ -46,7 +46,7 @@ No effect.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **One platform and kind** — the platform and kind selects offer only Tmall merchant accounts.
+- **Merchant accounts only** — the kind select offers only merchant accounts.
 
 <a id="dev-note"></a>
 ### Dev Note

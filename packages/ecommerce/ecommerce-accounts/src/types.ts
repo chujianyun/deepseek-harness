@@ -16,11 +16,13 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'ecommerce-accounts/chrome-outdated': { readonly version: string; readonly minVersion: number }
     /** Chrome could not be started or reached for this account. */
     'ecommerce-accounts/browser-failed': { readonly accountId: string; readonly reason: string }
+    /** Another Chrome, not started by DSH, is using this account's browser data. */
+    'ecommerce-accounts/browser-busy': { readonly accountId: string }
   }
 }
 
-/** An e-commerce platform DSH supports. */
-export type EcommercePlatform = 'tmall'
+/** An e-commerce platform DSH supports: Tmall, Taobao, Pinduoduo, and Douyin shops (抖店). */
+export type EcommercePlatform = 'tmall' | 'taobao' | 'pinduoduo' | 'doudian'
 
 /** What an account is used for: a store's back office, or public pages as an ordinary buyer. */
 export type EcommerceAccountKind = 'merchant' | 'buyer'
@@ -30,6 +32,12 @@ export type EcommerceAccountKind = 'merchant' | 'buyer'
  * while DSH asks the platform, and `check-failed` when the platform could not be asked.
  */
 export type EcommerceAccountStatus = 'signed-in' | 'signed-out' | 'signing-in' | 'checking' | 'check-failed'
+
+/**
+ * Why a check failed: the platform did not answer in time, its page could not be reached, or the
+ * account's browser data is in use by a Chrome DSH did not start.
+ */
+export type EcommerceCheckProblem = 'timeout' | 'network' | 'busy'
 
 /** One account as the settings page shows it; it holds no password or cookie. */
 export interface EcommerceAccountView {
@@ -42,8 +50,12 @@ export interface EcommerceAccountView {
   /** The account name the user entered. */
   readonly account: string
   readonly status: EcommerceAccountStatus
-  /** Name the platform reported for the signed-in account at the last successful check. */
+  /** Why the last check failed, while the status is `check-failed`. */
+  readonly problem?: EcommerceCheckProblem
+  /** Name the platform reported for the signed-in account at the last successful check, when it reports one. */
   readonly signedInAs?: string
+  /** The account was signed in before and is signed out now: its sign-in expired or was ended. */
+  readonly expired: boolean
   /** ISO time of the last check that reached the platform. */
   readonly checkedAt?: string
   /** ISO time the account was added. */

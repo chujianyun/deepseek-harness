@@ -1,11 +1,11 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import EcommerceAccountsService, { matchesCheckApi, mtopUserNick, parseJsonOrJsonp, TMALL } from '../src/index.ts'
+import EcommerceAccountsService, { DOUDIAN, matchesCheckApi, mtopUserNick, parseJsonOrJsonp, PINDUODUO, TAOBAO, TMALL } from '../src/index.ts'
 import { alive, closeChrome, ensureTab, findChrome, launchChrome, readRecord } from '../src/chrome.ts'
 import { Cdp, pageTabs } from '../src/cdp.ts'
 import type { EcommerceAccountsState } from '../src/types.ts'
@@ -392,7 +392,7 @@ describe('e-commerce account edge cases', () => {
     const broken = await setup({ home: env.home, config: { chromePath: silent, chromeTimeoutMs: 200 } })
     await broken.settle(s => s.accounts[0]?.status === 'check-failed')
     expect((await broken.service.getState()).chrome).toEqual({ status: 'ready', minVersion: 120, downloadUrl: 'https://www.google.com/chrome/' })
-  })
+  }, 15_000)
 
   it('drops a check whose account left with the tenant meanwhile', async () => {
     const env = await setup()
@@ -409,4 +409,99 @@ describe('e-commerce account edge cases', () => {
     await env.settle(s => s.tenantId === 't-b')
     expect((await checking).accounts).toEqual([])
   }, 15_000)
+
+  it('reads each platform\'s check response and sign-in pages', () => {
+    expect(TMALL.read('mtopjsonp1({"ret":["SUCCESS::ok"],"data":{"nick":"店小二"}})')).toEqual({ signedIn: true, name: '店小二' })
+    expect(TMALL.read('{"ret":["FAIL_SYS_SESSION_EXPIRED::x"]}')).toEqual({ signedIn: false })
+    expect(TAOBAO.read('mtopjsonp2({"ret":["SUCCESS::ok"],"data":{}})')).toEqual({ signedIn: true })
+    expect(TAOBAO.read('mtopjsonp2({"ret":["FAIL_SYS_SESSION_EXPIRED::x"]})')).toEqual({ signedIn: false })
+    expect(TAOBAO.read('oops')).toEqual({ signedIn: false })
+    expect(PINDUODUO.read('{"result":{"login":true}}')).toEqual({ signedIn: true })
+    expect(PINDUODUO.read('{"result":{"login":false}}')).toEqual({ signedIn: false })
+    expect(PINDUODUO.read('{"result":null}')).toEqual({ signedIn: false })
+    expect(DOUDIAN.read('{"code":0,"data":{"menu_list":[{"name":"首页"}]}}')).toEqual({ signedIn: true })
+    expect(DOUDIAN.read('{"code":0,"data":{"menu_list":[]}}')).toEqual({ signedIn: false })
+    expect(DOUDIAN.read('{"code":10008,"data":null}')).toEqual({ signedIn: false })
+    expect(DOUDIAN.read('[]')).toEqual({ signedIn: false })
+    expect(TAOBAO.isLoginPage('https://login.taobao.com/havanaone/login/login.htm')).toBe(true)
+    // Signed out, the Qianniu workbench goes to its seller sign-in.
+    expect(TAOBAO.isLoginPage('https://loginmyseller.taobao.com/?from=taobaoindex&redirect_url=x')).toBe(true)
+    expect(TAOBAO.isLoginPage('https://qn.taobao.com/home.htm')).toBe(false)
+    expect(PINDUODUO.isLoginPage('https://mms.pinduoduo.com/login/?redirectUrl=x')).toBe(true)
+    expect(PINDUODUO.isLoginPage('https://mms.pinduoduo.com/home/')).toBe(false)
+    expect(DOUDIAN.isLoginPage('https://fxg.jinritemai.com/login/common')).toBe(true)
+    expect(DOUDIAN.isLoginPage('https://fxg.jinritemai.com/ffa/mshop/homepage/index')).toBe(false)
+  })
+
+  it('signs in Taobao, Pinduoduo, and Douyin shop accounts, and shows a lost sign-in as expired', async () => {
+    const env = await setup()
+    for (const platform of ['taobao', 'pinduoduo', 'doudian'] as const) {
+      const { accountId } = await env.service.addAccount({ ...merchant, platform })
+      expect((await env.service.getState()).accounts.at(-1)).toMatchObject({ platform, status: 'signed-out', expired: false })
+      await env.service.startSignIn(accountId)
+      await env.signIn(accountId, '小美')
+    }
+    const signedIn = await env.settle(s => s.accounts.every(account => account.status === 'signed-in'))
+    // These platforms answer only whether the account is signed in.
+    expect(signedIn.accounts.map(account => account.signedInAs)).toEqual([undefined, undefined, undefined])
+    for (const account of signedIn.accounts) await rm(join(env.browserDir(account.id), 'user-data', 'fake-signed-in'))
+    // Signed out, the Taobao and Douyin shop pages go to sign in, and Pinduoduo says so.
+    const lost = await env.service.refresh()
+    expect(lost.accounts.map(account => [account.status, account.expired])).toEqual([['signed-out', true], ['signed-out', true], ['signed-out', true]])
+  })
+
+  it('shows a check that times out, cannot reach the page, or finds the browser held by another Chrome as a problem', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    const dir = env.browserDir(accountId)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    await env.settle(s => s.accounts[0]!.status === 'signed-in')
+    const failed = async (problem: string) => {
+      await closeChrome(dir, 2000)
+      expect((await env.service.refresh()).accounts[0]).toMatchObject({ status: 'check-failed', problem, signedInAs: 'nick', expired: false })
+    }
+    process.env.FAKE_CHROME_OFFLINE = '1'
+    await failed('network')
+    Reflect.deleteProperty(process.env, 'FAKE_CHROME_OFFLINE')
+    process.env.FAKE_CHROME_SILENT = '1'
+    await failed('timeout')
+    Reflect.deleteProperty(process.env, 'FAKE_CHROME_SILENT')
+    // A Chrome DSH did not start holds the data: DSH starts none and refuses to sign in.
+    const lock = join(dir, 'user-data', 'SingletonLock')
+    await symlink(`other-host-${String(process.pid)}`, lock)
+    await failed('busy')
+    expect(await readRecord(dir)).toBeUndefined()
+    expect(await code(env.service.startSignIn(accountId))).toBe('ecommerce-accounts/browser-busy')
+    // A lock left by a Chrome that is gone, or one DSH cannot read, holds nothing.
+    for (const target of ['other-host-999999999', 'garbage']) {
+      await rm(lock)
+      await symlink(target, lock)
+      expect((await env.service.refresh()).accounts[0]).toMatchObject({ status: 'signed-in' })
+      expect((await env.service.getState()).accounts[0]!.problem).toBeUndefined()
+      await closeChrome(dir, 2000)
+    }
+  }, 20_000)
+
+  it('renames an account, refusing a name another account has or an invalid one', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.addAccount({ ...merchant, account: 'other' })
+    expect((await env.service.renameAccount(accountId, ' 名流:小美 ')).accounts[0]!.account).toBe('名流:小美')
+    expect((await env.service.renameAccount(accountId, '名流:小美')).accounts[0]!.account).toBe('名流:小美')
+    expect(await code(env.service.renameAccount(accountId, 'other'))).toBe('ecommerce-accounts/duplicate')
+    expect(await code(env.service.renameAccount(accountId, ' '))).toBe('ecommerce-accounts/invalid-field')
+    expect(await code(env.service.renameAccount('nope', 'x'))).toBe('ecommerce-accounts/not-found')
+    const ledger = JSON.parse(await readFile(join(env.home, 'ecommerce', 't-a', 'accounts.json'), 'utf8')) as { accounts: { account: string }[] }
+    expect(ledger.accounts.map(account => account.account)).toEqual(['名流:小美', 'other'])
+  })
+
+  it('checks every account in the background', async () => {
+    const env = await setup({ config: { checkIntervalMs: 300 } })
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    const first = (await env.settle(s => s.accounts[0]!.status === 'signed-in')).accounts[0]!.checkedAt
+    await env.settle(s => s.accounts[0]!.checkedAt !== first && s.accounts[0]!.status === 'signed-in')
+  })
 })

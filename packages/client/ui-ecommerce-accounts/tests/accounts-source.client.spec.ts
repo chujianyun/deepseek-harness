@@ -14,6 +14,7 @@ function harness() {
     add: vi.fn(() => ok({ accountId: 'e1', state: state(5) })),
     startSignIn: vi.fn(() => ok(state(6))),
     confirmSignIn: vi.fn(() => ok(state(7))),
+    rename: vi.fn(() => ok(state(7))),
     refresh: vi.fn(() => ok(state(8))),
     remove: vi.fn(() => ok(state(9))),
     openUrl: vi.fn(),
@@ -34,6 +35,8 @@ describe('accounts source', () => {
     h.source.publish(state(11))
     expect(await h.source.onStartSignIn('e1')).toBeUndefined()
     expect(await h.source.onConfirmSignIn('e1')).toBeUndefined()
+    expect(await h.source.onRename('e1', 'nick')).toBeUndefined()
+    expect(h.deps.rename).toHaveBeenCalledWith('e1', 'nick')
     await h.source.onRefresh()
     expect(await h.source.onDelete('e1')).toBeUndefined()
     expect(h.revision()).toBe(11)
@@ -49,6 +52,8 @@ describe('accounts source', () => {
     expect(await h.source.onStartSignIn('e1')).toEqual({ kind: 'chrome-outdated', version: '100.0', minVersion: 120 })
     h.deps.add.mockReturnValueOnce(refused(new RemoteError('ecommerce-accounts/duplicate', 'dup', { accountId: 'e0' })))
     expect(await h.source.onAdd({ platform: 'tmall', kind: 'merchant', storeName: 's', account: 'a' })).toEqual({ kind: 'duplicate' })
+    h.deps.startSignIn.mockReturnValueOnce(refused(new RemoteError('ecommerce-accounts/browser-busy', 'busy', { accountId: 'e1' })))
+    expect(await h.source.onStartSignIn('e1')).toEqual({ kind: 'browser-busy' })
     h.deps.remove.mockReturnValueOnce(refused(new RemoteError('ecommerce-accounts/not-found', 'gone', { accountId: 'e1' })))
     expect(await h.source.onDelete('e1')).toEqual({ kind: 'other', message: 'gone' })
   })

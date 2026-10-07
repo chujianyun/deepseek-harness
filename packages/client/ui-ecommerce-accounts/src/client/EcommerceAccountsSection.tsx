@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState, type ReactNode } from 'react'
-import type { EcommerceAccountView, EcommercePlatform } from '@deepseek-ai/dsh-ecommerce-accounts/types'
+import type { EcommerceAccountView, EcommerceCheckProblem, EcommercePlatform } from '@deepseek-ai/dsh-ecommerce-accounts/types'
 import { Button, IconSearchOutlineRegular, Input, Modal, relativeTime } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountsInjected, Refusal } from './accounts-source.ts'
@@ -17,13 +17,24 @@ export type EcommerceAccountsSectionProps = PropsLocale<'ecommerce-accounts'> & 
 
 type T = TranslateNS<'ecommerce-accounts'>
 
-const PLATFORM_KEYS: Readonly<Record<EcommercePlatform, EcommerceLocaleKey>> = { tmall: 'platformTmall' }
+const PLATFORM_KEYS = {
+  tmall: 'platformTmall', taobao: 'platformTaobao', pinduoduo: 'platformPinduoduo', doudian: 'platformDoudian',
+} as const satisfies Record<EcommercePlatform, EcommerceLocaleKey>
+/** Platforms in the order the add form offers them. */
+const PLATFORM_ORDER = Object.keys(PLATFORM_KEYS) as EcommercePlatform[]
+const PROBLEM_KEYS = {
+  timeout: 'problemTimeout', network: 'problemNetwork', busy: 'problemBusy',
+} as const satisfies Record<EcommerceCheckProblem, EcommerceLocaleKey>
 const STATUS_KEYS = {
   'signed-in': 'statusSignedIn', 'signed-out': 'statusSignedOut', 'signing-in': 'statusSigningIn', checking: 'statusChecking', 'check-failed': 'statusCheckFailed',
 } as const satisfies Record<EcommerceAccountView['status'], EcommerceLocaleKey>
 
 /** The name a row leads with: the store of a merchant account, else the account. */
 const titleOf = (account: EcommerceAccountView): string => account.storeName ?? account.account
+
+/** The status in words; a failed check says why. */
+const statusText = (t: T, account: EcommerceAccountView): string =>
+  account.problem === undefined ? t(STATUS_KEYS[account.status]) : t(PROBLEM_KEYS[account.problem])
 
 /**
  * Word a refusal.
@@ -36,6 +47,7 @@ function refusalText(t: T, refusal: Refusal): string {
     case 'chrome-missing': return t('chromeMissing')
     case 'chrome-outdated': return t('chromeOutdated', { version: refusal.version, min: refusal.minVersion })
     case 'duplicate': return t('duplicate')
+    case 'browser-busy': return t('browserBusy')
     case 'other': return t('failed', { message: refusal.message })
   }
 }
@@ -144,7 +156,7 @@ function AccountList({ t, accounts, query, setQuery, onOpen }: EcommerceAccounts
                       <span className={css.rowTitle}>{titleOf(item)}</span>
                       <span className={css.muted}>{`${item.account} · ${t(item.kind === 'merchant' ? 'kindMerchant' : 'kindBuyer')}`}</span>
                     </span>
-                    <span className={css.muted}>{t(STATUS_KEYS[item.status])}</span>
+                    <span className={css.muted}>{statusText(t, item)}</span>
                   </button>
                 </li>
               ))}
@@ -176,7 +188,7 @@ function AccountDetail(props: EcommerceAccountsSectionProps & {
     ...account.storeName === undefined ? [] : [['storeName', account.storeName] as const],
     ['account', account.account],
     ['kind', t(account.kind === 'merchant' ? 'kindMerchant' : 'kindBuyer')],
-    ['status', t(STATUS_KEYS[account.status])],
+    ['status', statusText(t, account)],
     ...account.signedInAs === undefined ? [] : [['signedInAs', account.signedInAs] as const],
     ...account.checkedAt === undefined ? [] : [['checkedAt', ago(t, account.checkedAt)] as const],
   ]
@@ -193,6 +205,7 @@ function AccountDetail(props: EcommerceAccountsSectionProps & {
           </div>
         ))}
       </dl>
+      <ActualAccount {...props} account={account} onSignIn={onSignIn} />
       {failure !== null && <p className={css.error} role="alert">{failure}</p>}
       <div className={css.actions}>
         <Button variant="primary" onClick={onSignIn}>{account.status === 'signed-in' ? t('relogin') : t('signIn')}</Button>
@@ -229,6 +242,7 @@ function AccountDetail(props: EcommerceAccountsSectionProps & {
 function AddDialog(
   { t, onAdd, onClose, onAdded }: EcommerceAccountsSectionProps & { readonly onClose: () => void; readonly onAdded: (id: string) => void },
 ) {
+  const [platform, setPlatform] = useState<EcommercePlatform>('tmall')
   const [storeName, setStoreName] = useState('')
   const [account, setAccount] = useState('')
   const [busy, setBusy] = useState(false)
@@ -237,7 +251,7 @@ function AddDialog(
   const submit = async (): Promise<void> => {
     setBusy(true)
     setFailure(null)
-    const result = await onAdd({ platform: 'tmall', kind: 'merchant', storeName, account })
+    const result = await onAdd({ platform, kind: 'merchant', storeName, account })
     setBusy(false)
     if ('accountId' in result) onAdded(result.accountId)
     else setFailure(refusalText(t, result))
@@ -255,8 +269,11 @@ function AddDialog(
       <div className={css.form}>
         <label className={css.formField}>
           <span>{t('platform')}</span>
-          <select className={css.select} value="tmall" aria-label={t('platform')} disabled>
-            <option value="tmall">{t('platformTmall')}</option>
+          <select
+            className={css.select} value={platform} aria-label={t('platform')}
+            onChange={(event) => { setPlatform(event.target.value as EcommercePlatform) }}
+          >
+            {PLATFORM_ORDER.map(id => <option key={id} value={id}>{t(PLATFORM_KEYS[id])}</option>)}
           </select>
         </label>
         <label className={css.formField}>
@@ -317,12 +334,47 @@ function SignInDialog(props: EcommerceAccountsSectionProps & {
     >
       <div className={css.signIn} role="status">
         {refusal !== undefined && <p className={css.error}>{refusalText(t, refusal)}</p>}
-        {refusal === undefined && done && <p>{t('signInDone', { name: account.signedInAs ?? account.account })}</p>}
+        {refusal === undefined && done && (
+          <p>{account.signedInAs === undefined ? t('signInDoneUnnamed') : t('signInDone', { name: account.signedInAs })}</p>
+        )}
+        {refusal === undefined && done && (
+          <ActualAccount {...props} account={account} onSignIn={() => { void props.onStartSignIn(account.id) }} />
+        )}
         {refusal === undefined && !done && waiting && <p>{t('signInWaiting', { platform })}</p>}
         {refusal === undefined && !done && !waiting && <p>{t('signInExpired')}</p>}
         {failure !== null && <p className={css.error}>{failure}</p>}
       </div>
     </Modal>
+  )
+}
+
+/**
+ * When the platform reports another account name than the one entered: says so, and offers to use
+ * the reported name or to sign in again.
+ */
+function ActualAccount(props: EcommerceAccountsSectionProps & { readonly account: EcommerceAccountView; readonly onSignIn: () => void }) {
+  const { t, account, onSignIn } = props
+  const [failure, setFailure] = useState<string | null>(null)
+  const actual = account.signedInAs
+  if (account.status !== 'signed-in' || actual === undefined || actual === account.account) return null
+  return (
+    <div className={css.mismatch} role="note">
+      <p>{t('actualAccount', { name: actual })}</p>
+      <div className={css.actions}>
+        <Button
+          variant="outline" size="sm"
+          onClick={() => {
+            void props.onRename(account.id, actual).then((refusal) => {
+              setFailure(refusal === undefined ? null : refusalText(t, refusal))
+            })
+          }}
+        >
+          {t('useActual')}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onSignIn}>{t('relogin')}</Button>
+      </div>
+      {failure !== null && <p className={css.error} role="alert">{failure}</p>}
+    </div>
   )
 }
 

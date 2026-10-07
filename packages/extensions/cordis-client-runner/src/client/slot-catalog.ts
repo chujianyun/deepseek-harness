@@ -2961,6 +2961,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'root\' (client-ui-layout), so it exists while that entry is mounted',
     occupants: [
       'client-ui-chat QuotaNoticeHost id \'chat.quota-notice\'',
+      'client-ui-ecommerce-accounts ExpiredToast id \'ecommerce-accounts.expired\'',
       'client-ui-plugin-manager PluginRefreshToast id \'plugin-manager.refresh-toast\'',
       'client-ui-schedule ScheduleDeleteToast id \'schedule.delete-toast\'',
       'client-ui-settings-account DesktopOnboardingEntry id \'desktop-onboarding\'',
