@@ -51,7 +51,9 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-agent-default-model": "workspace:*",
     "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
+    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
     "@deepseek-ai/dsh-hub-account": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
@@ -61,8 +63,10 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-agent-default-model": "workspace:*",
     "@deepseek-ai/dsh-agent-loop": "workspace:*",
     "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
+    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
     "@deepseek-ai/dsh-hub-account": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",

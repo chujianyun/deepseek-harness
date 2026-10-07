@@ -15,3 +15,4 @@
         apiKeyEnv: DSH_E2E_ACME_KEY
         models:
           - id: acme-chat
+          - id: acme-pro

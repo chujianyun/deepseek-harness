@@ -5,6 +5,7 @@ import { Button, IconSearchOutlineRegular, Input, Tag } from '@deepseek-ai/dsh-c
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { AssistantAvatar } from './AssistantAvatar.tsx'
 import type { AssistantsInjected } from './assistants-source.ts'
+import { CreateAssistantWizard } from './CreateAssistantWizard.tsx'
 import css from './AssistantsPage.module.css'
 
 /** Props the page reads from its `main` registration: the translator and the assistants face. */
@@ -15,10 +16,11 @@ export type AssistantsPageProps = PropsLocale<'assistants'> & InjectFace<Assista
  * @param props - the `assistants` translator and the assistants face.
  * @returns the page.
  */
-export function AssistantsPage({ t, useAssistants, onChat, onDismiss }: AssistantsPageProps) {
+export function AssistantsPage({ t, useAssistants, onChat, onDismiss, onCreate, onLoadOptions, squareAvatar }: AssistantsPageProps) {
   const state = useAssistants(snapshot => snapshot.state)
   const failure = useAssistants(snapshot => snapshot.failure)
   const [query, setQuery] = useState('')
+  const [creating, setCreating] = useState(false)
   const needle = query.trim().toLowerCase()
   const assistants = state?.assistants ?? []
   const shown = needle === ''
@@ -27,9 +29,18 @@ export function AssistantsPage({ t, useAssistants, onChat, onDismiss }: Assistan
   return (
     <div className={css.page}>
       <header className={css.header}>
-        <h1 className={css.title}>{t('title')}</h1>
+        <div className={css.headerRow}>
+          <h1 className={css.title}>{t('title')}</h1>
+          {state?.tenantId != null && <Button variant="primary" size="sm" onClick={() => { setCreating(true) }}>{t('create')}</Button>}
+        </div>
         <p className={css.intro}>{t('intro')}</p>
       </header>
+      {creating && state !== undefined && (
+        <CreateAssistantWizard
+          t={t} open templates={state.templates} onClose={() => { setCreating(false) }}
+          onCreate={onCreate} onLoadOptions={onLoadOptions} squareAvatar={squareAvatar}
+        />
+      )}
       {failure !== null && (
         <div className={css.alert} role="alert">
           <span>{t('selectFailed', { message: failure })}</span>

@@ -433,6 +433,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the current state, then every change.',
       },
       {
+        signature: '@Remote createAssistant(input: CreateAssistantInput): Promise<CreateAssistantResult>',
+        description: 'Create an assistant for the signed-in tenant from a template or blank.',
+        parameters: [{ name: 'input', description: 'the wizard\'s choices: start, identity, avatar, model, preset, and user information.' }],
+        returns: 'the new assistant\'s id and the state with it last.',
+        throws: ['RemoteError `hub-account/signed-out`, `assistants/template-not-found`, `assistants/invalid-name`, `assistants/invalid-description`, `assistants/invalid-avatar`, or `assistants/preset-unavailable`.'],
+      },
+      {
         signature: '@Remote(\'select\') select(agent: Agent, assistantId: string): Promise<string>',
         description: 'Bind a blank session to one of the signed-in tenant\'s assistants.',
         parameters: [{ name: 'agent', description: 'the session\'s Agent.' }, { name: 'assistantId', description: 'the assistant to bind.' }],
@@ -2358,6 +2365,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select one Session-local model after explicitly resuming the Session; save the default in the background.',
         parameters: [{ name: 'request', description: 'Session identity and requested model selection.' }],
         returns: 'the normalized selection installed for the Session, without waiting for default persistence.',
+      },
+      {
+        signature: 'useModel(agent: Agent, selection: ModelSelection): Promise<boolean>',
+        description: 'Install one model for a Session without saving it as the default, for a Host plugin that binds a model to a Session it composes, such as an assistant\'s.',
+        parameters: [{ name: 'agent', description: 'live Agent of the Session, which may still be unpublished.' }, { name: 'selection', description: 'requested provider, model, and optional reasoning effort.' }],
+        returns: 'whether the model was available and installed; an unavailable model changes nothing.',
       },
       {
         signature: '@Remote async initializeDefaultModel(): Promise<void>',
@@ -5210,11 +5223,19 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AssistantAvatar',
-    declaration: 'export type AssistantAvatar = AssistantPresetAvatar;',
+    declaration: 'export type AssistantAvatar = AssistantPresetAvatar | AssistantImageAvatar;',
+  },
+  {
+    name: 'AssistantImageAvatar',
+    declaration: 'export interface AssistantImageAvatar {\n    readonly kind: \'image\';\n    readonly dataUrl: string;\n}',
   },
   {
     name: 'AssistantMessage',
     declaration: 'export interface AssistantMessage extends MessageBase {\n    readonly role: \'assistant\';\n    readonly source: ModelMessageSource;\n}',
+  },
+  {
+    name: 'AssistantModel',
+    declaration: 'export interface AssistantModel {\n    readonly provider: string;\n    readonly model: string;\n    readonly reasoningEffort?: string;\n}',
   },
   {
     name: 'AssistantPresetAvatar',
@@ -5226,7 +5247,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AssistantsState',
-    declaration: 'export interface AssistantsState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly defaultId: string | null;\n    readonly assistants: readonly AssistantView[];\n}',
+    declaration: 'export interface AssistantsState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly defaultId: string | null;\n    readonly assistants: readonly AssistantView[];\n    readonly templates: readonly AssistantTemplateView[];\n}',
   },
   {
     name: 'AssistantStreamFrame',
@@ -5237,8 +5258,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AssistantStreamRecord = {\n    readonly type: \'text-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly texts: readonly string[];\n} | {\n    readonly type: \'reasoning-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly texts: readonly string[];\n} | {\n    readonly type: \'tool-call-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly id: ToolCallId;\n    readonly name?: string;\n    readonly args: readonly string[];\n} | {\n    readonly type: \'chunk\';\n    readonly time: number;\n    readonly chunk: StreamChunk;\n};',
   },
   {
+    name: 'AssistantTemplateView',
+    declaration: 'export interface AssistantTemplateView {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly avatar: AssistantAvatar;\n}',
+  },
+  {
+    name: 'AssistantUserInfo',
+    declaration: 'export interface AssistantUserInfo {\n    readonly name: string;\n    readonly language: string;\n    readonly notes: string;\n    readonly background: string;\n}',
+  },
+  {
     name: 'AssistantView',
-    declaration: 'export interface AssistantView {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly avatar: AssistantAvatar;\n    readonly preset?: string;\n    readonly templateId?: string;\n    readonly createdAt: string;\n}',
+    declaration: 'export interface AssistantView {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly avatar: AssistantAvatar;\n    readonly preset?: string;\n    readonly model?: AssistantModel;\n    readonly templateId?: string;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'AtInput',
@@ -5647,6 +5676,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CreateAgentOptions',
     declaration: 'export interface CreateAgentOptions {\n    readonly sessionId: SessionId;\n    readonly parentAgent?: Agent;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly isSeeded?: boolean;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n    readonly inheritedEventCount?: SessionLogOffset;\n    readonly seed?: readonly SessionEvent[];\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
+  },
+  {
+    name: 'CreateAssistantInput',
+    declaration: 'export interface CreateAssistantInput {\n    readonly templateId: string | null;\n    readonly name: string;\n    readonly description: string;\n    readonly avatar: AssistantAvatar;\n    readonly model?: AssistantModel;\n    readonly preset?: string;\n    readonly user: AssistantUserInfo;\n}',
+  },
+  {
+    name: 'CreateAssistantResult',
+    declaration: 'export interface CreateAssistantResult {\n    readonly assistantId: string;\n    readonly state: AssistantsState;\n}',
   },
   {
     name: 'CreateGoalRequest',

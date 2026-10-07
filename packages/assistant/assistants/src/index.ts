@@ -22,6 +22,8 @@ import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
+import type {} from '@deepseek-ai/dsh-api-session-controller'
+import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-hub-account'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
@@ -29,11 +31,14 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
-import { CORE_FILE_NAMES, DAILY_ASSISTANT, type AssistantTemplate } from './templates.ts'
-import type { AssistantProjectionState, AssistantsState, AssistantView } from './types.ts'
+import { BLANK_FILES, CORE_FILE_NAMES, DAILY_ASSISTANT, TEMPLATES, type AssistantTemplate, type CoreFiles } from './templates.ts'
+import type {
+  AssistantAvatar, AssistantProjectionState, AssistantsState, AssistantTemplateView, AssistantUserInfo, AssistantView,
+  CreateAssistantInput, CreateAssistantResult,
+} from './types.ts'
 
 export type * from './types.ts'
-export { CORE_FILE_NAMES, DAILY_ASSISTANT, TEMPLATES, type AssistantTemplate, type CoreFiles } from './templates.ts'
+export { BLANK_FILES, CORE_FILE_NAMES, DAILY_ASSISTANT, ECOMMERCE_MANAGER, TEMPLATES, type AssistantTemplate, type CoreFiles } from './templates.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -46,17 +51,31 @@ declare module '@deepseek-ai/cordis' {
 export interface Config {
   /** DeepSeek Harness home; assistants live under `<dshHome>/assistants`. Defaults to `$DSH_HOME` or `~/.dsh`. */
   dshHome?: string
+  /** Longest assistant name, in characters. */
+  maxNameLength?: number
+  /** Longest assistant description, in characters. */
+  maxDescriptionLength?: number
+  /** Largest uploaded avatar, as the length of its data URL. */
+  maxAvatarLength?: number
 }
 
 /** Runtime schema for {@link Config}. */
 export const Config: Schema<Config> = Schema.object({
   dshHome: Schema.string().description('DeepSeek Harness home; assistants live under `<dshHome>/assistants`. Defaults to `$DSH_HOME` or `~/.dsh`.'),
+  maxNameLength: Schema.natural().min(1).default(32).description('Longest assistant name, in characters.'),
+  maxDescriptionLength: Schema.natural().default(200).description('Longest assistant description, in characters.'),
+  maxAvatarLength: Schema.natural().min(1).default(700_000).description('Largest uploaded avatar, as the length of its data URL.'),
 })
 
 /** Name of the prompt section that carries the bound assistant's core files. */
 export const ASSISTANT_SECTION = 'assistant:core-files'
 
-const avatarSchema = z.object({ kind: z.literal('preset'), key: z.string().min(1) })
+const IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/
+const avatarSchema = z.union([
+  z.object({ kind: z.literal('preset'), key: z.string().min(1) }),
+  z.object({ kind: z.literal('image'), dataUrl: z.string().regex(IMAGE_DATA_URL) }),
+])
+const modelSchema = z.object({ provider: z.string().min(1), model: z.string().min(1), reasoningEffort: z.string().min(1).optional() })
 
 const assistantFileSchema = z.object({
   version: z.literal(1),
@@ -65,6 +84,7 @@ const assistantFileSchema = z.object({
   description: z.string(),
   avatar: avatarSchema,
   preset: z.string().min(1).optional(),
+  model: modelSchema.optional(),
   templateId: z.string().min(1).optional(),
   createdAt: z.string(),
 })
@@ -110,6 +130,33 @@ export function renderInstructions(name: string, files: ReadonlyArray<readonly [
 }
 
 /**
+ * Put an assistant's name into the `**名称**` line of its identity file, when the file has one.
+ * @param identity - the identity file text.
+ * @param name - the assistant's name.
+ * @returns the text with the name line replaced.
+ */
+export function withName(identity: string, name: string): string {
+  return identity.replace(/^(- \*\*名称\*\*：).*$/mu, (_line, label: string) => `${label}${name}`)
+}
+
+/**
+ * Render the user information file.
+ * @param user - what the user said about themselves.
+ * @returns the `USER.md` text.
+ */
+export function renderUser(user: AssistantUserInfo): string {
+  const line = (value: string): string => value.trim().replace(/\s*\n\s*/gu, ' ')
+  return [
+    '# 用户信息', '',
+    `- **称呼**：${line(user.name)}`,
+    `- **偏好语言**：${line(user.language)}`,
+    `- **备注**：${line(user.notes)}`,
+    '', '## 背景', '',
+    ...(user.background.trim() === '' ? [] : [user.background.trim(), '']),
+  ].join('\n')
+}
+
+/**
  * Read a UTF-8 file that may not exist.
  * @param path - the file to read.
  * @returns its text, or undefined when it does not exist; other read failures reject.
@@ -123,12 +170,16 @@ async function readOptional(path: string): Promise<string | undefined> {
   }
 }
 
+const TEMPLATE_VIEWS: readonly AssistantTemplateView[] = [...TEMPLATES.values()]
+  .map(({ id, name, description, avatar }) => ({ id, name, description, avatar }))
+
 /** Host owner of the assistants and of the `assistants` Remote namespace. */
 export class AssistantsService extends TypertRemoteService {
   static inject = ['hubAccount', 'sessionProjections', 'agents']
   static Config = Config
 
   private readonly root: string
+  private readonly limits: { readonly name: number; readonly description: number; readonly avatar: number }
   private tenantId: string | null = null
   private tenant: TenantFile = { version: 1, defaultId: null, seeded: false }
   private list: AssistantView[] = []
@@ -140,7 +191,9 @@ export class AssistantsService extends TypertRemoteService {
   /** @param ctx - Host with the Hub sign-in, session projections, and agents. @param config - storage options. */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'assistants', { namespace: 'assistants' })
-    this.root = join(resolveDshHome(Config(config).dshHome), 'assistants')
+    const resolved = Config(config) as Config & Required<Omit<Config, 'dshHome'>>
+    this.root = join(resolveDshHome(resolved.dshHome), 'assistants')
+    this.limits = { name: resolved.maxNameLength, description: resolved.maxDescriptionLength, avatar: resolved.maxAvatarLength }
     ctx.sessionProjections.register(assistantProjectionDefinition)
     ctx.effect(() => () => {
       this.lifetime.abort()
@@ -178,7 +231,9 @@ export class AssistantsService extends TypertRemoteService {
    */
   @Remote
   getState(): Promise<AssistantsState> {
-    return Promise.resolve({ revision: this.revision, tenantId: this.tenantId, defaultId: this.tenant.defaultId, assistants: this.list })
+    return Promise.resolve({
+      revision: this.revision, tenantId: this.tenantId, defaultId: this.tenant.defaultId, assistants: this.list, templates: TEMPLATE_VIEWS,
+    })
   }
 
   /**
@@ -205,6 +260,53 @@ export class AssistantsService extends TypertRemoteService {
   }
 
   /**
+   * Create an assistant for the signed-in tenant from a template or blank.
+   * @param input - the wizard's choices: start, identity, avatar, model, preset, and user information.
+   * @returns the new assistant's id and the state with it last.
+   * @throws RemoteError `hub-account/signed-out`, `assistants/template-not-found`, `assistants/invalid-name`,
+   *   `assistants/invalid-description`, `assistants/invalid-avatar`, or `assistants/preset-unavailable`.
+   */
+  @Remote
+  createAssistant(input: CreateAssistantInput): Promise<CreateAssistantResult> {
+    return this.serialized(async () => {
+      const tenantId = this.requireTenant()
+      const template = input.templateId === null ? undefined : TEMPLATES.get(input.templateId)
+      if (input.templateId !== null && template === undefined) {
+        throw new RemoteError('assistants/template-not-found', 'This template does not exist', { templateId: input.templateId })
+      }
+      const name = input.name.trim()
+      if (name === '' || Array.from(name).length > this.limits.name) {
+        throw new RemoteError('assistants/invalid-name', `The name must be 1 to ${String(this.limits.name)} characters`, { name: input.name })
+      }
+      const description = input.description.trim()
+      if (Array.from(description).length > this.limits.description) {
+        throw new RemoteError('assistants/invalid-description', `The description must be at most ${String(this.limits.description)} characters`, { length: Array.from(description).length })
+      }
+      this.checkAvatar(input.avatar)
+      const presets = this.ctx.get('agentPresets')
+      if (input.preset !== undefined && presets !== undefined) {
+        try {
+          await presets.resolve(input.preset)
+        } catch {
+          // resolve() rejects an id no declaration supplies; the wizard offered an outdated roster.
+          throw new RemoteError('assistants/preset-unavailable', 'This capability base is no longer available', { preset: input.preset })
+        }
+      }
+      const files = template?.files ?? BLANK_FILES
+      const view = await this.writeAssistant(tenantId, {
+        id: randomUUID(), name, description, avatar: input.avatar,
+        ...(input.preset === undefined ? {} : { preset: input.preset }),
+        ...(input.model === undefined ? {} : { model: input.model }),
+        ...(template === undefined ? {} : { templateId: template.id }),
+        createdAt: new Date().toISOString(),
+      }, { ...files, 'IDENTITY.md': withName(files['IDENTITY.md'], name), 'USER.md': renderUser(input.user) })
+      this.list = [...this.list, view]
+      this.changed()
+      return { assistantId: view.id, state: await this.getState() }
+    })
+  }
+
+  /**
    * Bind a blank session to one of the signed-in tenant's assistants.
    * @param agent - the session's Agent.
    * @param assistantId - the assistant to bind.
@@ -218,15 +320,40 @@ export class AssistantsService extends TypertRemoteService {
       const assistant = this.list.find(item => item.id === assistantId)
       if (assistant === undefined) throw new RemoteError('assistants/not-found', 'This assistant no longer exists', { assistantId })
       if (!this.isBlank(agent)) throw new RemoteError('assistants/locked', 'This session has already started', { sessionId: agent.id, assistantId })
-      if (this.boundId(agent) !== assistantId) await this.bind(agent, assistant)
+      const previous = this.list.find(item => item.id === this.boundId(agent))
+      if (previous !== assistant) await this.bind(agent, assistant, previous)
       return assistantId
     })
   }
 
-  private async bind(agent: Agent, assistant: AssistantView): Promise<void> {
+  /**
+   * Bind the assistant, applying its preset and model. Picking, in the same blank session, an
+   * assistant without either after one that set it returns the session to the deployment's default
+   * preset or the global model, so a choice the user made in the composer is left alone otherwise.
+   */
+  private async bind(agent: Agent, assistant: AssistantView, previous?: AssistantView): Promise<void> {
     const presets = this.ctx.get('agentPresets')
-    if (assistant.preset !== undefined && presets !== undefined) await presets.select(agent, assistant.preset)
+    const preset = assistant.preset ?? (previous?.preset === undefined ? undefined : presets?.defaultId)
+    if (preset !== undefined && presets !== undefined) {
+      try {
+        await presets.select(agent, preset)
+      } catch (error) {
+        // A preset removed since the assistant was created leaves the session on the deployment default.
+        this.ctx.logger.warn(`assistants: preset ${preset} for ${assistant.id} not applied: ${String(error)}`)
+      }
+    }
+    const model = assistant.model ?? (previous?.model === undefined ? undefined : this.ctx.get('agentDefaultModel')?.currentSelection())
+    // An unavailable model, such as one removed from Settings, leaves the session on the global default.
+    if (model !== undefined) await this.ctx.get('sessionController')?.useModel(agent, model)
     agent.session.append('assistant/selected', { assistantId: assistant.id })
+  }
+
+  private checkAvatar(avatar: AssistantAvatar): void {
+    const parsed = avatarSchema.safeParse(avatar)
+    if (!parsed.success) throw new RemoteError('assistants/invalid-avatar', 'The avatar must be a preset or a PNG, JPEG, or WebP image', { reason: 'format' })
+    if (avatar.kind === 'image' && avatar.dataUrl.length > this.limits.avatar) {
+      throw new RemoteError('assistants/invalid-avatar', 'The avatar image is too large', { reason: 'size' })
+    }
   }
 
   private boundId(agent: Agent): string | null {
@@ -305,24 +432,36 @@ export class AssistantsService extends TypertRemoteService {
         this.ctx.logger.warn(`assistants: skipped malformed ${join(dir, entry.name, 'assistant.json')}`)
         continue
       }
-      const { version: _version, preset, templateId, ...view } = parsed.data
-      found.push({ ...view, ...(preset === undefined ? {} : { preset }), ...(templateId === undefined ? {} : { templateId }) })
+      const { version: _version, preset, model, templateId, ...view } = parsed.data
+      found.push({
+        ...view,
+        ...(preset === undefined ? {} : { preset }),
+        ...(model === undefined ? {} : {
+          model: {
+            provider: model.provider, model: model.model,
+            ...(model.reasoningEffort === undefined ? {} : { reasoningEffort: model.reasoningEffort }),
+          },
+        }),
+        ...(templateId === undefined ? {} : { templateId }),
+      })
     }
     return found.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
 
-  private async createFrom(tenantId: string, template: AssistantTemplate): Promise<AssistantView> {
-    const id = randomUUID()
-    const view: AssistantView = {
-      id, name: template.name, description: template.description, avatar: template.avatar,
+  private createFrom(tenantId: string, template: AssistantTemplate): Promise<AssistantView> {
+    return this.writeAssistant(tenantId, {
+      id: randomUUID(), name: template.name, description: template.description, avatar: template.avatar,
       templateId: template.id, createdAt: new Date().toISOString(),
-    }
+    }, template.files)
+  }
+
+  private async writeAssistant(tenantId: string, view: AssistantView, files: CoreFiles): Promise<AssistantView> {
     // Build in a temporary directory and rename, so a crash never leaves a half-written assistant.
-    const staging = join(this.root, tenantId, `.${id}.tmp`)
+    const staging = join(this.root, tenantId, `.${view.id}.tmp`)
     await mkdir(staging, { recursive: true })
-    for (const file of CORE_FILE_NAMES) await writeFile(join(staging, file), template.files[file])
+    for (const file of CORE_FILE_NAMES) await writeFile(join(staging, file), files[file])
     await this.writeJson(join(staging, 'assistant.json'), { version: 1, ...view })
-    await rename(staging, join(this.root, tenantId, id))
+    await rename(staging, join(this.root, tenantId, view.id))
     return view
   }
 

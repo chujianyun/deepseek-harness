@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { AssistantsState } from '@deepseek-ai/dsh-assistants/types'
+import type { AssistantsState, CreateAssistantInput } from '@deepseek-ai/dsh-assistants/types'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { createAssistantsSource, shownAssistant, type BlankSession } from '../src/client/assistants-source.ts'
 
 const state: AssistantsState = {
-  revision: 1, tenantId: 't-a', defaultId: 'a1',
+  revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [],
   assistants: [
     { id: 'a1', name: '日常助手', description: 'd', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:00Z' },
     { id: 'a2', name: '电商管家', description: '', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:01Z' },
@@ -17,10 +17,13 @@ function harness(initial: BlankSession | undefined) {
   let blank = initial
   const select = vi.fn((_sessionId: SessionSummary['id'], assistantId: string) => Promise.resolve({ ok: true as const, value: assistantId }))
   const startSession = vi.fn()
-  const source = createAssistantsSource({ select, startSession, blankSession: () => blank })
+  const create = vi.fn(async (_input: CreateAssistantInput) => ({ ok: true as const, value: { assistantId: 'a3', state: { ...state, revision: 2 } } }))
+  const loadOptions = vi.fn(async () => ({ models: [], presets: [] }))
+  const squareAvatar = vi.fn(async (_file: Blob) => 'data:image/webp;base64,AA')
+  const source = createAssistantsSource({ select, startSession, blankSession: () => blank, create, loadOptions, squareAvatar })
   source.publish(state)
   return {
-    source, select, startSession,
+    source, select, startSession, create, loadOptions, squareAvatar,
     setBlank: (next: BlankSession | undefined) => { blank = next },
     snapshot: () => source.hooks.assistants.getSnapshot(),
   }
@@ -79,9 +82,37 @@ describe('assistants source', () => {
   })
 
   it('shows the tenant default before any session or pick, and nothing before the first frame', () => {
-    const empty = createAssistantsSource({ select: vi.fn(), startSession: vi.fn(), blankSession: () => undefined })
+    const empty = createAssistantsSource({
+      select: vi.fn(), startSession: vi.fn(), blankSession: () => undefined, create: vi.fn(), loadOptions: vi.fn(), squareAvatar: vi.fn(),
+    })
     expect(shownAssistant(empty.hooks.assistants.getSnapshot())).toBeNull()
     const h = harness(undefined)
     expect(shownAssistant(h.snapshot())).toBe('a1')
+  })
+
+  it('creates through the Host, keeping the newer of its answer and the stream, and reports a refusal', async () => {
+    const h = harness(undefined)
+    const user = { name: '', language: '', notes: '', background: '' }
+    const input = { templateId: null, name: 'x', description: '', avatar: { kind: 'preset', key: 'sun' }, user } as const
+    expect(await h.source.onCreate(input)).toBeUndefined()
+    expect(h.snapshot().state?.revision).toBe(2)
+    h.source.publish({ ...state, revision: 5 })
+    expect(await h.source.onCreate(input)).toBeUndefined()
+    expect(h.snapshot().state?.revision).toBe(5)
+    h.create.mockResolvedValueOnce({ ok: false, error: new RemoteError('assistants/invalid-name', 'bad name', { name: 'x' }) } as never)
+    expect(await h.source.onCreate(input)).toBe('bad name')
+    await h.source.onLoadOptions()
+    expect(h.loadOptions).toHaveBeenCalledOnce()
+    expect(await h.source.squareAvatar(new Blob(['x']))).toBe('data:image/webp;base64,AA')
+  })
+
+  it('creates before the first frame arrives', async () => {
+    const create = vi.fn(async () => ({ ok: true as const, value: { assistantId: 'a', state } }))
+    const source = createAssistantsSource({
+      select: vi.fn(), startSession: vi.fn(), blankSession: () => undefined, create, loadOptions: vi.fn(), squareAvatar: vi.fn(),
+    })
+    const user = { name: '', language: '', notes: '', background: '' }
+    await source.onCreate({ templateId: null, name: 'x', description: '', avatar: { kind: 'preset', key: 'sun' }, user })
+    expect(source.hooks.assistants.getSnapshot().state).toBe(state)
   })
 })

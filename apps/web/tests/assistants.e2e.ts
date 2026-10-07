@@ -22,9 +22,12 @@ import { connectFreshWorkspaceZh, saveFailureShot, writeComposerDraft, ZH_BROWSE
 const OVERLAYS = ['./hub-account.overlay.yml', './assistants.overlay.yml'].map(path => fileURLToPath(new URL(path, import.meta.url)))
 const ANSWER = 'ASSISTANT_ANSWER'
 const SHOP_ID = 'shop-keeper'
+/** A 3x2 PNG, so the wizard has a non-square image to crop. */
+const PNG_3X2 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAEElEQVR4nGP4X6EBQQxwFgBmYgm7t2V+mQAAAABJRU5ErkJggg==', 'base64')
 
 /** One chat completion request the mock received. */
 interface ChatRequest {
+  readonly model?: string
   readonly messages: readonly { readonly role: string; readonly content?: unknown }[]
 }
 
@@ -151,6 +154,44 @@ it('creates the default assistant, carries its core files into the chat, and let
     await send('今天的运营怎么样？')
     await expect.poll(() => chat.chats.filter(request => systemPrompt(request).includes('SHOP_IDENTITY')).length, { timeout: 30_000 }).toBe(1)
     expect(systemPrompt(chat.chats.at(-1)!)).toContain('You are the assistant \\"店铺测试助手\\"')
+
+    // The wizard creates an E-commerce Manager with an uploaded avatar, its own model, and what it should know about the user.
+    await page.getByRole('button', { name: '智能体', exact: true }).click()
+    await page.getByRole('button', { name: '新建智能体' }).click()
+    const wizard = page.getByRole('dialog', { name: '新建智能体' })
+    await wizard.getByRole('radio', { name: /电商管家/ }).click()
+    await wizard.getByRole('button', { name: '下一步' }).click()
+    await wizard.getByRole('textbox', { name: '名称' }).fill('')
+    await expect.poll(() => wizard.getByRole('button', { name: '下一步' }).isDisabled()).toBe(true)
+    await wizard.getByRole('textbox', { name: '名称' }).fill('名流电商管家')
+    await wizard.getByLabel('上传图片').setInputFiles({ name: 'logo.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') })
+    await wizard.getByText('只支持 PNG、JPG、WebP 图片').waitFor()
+    await wizard.getByLabel('上传图片').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: PNG_3X2 })
+    await wizard.locator('img[src^="data:image/webp"]').waitFor()
+    await wizard.getByRole('combobox', { name: '模型' }).selectOption(JSON.stringify(['acme-gateway', 'acme-pro']))
+    await wizard.getByRole('button', { name: '下一步' }).click()
+    await wizard.getByRole('radio', { name: /跟随默认/ }).waitFor()
+    await wizard.getByRole('button', { name: '下一步' }).click()
+    await wizard.getByRole('textbox', { name: '如何称呼你' }).fill('小明 USER_NAME')
+    await wizard.getByRole('textbox', { name: '补充背景' }).fill('负责名流天猫旗舰店')
+    await wizard.getByRole('button', { name: '创建' }).click()
+    await wizard.waitFor({ state: 'detached' })
+    const created = (await scaffold.ctx.assistants.getState()).assistants.find(item => item.name === '名流电商管家')!
+    expect(created).toMatchObject({ templateId: 'ecommerce', model: { provider: 'acme-gateway', model: 'acme-pro' } })
+    expect(created.avatar.kind).toBe('image')
+    const card = page.locator(`li[data-assistant-id="${created.id}"]`)
+    await card.locator('img[src^="data:image/webp"]').waitFor()
+    expect(await readFile(join(tenantDir, created.id, 'USER.md'), 'utf8')).toContain('- **称呼**：小明 USER_NAME')
+
+    // Chat with it: the first request runs on the assistant's model and carries its core files and the user information.
+    await card.getByRole('button', { name: '对话' }).click()
+    await expect.poll(() => picker.textContent()).toContain('名流电商管家')
+    await send('帮我看看店铺')
+    await expect.poll(() => chat.chats.filter(request => systemPrompt(request).includes('名流电商管家')).length, { timeout: 30_000 }).toBe(1)
+    const shop = chat.chats.find(request => systemPrompt(request).includes('名流电商管家'))!
+    expect(shop.model).toBe('acme-pro')
+    expect(systemPrompt(shop)).toContain('天猫、拼多多、抖店')
+    expect(systemPrompt(shop)).toContain('小明 USER_NAME')
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
     if (failurePage !== undefined) await saveFailureShot(failurePage, 'assistants')

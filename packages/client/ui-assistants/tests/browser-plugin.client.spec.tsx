@@ -21,7 +21,7 @@ beforeAll(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { pro
 afterAll(() => { Reflect.deleteProperty(globalThis, 'dshDesktop') })
 
 const state: AssistantsState = {
-  revision: 1, tenantId: 't-a', defaultId: 'a1',
+  revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [{ id: 'daily', name: '日常助手', description: 'd', avatar: { kind: 'preset', key: 'sun' } }],
   assistants: [{ id: 'a1', name: '日常助手', description: '', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:00Z' }],
 }
 
@@ -42,9 +42,27 @@ async function bench() {
   ctx.provide('uiWorkspace', { startSession } as never)
   const assistants = {
     select: vi.fn((_sessionId: string, assistantId: string) => Promise.resolve({ ok: true as const, value: assistantId })),
+    createAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: { assistantId: 'a9', state } })),
     watch: vi.fn(),
   }
-  const remote = new TestRemote(ctx, { assistants })
+  const session = {
+    modelCatalog: vi.fn(() => Promise.resolve({ ok: true as const, value: {
+      default: { provider: 'acme', model: 'chat' }, routableProviders: ['acme'], failures: [],
+      groups: [{ id: 'acme', name: 'Acme', models: [
+        { id: 'chat', name: 'Chat' },
+        { id: 'think', name: 'Think', reasoning: { efforts: [{ id: 'high', name: '高', description: 'x' }], defaultEffort: 'high' } },
+        { id: 'plain', name: 'Plain', reasoning: { efforts: [] } },
+      ] }],
+    } })),
+  }
+  const agentPresets = {
+    list: vi.fn(() => Promise.resolve({ ok: true as const, value: { presets: [
+      { id: 'standard', isDefault: true, name: '标准', description: '日常' },
+      { id: 'ptc', isDefault: false },
+      { id: 'broken', isDefault: false, broken: 'x' },
+    ] } })),
+  }
+  const remote = new TestRemote(ctx, { assistants, session, agentPresets })
   const frames: AssistantsState[] = []
   let wake: (() => void) | undefined
   let fail: ((error: Error) => void) | undefined
@@ -77,7 +95,7 @@ async function bench() {
   } as never, () => null)
   onTestFinished(removeRoot)
   return {
-    ctx, slots, assistants, options, dispose, accepted, list, startSession,
+    ctx, slots, assistants, session, agentPresets, options, dispose, accepted, list, startSession,
     push: (value: AssistantsState) => { frames.push(value); wake?.() },
     fail: (error: Error) => { fail?.(error) },
   }
@@ -128,6 +146,27 @@ describe('ui-assistants browser plugin', () => {
     b.fail(new Error('gone'))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(b.slots.entries('main')).toHaveLength(1)
+  })
+
+  it('creates through the Remote and reads the wizard\'s models and presets, offering none from a failing Remote', async () => {
+    const b = await bench()
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const face: object = b.slots.entries('main')[0]!.inject!()
+    const injected = face as AssistantsInjected
+    await injected.onCreate({ templateId: null, name: 'x', description: '', avatar: { kind: 'preset', key: 'sun' }, user: { name: '', language: '', notes: '', background: '' } })
+    expect(b.assistants.createAssistant).toHaveBeenCalledOnce()
+    expect(await injected.onLoadOptions()).toEqual({
+      models: [
+        { provider: 'acme', providerName: 'Acme', id: 'chat', name: 'Chat', efforts: [] },
+        { provider: 'acme', providerName: 'Acme', id: 'think', name: 'Think', efforts: [{ id: 'high', name: '高' }], defaultEffort: 'high' },
+        { provider: 'acme', providerName: 'Acme', id: 'plain', name: 'Plain', efforts: [] },
+      ],
+      presets: [{ id: 'standard', name: '标准', description: '日常' }, { id: 'ptc', name: 'ptc' }],
+    })
+    b.session.modelCatalog.mockResolvedValueOnce({ ok: false, error: new Error('down') } as never)
+    b.agentPresets.list.mockRejectedValueOnce(new Error('absent'))
+    expect(await injected.onLoadOptions()).toEqual({ models: [], presets: [] })
+    expect(typeof injected.squareAvatar).toBe('function')
   })
 
   it('stays out of a non-Desktop renderer, and the node half does nothing', async () => {

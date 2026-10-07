@@ -224,7 +224,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-session-controller`
 
 - `inject`: `agentDefaultModel` · `agents` · `attachments` · `fileUploads` · `fs` · `llm` · `sessions` · `sessionProjections` · `sessionQuery` · `typert` · `workspaceRegistry`
-- `source`: [`packages/api/session-controller/src/index.ts:79`](../packages/api/session-controller/src/index.ts)
+- `source`: [`packages/api/session-controller/src/index.ts:80`](../packages/api/session-controller/src/index.ts)
 
 ```ts config-catalog
 /** Session Controller deployment policy. */
@@ -353,13 +353,19 @@ export interface Config {
 ## `@deepseek-ai/dsh-assistants`
 
 - `inject`: `hubAccount` · `sessionProjections` · `agents`
-- `source`: [`packages/assistant/assistants/src/index.ts:46`](../packages/assistant/assistants/src/index.ts)
+- `source`: [`packages/assistant/assistants/src/index.ts:51`](../packages/assistant/assistants/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
 export interface Config {
   /** DeepSeek Harness home; assistants live under `<dshHome>/assistants`. Defaults to `$DSH_HOME` or `~/.dsh`. */
   dshHome?: string
+  /** Longest assistant name, in characters. */
+  maxNameLength?: number
+  /** Longest assistant description, in characters. */
+  maxDescriptionLength?: number
+  /** Largest uploaded avatar, as the length of its data URL. */
+  maxAvatarLength?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-assistants -->

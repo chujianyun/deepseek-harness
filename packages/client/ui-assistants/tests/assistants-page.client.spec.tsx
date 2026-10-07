@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { AssistantsState } from '@deepseek-ai/dsh-assistants/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -11,7 +11,7 @@ import { en, zh } from '../src/client/locales.ts'
 afterEach(() => { cleanup() })
 
 const state: AssistantsState = {
-  revision: 1, tenantId: 't-a', defaultId: 'a1',
+  revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [{ id: 'daily', name: '日常助手', description: 'd', avatar: { kind: 'preset', key: 'sun' } }],
   assistants: [
     { id: 'a1', name: '日常助手', description: '通用日常助手', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:00Z' },
     { id: 'a2', name: '电商管家', description: '', avatar: { kind: 'preset', key: 'moon' }, createdAt: '2026-10-07T00:00:01Z' },
@@ -24,6 +24,8 @@ function mount(value: AssistantsState | undefined, extra: Partial<AssistantsSnap
   const props = {
     t: makeTranslate(copy), useAssistants: bindSnapshotSelector(store),
     onPick: vi.fn(async (_id: string) => {}), onChat: vi.fn(async (_id: string) => {}), onDismiss: vi.fn(),
+    onCreate: vi.fn(async () => undefined), onLoadOptions: vi.fn(async () => ({ models: [], presets: [] })),
+    squareAvatar: vi.fn(async () => 'data:image/webp;base64,AA'),
   }
   render(<AssistantsPage {...props} />)
   return props
@@ -52,6 +54,24 @@ describe('assistants page', () => {
   it('draws an empty initial for a blank name', () => {
     mount({ ...state, assistants: [{ ...state.assistants[0]!, name: ' ' }] })
     expect(document.querySelector('[data-tone="sun"]')!.textContent).toBe('')
+  })
+
+  it('opens the creation wizard from the header and closes it', async () => {
+    const props = mount(state)
+    fireEvent.click(screen.getByRole('button', { name: '新建智能体' }))
+    expect(screen.getByRole('dialog', { name: '新建智能体' })).toBeTruthy()
+    await act(async () => { await Promise.resolve() })
+    expect(props.onLoadOptions).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    cleanup()
+    mount({ ...state, tenantId: null, assistants: [] })
+    expect(screen.queryByRole('button', { name: '新建智能体' })).toBeNull()
+  })
+
+  it('draws an uploaded avatar as an image', () => {
+    mount({ ...state, assistants: [{ ...state.assistants[0]!, avatar: { kind: 'image', dataUrl: 'data:image/webp;base64,AA' } }] })
+    expect(document.querySelector('img[src="data:image/webp;base64,AA"]')).toBeTruthy()
   })
 
   it('opens a new session from a card', () => {

@@ -41,6 +41,15 @@ Host owner of the assistants and of the `assistants` Remote namespace.
 @Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<AssistantsState>
 
 /**
+ * Create an assistant for the signed-in tenant from a template or blank.
+ * @param input - the wizard's choices: start, identity, avatar, model, preset, and user information.
+ * @returns the new assistant's id and the state with it last.
+ * @throws RemoteError `hub-account/signed-out`, `assistants/template-not-found`, `assistants/invalid-name`,
+ *   `assistants/invalid-description`, `assistants/invalid-avatar`, or `assistants/preset-unavailable`.
+ */
+@Remote createAssistant(input: CreateAssistantInput): Promise<CreateAssistantResult>
+
+/**
  * Bind a blank session to one of the signed-in tenant's assistants.
  * @param agent - the session's Agent.
  * @param assistantId - the assistant to bind.

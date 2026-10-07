@@ -2,7 +2,7 @@
 
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { AssistantsState } from '@deepseek-ai/dsh-assistants/types'
+import type { AssistantsState, CreateAssistantInput, CreateAssistantResult } from '@deepseek-ai/dsh-assistants/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 
@@ -27,6 +27,30 @@ export interface AssistantsSnapshot {
   readonly failure: string | null
 }
 
+/** One model the creation wizard offers. */
+export interface WizardModel {
+  readonly provider: string
+  readonly providerName: string
+  readonly id: string
+  readonly name: string
+  /** Reasoning efforts the model offers, in order; empty when it has none. */
+  readonly efforts: readonly { readonly id: string; readonly name: string }[]
+  readonly defaultEffort?: string
+}
+
+/** One Agent preset the creation wizard offers as the capability base. */
+export interface WizardPreset {
+  readonly id: string
+  readonly name: string
+  readonly description?: string
+}
+
+/** The models and presets the creation wizard offers. */
+export interface WizardOptions {
+  readonly models: readonly WizardModel[]
+  readonly presets: readonly WizardPreset[]
+}
+
 /** Remote calls and workspace navigation the source drives. */
 export interface AssistantsDependencies {
   readonly select: (sessionId: SessionSummary['id'], assistantId: string) => Promise<RemoteResult<string>>
@@ -34,6 +58,11 @@ export interface AssistantsDependencies {
   readonly startSession: () => void
   /** The blank session the main view shows now, if any. */
   readonly blankSession: () => BlankSession | undefined
+  readonly create: (input: CreateAssistantInput) => Promise<RemoteResult<CreateAssistantResult>>
+  /** Read the models and presets the wizard offers; a source that fails contributes none. */
+  readonly loadOptions: () => Promise<WizardOptions>
+  /** Crop and compress an uploaded image into an avatar data URL. */
+  readonly squareAvatar: (file: Blob) => Promise<string>
 }
 
 /** Business face injected into the page and the picker. */
@@ -45,6 +74,10 @@ export interface AssistantsInjected {
   readonly onChat: (assistantId: string) => Promise<void>
   /** Clear the last failure. */
   readonly onDismiss: () => void
+  /** Create an assistant; resolves to the Host's refusal message, or undefined once created. */
+  readonly onCreate: (input: CreateAssistantInput) => Promise<string | undefined>
+  readonly onLoadOptions: () => Promise<WizardOptions>
+  readonly squareAvatar: (file: Blob) => Promise<string>
 }
 
 /** The face plus the entry points of the Host stream and of session-list changes. */
@@ -107,5 +140,15 @@ export function createAssistantsSource(deps: AssistantsDependencies): Assistants
       await apply()
     },
     onDismiss: () => { set({ failure: null }) },
+    onCreate: async (input) => {
+      const result = await deps.create(input)
+      if (!result.ok) return result.error.message
+      // The stream brings the same state; keep whichever is newer so the card shows at once.
+      const current = store.getSnapshot().state
+      if (current === undefined || result.value.state.revision > current.revision) set({ state: result.value.state })
+      return undefined
+    },
+    onLoadOptions: () => deps.loadOptions(),
+    squareAvatar: file => deps.squareAvatar(file),
   }
 }

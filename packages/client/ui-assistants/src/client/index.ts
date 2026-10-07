@@ -14,7 +14,8 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
-import { createAssistantsSource, type BlankSession } from './assistants-source.ts'
+import { createAssistantsSource, type BlankSession, type WizardOptions } from './assistants-source.ts'
+import { squareAvatar } from './avatar-image.ts'
 import { AssistantSeat } from './AssistantSeat.tsx'
 import { AssistantsPage } from './AssistantsPage.tsx'
 import { AssistantsPanelIcon } from './AssistantsPanelIcon.tsx'
@@ -35,8 +36,35 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'assistants'
 const PANEL_ID = 'assistants' as MainPanelId
 
-/** Services the page reads: the `assistants` Remote and the layout slots. */
-export const inject = ['slots', 'locale', 'remote', 'remote.assistants']
+/** Services the page reads: the `assistants` Remote, the model catalog and preset roster for the wizard, and the layout slots. */
+export const inject = ['slots', 'locale', 'remote', 'remote.assistants', 'remote.session', 'remote.agentPresets']
+
+/**
+ * Read the wizard's models and presets; a Remote that refuses or is absent contributes none.
+ * @param ctx - the browser plugin context.
+ * @returns the models of every routable provider and the presets that can compose a session.
+ */
+async function wizardOptions(ctx: ClientContext): Promise<WizardOptions> {
+  // A deployment without one of these Remotes, or one that refuses, offers nothing from it.
+  const settle = <T>(call: () => Promise<T>): Promise<T | undefined> => Promise.resolve().then(call).catch(() => undefined)
+  const [catalog, roster] = await Promise.all([
+    settle(() => ctx.remote.session.modelCatalog()),
+    settle(() => ctx.remote.agentPresets.list()),
+  ])
+  const models = catalog?.ok === true
+    ? catalog.value.groups.flatMap(group => group.models.map(model => ({
+      provider: group.id, providerName: group.name, id: model.id, name: model.name,
+      efforts: (model.reasoning?.efforts ?? []).map(effort => ({ id: effort.id, name: effort.name })),
+      ...(model.reasoning?.defaultEffort === undefined ? {} : { defaultEffort: model.reasoning.defaultEffort }),
+    })))
+    : []
+  const presets = roster?.ok === true
+    ? roster.value.presets.filter(preset => preset.broken === undefined).map(preset => ({
+      id: preset.id, name: preset.name ?? preset.id, ...(preset.description === undefined ? {} : { description: preset.description }),
+    }))
+    : []
+  return { models, presets }
+}
 
 /**
  * Contribute the Assistants sidebar entry, below Connectors, its page, and the new-session picker, in the Desktop renderer.
@@ -60,6 +88,9 @@ export function apply(ctx: ClientContext): void {
       select: (sessionId, assistantId) => remote.select(sessionId, assistantId),
       startSession: () => { scope.uiWorkspace.startSession() },
       blankSession,
+      create: input => remote.createAssistant(input),
+      loadOptions: () => wizardOptions(scope),
+      squareAvatar,
     })
     const assistants = scope.remote.$stream<AssistantsState>({
       name: 'assistants', open: signal => remote.watch(signal), ended: () => new Error('assistants stream ended'),

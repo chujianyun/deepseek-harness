@@ -11,13 +11,21 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-import AssistantsService, { ASSISTANT_SECTION, assistantProjectionDefinition, renderInstructions } from '../src/index.ts'
+import AssistantsService, { ASSISTANT_SECTION, assistantProjectionDefinition, ECOMMERCE_MANAGER, renderInstructions, renderUser, withName } from '../src/index.ts'
+import type { CreateAssistantInput } from '../src/types.ts'
 import { hubStub } from '../../../connector/connectors/tests/support.ts'
 
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-async function setup(options: { tenant?: string | null; home?: string; before?: (ctx: Context) => Promise<void> } = {}) {
+interface SetupOptions {
+  tenant?: string | null
+  home?: string
+  before?: (ctx: Context) => Promise<void>
+  config?: Record<string, number>
+}
+
+async function setup(options: SetupOptions = {}) {
   const home = options.home ?? await mkdtemp(join(tmpdir(), 'dsh-assistants-'))
   if (options.home === undefined) cleanups.push(() => rm(home, { recursive: true, force: true }))
   const ctx = new Context()
@@ -32,7 +40,7 @@ async function setup(options: { tenant?: string | null; home?: string; before?: 
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   await options.before?.(ctx)
-  await ctx.plugin(AssistantsService, { dshHome: home })
+  await ctx.plugin(AssistantsService, { dshHome: home, ...options.config })
   const service = ctx.get('assistants')!
   const settle = async (predicate: (state: Awaited<ReturnType<typeof service.getState>>) => boolean) => {
     for (let i = 0; i < 200; i++) {
@@ -301,6 +309,135 @@ describe('session binding edge cases', () => {
     await rm(file)
     await mkdir(file)
     await expect(env.turnPrompt(agent)).rejects.toMatchObject({ code: 'EISDIR' })
+  })
+})
+
+const USER = { name: '小明', language: '中文', notes: '杭州\n运营', background: '在名流做天猫店运营。' }
+const input = (over: Partial<CreateAssistantInput> = {}): CreateAssistantInput => ({
+  templateId: 'ecommerce', name: '我的管家', description: '店铺助手', avatar: { kind: 'preset', key: 'ocean' }, user: USER, ...over,
+})
+const PNG = 'data:image/png;base64,iVBORw0KGgo='
+
+describe('creating assistants', () => {
+  it('creates one from a template with its name, user information, model, and preset', async () => {
+    const env = await setup({ before: async (ctx) => { ctx.provide('agentPresets', { resolve: async (id: string) => ({ id }), select: vi.fn() } as never) } })
+    await env.settle(s => s.assistants.length === 1)
+    const model = { provider: 'acme', model: 'chat', reasoningEffort: 'high' }
+    const { assistantId, state } = await env.service.createAssistant(input({ name: ' 我的管家 ', model, preset: 'standard', avatar: { kind: 'image', dataUrl: PNG } }))
+    expect(state.assistants.at(-1)).toMatchObject({ id: assistantId, name: '我的管家', templateId: 'ecommerce', model, preset: 'standard', avatar: { kind: 'image', dataUrl: PNG } })
+    const dir = join(env.home, 'assistants', 't-a', assistantId)
+    expect(await readFile(join(dir, 'IDENTITY.md'), 'utf8')).toContain('- **名称**：我的管家')
+    expect(await readFile(join(dir, 'AGENTS.md'), 'utf8')).toBe(ECOMMERCE_MANAGER.files['AGENTS.md'])
+    expect(await readFile(join(dir, 'USER.md'), 'utf8')).toContain('- **称呼**：小明')
+    const again = await setup({ home: env.home })
+    expect((await again.settle(s => s.assistants.length === 2)).assistants[1]).toMatchObject({ model, preset: 'standard' })
+    expect(state.templates.map(t => t.id)).toEqual(['daily', 'ecommerce'])
+  })
+
+  it('creates a blank one whose user information reaches the prompt', async () => {
+    const env = await setup()
+    await env.settle(s => s.assistants.length === 1)
+    const { assistantId } = await env.service.createAssistant(input({ templateId: null, name: '空白' }))
+    const dir = join(env.home, 'assistants', 't-a', assistantId)
+    expect(await readFile(join(dir, 'SOUL.md'), 'utf8')).toBe('# 人格\n\n')
+    expect((await env.service.getState()).assistants.at(-1)).not.toHaveProperty('templateId')
+    const agent = await env.agent('s1')
+    await env.service.select(agent, assistantId)
+    const text = await env.turnPrompt(agent)
+    expect(text).toContain('- **称呼**：小明')
+    expect(text).toContain('在名流做天猫店运营。')
+  })
+
+  it('refuses bad input', async () => {
+    const env = await setup({ config: { maxNameLength: 4, maxDescriptionLength: 3, maxAvatarLength: 40 } })
+    await env.settle(s => s.assistants.length === 1)
+    const code = (promise: Promise<unknown>) => promise.then(() => 'ok', (e: unknown) => (e as { code: string }).code)
+    expect(await code(env.service.createAssistant(input({ templateId: 'nope' })))).toBe('assistants/template-not-found')
+    expect(await code(env.service.createAssistant(input({ name: '  ' })))).toBe('assistants/invalid-name')
+    expect(await code(env.service.createAssistant(input({ name: '一二三四五' })))).toBe('assistants/invalid-name')
+    expect(await code(env.service.createAssistant(input({ name: '名', description: '一二三四' })))).toBe('assistants/invalid-description')
+    expect(await code(env.service.createAssistant(input({ name: '名', description: '', avatar: { kind: 'image', dataUrl: 'data:image/gif;base64,R0lG' } })))).toBe('assistants/invalid-avatar')
+    expect(await code(env.service.createAssistant(input({ name: '名', description: '', avatar: { kind: 'image', dataUrl: `data:image/png;base64,${'A'.repeat(40)}` } })))).toBe('assistants/invalid-avatar')
+    expect(await code(env.service.createAssistant(input({ name: '名', description: '', preset: 'gone' })))).toBe('ok')
+    env.hub.set(null)
+    await env.settle(s => s.tenantId === null)
+    expect(await code(env.service.createAssistant(input({ name: '名', description: '' })))).toBe('hub-account/signed-out')
+  })
+
+  it('refuses a preset the deployment no longer composes', async () => {
+    const env = await setup({ before: async (ctx) => { ctx.provide('agentPresets', { resolve: async () => { throw new Error('Unknown agent preset') } } as never) } })
+    await env.settle(s => s.assistants.length === 1)
+    await expect(env.service.createAssistant(input({ preset: 'gone' }))).rejects.toMatchObject({ code: 'assistants/preset-unavailable' })
+  })
+})
+
+describe('binding an assistant\'s model and preset', () => {
+  it('installs the assistant\'s model and preset, and keeps the defaults when either is gone', async () => {
+    const useModel = vi.fn(async (_agent: Agent, selection: { model: string }) => selection.model !== 'removed')
+    const select = vi.fn(async (_agent: Agent, preset: string) => {
+      if (preset === 'gone') throw new Error('Unknown agent preset')
+      return preset
+    })
+    const env = await setup({ before: async (ctx) => {
+      ctx.provide('sessionController', { useModel } as never)
+      ctx.provide('agentPresets', { resolve: async (id: string) => ({ id }), select } as never)
+    } })
+    await env.settle(s => s.assistants.length === 1)
+    const model = { provider: 'acme', model: 'chat' }
+    const { assistantId } = await env.service.createAssistant(input({ model, preset: 'ptc' }))
+    const agent = await env.agent('s1')
+    await env.service.select(agent, assistantId)
+    expect(useModel).toHaveBeenCalledWith(agent, model)
+    expect(select).toHaveBeenCalledWith(agent, 'ptc')
+    // Settings removed the model and the deployment the preset: binding still succeeds on the defaults.
+    const dir = join(env.home, 'assistants', 't-a', assistantId)
+    const stored = JSON.parse(await readFile(join(dir, 'assistant.json'), 'utf8')) as Record<string, unknown>
+    await writeFile(join(dir, 'assistant.json'), JSON.stringify({ ...stored, model: { provider: 'acme', model: 'removed' }, preset: 'gone' }))
+    env.hub.set('t-b')
+    await env.settle(s => s.tenantId === 't-b')
+    env.hub.set('t-a')
+    await env.settle(s => s.tenantId === 't-a' && s.assistants.length === 2)
+    const second = await env.agent('s2')
+    await env.service.select(second, assistantId)
+    expect(useModel).toHaveLastReturnedWith(Promise.resolve(false))
+    expect(env.events(second, 'assistant/selected').at(-1)).toEqual({ assistantId })
+  })
+})
+
+describe('switching assistants in a blank session', () => {
+  it('returns to the default preset and the global model after an assistant that set them, and leaves them otherwise', async () => {
+    const useModel = vi.fn(async () => true)
+    const select = vi.fn(async (_agent: Agent, preset: string) => preset)
+    const env = await setup({ before: async (ctx) => {
+      ctx.provide('sessionController', { useModel } as never)
+      ctx.provide('agentPresets', { resolve: async (id: string) => ({ id }), select, defaultId: 'standard' } as never)
+      ctx.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'deepseek', model: 'chat' }) } as never)
+    } })
+    const state = await env.settle(s => s.assistants.length === 1)
+    const plain = state.defaultId!
+    const { assistantId: tuned } = await env.service.createAssistant(input({ model: { provider: 'acme', model: 'pro' }, preset: 'ptc' }))
+    const agent = await env.agent('s1')
+    expect(useModel).not.toHaveBeenCalled()
+    await env.service.select(agent, tuned)
+    expect(useModel).toHaveBeenLastCalledWith(agent, { provider: 'acme', model: 'pro' })
+    expect(select).toHaveBeenLastCalledWith(agent, 'ptc')
+    await env.service.select(agent, plain)
+    expect(useModel).toHaveBeenLastCalledWith(agent, { provider: 'deepseek', model: 'chat' })
+    expect(select).toHaveBeenLastCalledWith(agent, 'standard')
+    const { assistantId: other } = await env.service.createAssistant(input({ name: '另一个' }))
+    useModel.mockClear()
+    select.mockClear()
+    await env.service.select(agent, other)
+    expect(useModel).not.toHaveBeenCalled()
+    expect(select).not.toHaveBeenCalled()
+  })
+})
+
+describe('core file helpers', () => {
+  it('puts the name into the identity line, and renders user information on one line each', () => {
+    expect(withName('# 身份\n\n- **名称**：旧\n- **定位**：x\n', '新')).toBe('# 身份\n\n- **名称**：新\n- **定位**：x\n')
+    expect(withName('# 身份\n', '新')).toBe('# 身份\n')
+    expect(renderUser({ name: ' 小明 ', language: '', notes: 'a\n b', background: ' ' })).toBe('# 用户信息\n\n- **称呼**：小明\n- **偏好语言**：\n- **备注**：a b\n\n## 背景\n')
   })
 })
 

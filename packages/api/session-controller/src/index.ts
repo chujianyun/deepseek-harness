@@ -54,6 +54,7 @@ import type {
   SessionRenameValue,
   SessionSearchRequest,
   SessionSearchValue,
+  ModelSelection,
   SessionSelectModelRequest,
   SessionSelectModelValue,
   SessionProjectionsRequest,
@@ -289,6 +290,17 @@ export class SessionController extends TypertRemoteService {
   @Remote('selectModel')
   selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue> {
     return this.commands.selectModel(request)
+  }
+
+  /**
+   * Install one model for a Session without saving it as the default, for a Host plugin that
+   * binds a model to a Session it composes, such as an assistant's.
+   * @param agent - live Agent of the Session, which may still be unpublished.
+   * @param selection - requested provider, model, and optional reasoning effort.
+   * @returns whether the model was available and installed; an unavailable model changes nothing.
+   */
+  useModel(agent: Agent, selection: ModelSelection): Promise<boolean> {
+    return this.commands.useModel(agent, selection)
   }
 
   /**
