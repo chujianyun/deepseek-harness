@@ -353,7 +353,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-assistants`
 
 - `inject`: `hubAccount` · `sessionProjections` · `agents`
-- `source`: [`packages/assistant/assistants/src/index.ts:51`](../packages/assistant/assistants/src/index.ts)
+- `source`: [`packages/assistant/assistants/src/index.ts:52`](../packages/assistant/assistants/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -366,6 +366,8 @@ export interface Config {
   maxDescriptionLength?: number
   /** Largest uploaded avatar, as the length of its data URL. */
   maxAvatarLength?: number
+  /** Longest core file the detail page may save, in characters; every turn carries the core files. */
+  maxCoreFileLength?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-assistants -->

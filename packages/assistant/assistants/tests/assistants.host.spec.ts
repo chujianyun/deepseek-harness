@@ -447,3 +447,188 @@ describe('renderInstructions', () => {
     expect(renderInstructions('A', [['IDENTITY.md', 'x'], ['SOUL.md', '']])).toBe('You are the assistant "A". The user wrote the core files below to define your identity, personality, what you know about them, and how you work. Follow them in this session.\n\n<core_file name="IDENTITY.md">\nx\n</core_file>')
   })
 })
+
+describe('managing assistants', () => {
+  const code = (promise: Promise<unknown>) => promise.then(() => 'ok', (e: unknown) => (e as { code: string }).code)
+
+  it('reads an assistant with its core files, and refuses an unknown one', async () => {
+    const env = await setup()
+    const state = await env.settle(s => s.assistants.length === 1)
+    const detail = await env.service.getAssistant(state.defaultId!)
+    expect(detail.assistant).toEqual(state.assistants[0])
+    expect(detail.files['SOUL.md']).toContain('# 人格')
+    await rm(join(env.home, 'assistants', 't-a', state.defaultId!, 'USER.md'))
+    expect((await env.service.getAssistant(state.defaultId!)).files['USER.md']).toBe('')
+    expect(await code(env.service.getAssistant('missing'))).toBe('assistants/not-found')
+  })
+
+  it('saves edits that the next turn of a running session carries, and renames the identity line', async () => {
+    const env = await setup()
+    const id = (await env.settle(s => s.assistants.length === 1)).defaultId!
+    const agent = await env.agent('s1')
+    expect(await env.turnPrompt(agent)).toContain('"日常助手"')
+    const files = { 'SOUL.md': '# 人格\n\n说话像海盗。\n', 'evil.md': 'x' } as never
+    const state = await env.service.updateAssistant(id, {
+      name: ' 海盗 ', description: '新描述', avatar: { kind: 'image', dataUrl: PNG }, model: { provider: 'acme', model: 'chat' }, preset: 'ptc', files,
+    })
+    expect(state.assistants[0]).toMatchObject({ name: '海盗', description: '新描述', avatar: { kind: 'image', dataUrl: PNG }, model: { provider: 'acme', model: 'chat' }, preset: 'ptc' })
+    const text = await env.turnPrompt(agent)
+    expect(text).toContain('You are the assistant "海盗"')
+    expect(text).toContain('说话像海盗')
+    expect(text).toContain('- **名称**：海盗')
+    const dir = join(env.home, 'assistants', 't-a', id)
+    expect(await readdir(dir)).not.toContain('evil.md')
+    const again = await setup({ home: env.home })
+    expect((await again.settle(s => s.assistants.length === 1)).assistants[0]).toMatchObject({ name: '海盗', preset: 'ptc' })
+    const cleared = await again.service.updateAssistant(id, { model: null, preset: null })
+    expect(cleared.assistants[0]).not.toHaveProperty('model')
+    expect(cleared.assistants[0]).not.toHaveProperty('preset')
+    expect(cleared.assistants[0]).toMatchObject({ name: '海盗', description: '新描述' })
+  })
+
+  it('keeps the identity file when only other fields change, and writes the name into an edited one', async () => {
+    const env = await setup()
+    const id = (await env.settle(s => s.assistants.length === 1)).defaultId!
+    const dir = join(env.home, 'assistants', 't-a', id)
+    await env.service.updateAssistant(id, { files: { 'IDENTITY.md': '# 身份\n\n- **名称**：随便\n' } })
+    expect(await readFile(join(dir, 'IDENTITY.md'), 'utf8')).toBe('# 身份\n\n- **名称**：随便\n')
+    await env.service.updateAssistant(id, { name: '新名', files: { 'IDENTITY.md': '# 身份\n\n- **名称**：旧名\n' } })
+    expect(await readFile(join(dir, 'IDENTITY.md'), 'utf8')).toBe('# 身份\n\n- **名称**：新名\n')
+    await rm(join(dir, 'IDENTITY.md'))
+    await env.service.updateAssistant(id, { name: '再改' })
+    expect(await readFile(join(dir, 'IDENTITY.md'), 'utf8')).toBe('')
+  })
+
+  it('refuses bad edits and leaves the assistant as it was', async () => {
+    const env = await setup({ config: { maxNameLength: 4, maxDescriptionLength: 3, maxCoreFileLength: 5 } })
+    const id = (await env.settle(s => s.assistants.length === 1)).defaultId!
+    expect(await code(env.service.updateAssistant('missing', {}))).toBe('assistants/not-found')
+    expect(await code(env.service.updateAssistant(id, { name: '' }))).toBe('assistants/invalid-name')
+    expect(await code(env.service.updateAssistant(id, { description: '一二三四' }))).toBe('assistants/invalid-description')
+    expect(await code(env.service.updateAssistant(id, { avatar: { kind: 'image', dataUrl: 'data:image/gif;base64,R0lG' } }))).toBe('assistants/invalid-avatar')
+    expect(await code(env.service.updateAssistant(id, { files: { 'AGENTS.md': '一二三四五六' } }))).toBe('assistants/invalid-file')
+    expect(await code(env.service.updateAssistant(id, { files: { 'AGENTS.md': '一二三四五' } }))).toBe('ok')
+    expect((await env.service.getState()).assistants[0]!.name).toBe('日常助手')
+  })
+
+  it('refuses a preset the deployment no longer composes', async () => {
+    const env = await setup({ before: async (ctx) => { ctx.provide('agentPresets', { resolve: async () => { throw new Error('Unknown agent preset') } } as never) } })
+    const id = (await env.settle(s => s.assistants.length === 1)).defaultId!
+    expect(await code(env.service.updateAssistant(id, { preset: 'gone' }))).toBe('assistants/preset-unavailable')
+  })
+
+  it('applies a changed model and preset to a blank session bound to the assistant, and leaves started ones', async () => {
+    const useModel = vi.fn(async () => true)
+    const select = vi.fn(async (_agent: Agent, preset: string) => preset)
+    const env = await setup({ before: async (ctx) => {
+      ctx.provide('sessionController', { useModel } as never)
+      ctx.provide('agentPresets', { resolve: async (id: string) => ({ id }), select, defaultId: 'standard' } as never)
+      ctx.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'deepseek', model: 'chat' }) } as never)
+    } })
+    const id = (await env.settle(s => s.assistants.length === 1)).defaultId!
+    const blank = await env.agent('blank')
+    await env.service.updateAssistant(id, { model: { provider: 'acme', model: 'pro' }, preset: 'ptc' })
+    expect(useModel).toHaveBeenLastCalledWith(blank, { provider: 'acme', model: 'pro' })
+    expect(select).toHaveBeenLastCalledWith(blank, 'ptc')
+    expect(env.events(blank, 'assistant/selected')).toHaveLength(1)
+    useModel.mockClear()
+    await env.service.updateAssistant(id, { description: '只改描述' })
+    expect(useModel).not.toHaveBeenCalled()
+    await env.service.updateAssistant(id, { model: null, preset: null })
+    expect(useModel).toHaveBeenLastCalledWith(blank, { provider: 'deepseek', model: 'chat' })
+    expect(select).toHaveBeenLastCalledWith(blank, 'standard')
+  })
+
+  it('makes another assistant the default, which new and blank sessions then bind', async () => {
+    const env = await setup()
+    const first = (await env.settle(s => s.assistants.length === 1)).defaultId!
+    const { assistantId: second } = await env.service.createAssistant(input())
+    const blank = await env.agent('blank')
+    const picked = await env.agent('picked')
+    await env.service.select(picked, second)
+    expect((await env.service.setDefault(second)).defaultId).toBe(second)
+    expect(env.events(blank, 'assistant/selected').at(-1)).toEqual({ assistantId: second })
+    expect(env.events(picked, 'assistant/selected')).toHaveLength(2)
+    expect(env.events(await env.agent('fresh'), 'assistant/selected')).toEqual([{ assistantId: second }])
+    await env.service.setDefault(second)
+    expect(env.events(blank, 'assistant/selected')).toHaveLength(2)
+    const again = await setup({ home: env.home })
+    expect((await again.settle(s => s.assistants.length === 2)).defaultId).toBe(second)
+    expect(await code(env.service.setDefault('missing'))).toBe('assistants/not-found')
+    expect(first).not.toBe(second)
+  })
+
+  it('duplicates the configuration and core files under a copy name, without the sessions', async () => {
+    const env = await setup({ config: { maxNameLength: 6 } })
+    await env.settle(s => s.assistants.length === 1)
+    const model = { provider: 'acme', model: 'chat' }
+    const { assistantId: source } = await env.service.createAssistant(input({ name: '店铺管家甲', model, preset: 'ptc' }))
+    await env.service.updateAssistant(source, { files: { 'SOUL.md': '# 人格\n\n严谨。\n' } })
+    const bound = await env.agent('s1')
+    await env.service.select(bound, source)
+    const { assistantId, state } = await env.service.duplicateAssistant(source)
+    expect(state.assistants.at(-1)).toMatchObject({ id: assistantId, name: '店铺管 副本', description: '店铺助手', model, preset: 'ptc', templateId: 'ecommerce' })
+    const copy = await env.service.getAssistant(assistantId)
+    const original = await env.service.getAssistant(source)
+    expect(copy.files['SOUL.md']).toBe(original.files['SOUL.md'])
+    expect(copy.files['AGENTS.md']).toBe(original.files['AGENTS.md'])
+    expect(copy.files['IDENTITY.md']).toContain('- **名称**：店铺管 副本')
+    expect(env.events(bound, 'assistant/selected')).toEqual([{ assistantId: state.defaultId }, { assistantId: source }])
+    expect(await code(env.service.duplicateAssistant('missing'))).toBe('assistants/not-found')
+  })
+
+  it('deletes an assistant: its sessions continue without its core files and the default moves on', async () => {
+    const env = await setup()
+    const first = (await env.settle(s => s.assistants.length === 1)).defaultId!
+    const { assistantId: second } = await env.service.createAssistant(input())
+    const original = env.ctx.sessionProjections.stateOf.bind(env.ctx.sessionProjections) as (session: Agent['session'], key: string) => object | undefined
+    const started = await env.agent('started')
+    vi.spyOn(env.ctx.sessionProjections, 'stateOf').mockImplementation((session: Agent['session'], key: string): object | undefined => (
+      key === 'turnBoundary' && session === started.session ? { openTurnStartSeq: null, lastTurn: 1 } : original(session, key)))
+    expect(await env.turnPrompt(started)).not.toBe('')
+    const state = await env.service.deleteAssistant(first)
+    expect(state).toMatchObject({ defaultId: second, assistants: [{ id: second }] })
+    expect(await readdir(join(env.home, 'assistants', 't-a'))).not.toContain(first)
+    expect(await env.turnPrompt(started)).toBe('')
+    expect(env.events(started, 'assistant/selected')).toEqual([{ assistantId: first }])
+    const again = await setup({ home: env.home })
+    expect((await again.settle(s => s.assistants.length === 1)).defaultId).toBe(second)
+    expect(await code(env.service.deleteAssistant(first))).toBe('assistants/not-found')
+  })
+
+  it('moves blank sessions of a deleted assistant to the default, and after the last one new sessions bind none', async () => {
+    const useModel = vi.fn(async () => true)
+    const env = await setup({ before: async (ctx) => {
+      ctx.provide('sessionController', { useModel } as never)
+      ctx.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'deepseek', model: 'chat' }) } as never)
+    } })
+    const first = (await env.settle(s => s.assistants.length === 1)).defaultId!
+    const { assistantId: tuned } = await env.service.createAssistant(input({ model: { provider: 'acme', model: 'pro' } }))
+    const blank = await env.agent('blank')
+    await env.service.select(blank, tuned)
+    expect((await env.service.deleteAssistant(tuned)).defaultId).toBe(first)
+    expect(env.events(blank, 'assistant/selected').at(-1)).toEqual({ assistantId: first })
+    expect(useModel).toHaveBeenLastCalledWith(blank, { provider: 'deepseek', model: 'chat' })
+    expect((await env.service.deleteAssistant(first)).defaultId).toBeNull()
+    expect(await env.turnPrompt(blank)).toBe('')
+    const fresh = await env.agent('fresh')
+    expect(env.events(fresh, 'assistant/selected')).toEqual([])
+    expect(await env.turnPrompt(fresh)).toBe('')
+    const again = await setup({ home: env.home })
+    expect(await again.settle(s => s.tenantId === 't-a')).toMatchObject({ defaultId: null, assistants: [] })
+  })
+
+  it('deletes an assistant whose files were already removed on disk', async () => {
+    const env = await setup()
+    const id = (await env.settle(s => s.assistants.length === 1)).defaultId!
+    await rm(join(env.home, 'assistants', 't-a', id), { recursive: true })
+    expect((await env.service.deleteAssistant(id)).assistants).toEqual([])
+  })
+
+  it('refuses every change while signed out', async () => {
+    const env = await setup({ tenant: null })
+    await env.settle(s => s.tenantId === null)
+    expect(await code(env.service.getAssistant('x'))).toBe('hub-account/signed-out')
+    expect(await code(env.service.deleteAssistant('x'))).toBe('hub-account/signed-out')
+  })
+})

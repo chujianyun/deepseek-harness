@@ -85,6 +85,26 @@
   background: var(--dsw-alias-bg-layer-1);
 }
 
+.open {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: -6px -8px 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: none;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.open:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
 .cardHead {
   display: flex;
   align-items: center;
@@ -116,5 +136,7 @@
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 4px;
 }

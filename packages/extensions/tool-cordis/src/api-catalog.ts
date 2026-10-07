@@ -440,6 +440,41 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RemoteError `hub-account/signed-out`, `assistants/template-not-found`, `assistants/invalid-name`, `assistants/invalid-description`, `assistants/invalid-avatar`, or `assistants/preset-unavailable`.'],
       },
       {
+        signature: '@Remote getAssistant(assistantId: string): Promise<AssistantDetail>',
+        description: 'Read one assistant with the text of its core files.',
+        parameters: [{ name: 'assistantId', description: 'the assistant to read.' }],
+        returns: 'the assistant and its core files.',
+        throws: ['RemoteError `hub-account/signed-out` or `assistants/not-found`.'],
+      },
+      {
+        signature: '@Remote updateAssistant(assistantId: string, input: UpdateAssistantInput): Promise<AssistantsState>',
+        description: 'Change an assistant. Core files and the name reach every session bound to it on its next turn; a changed model or preset applies to sessions bound afterward and to blank sessions bound now. Renaming also rewrites the `**名称**` line of the identity file.',
+        parameters: [{ name: 'assistantId', description: 'the assistant to change.' }, { name: 'input', description: 'the fields to change.' }],
+        returns: 'the state with the change.',
+        throws: ['RemoteError `hub-account/signed-out`, `assistants/not-found`, `assistants/invalid-name`, `assistants/invalid-description`, `assistants/invalid-avatar`, `assistants/preset-unavailable`, or `assistants/invalid-file`.'],
+      },
+      {
+        signature: '@Remote setDefault(assistantId: string): Promise<AssistantsState>',
+        description: 'Make an assistant the one new sessions bind; blank sessions bound to the previous default move to it.',
+        parameters: [{ name: 'assistantId', description: 'the new default.' }],
+        returns: 'the state with the new default.',
+        throws: ['RemoteError `hub-account/signed-out` or `assistants/not-found`.'],
+      },
+      {
+        signature: '@Remote duplicateAssistant(assistantId: string): Promise<CreateAssistantResult>',
+        description: 'Copy an assistant\'s configuration and core files into a new assistant named «name 副本»; sessions are not copied.',
+        parameters: [{ name: 'assistantId', description: 'the assistant to copy.' }],
+        returns: 'the copy\'s id and the state with it last.',
+        throws: ['RemoteError `hub-account/signed-out` or `assistants/not-found`.'],
+      },
+      {
+        signature: '@Remote deleteAssistant(assistantId: string): Promise<AssistantsState>',
+        description: 'Delete an assistant. Its sessions remain and carry no core files from their next turn. Deleting the default makes the first remaining assistant the default; blank sessions bound to the deleted one move to the default, or bind none when no assistant remains.',
+        parameters: [{ name: 'assistantId', description: 'the assistant to delete.' }],
+        returns: 'the state without it.',
+        throws: ['RemoteError `hub-account/signed-out` or `assistants/not-found`.'],
+      },
+      {
         signature: '@Remote(\'select\') select(agent: Agent, assistantId: string): Promise<string>',
         description: 'Bind a blank session to one of the signed-in tenant\'s assistants.',
         parameters: [{ name: 'agent', description: 'the session\'s Agent.' }, { name: 'assistantId', description: 'the assistant to bind.' }],
@@ -5226,6 +5261,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AssistantAvatar = AssistantPresetAvatar | AssistantImageAvatar;',
   },
   {
+    name: 'AssistantDetail',
+    declaration: 'export interface AssistantDetail {\n    readonly assistant: AssistantView;\n    readonly files: Readonly<Record<CoreFileName, string>>;\n}',
+  },
+  {
     name: 'AssistantImageAvatar',
     declaration: 'export interface AssistantImageAvatar {\n    readonly kind: \'image\';\n    readonly dataUrl: string;\n}',
   },
@@ -5672,6 +5711,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CordisRuntimeTreeReader',
     declaration: 'export interface CordisRuntimeTreeReader {\n    getTree(): Promise<CordisRuntimeTree>;\n}',
+  },
+  {
+    name: 'CoreFileName',
+    declaration: 'export type CoreFileName = \'IDENTITY.md\' | \'SOUL.md\' | \'USER.md\' | \'AGENTS.md\';',
   },
   {
     name: 'CreateAgentOptions',
@@ -8960,6 +9003,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UiRenderResult',
     declaration: 'export type UiRenderResult = UiNode;',
+  },
+  {
+    name: 'UpdateAssistantInput',
+    declaration: 'export interface UpdateAssistantInput {\n    readonly name?: string;\n    readonly description?: string;\n    readonly avatar?: AssistantAvatar;\n    readonly model?: AssistantModel | null;\n    readonly preset?: string | null;\n    readonly files?: Readonly<Partial<Record<CoreFileName, string>>>;\n}',
   },
   {
     name: 'UpdateTeamTaskRequest',

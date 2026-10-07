@@ -16,6 +16,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'assistants/template-not-found': { readonly templateId: string }
     /** The deployment composes no Agent preset with this id. */
     'assistants/preset-unavailable': { readonly preset: string }
+    /** A core file is longer than allowed. */
+    'assistants/invalid-file': { readonly file: string; readonly length: number }
   }
 }
 
@@ -82,6 +84,22 @@ export interface CreateAssistantResult {
   readonly state: AssistantsState
 }
 
+/** Name of one core file. */
+export type CoreFileName = 'IDENTITY.md' | 'SOUL.md' | 'USER.md' | 'AGENTS.md'
+
+/** Changes the detail page saves; an absent field keeps its value. */
+export interface UpdateAssistantInput {
+  readonly name?: string
+  readonly description?: string
+  readonly avatar?: AssistantAvatar
+  /** Model the assistant's sessions use; null follows the global default again. */
+  readonly model?: AssistantModel | null
+  /** Agent preset the assistant's sessions run; null follows the deployment default again. */
+  readonly preset?: string | null
+  /** Core file texts to replace. */
+  readonly files?: Readonly<Partial<Record<CoreFileName, string>>>
+}
+
 /** One assistant as the Assistants page and the new-session picker show it. */
 export interface AssistantView {
   /** Assistant id, unique within the tenant. */
@@ -97,6 +115,13 @@ export interface AssistantView {
   readonly templateId?: string
   /** ISO time of creation. */
   readonly createdAt: string
+}
+
+/** One assistant with the text of its core files, as the detail page edits them. */
+export interface AssistantDetail {
+  readonly assistant: AssistantView
+  /** Text of each core file; empty when the file is missing on disk. */
+  readonly files: Readonly<Record<CoreFileName, string>>
 }
 
 /** The signed-in tenant's assistants. */

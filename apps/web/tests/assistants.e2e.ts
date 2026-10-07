@@ -3,14 +3,16 @@
 // the sidebar, finds the cards, and starts a chat with the default; the scripted model's request carries
 // the assistant's core files after the deployment persona, and an edit to a core file on disk reaches
 // the next request. A new session picks another assistant in the hero picker, and its first request
-// carries that assistant's identity instead.
+// carries that assistant's identity instead. A second run manages assistants from their detail page:
+// a core file saved there reaches the next request of a session in progress, the default moves, a copy
+// keeps the core files, and a deleted assistant's session continues without them.
 import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium, type Page } from 'playwright'
+import { chromium } from 'playwright'
 import { expect, it } from 'vitest'
 import type {} from '@deepseek-ai/dsh-assistants'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
@@ -78,7 +80,8 @@ async function writeShopKeeper(tenantDir: string): Promise<void> {
   await writeFile(join(dir, 'IDENTITY.md'), '# 身份\n\n- **名称**：店铺测试助手 SHOP_IDENTITY\n')
 }
 
-it('creates the default assistant, carries its core files into the chat, and lets a new session pick another', async () => {
+/** Sign the employee in to a mock user center and open the Desktop web page in Chinese. */
+async function launch() {
   const chat = await startChat()
   const center = await startMockUserCenter()
   Object.assign(process.env, { DSH_E2E_HUB_ORIGIN: center.origin, DSH_E2E_CHAT_API: chat.baseURL })
@@ -89,24 +92,42 @@ it('creates the default assistant, carries its core files into the chat, and let
   await writeShopKeeper(tenantDir)
   const scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAYS, harnessHome })
   const browser = await chromium.launch()
-  let failurePage: Page | undefined
+  const close = async () => {
+    await browser.close()
+    await scaffold.close()
+    await center.close()
+    await chat.close()
+  }
+  await scaffold.ctx.hubAccount.signIn()
+  await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).attempt?.authorizeUrl).toBeDefined()
+  await browse((await scaffold.ctx.hubAccount.getState()).attempt!.authorizeUrl!)
+  await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).status).toBe('signed-in')
+  await scaffold.ctx.credentials.set(credentialRef('DSH_E2E_ACME_KEY'), 'sk-acme-e2e')
+  await expect.poll(async () => (await scaffold.ctx.assistants.getState()).assistants.length).toBe(2)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
+  await page.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+  const tripwire = watchConsole(page)
+  await page.goto(scaffold.authenticatedUrl)
+  await connectFreshWorkspaceZh(page, scaffold.workspaceCwd, 'assistants')
+  const input = page.locator('[data-composer-input][contenteditable="true"]').first()
+  const send = async (text: string) => {
+    await writeComposerDraft(page, input, text)
+    await page.keyboard.press('Enter')
+  }
+  const useChatModel = async () => {
+    await page.getByRole('button', { name: /^选择模型/ }).click()
+    await page.getByRole('menuitem', { name: /^模型/ }).click()
+    await page.getByRole('menuitemradio', { name: 'acme-chat' }).click()
+  }
+  return { chat, scaffold, tenantDir, page, tripwire, send, useChatModel, close }
+}
+
+it('creates the default assistant, carries its core files into the chat, and lets a new session pick another', async () => {
+  const { chat, scaffold, tenantDir, page, tripwire, send, useChatModel, close } = await launch()
   try {
-    await scaffold.ctx.hubAccount.signIn()
-    await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).attempt?.authorizeUrl).toBeDefined()
-    await browse((await scaffold.ctx.hubAccount.getState()).attempt!.authorizeUrl!)
-    await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).status).toBe('signed-in')
-    await scaffold.ctx.credentials.set(credentialRef('DSH_E2E_ACME_KEY'), 'sk-acme-e2e')
-    await expect.poll(async () => (await scaffold.ctx.assistants.getState()).assistants.length).toBe(2)
     const { defaultId } = await scaffold.ctx.assistants.getState()
     expect(defaultId).not.toBe(SHOP_ID)
     expect(JSON.parse(await readFile(join(tenantDir, 'tenant.json'), 'utf8'))).toEqual({ version: 1, defaultId, seeded: true })
-
-    const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
-    failurePage = page
-    await page.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
-    const tripwire = watchConsole(page)
-    await page.goto(scaffold.authenticatedUrl)
-    await connectFreshWorkspaceZh(page, scaffold.workspaceCwd, 'assistants')
 
     // The sidebar entry opens the cards: the Daily Assistant is the default, and search narrows the list.
     await page.getByRole('button', { name: '智能体', exact: true }).click()
@@ -122,14 +143,7 @@ it('creates the default assistant, carries its core files into the chat, and let
     await daily.getByRole('button', { name: '对话' }).click()
     const picker = page.getByRole('button', { name: '选择这个会话的智能体' })
     await expect.poll(() => picker.textContent()).toContain('日常助手')
-    await page.getByRole('button', { name: /^选择模型/ }).click()
-    await page.getByRole('menuitem', { name: /^模型/ }).click()
-    await page.getByRole('menuitemradio', { name: 'acme-chat' }).click()
-    const input = page.locator('[data-composer-input][contenteditable="true"]').first()
-    const send = async (text: string) => {
-      await writeComposerDraft(page, input, text)
-      await page.keyboard.press('Enter')
-    }
+    await useChatModel()
     await send('你好，你是谁？')
     await page.getByText(ANSWER).first().waitFor({ timeout: 30_000 })
     const first = systemPrompt(chat.chats.at(-1)!)
@@ -194,12 +208,109 @@ it('creates the default assistant, carries its core files into the chat, and let
     expect(systemPrompt(shop)).toContain('小明 USER_NAME')
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
-    if (failurePage !== undefined) await saveFailureShot(failurePage, 'assistants')
+    await saveFailureShot(page, 'assistants')
     throw error
   } finally {
-    await browser.close()
-    await scaffold.close()
-    await center.close()
-    await chat.close()
+    await close()
   }
 }, 180_000)
+
+it('edits core files on the detail page, moves the default, copies, and deletes assistants', async () => {
+  const { chat, scaffold, tenantDir, page, tripwire, send, useChatModel, close } = await launch()
+  const lastPrompt = () => systemPrompt(chat.chats.at(-1)!)
+  const answers = () => page.getByText(ANSWER).count()
+  const openAssistants = async () => {
+    await page.getByRole('button', { name: '智能体', exact: true }).click()
+    await page.getByRole('heading', { level: 1, name: '智能体' }).waitFor()
+  }
+  const card = (id: string) => page.locator(`li[data-assistant-id="${id}"]`)
+  const deleteCard = async (id: string, sessions: number) => {
+    await card(id).getByRole('button', { name: '删除' }).click()
+    const dialog = page.getByRole('dialog', { name: '删除智能体' })
+    await expect.poll(() => dialog.textContent()).toContain(`它有 ${String(sessions)} 个会话`)
+    await dialog.getByRole('button', { name: '删除' }).click()
+    await card(id).waitFor({ state: 'detached' })
+  }
+  try {
+    const dailyId = (await scaffold.ctx.assistants.getState()).defaultId!
+
+    // A card opens the detail page with the core files; Chat there starts a session bound to it.
+    await openAssistants()
+    await page.getByRole('button', { name: '查看 店铺测试助手 的详情' }).click()
+    await page.getByRole('heading', { level: 1, name: '店铺测试助手' }).waitFor()
+    await expect.poll(() => page.getByRole('textbox', { name: '身份 IDENTITY.md' }).inputValue()).toContain('SHOP_IDENTITY')
+    await page.getByRole('button', { name: '对话' }).click()
+    const picker = page.getByRole('button', { name: '选择这个会话的智能体' })
+    await expect.poll(() => picker.textContent()).toContain('店铺测试助手')
+    await useChatModel()
+    await send('第一轮')
+    await expect.poll(answers, { timeout: 30_000 }).toBe(1)
+    expect(lastPrompt()).toContain('SHOP_IDENTITY')
+    const rowKey = await page.locator('[role="treeitem"][aria-selected="true"]').getAttribute('data-row-key')
+    const shopSession = page.locator(`[role="treeitem"][data-row-key="${rowKey!}"]`)
+
+    // Renaming and a personality edit saved on the detail page reach the next request of that session.
+    await openAssistants()
+    await page.getByRole('button', { name: '查看 店铺测试助手 的详情' }).click()
+    await page.getByRole('textbox', { name: '名称', exact: true }).fill('店铺复盘助手')
+    await page.getByRole('tab', { name: '人格' }).click()
+    await page.getByRole('textbox', { name: '人格 SOUL.md' }).fill('# 人格\n\n回答前先说 SOUL_FROM_PAGE。\n')
+    await page.getByRole('button', { name: '保存' }).click()
+    await page.getByRole('status').filter({ hasText: '已保存' }).waitFor()
+    await page.getByRole('heading', { level: 1, name: '店铺复盘助手' }).waitFor()
+    await page.getByRole('tab', { name: '身份' }).click()
+    await expect.poll(() => page.getByRole('textbox', { name: '身份 IDENTITY.md' }).inputValue()).toContain('- **名称**：店铺复盘助手')
+    expect(await readFile(join(tenantDir, SHOP_ID, 'SOUL.md'), 'utf8')).toContain('SOUL_FROM_PAGE')
+    await shopSession.click()
+    await send('第二轮')
+    await expect.poll(answers, { timeout: 30_000 }).toBe(2)
+    expect(lastPrompt()).toContain('SOUL_FROM_PAGE')
+    expect(lastPrompt()).toContain('You are the assistant \\"店铺复盘助手\\"')
+
+    // Make default: the new-session screen then starts with it.
+    await openAssistants()
+    await card(SHOP_ID).getByRole('button', { name: '设为默认' }).click()
+    await expect.poll(() => card(SHOP_ID).textContent()).toContain('默认')
+    await expect.poll(async () => (await scaffold.ctx.assistants.getState()).defaultId).toBe(SHOP_ID)
+    await page.getByRole('button', { name: '新建会话' }).first().click()
+    await expect.poll(() => picker.textContent()).toContain('店铺复盘助手')
+
+    // Duplicate: a copy with the same core files and no sessions.
+    await openAssistants()
+    await card(SHOP_ID).getByRole('button', { name: '复制' }).click()
+    await expect.poll(async () => (await scaffold.ctx.assistants.getState()).assistants.length).toBe(3)
+    const copy = (await scaffold.ctx.assistants.getState()).assistants.at(-1)!
+    expect(copy.name).toBe('店铺复盘助手 副本')
+    await card(copy.id).waitFor()
+    expect(await readFile(join(tenantDir, copy.id, 'SOUL.md'), 'utf8')).toBe(await readFile(join(tenantDir, SHOP_ID, 'SOUL.md'), 'utf8'))
+
+    // Delete the default with its one session: the default moves to the first remaining assistant,
+    // and the session continues without the deleted assistant's core files.
+    await deleteCard(SHOP_ID, 1)
+    await expect.poll(() => card(dailyId).textContent()).toContain('默认')
+    await shopSession.click()
+    await send('第三轮')
+    await expect.poll(answers, { timeout: 30_000 }).toBe(3)
+    expect(lastPrompt()).not.toContain('SOUL_FROM_PAGE')
+    expect(lastPrompt()).not.toContain('<core_file')
+
+    // With every assistant deleted, a new session has no picker and no core files, as before assistants.
+    await openAssistants()
+    await deleteCard(copy.id, 0)
+    await deleteCard(dailyId, 0)
+    await page.getByText('还没有智能体。').waitFor()
+    await page.getByRole('button', { name: '新建会话' }).first().click()
+    await page.locator('[data-composer-card]').waitFor()
+    expect(await picker.count()).toBe(0)
+    await useChatModel()
+    await send('没有智能体了')
+    await expect.poll(answers, { timeout: 30_000 }).toBe(1)
+    expect(lastPrompt()).not.toContain('You are the assistant')
+    expect(tripwire.pageErrors).toEqual([])
+  } catch (error) {
+    await saveFailureShot(page, 'assistants-manage')
+    throw error
+  } finally {
+    await close()
+  }
+}, 240_000)

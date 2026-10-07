@@ -43,6 +43,11 @@ async function bench() {
   const assistants = {
     select: vi.fn((_sessionId: string, assistantId: string) => Promise.resolve({ ok: true as const, value: assistantId })),
     createAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: { assistantId: 'a9', state } })),
+    getAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: { assistant: state.assistants[0]!, files: { 'IDENTITY.md': '', 'SOUL.md': '', 'USER.md': '', 'AGENTS.md': '' } } })),
+    updateAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
+    setDefault: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
+    duplicateAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: { assistantId: 'a8', state } })),
+    deleteAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
     watch: vi.fn(),
   }
   const session = {
@@ -167,6 +172,31 @@ describe('ui-assistants browser plugin', () => {
     b.agentPresets.list.mockRejectedValueOnce(new Error('absent'))
     expect(await injected.onLoadOptions()).toEqual({ models: [], presets: [] })
     expect(typeof injected.squareAvatar).toBe('function')
+  })
+
+  it('manages assistants through the Remote and counts their started sessions', async () => {
+    const b = await bench()
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const face: object = b.slots.entries('main')[0]!.inject!()
+    const injected = face as AssistantsInjected
+    await injected.onRead('a1')
+    expect(b.assistants.getAssistant).toHaveBeenCalledWith('a1')
+    await injected.onUpdate('a1', { name: 'x' })
+    expect(b.assistants.updateAssistant).toHaveBeenCalledWith('a1', { name: 'x' })
+    await injected.onSetDefault('a1')
+    expect(b.assistants.setDefault).toHaveBeenCalledWith('a1')
+    expect(await injected.onDuplicate('a1')).toEqual({ assistantId: 'a8' })
+    expect(b.assistants.duplicateAssistant).toHaveBeenCalledWith('a1')
+    await injected.onDelete('a1')
+    expect(b.assistants.deleteAssistant).toHaveBeenCalledWith('a1')
+    b.list.set({ byId: {
+      s1: { id: 's1', blank: false, retainedBy: {}, projectionValues: { assistant: 'a1' } },
+      s2: { id: 's2', blank: false, retainedBy: {}, projectionValues: { assistant: 'a1' } },
+      s3: { id: 's3', blank: true, retainedBy: { mainView: 1 }, projectionValues: { assistant: 'a1' } },
+      s4: { id: 's4', blank: false, retainedBy: {}, projectionValues: { assistant: 'a2' } },
+      s5: { id: 's5', blank: false, retainedBy: {} },
+    } })
+    expect(injected.sessionCount('a1')).toBe(2)
   })
 
   it('stays out of a non-Desktop renderer, and the node half does nothing', async () => {

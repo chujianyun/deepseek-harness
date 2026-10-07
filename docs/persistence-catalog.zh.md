@@ -302,7 +302,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'assistant/instructions': { text: string }
 ```
 
-来源：[`packages/assistant/assistants/src/types.ts:135`](../packages/assistant/assistants/src/types.ts)
+来源：[`packages/assistant/assistants/src/types.ts:160`](../packages/assistant/assistants/src/types.ts)
 
 <a id="assistantmessage--surface"></a>
 
@@ -346,7 +346,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'assistant/selected': { assistantId: string }
 ```
 
-来源：[`packages/assistant/assistants/src/types.ts:130`](../packages/assistant/assistants/src/types.ts)
+来源：[`packages/assistant/assistants/src/types.ts:155`](../packages/assistant/assistants/src/types.ts)
 
 ### `command/*`
 
@@ -5705,7 +5705,7 @@ SHA-256: `e4c18e294232c3ba6c9f1999f168263cc55956147cfe4121720899be8e52edd1`
 
 SHA-256: `08484270c008b80791bb5cb13b26e3e1dbab4c945e8d6699f4f41853dcbf553a`
 
-来源：[`packages/assistant/assistants/src/types.ts:130`](../packages/assistant/assistants/src/types.ts)
+来源：[`packages/assistant/assistants/src/types.ts:155`](../packages/assistant/assistants/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -7775,7 +7775,7 @@ SHA-256: `a40d12070f6f4a124f32fb3cc86e7857554702e32f0eda3080a25c4b9ac9b18c`
 
 SHA-256: `fc362d6c3bc744ee54ea7e008f30aff28f240db9d9882faec31b12982b643d5c`
 
-来源：[`packages/assistant/assistants/src/types.ts:135`](../packages/assistant/assistants/src/types.ts)
+来源：[`packages/assistant/assistants/src/types.ts:160`](../packages/assistant/assistants/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|

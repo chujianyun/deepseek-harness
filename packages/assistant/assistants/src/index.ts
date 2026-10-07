@@ -4,20 +4,21 @@
  * under `<dshHome>/assistants/<tenantId>/<assistantId>/`: `assistant.json` and the Markdown core
  * files. The tenant's `tenant.json` records its default assistant and that its first assistant
  * was created; the first time a tenant signs in, the service creates one from the Daily Assistant
- * template and makes it the default, and never again after the user deletes it.
+ * template and makes it the default, and never again after the user deletes it. Deleting the
+ * default makes the first remaining assistant the default; with none left, new sessions bind none.
  *
  * A main session binds one assistant while it is blank: a new session takes the tenant's default,
  * and the user may pick another before the first turn. Before each turn step the service reads the
  * bound assistant's core files and records them with `assistant/instructions` whenever they
  * differ from the previous record; the `assistant:core-files` prompt section carries the recorded
  * text, so an edit reaches the model on the next turn and every prompt stays reconstructable from
- * the session log.
+ * the session log. A session whose assistant was deleted keeps its binding and loses the section.
  *
  * @module @deepseek-ai/dsh-assistants
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -33,8 +34,8 @@ import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { BLANK_FILES, CORE_FILE_NAMES, DAILY_ASSISTANT, TEMPLATES, type AssistantTemplate, type CoreFiles } from './templates.ts'
 import type {
-  AssistantAvatar, AssistantProjectionState, AssistantsState, AssistantTemplateView, AssistantUserInfo, AssistantView,
-  CreateAssistantInput, CreateAssistantResult,
+  AssistantAvatar, AssistantDetail, AssistantProjectionState, AssistantsState, AssistantTemplateView, AssistantUserInfo,
+  AssistantView, CreateAssistantInput, CreateAssistantResult, UpdateAssistantInput,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -57,6 +58,8 @@ export interface Config {
   maxDescriptionLength?: number
   /** Largest uploaded avatar, as the length of its data URL. */
   maxAvatarLength?: number
+  /** Longest core file the detail page may save, in characters; every turn carries the core files. */
+  maxCoreFileLength?: number
 }
 
 /** Runtime schema for {@link Config}. */
@@ -65,7 +68,11 @@ export const Config: Schema<Config> = Schema.object({
   maxNameLength: Schema.natural().min(1).default(32).description('Longest assistant name, in characters.'),
   maxDescriptionLength: Schema.natural().default(200).description('Longest assistant description, in characters.'),
   maxAvatarLength: Schema.natural().min(1).default(700_000).description('Largest uploaded avatar, as the length of its data URL.'),
+  maxCoreFileLength: Schema.natural().min(1).default(20_000).description('Longest core file the detail page may save, in characters; every turn carries the core files.'),
 })
+
+/** Suffix of a duplicated assistant's name. */
+const COPY_SUFFIX = ' 副本'
 
 /** Name of the prompt section that carries the bound assistant's core files. */
 export const ASSISTANT_SECTION = 'assistant:core-files'
@@ -170,6 +177,15 @@ async function readOptional(path: string): Promise<string | undefined> {
   }
 }
 
+/**
+ * Format a JSON file's text.
+ * @param value - the value to store.
+ * @returns indented JSON with a trailing newline.
+ */
+function jsonText(value: object): string {
+  return `${JSON.stringify(value, null, 2)}\n`
+}
+
 const TEMPLATE_VIEWS: readonly AssistantTemplateView[] = [...TEMPLATES.values()]
   .map(({ id, name, description, avatar }) => ({ id, name, description, avatar }))
 
@@ -179,7 +195,7 @@ export class AssistantsService extends TypertRemoteService {
   static Config = Config
 
   private readonly root: string
-  private readonly limits: { readonly name: number; readonly description: number; readonly avatar: number }
+  private readonly limits: { readonly name: number; readonly description: number; readonly avatar: number; readonly file: number }
   private tenantId: string | null = null
   private tenant: TenantFile = { version: 1, defaultId: null, seeded: false }
   private list: AssistantView[] = []
@@ -193,7 +209,10 @@ export class AssistantsService extends TypertRemoteService {
     super(ctx, 'assistants', { namespace: 'assistants' })
     const resolved = Config(config) as Config & Required<Omit<Config, 'dshHome'>>
     this.root = join(resolveDshHome(resolved.dshHome), 'assistants')
-    this.limits = { name: resolved.maxNameLength, description: resolved.maxDescriptionLength, avatar: resolved.maxAvatarLength }
+    this.limits = {
+      name: resolved.maxNameLength, description: resolved.maxDescriptionLength,
+      avatar: resolved.maxAvatarLength, file: resolved.maxCoreFileLength,
+    }
     ctx.sessionProjections.register(assistantProjectionDefinition)
     ctx.effect(() => () => {
       this.lifetime.abort()
@@ -274,24 +293,10 @@ export class AssistantsService extends TypertRemoteService {
       if (input.templateId !== null && template === undefined) {
         throw new RemoteError('assistants/template-not-found', 'This template does not exist', { templateId: input.templateId })
       }
-      const name = input.name.trim()
-      if (name === '' || Array.from(name).length > this.limits.name) {
-        throw new RemoteError('assistants/invalid-name', `The name must be 1 to ${String(this.limits.name)} characters`, { name: input.name })
-      }
-      const description = input.description.trim()
-      if (Array.from(description).length > this.limits.description) {
-        throw new RemoteError('assistants/invalid-description', `The description must be at most ${String(this.limits.description)} characters`, { length: Array.from(description).length })
-      }
+      const name = this.checkName(input.name)
+      const description = this.checkDescription(input.description)
       this.checkAvatar(input.avatar)
-      const presets = this.ctx.get('agentPresets')
-      if (input.preset !== undefined && presets !== undefined) {
-        try {
-          await presets.resolve(input.preset)
-        } catch {
-          // resolve() rejects an id no declaration supplies; the wizard offered an outdated roster.
-          throw new RemoteError('assistants/preset-unavailable', 'This capability base is no longer available', { preset: input.preset })
-        }
-      }
+      if (input.preset !== undefined) await this.checkPreset(input.preset)
       const files = template?.files ?? BLANK_FILES
       const view = await this.writeAssistant(tenantId, {
         id: randomUUID(), name, description, avatar: input.avatar,
@@ -303,6 +308,132 @@ export class AssistantsService extends TypertRemoteService {
       this.list = [...this.list, view]
       this.changed()
       return { assistantId: view.id, state: await this.getState() }
+    })
+  }
+
+  /**
+   * Read one assistant with the text of its core files.
+   * @param assistantId - the assistant to read.
+   * @returns the assistant and its core files.
+   * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
+   */
+  @Remote
+  getAssistant(assistantId: string): Promise<AssistantDetail> {
+    return this.serialized(async () => {
+      const assistant = this.find(assistantId)
+      return { assistant, files: await this.readFiles(this.dirOf(assistant.id)) }
+    })
+  }
+
+  /**
+   * Change an assistant. Core files and the name reach every session bound to it on its next turn;
+   * a changed model or preset applies to sessions bound afterward and to blank sessions bound now.
+   * Renaming also rewrites the `**名称**` line of the identity file.
+   * @param assistantId - the assistant to change.
+   * @param input - the fields to change.
+   * @returns the state with the change.
+   * @throws RemoteError `hub-account/signed-out`, `assistants/not-found`, `assistants/invalid-name`,
+   *   `assistants/invalid-description`, `assistants/invalid-avatar`, `assistants/preset-unavailable`, or `assistants/invalid-file`.
+   */
+  @Remote
+  updateAssistant(assistantId: string, input: UpdateAssistantInput): Promise<AssistantsState> {
+    return this.serialized(async () => {
+      const previous = this.find(assistantId)
+      const name = input.name === undefined ? previous.name : this.checkName(input.name)
+      const description = input.description === undefined ? previous.description : this.checkDescription(input.description)
+      if (input.avatar !== undefined) this.checkAvatar(input.avatar)
+      if (typeof input.preset === 'string') await this.checkPreset(input.preset)
+      // Only the core file names are read, so no other path under the assistant can be written.
+      const files: Partial<Record<keyof CoreFiles, string>> = {}
+      for (const file of CORE_FILE_NAMES) {
+        const text = input.files?.[file]
+        if (text === undefined) continue
+        files[file] = text
+        if (Array.from(text).length > this.limits.file) {
+          throw new RemoteError('assistants/invalid-file', `A core file must be at most ${String(this.limits.file)} characters`, { file, length: Array.from(text).length })
+        }
+      }
+      const dir = this.dirOf(assistantId)
+      if (name !== previous.name) files['IDENTITY.md'] = withName(files['IDENTITY.md'] ?? await readOptional(join(dir, 'IDENTITY.md')) ?? '', name)
+      const { preset: _preset, model: _model, ...kept } = previous
+      const preset = input.preset === undefined ? previous.preset : input.preset ?? undefined
+      const model = input.model === undefined ? previous.model : input.model ?? undefined
+      const next: AssistantView = {
+        ...kept, name, description, avatar: input.avatar ?? previous.avatar,
+        ...(preset === undefined ? {} : { preset }),
+        ...(model === undefined ? {} : { model }),
+      }
+      for (const [file, text] of Object.entries(files)) await this.writeAtomic(join(dir, file), text)
+      await this.writeAtomic(join(dir, 'assistant.json'), jsonText({ version: 1, ...next }))
+      this.list = this.list.map(item => item.id === assistantId ? next : item)
+      const rebind = preset !== previous.preset || JSON.stringify(model) !== JSON.stringify(previous.model)
+      if (rebind) await this.rebindBlank(assistantId, next, previous)
+      this.changed()
+      return this.getState()
+    })
+  }
+
+  /**
+   * Make an assistant the one new sessions bind; blank sessions bound to the previous default move to it.
+   * @param assistantId - the new default.
+   * @returns the state with the new default.
+   * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
+   */
+  @Remote
+  setDefault(assistantId: string): Promise<AssistantsState> {
+    return this.serialized(async () => {
+      const assistant = this.find(assistantId)
+      const previous = this.list.find(item => item.id === this.tenant.defaultId)
+      await this.saveDefault(assistant.id)
+      if (previous !== undefined && previous !== assistant) await this.rebindBlank(previous.id, assistant, previous)
+      this.changed()
+      return this.getState()
+    })
+  }
+
+  /**
+   * Copy an assistant's configuration and core files into a new assistant named «name 副本»; sessions are not copied.
+   * @param assistantId - the assistant to copy.
+   * @returns the copy's id and the state with it last.
+   * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
+   */
+  @Remote
+  duplicateAssistant(assistantId: string): Promise<CreateAssistantResult> {
+    return this.serialized(async () => {
+      const source = this.find(assistantId)
+      const base = Array.from(source.name).slice(0, Math.max(0, this.limits.name - Array.from(COPY_SUFFIX).length)).join('')
+      const name = `${base}${COPY_SUFFIX}`
+      const files = await this.readFiles(this.dirOf(source.id))
+      const view = await this.writeAssistant(this.requireTenant(), {
+        ...source, id: randomUUID(), name, createdAt: new Date().toISOString(),
+      }, { ...files, 'IDENTITY.md': withName(files['IDENTITY.md'], name) })
+      this.list = [...this.list, view]
+      this.changed()
+      return { assistantId: view.id, state: await this.getState() }
+    })
+  }
+
+  /**
+   * Delete an assistant. Its sessions remain and carry no core files from their next turn. Deleting
+   * the default makes the first remaining assistant the default; blank sessions bound to the deleted
+   * one move to the default, or bind none when no assistant remains.
+   * @param assistantId - the assistant to delete.
+   * @returns the state without it.
+   * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
+   */
+  @Remote
+  deleteAssistant(assistantId: string): Promise<AssistantsState> {
+    return this.serialized(async () => {
+      const deleted = this.find(assistantId)
+      const dir = this.dirOf(deleted.id)
+      // Without assistant.json the directory is no longer an assistant, so a crash mid-removal leaves none behind.
+      await rm(join(dir, 'assistant.json'), { force: true })
+      await rm(dir, { recursive: true, force: true })
+      this.list = this.list.filter(item => item !== deleted)
+      if (this.tenant.defaultId === deleted.id) await this.saveDefault(this.list[0]?.id ?? null)
+      await this.rebindBlank(deleted.id, this.list.find(item => item.id === this.tenant.defaultId), deleted)
+      this.changed()
+      return this.getState()
     })
   }
 
@@ -321,7 +452,7 @@ export class AssistantsService extends TypertRemoteService {
       if (assistant === undefined) throw new RemoteError('assistants/not-found', 'This assistant no longer exists', { assistantId })
       if (!this.isBlank(agent)) throw new RemoteError('assistants/locked', 'This session has already started', { sessionId: agent.id, assistantId })
       const previous = this.list.find(item => item.id === this.boundId(agent))
-      if (previous !== assistant) await this.bind(agent, assistant, previous)
+      if (previous?.id !== assistant.id) await this.bind(agent, assistant, previous)
       return assistantId
     })
   }
@@ -330,22 +461,65 @@ export class AssistantsService extends TypertRemoteService {
    * Bind the assistant, applying its preset and model. Picking, in the same blank session, an
    * assistant without either after one that set it returns the session to the deployment's default
    * preset or the global model, so a choice the user made in the composer is left alone otherwise.
+   * Without an assistant, only that return happens and the binding stays.
    */
-  private async bind(agent: Agent, assistant: AssistantView, previous?: AssistantView): Promise<void> {
+  private async bind(agent: Agent, assistant: AssistantView | undefined, previous?: AssistantView): Promise<void> {
     const presets = this.ctx.get('agentPresets')
-    const preset = assistant.preset ?? (previous?.preset === undefined ? undefined : presets?.defaultId)
+    const preset = assistant?.preset ?? (previous?.preset === undefined ? undefined : presets?.defaultId)
     if (preset !== undefined && presets !== undefined) {
       try {
         await presets.select(agent, preset)
       } catch (error) {
         // A preset removed since the assistant was created leaves the session on the deployment default.
-        this.ctx.logger.warn(`assistants: preset ${preset} for ${assistant.id} not applied: ${String(error)}`)
+        this.ctx.logger.warn(`assistants: preset ${preset} for ${agent.id} not applied: ${String(error)}`)
       }
     }
-    const model = assistant.model ?? (previous?.model === undefined ? undefined : this.ctx.get('agentDefaultModel')?.currentSelection())
+    const model = assistant?.model ?? (previous?.model === undefined ? undefined : this.ctx.get('agentDefaultModel')?.currentSelection())
     // An unavailable model, such as one removed from Settings, leaves the session on the global default.
     if (model !== undefined) await this.ctx.get('sessionController')?.useModel(agent, model)
-    agent.session.append('assistant/selected', { assistantId: assistant.id })
+    if (assistant !== undefined && assistant.id !== this.boundId(agent)) agent.session.append('assistant/selected', { assistantId: assistant.id })
+  }
+
+  /** Bind every blank main session bound to `fromId` to `next`, or to none, replacing `previous`'s preset and model. */
+  private async rebindBlank(fromId: string, next: AssistantView | undefined, previous: AssistantView): Promise<void> {
+    for (const agent of this.ctx.agents.list()) {
+      if (agent.session.header.parentSession !== undefined || !this.isBlank(agent) || this.boundId(agent) !== fromId) continue
+      await this.bind(agent, next, previous)
+    }
+  }
+
+  private find(assistantId: string): AssistantView {
+    this.requireTenant()
+    const assistant = this.list.find(item => item.id === assistantId)
+    if (assistant === undefined) throw new RemoteError('assistants/not-found', 'This assistant no longer exists', { assistantId })
+    return assistant
+  }
+
+  private checkName(raw: string): string {
+    const name = raw.trim()
+    if (name === '' || Array.from(name).length > this.limits.name) {
+      throw new RemoteError('assistants/invalid-name', `The name must be 1 to ${String(this.limits.name)} characters`, { name: raw })
+    }
+    return name
+  }
+
+  private checkDescription(raw: string): string {
+    const description = raw.trim()
+    if (Array.from(description).length > this.limits.description) {
+      throw new RemoteError('assistants/invalid-description', `The description must be at most ${String(this.limits.description)} characters`, { length: Array.from(description).length })
+    }
+    return description
+  }
+
+  private async checkPreset(preset: string): Promise<void> {
+    const presets = this.ctx.get('agentPresets')
+    if (presets === undefined) return
+    try {
+      await presets.resolve(preset)
+    } catch {
+      // resolve() rejects an id no declaration supplies; the page offered an outdated roster.
+      throw new RemoteError('assistants/preset-unavailable', 'This capability base is no longer available', { preset })
+    }
   }
 
   private checkAvatar(avatar: AssistantAvatar): void {
@@ -389,10 +563,23 @@ export class AssistantsService extends TypertRemoteService {
   private async instructionsFor(assistantId: string): Promise<string> {
     const assistant = this.list.find(item => item.id === assistantId)
     if (assistant === undefined || this.tenantId === null) return ''
-    const dir = join(this.root, this.tenantId, assistant.id)
-    // A missing core file contributes nothing; the user may have deleted it on disk.
-    const files = await Promise.all(CORE_FILE_NAMES.map(async file => [file, await readOptional(join(dir, file)) ?? ''] as const))
-    return renderInstructions(assistant.name, files)
+    const files = await this.readFiles(this.dirOf(assistant.id))
+    return renderInstructions(assistant.name, CORE_FILE_NAMES.map(file => [file, files[file]] as const))
+  }
+
+  /** Read the core files of an assistant directory; a missing file reads empty, since the user may have deleted it on disk. */
+  private async readFiles(dir: string): Promise<CoreFiles> {
+    const texts = await Promise.all(CORE_FILE_NAMES.map(async file => [file, await readOptional(join(dir, file)) ?? ''] as const))
+    return Object.fromEntries(texts) as Record<keyof CoreFiles, string>
+  }
+
+  private dirOf(assistantId: string): string {
+    return join(this.root, this.requireTenant(), assistantId)
+  }
+
+  private async saveDefault(defaultId: string | null): Promise<void> {
+    this.tenant = { ...this.tenant, defaultId }
+    await this.writeAtomic(join(this.root, this.requireTenant(), 'tenant.json'), jsonText(this.tenant))
   }
 
   private async switchTenant(tenantId: string | null): Promise<void> {
@@ -407,7 +594,7 @@ export class AssistantsService extends TypertRemoteService {
         const created = await this.createFrom(tenantId, DAILY_ASSISTANT)
         this.list = [...this.list, created]
         this.tenant = { version: 1, defaultId: created.id, seeded: true }
-        await this.writeJson(join(this.root, tenantId, 'tenant.json'), this.tenant)
+        await this.writeAtomic(join(this.root, tenantId, 'tenant.json'), jsonText(this.tenant))
       }
     }
     this.changed()
@@ -460,14 +647,14 @@ export class AssistantsService extends TypertRemoteService {
     const staging = join(this.root, tenantId, `.${view.id}.tmp`)
     await mkdir(staging, { recursive: true })
     for (const file of CORE_FILE_NAMES) await writeFile(join(staging, file), files[file])
-    await this.writeJson(join(staging, 'assistant.json'), { version: 1, ...view })
+    await this.writeAtomic(join(staging, 'assistant.json'), jsonText({ version: 1, ...view }))
     await rename(staging, join(this.root, tenantId, view.id))
     return view
   }
 
-  private async writeJson(path: string, value: object): Promise<void> {
+  private async writeAtomic(path: string, text: string): Promise<void> {
     const temporary = `${path}.tmp`
-    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`)
+    await writeFile(temporary, text)
     await rename(temporary, path)
   }
 

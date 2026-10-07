@@ -8,6 +8,10 @@
 
 智能体属于当前 Hub 登录所在的租户，保存在 `<dshHome>/assistants/<tenantId>/<assistantId>/`，包含 `assistant.json` 和核心文件 `IDENTITY.md`、`SOUL.md`、`USER.md`、`AGENTS.md`。租户的 `tenant.json` 记录它的默认智能体，以及它的第一个智能体已经创建过：租户第一次登录时用日常助手模板创建一个并设为默认，之后的登录不再创建。
 
+## 管理智能体
+
+详情页通过 `assistants` Remote 编辑智能体的字段和四份核心文件。保存后的核心文件和新名称会在下一步到达所有绑定该智能体的会话，进行中的会话也一样；新的模型或 preset 对之后绑定的会话生效。把另一个智能体设为默认时，绑定旧默认智能体的空白会话会改绑到它。副本带着配置和核心文件，名称为 `<名称> 副本`，不带会话。删除智能体会保留它的会话，这些会话继续进行但不再带它的核心文件；剩下的第一个智能体成为默认，全部删光后新会话不绑定智能体。
+
 ## 会话绑定
 
 主会话在空白时绑定一个智能体，记录为 `assistant/selected`；没有绑定的空白会话使用租户的默认智能体，新会话选择器可以在第一轮之前改绑另一个。带 Agent preset 的智能体会先把会话切换到该 preset。每个轮次步骤开始前，读取所绑定智能体的核心文件，有变化时记录为 `assistant/instructions`；位于部署人设之后的 `assistant:core-files` 提示词段落携带记录下来的文本，所以模型在下一步就能看到修改，会话日志可以还原每个提示词。子智能体会话不绑定智能体。
@@ -48,6 +52,52 @@ Host owner of the assistants and of the `assistants` Remote namespace.
  *   `assistants/invalid-description`, `assistants/invalid-avatar`, or `assistants/preset-unavailable`.
  */
 @Remote createAssistant(input: CreateAssistantInput): Promise<CreateAssistantResult>
+
+/**
+ * Read one assistant with the text of its core files.
+ * @param assistantId - the assistant to read.
+ * @returns the assistant and its core files.
+ * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
+ */
+@Remote getAssistant(assistantId: string): Promise<AssistantDetail>
+
+/**
+ * Change an assistant. Core files and the name reach every session bound to it on its next turn;
+ * a changed model or preset applies to sessions bound afterward and to blank sessions bound now.
+ * Renaming also rewrites the `**名称**` line of the identity file.
+ * @param assistantId - the assistant to change.
+ * @param input - the fields to change.
+ * @returns the state with the change.
+ * @throws RemoteError `hub-account/signed-out`, `assistants/not-found`, `assistants/invalid-name`,
+ *   `assistants/invalid-description`, `assistants/invalid-avatar`, `assistants/preset-unavailable`, or `assistants/invalid-file`.
+ */
+@Remote updateAssistant(assistantId: string, input: UpdateAssistantInput): Promise<AssistantsState>
+
+/**
+ * Make an assistant the one new sessions bind; blank sessions bound to the previous default move to it.
+ * @param assistantId - the new default.
+ * @returns the state with the new default.
+ * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
+ */
+@Remote setDefault(assistantId: string): Promise<AssistantsState>
+
+/**
+ * Copy an assistant's configuration and core files into a new assistant named «name 副本»; sessions are not copied.
+ * @param assistantId - the assistant to copy.
+ * @returns the copy's id and the state with it last.
+ * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
+ */
+@Remote duplicateAssistant(assistantId: string): Promise<CreateAssistantResult>
+
+/**
+ * Delete an assistant. Its sessions remain and carry no core files from their next turn. Deleting
+ * the default makes the first remaining assistant the default; blank sessions bound to the deleted
+ * one move to the default, or bind none when no assistant remains.
+ * @param assistantId - the assistant to delete.
+ * @returns the state without it.
+ * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
+ */
+@Remote deleteAssistant(assistantId: string): Promise<AssistantsState>
 
 /**
  * Bind a blank session to one of the signed-in tenant's assistants.

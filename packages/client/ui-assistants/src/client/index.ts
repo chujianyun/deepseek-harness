@@ -2,7 +2,8 @@
  * Assistants, browser half: the **Assistants** entry of the Desktop sidebar with the page it opens
  * in the main column, and the assistant picker that leads the new-session screen's workspace row.
  * State streams from the `assistants` Remote; a pick binds the blank session the main view shows,
- * and a card's Chat button opens the new-session screen with that assistant picked.
+ * and a card's Chat button opens the new-session screen with that assistant picked. A card opens
+ * the assistant's detail page, where its fields and core files are edited.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -91,6 +92,13 @@ export function apply(ctx: ClientContext): void {
       create: input => remote.createAssistant(input),
       loadOptions: () => wizardOptions(scope),
       squareAvatar,
+      read: assistantId => remote.getAssistant(assistantId),
+      update: (assistantId, input) => remote.updateAssistant(assistantId, input),
+      setDefault: assistantId => remote.setDefault(assistantId),
+      duplicate: assistantId => remote.duplicateAssistant(assistantId),
+      remove: assistantId => remote.deleteAssistant(assistantId),
+      sessionCount: assistantId => Object.values(scope.sessions.list.getSnapshot().byId)
+        .filter(session => !session.blank && session.projectionValues?.assistant === assistantId).length,
     })
     const assistants = scope.remote.$stream<AssistantsState>({
       name: 'assistants', open: signal => remote.watch(signal), ended: () => new Error('assistants stream ended'),

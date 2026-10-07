@@ -1,8 +1,10 @@
-/** Assistants state and actions over the `assistants` Remote: the page's cards and the new-session picker. */
+/** Assistants state and actions over the `assistants` Remote: the page's cards, the detail page, and the new-session picker. */
 
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { AssistantsState, CreateAssistantInput, CreateAssistantResult } from '@deepseek-ai/dsh-assistants/types'
+import type {
+  AssistantDetail, AssistantsState, CreateAssistantInput, CreateAssistantResult, UpdateAssistantInput,
+} from '@deepseek-ai/dsh-assistants/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 
@@ -63,6 +65,13 @@ export interface AssistantsDependencies {
   readonly loadOptions: () => Promise<WizardOptions>
   /** Crop and compress an uploaded image into an avatar data URL. */
   readonly squareAvatar: (file: Blob) => Promise<string>
+  readonly read: (assistantId: string) => Promise<RemoteResult<AssistantDetail>>
+  readonly update: (assistantId: string, input: UpdateAssistantInput) => Promise<RemoteResult<AssistantsState>>
+  readonly setDefault: (assistantId: string) => Promise<RemoteResult<AssistantsState>>
+  readonly duplicate: (assistantId: string) => Promise<RemoteResult<CreateAssistantResult>>
+  readonly remove: (assistantId: string) => Promise<RemoteResult<AssistantsState>>
+  /** How many started sessions in the session list are bound to the assistant. */
+  readonly sessionCount: (assistantId: string) => number
 }
 
 /** Business face injected into the page and the picker. */
@@ -78,6 +87,18 @@ export interface AssistantsInjected {
   readonly onCreate: (input: CreateAssistantInput) => Promise<string | undefined>
   readonly onLoadOptions: () => Promise<WizardOptions>
   readonly squareAvatar: (file: Blob) => Promise<string>
+  /** Read an assistant and its core files; resolves to the Host's refusal message when it cannot. */
+  readonly onRead: (assistantId: string) => Promise<AssistantDetail | string>
+  /** Save changes; resolves to the Host's refusal message, or undefined once saved. */
+  readonly onUpdate: (assistantId: string, input: UpdateAssistantInput) => Promise<string | undefined>
+  /** Make the assistant the default; resolves to the Host's refusal message, or undefined. */
+  readonly onSetDefault: (assistantId: string) => Promise<string | undefined>
+  /** Copy the assistant; resolves to the copy's id, or the Host's refusal message. */
+  readonly onDuplicate: (assistantId: string) => Promise<{ readonly assistantId: string } | string>
+  /** Delete the assistant; resolves to the Host's refusal message, or undefined once deleted. */
+  readonly onDelete: (assistantId: string) => Promise<string | undefined>
+  /** How many started sessions are bound to the assistant, for the delete confirmation. */
+  readonly sessionCount: (assistantId: string) => number
 }
 
 /** The face plus the entry points of the Host stream and of session-list changes. */
@@ -126,6 +147,17 @@ export function createAssistantsSource(deps: AssistantsDependencies): Assistants
       set({ staged: undefined, busy: false, bound: shown })
     }
   }
+  // A call's state and the stream's frames may arrive in either order; keep the newer one.
+  const adopt = (state: AssistantsState): void => {
+    const current = store.getSnapshot().state
+    if (current === undefined || state.revision > current.revision) set({ state })
+  }
+  const settle = async (call: Promise<RemoteResult<AssistantsState>>): Promise<string | undefined> => {
+    const result = await call
+    if (!result.ok) return result.error.message
+    adopt(result.value)
+    return undefined
+  }
   return {
     hooks: { assistants: store },
     publish: (state) => { set({ state }) },
@@ -143,12 +175,24 @@ export function createAssistantsSource(deps: AssistantsDependencies): Assistants
     onCreate: async (input) => {
       const result = await deps.create(input)
       if (!result.ok) return result.error.message
-      // The stream brings the same state; keep whichever is newer so the card shows at once.
-      const current = store.getSnapshot().state
-      if (current === undefined || result.value.state.revision > current.revision) set({ state: result.value.state })
+      adopt(result.value.state)
       return undefined
     },
     onLoadOptions: () => deps.loadOptions(),
     squareAvatar: file => deps.squareAvatar(file),
+    onRead: async (assistantId) => {
+      const result = await deps.read(assistantId)
+      return result.ok ? result.value : result.error.message
+    },
+    onUpdate: (assistantId, input) => settle(deps.update(assistantId, input)),
+    onSetDefault: assistantId => settle(deps.setDefault(assistantId)),
+    onDuplicate: async (assistantId) => {
+      const result = await deps.duplicate(assistantId)
+      if (!result.ok) return result.error.message
+      adopt(result.value.state)
+      return { assistantId: result.value.assistantId }
+    },
+    onDelete: assistantId => settle(deps.remove(assistantId)),
+    sessionCount: assistantId => deps.sessionCount(assistantId),
   }
 }

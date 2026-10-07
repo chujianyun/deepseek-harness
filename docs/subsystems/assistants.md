@@ -8,6 +8,10 @@ Assistants let a Desktop user turn the roles they work with into named assistant
 
 Assistants belong to the tenant of the current Hub sign-in and live under `<dshHome>/assistants/<tenantId>/<assistantId>/`, with `assistant.json` and the core files `IDENTITY.md`, `SOUL.md`, `USER.md`, and `AGENTS.md`. The tenant's `tenant.json` records its default assistant and that its first assistant was created: the first sign-in of a tenant creates one from the Daily Assistant template and makes it the default, and no later sign-in creates another.
 
+## Managing assistants
+
+The detail page edits an assistant's fields and its four core files through the `assistants` Remote. Saved core files and a new name reach every session bound to the assistant on its next step, including sessions in progress; a new model or preset applies to sessions bound afterward. Setting another default moves blank sessions bound to the previous default to it. A copy carries the configuration and core files under the name `<name> 副本`, without sessions. Deleting an assistant keeps its sessions, which continue without its core files; the first remaining assistant becomes the default, and with none left new sessions bind no assistant.
+
 ## Session binding
 
 A main session binds one assistant while it is blank, recorded as `assistant/selected`; a blank session without one takes the tenant's default, and the new-session picker binds another before the first turn. An assistant with an Agent preset switches the session to it first. Before each turn step, the bound assistant's core files are read and, when they changed, recorded as `assistant/instructions`; the `assistant:core-files` prompt section after the deployment persona carries the recorded text, so the model sees an edit on the next step and the session log reconstructs every prompt. Subagent sessions bind no assistant.
@@ -48,6 +52,52 @@ Host owner of the assistants and of the `assistants` Remote namespace.
  *   `assistants/invalid-description`, `assistants/invalid-avatar`, or `assistants/preset-unavailable`.
  */
 @Remote createAssistant(input: CreateAssistantInput): Promise<CreateAssistantResult>
+
+/**
+ * Read one assistant with the text of its core files.
+ * @param assistantId - the assistant to read.
+ * @returns the assistant and its core files.
+ * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
+ */
+@Remote getAssistant(assistantId: string): Promise<AssistantDetail>
+
+/**
+ * Change an assistant. Core files and the name reach every session bound to it on its next turn;
+ * a changed model or preset applies to sessions bound afterward and to blank sessions bound now.
+ * Renaming also rewrites the `**名称**` line of the identity file.
+ * @param assistantId - the assistant to change.
+ * @param input - the fields to change.
+ * @returns the state with the change.
+ * @throws RemoteError `hub-account/signed-out`, `assistants/not-found`, `assistants/invalid-name`,
+ *   `assistants/invalid-description`, `assistants/invalid-avatar`, `assistants/preset-unavailable`, or `assistants/invalid-file`.
+ */
+@Remote updateAssistant(assistantId: string, input: UpdateAssistantInput): Promise<AssistantsState>
+
+/**
+ * Make an assistant the one new sessions bind; blank sessions bound to the previous default move to it.
+ * @param assistantId - the new default.
+ * @returns the state with the new default.
+ * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
+ */
+@Remote setDefault(assistantId: string): Promise<AssistantsState>
+
+/**
+ * Copy an assistant's configuration and core files into a new assistant named «name 副本»; sessions are not copied.
+ * @param assistantId - the assistant to copy.
+ * @returns the copy's id and the state with it last.
+ * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
+ */
+@Remote duplicateAssistant(assistantId: string): Promise<CreateAssistantResult>
+
+/**
+ * Delete an assistant. Its sessions remain and carry no core files from their next turn. Deleting
+ * the default makes the first remaining assistant the default; blank sessions bound to the deleted
+ * one move to the default, or bind none when no assistant remains.
+ * @param assistantId - the assistant to delete.
+ * @returns the state without it.
+ * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
+ */
+@Remote deleteAssistant(assistantId: string): Promise<AssistantsState>
 
 /**
  * Bind a blank session to one of the signed-in tenant's assistants.

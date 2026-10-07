@@ -368,6 +368,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   AssistantsState: 'assistants.md',
   CreateAssistantInput: 'assistants.md',
   CreateAssistantResult: 'assistants.md',
+  AssistantDetail: 'assistants.md',
+  UpdateAssistantInput: 'assistants.md',
   ResolvedRetryPolicy: 'llm-streaming.md',
   Message: 'llm-streaming.md',
   MessageSource: 'llm-streaming.md',
