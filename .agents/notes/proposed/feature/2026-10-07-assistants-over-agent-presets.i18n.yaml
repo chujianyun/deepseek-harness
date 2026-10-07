@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for 2026-10-07-assistants-over-agent-presets.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-10-07-assistants-over-agent-presets.md
+/agent-note-assistants-layered-over-agent-presets:
+  en: 6fdae59e477dc328
+  zh: 3528c6ca5ef2fa9a
+/agent-note-assistants-layered-over-agent-presets/problem:
+  en: 0f13d80d84d3c3f2
+  zh: 5d104c1cad660407
+/agent-note-assistants-layered-over-agent-presets/proposal:
+  en: 24b691afbfb313cc
+  zh: ea08cc7e2b52152f
+/agent-note-assistants-layered-over-agent-presets/alternatives-considered:
+  en: 6119e2aff3b6be5a
+  zh: 4237c596c10e1ee9
+/agent-note-assistants-layered-over-agent-presets/alternatives-considered/why-not-replace-agent-presets-with-assistants:
+  en: bbb0a393c97a9ff8
+  zh: bdc63491ca677d84
+/agent-note-assistants-layered-over-agent-presets/alternatives-considered/why-not-generate-one-preset-per-assistant:
+  en: 46b1ca5f7edc1b7f
+  zh: c77ef174346d6958
+/agent-note-assistants-layered-over-agent-presets/alternatives-considered/why-not-store-assistants-in-the-profile-configuration:
+  en: d7866522c9bb0c84
+  zh: 137e16bc70a64739
+/agent-note-assistants-layered-over-agent-presets/acceptance-criteria:
+  en: 4f29f52f1ef20b08
+  zh: ed4f38ab299fc848
+/agent-note-assistants-layered-over-agent-presets/risks:
+  en: 754d21f1b5984b89
+  zh: e7edc0b494992f59
