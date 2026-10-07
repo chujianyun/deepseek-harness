@@ -43,6 +43,18 @@
     },
     {
       "path": "../../core/agent-default-model"
+    },
+    {
+      "path": "../../skill/skill"
+    },
+    {
+      "path": "../../connector/connectors"
+    },
+    {
+      "path": "../../knowledge/knowledge-base"
+    },
+    {
+      "path": "../../knowledge/knowledge-selection"
     }
   ]
 }

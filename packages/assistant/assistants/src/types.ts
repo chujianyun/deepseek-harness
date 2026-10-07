@@ -46,6 +46,37 @@ export interface AssistantModel {
   readonly reasoningEffort?: string
 }
 
+/**
+ * Which Skills, connectors, and knowledge bases an assistant's sessions may use. An absent list
+ * allows every one, including ones added later; a list allows only the ids it names, and an id
+ * whose item is gone allows nothing.
+ */
+export interface AssistantSubsets {
+  /** Skill names; connector Skills follow `connectors` instead. */
+  readonly skills?: readonly string[]
+  /** Connector ids, such as `feishu`. */
+  readonly connectors?: readonly string[]
+  /** Knowledge base ids of the tenant. */
+  readonly knowledgeBases?: readonly string[]
+}
+
+/** One Skill, connector, or knowledge base the subset choices offer. */
+export interface AssistantCapabilityOption {
+  readonly id: string
+  readonly name: string
+  readonly description?: string
+}
+
+/** The Skills, connectors, and knowledge bases available now, which subsets can name. */
+export interface AssistantCapabilityOptions {
+  /** Enabled Skills the model can use, without connector Skills. */
+  readonly skills: readonly AssistantCapabilityOption[]
+  /** Connectors installed and switched on for the tenant. */
+  readonly connectors: readonly AssistantCapabilityOption[]
+  /** The tenant's knowledge bases. */
+  readonly knowledgeBases: readonly AssistantCapabilityOption[]
+}
+
 /** What the user tells an assistant about themselves; written into its `USER.md`. */
 export interface AssistantUserInfo {
   /** How the assistant addresses the user. */
@@ -62,6 +93,8 @@ export interface AssistantTemplateView {
   readonly name: string
   readonly description: string
   readonly avatar: AssistantAvatar
+  /** Subsets the template starts with; absent allows everything. */
+  readonly subsets?: AssistantSubsets
 }
 
 /** Everything the creation wizard collects. */
@@ -75,6 +108,8 @@ export interface CreateAssistantInput {
   readonly model?: AssistantModel
   /** Agent preset the assistant's sessions run; absent follows the deployment default. */
   readonly preset?: string
+  /** Capability subsets; absent takes the template's, or allows everything when blank. */
+  readonly subsets?: AssistantSubsets
   readonly user: AssistantUserInfo
 }
 
@@ -96,6 +131,8 @@ export interface UpdateAssistantInput {
   readonly model?: AssistantModel | null
   /** Agent preset the assistant's sessions run; null follows the deployment default again. */
   readonly preset?: string | null
+  /** Capability subsets, replacing the current ones; a list left out allows everything again. */
+  readonly subsets?: AssistantSubsets
   /** Core file texts to replace. */
   readonly files?: Readonly<Partial<Record<CoreFileName, string>>>
 }
@@ -111,6 +148,8 @@ export interface AssistantView {
   readonly preset?: string
   /** Model the assistant's sessions use; absent means the global default. */
   readonly model?: AssistantModel
+  /** Capability subsets; absent allows every Skill, connector, and knowledge base. */
+  readonly subsets?: AssistantSubsets
   /** Template the assistant was created from, when any. */
   readonly templateId?: string
   /** ISO time of creation. */

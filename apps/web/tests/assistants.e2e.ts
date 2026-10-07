@@ -5,7 +5,9 @@
 // the next request. A new session picks another assistant in the hero picker, and its first request
 // carries that assistant's identity instead. A second run manages assistants from their detail page:
 // a core file saved there reaches the next request of a session in progress, the default moves, a copy
-// keeps the core files, and a deleted assistant's session continues without them.
+// keeps the core files, and a deleted assistant's session continues without them. A third run gives
+// an assistant only some Skills: its sessions' catalog lists only those, and the detail page marks one
+// that is gone.
 import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
@@ -87,9 +89,17 @@ async function launch() {
   Object.assign(process.env, { DSH_E2E_HUB_ORIGIN: center.origin, DSH_E2E_CHAT_API: chat.baseURL })
   const harnessHome = await mkdtemp(join(tmpdir(), 'dsh-assistants-home-'))
   await mkdir(join(harnessHome, 'profiles', 'scaffold'), { recursive: true })
-  await writeFile(join(harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), JSON.stringify([{ id: 'assistants', config: { dshHome: harnessHome } }]))
+  await writeFile(join(harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), JSON.stringify([
+    { id: 'assistants', config: { dshHome: harnessHome } },
+    // User Skills come from the test home, and the user's own ~/.agents stays out.
+    { id: 'skill-filesystem', config: { dshHome: harnessHome, agentsHome: join(harnessHome, 'agents') } },
+  ]))
   const tenantDir = join(harnessHome, 'assistants', 't-a')
   await writeShopKeeper(tenantDir)
+  for (const name of ['e2e-alpha', 'e2e-beta']) {
+    await mkdir(join(harnessHome, 'skills', name), { recursive: true })
+    await writeFile(join(harnessHome, 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${name} 测试用 Skill\n---\n\n# ${name}\n`)
+  }
   const scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAYS, harnessHome })
   const browser = await chromium.launch()
   const close = async () => {
@@ -186,12 +196,15 @@ it('creates the default assistant, carries its core files into the chat, and let
     await wizard.getByRole('button', { name: '下一步' }).click()
     await wizard.getByRole('radio', { name: /跟随默认/ }).waitFor()
     await wizard.getByRole('button', { name: '下一步' }).click()
+    // The E-commerce Manager starts with only the Feishu connector.
+    expect(await wizard.getByRole('group', { name: '连接器' }).getByRole('radio', { name: '仅选中' }).isChecked()).toBe(true)
+    await wizard.getByRole('button', { name: '下一步' }).click()
     await wizard.getByRole('textbox', { name: '如何称呼你' }).fill('小明 USER_NAME')
     await wizard.getByRole('textbox', { name: '补充背景' }).fill('负责名流天猫旗舰店')
     await wizard.getByRole('button', { name: '创建' }).click()
     await wizard.waitFor({ state: 'detached' })
     const created = (await scaffold.ctx.assistants.getState()).assistants.find(item => item.name === '名流电商管家')!
-    expect(created).toMatchObject({ templateId: 'ecommerce', model: { provider: 'acme-gateway', model: 'acme-pro' } })
+    expect(created).toMatchObject({ templateId: 'ecommerce', model: { provider: 'acme-gateway', model: 'acme-pro' }, subsets: { connectors: ['feishu'] } })
     expect(created.avatar.kind).toBe('image')
     const card = page.locator(`li[data-assistant-id="${created.id}"]`)
     await card.locator('img[src^="data:image/webp"]').waitFor()
@@ -316,3 +329,61 @@ it('edits core files on the detail page, moves the default, copies, and deletes 
     await close()
   }
 }, 240_000)
+
+it('gives an assistant\'s sessions only the Skills it allows, and marks a Skill that is gone', async () => {
+  const { chat, scaffold, tenantDir, page, tripwire, send, useChatModel, close } = await launch()
+  const messages = () => JSON.stringify(chat.chats.at(-1)!.messages)
+  try {
+    // The wizard's capability subsets step: only e2e-alpha among the Skills.
+    await page.getByRole('button', { name: '智能体', exact: true }).click()
+    await page.getByRole('button', { name: '新建智能体' }).click()
+    const wizard = page.getByRole('dialog', { name: '新建智能体' })
+    await wizard.getByRole('radio', { name: /空白/ }).click()
+    await wizard.getByRole('button', { name: '下一步' }).click()
+    await wizard.getByRole('textbox', { name: '名称', exact: true }).fill('只用一个Skill')
+    await wizard.getByRole('button', { name: '下一步' }).click()
+    await wizard.getByRole('button', { name: '下一步' }).click()
+    const skills = wizard.getByRole('group', { name: 'Skill' })
+    await skills.getByRole('radio', { name: '仅选中' }).check()
+    await skills.getByRole('checkbox', { name: 'e2e-alpha' }).check()
+    await wizard.getByRole('button', { name: '下一步' }).click()
+    await wizard.getByRole('button', { name: '创建' }).click()
+    await wizard.waitFor({ state: 'detached' })
+    const limited = (await scaffold.ctx.assistants.getState()).assistants.find(item => item.name === '只用一个Skill')!
+    expect(limited.subsets).toEqual({ skills: ['e2e-alpha'] })
+
+    // Its session's Skill catalog lists e2e-alpha only; a session of the default assistant lists both.
+    await page.locator(`li[data-assistant-id="${limited.id}"]`).getByRole('button', { name: '对话' }).click()
+    const picker = page.getByRole('button', { name: '选择这个会话的智能体' })
+    await expect.poll(() => picker.textContent()).toContain('只用一个Skill')
+    await useChatModel()
+    await send('有哪些 Skill？')
+    await expect.poll(() => chat.chats.length, { timeout: 30_000 }).toBeGreaterThan(0)
+    await expect.poll(messages).toContain('e2e-alpha')
+    expect(messages()).not.toContain('e2e-beta')
+    await page.getByRole('button', { name: '新建会话' }).first().click()
+    await expect.poll(() => picker.textContent()).toContain('日常助手')
+    const before = chat.chats.length
+    await send('有哪些 Skill？')
+    await expect.poll(() => chat.chats.length, { timeout: 30_000 }).toBeGreaterThan(before)
+    expect(messages()).toContain('e2e-alpha')
+    expect(messages()).toContain('e2e-beta')
+
+    // A Skill named in the subset that is no longer installed shows as unavailable on the detail page.
+    await scaffold.ctx.assistants.updateAssistant(limited.id, { subsets: { skills: ['e2e-alpha', 'e2e-gone'] } })
+    await page.getByRole('button', { name: '智能体', exact: true }).click()
+    await page.getByRole('button', { name: '查看 只用一个Skill 的详情' }).click()
+    const group = page.getByRole('group', { name: 'Skill' })
+    await group.getByText('已失效').waitFor()
+    expect(await group.getByRole('checkbox', { name: 'e2e-gone' }).isChecked()).toBe(true)
+    expect(await group.getByRole('checkbox', { name: 'e2e-alpha' }).isChecked()).toBe(true)
+    expect(await group.getByRole('checkbox', { name: 'e2e-beta' }).isChecked()).toBe(false)
+    expect(JSON.parse(await readFile(join(tenantDir, limited.id, 'assistant.json'), 'utf8'))).toMatchObject({ subsets: { skills: ['e2e-alpha', 'e2e-gone'] } })
+    expect(tripwire.pageErrors).toEqual([])
+  } catch (error) {
+    await saveFailureShot(page, 'assistants-subsets')
+    throw error
+  } finally {
+    await close()
+  }
+}, 180_000)

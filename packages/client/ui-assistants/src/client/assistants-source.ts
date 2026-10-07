@@ -3,7 +3,7 @@
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
-  AssistantDetail, AssistantsState, CreateAssistantInput, CreateAssistantResult, UpdateAssistantInput,
+  AssistantCapabilityOptions, AssistantDetail, AssistantsState, CreateAssistantInput, CreateAssistantResult, UpdateAssistantInput,
 } from '@deepseek-ai/dsh-assistants/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
@@ -47,10 +47,12 @@ export interface WizardPreset {
   readonly description?: string
 }
 
-/** The models and presets the creation wizard offers. */
+/** The models, presets, and subset choices the creation wizard and the detail page offer. */
 export interface WizardOptions {
   readonly models: readonly WizardModel[]
   readonly presets: readonly WizardPreset[]
+  /** Skills, connectors, and knowledge bases available now; undefined when they could not be read. */
+  readonly capabilities?: AssistantCapabilityOptions
 }
 
 /** Remote calls and workspace navigation the source drives. */

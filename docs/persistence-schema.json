@@ -22192,7 +22192,7 @@
       "digest": "08484270c008b80791bb5cb13b26e3e1dbab4c945e8d6699f4f41853dcbf553a",
       "names": [],
       "sources": [
-        "packages/assistant/assistants/src/types.ts:155"
+        "packages/assistant/assistants/src/types.ts:194"
       ]
     },
     {
@@ -25755,7 +25755,7 @@
       "digest": "fc362d6c3bc744ee54ea7e008f30aff28f240db9d9882faec31b12982b643d5c",
       "names": [],
       "sources": [
-        "packages/assistant/assistants/src/types.ts:160"
+        "packages/assistant/assistants/src/types.ts:199"
       ]
     },
     {

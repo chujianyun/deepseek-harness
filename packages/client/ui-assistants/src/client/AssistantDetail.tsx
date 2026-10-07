@@ -4,11 +4,11 @@
  */
 
 import { useEffect, useId, useState, type ReactNode } from 'react'
-import type { AssistantDetail as Detail, AssistantView, CoreFileName, UpdateAssistantInput } from '@deepseek-ai/dsh-assistants/types'
+import type { AssistantDetail as Detail, AssistantSubsets, AssistantView, CoreFileName, UpdateAssistantInput } from '@deepseek-ai/dsh-assistants/types'
 import { Button, SegmentedTabs, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { AssistantAvatar } from './AssistantAvatar.tsx'
-import { IdentityFields, modelKey, modelOf, nameValid, PresetChoices, type IdentityValue } from './AssistantFields.tsx'
+import { IdentityFields, modelKey, modelOf, nameValid, PresetChoices, SubsetFields, type IdentityValue } from './AssistantFields.tsx'
 import type { AssistantsInjected, WizardOptions } from './assistants-source.ts'
 import type { AssistantsLocaleKey } from './locales.ts'
 import css from './AssistantDetail.module.css'
@@ -25,6 +25,7 @@ const FILE_LABELS = {
 interface Draft {
   readonly identity: IdentityValue
   readonly preset: string
+  readonly subsets: AssistantSubsets
   readonly files: Readonly<Record<CoreFileName, string>>
 }
 
@@ -40,6 +41,7 @@ function draftOf({ assistant, files }: Detail): Draft {
       model: modelKey(assistant.model), effort: assistant.model?.reasoningEffort ?? '',
     },
     preset: assistant.preset ?? '',
+    subsets: assistant.subsets ?? {},
     files,
   }
 }
@@ -61,8 +63,15 @@ function changesOf(saved: Draft, draft: Draft): UpdateAssistantInput {
       ? {}
       : { model: modelOf(identity.model, identity.effort) ?? null }),
     ...(draft.preset === saved.preset ? {} : { preset: draft.preset === '' ? null : draft.preset }),
+    ...(sameSubsets(draft.subsets, saved.subsets) ? {} : { subsets: draft.subsets }),
     ...(files.length === 0 ? {} : { files: Object.fromEntries(files.map(file => [file, draft.files[file]])) }),
   }
+}
+
+/** Whether two subsets allow the same items, whatever the order. */
+function sameSubsets(a: AssistantSubsets, b: AssistantSubsets): boolean {
+  const key = (subsets: AssistantSubsets) => JSON.stringify(['skills', 'connectors', 'knowledgeBases'].map(kind => subsets[kind as keyof AssistantSubsets]?.toSorted() ?? null))
+  return key(a) === key(b)
 }
 
 /** Props of the detail page. */
@@ -157,6 +166,13 @@ export function AssistantDetailPage(props: AssistantDetailProps) {
           <section className={css.section} aria-label={t('stepPreset')}>
             <h2 className={css.heading}>{t('stepPreset')}</h2>
             <PresetChoices t={t} presets={options.presets} value={draft.preset} onChange={(preset) => { edit({ ...draft, preset }) }} />
+          </section>
+          <section className={css.section} aria-label={t('stepSubsets')}>
+            <h2 className={css.heading}>{t('stepSubsets')}</h2>
+            <SubsetFields
+              t={t} value={draft.subsets} options={options.capabilities}
+              onChange={(subsets) => { edit({ ...draft, subsets }) }}
+            />
           </section>
           <section className={css.section} aria-label={t('coreFiles')}>
             <h2 className={css.heading}>{t('coreFiles')}</h2>

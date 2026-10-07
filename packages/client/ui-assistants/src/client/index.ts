@@ -41,16 +41,18 @@ const PANEL_ID = 'assistants' as MainPanelId
 export const inject = ['slots', 'locale', 'remote', 'remote.assistants', 'remote.session', 'remote.agentPresets']
 
 /**
- * Read the wizard's models and presets; a Remote that refuses or is absent contributes none.
+ * Read the wizard's models, presets, and subset choices; a Remote that refuses or is absent contributes none.
  * @param ctx - the browser plugin context.
- * @returns the models of every routable provider and the presets that can compose a session.
+ * @returns the models of every routable provider, the presets that can compose a session, and the
+ *   Skills, connectors, and knowledge bases available now.
  */
 async function wizardOptions(ctx: ClientContext): Promise<WizardOptions> {
   // A deployment without one of these Remotes, or one that refuses, offers nothing from it.
   const settle = <T>(call: () => Promise<T>): Promise<T | undefined> => Promise.resolve().then(call).catch(() => undefined)
-  const [catalog, roster] = await Promise.all([
+  const [catalog, roster, capabilities] = await Promise.all([
     settle(() => ctx.remote.session.modelCatalog()),
     settle(() => ctx.remote.agentPresets.list()),
+    settle(() => ctx.remote.assistants.capabilityOptions()),
   ])
   const models = catalog?.ok === true
     ? catalog.value.groups.flatMap(group => group.models.map(model => ({
@@ -64,7 +66,7 @@ async function wizardOptions(ctx: ClientContext): Promise<WizardOptions> {
       id: preset.id, name: preset.name ?? preset.id, ...(preset.description === undefined ? {} : { description: preset.description }),
     }))
     : []
-  return { models, presets }
+  return { models, presets, ...(capabilities?.ok === true ? { capabilities: capabilities.value } : {}) }
 }
 
 /**

@@ -11,6 +11,9 @@
 /assistants/managing-assistants:
   en: a8e4305105dd5f1d
   zh: e623440ad1b36dce
+/assistants/capability-subsets:
+  en: c68931557680b881
+  zh: 81cea612f45b180f
 /assistants/session-binding:
   en: ef3f64cef403d0b8
   zh: e015d663f60d0874

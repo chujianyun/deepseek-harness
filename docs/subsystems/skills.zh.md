@@ -467,6 +467,16 @@ Layered registry of skill providers, the host+per-scope shape the tools registry
 setDisabled(name: string, disabled: boolean): Promise<void>
 
 /**
+ * Leave skills out of reads made for a viewing scope. Every scoped `list()`, `snapshot()`, and
+ * `get()` applies every added filter on read, after the cache, so a filter may consult state
+ * that changes between reads; a read without a scope applies none. Adding or removing a filter
+ * emits `skills/change`.
+ * @param filter - returns false for a skill the scope must not see.
+ * @returns the disposer that removes the filter.
+ */
+addViewFilter(filter: SkillViewFilter): () => void
+
+/**
  * Register a borrowed same-process provider synchronously during plugin
  * apply, into the calling context's layer: a scoped context (an agent
  * preset's standing mount) registers for that scope alone, an unscoped

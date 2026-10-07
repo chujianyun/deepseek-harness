@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { AssistantTemplateView, CreateAssistantInput } from '@deepseek-ai/dsh-assistants/types'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { WizardOptions } from '../src/client/assistants-source.ts'
@@ -11,7 +11,7 @@ afterEach(() => { cleanup() })
 
 const templates: AssistantTemplateView[] = [
   { id: 'daily', name: '日常助手', description: '通用日常助手', avatar: { kind: 'preset', key: 'sun' } },
-  { id: 'ecommerce', name: '电商管家', description: '综合店铺管家', avatar: { kind: 'preset', key: 'ocean' } },
+  { id: 'ecommerce', name: '电商管家', description: '综合店铺管家', avatar: { kind: 'preset', key: 'ocean' }, subsets: { connectors: ['feishu'] } },
 ]
 const options: WizardOptions = {
   models: [
@@ -19,6 +19,11 @@ const options: WizardOptions = {
     { provider: 'acme', providerName: 'Acme', id: 'think', name: 'Think', efforts: [{ id: 'low', name: '低' }, { id: 'high', name: '高' }], defaultEffort: 'high' },
   ],
   presets: [{ id: 'standard', name: '标准', description: '日常工具' }, { id: 'minimal', name: '极简' }],
+  capabilities: {
+    skills: [{ id: 'weekly-report', name: 'weekly-report', description: '写周报' }, { id: 'pdf', name: 'pdf' }],
+    connectors: [{ id: 'feishu', name: 'feishu' }, { id: 'dingtalk', name: 'dingtalk' }],
+    knowledgeBases: [],
+  },
 }
 
 interface MountOptions {
@@ -39,22 +44,25 @@ async function mount(over: MountOptions = {}) {
   return props
 }
 const next = () => { fireEvent.click(screen.getByRole('button', { name: '下一步' })) }
-const step = () => screen.getByText(/^第 \d \/ 4 步$/).textContent
+const step = () => screen.getByText(/^第 \d \/ 5 步$/).textContent
 
 describe('creation wizard', () => {
-  it('walks four steps forward and back, starting from the first template', async () => {
+  it('walks five steps forward and back, starting from the first template', async () => {
     await mount()
-    expect(step()).toBe('第 1 / 4 步')
+    expect(step()).toBe('第 1 / 5 步')
     expect(screen.getByRole('radio', { name: /日常助手/ }).getAttribute('aria-checked')).toBe('true')
     next()
-    expect(step()).toBe('第 2 / 4 步')
+    expect(step()).toBe('第 2 / 5 步')
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: '名称' }).value).toBe('日常助手')
     fireEvent.click(screen.getByRole('button', { name: '上一步' }))
-    expect(step()).toBe('第 1 / 4 步')
+    expect(step()).toBe('第 1 / 5 步')
     next(); next()
     expect(screen.getByRole('radio', { name: /跟随默认/ }).getAttribute('aria-checked')).toBe('true')
     next()
-    expect(step()).toBe('第 4 / 4 步')
+    expect(step()).toBe('第 4 / 5 步')
+    expect(screen.getAllByRole<HTMLInputElement>('radio', { name: '全部（跟随全局）' }).map(radio => radio.checked)).toEqual([true, true, true])
+    next()
+    expect(step()).toBe('第 5 / 5 步')
     expect(screen.queryByRole('button', { name: '下一步' })).toBeNull()
   })
 
@@ -63,7 +71,7 @@ describe('creation wizard', () => {
     const props = await mount({ onCreate: () => new Promise((resolve) => { finish = resolve }) })
     next()
     fireEvent.change(screen.getByRole('textbox', { name: '描述' }), { target: { value: '新的描述' } })
-    next(); next()
+    next(); next(); next()
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '创建' })) })
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '正在创建…' }).disabled).toBe(true)
     await act(async () => { finish(undefined); await Promise.resolve() })
@@ -134,6 +142,19 @@ describe('creation wizard', () => {
     next()
     fireEvent.click(screen.getByRole('radio', { name: /极简/ }))
     next()
+    const connectors = screen.getByRole('group', { name: '连接器' })
+    expect(within(connectors).getByRole<HTMLInputElement>('radio', { name: '仅选中' }).checked).toBe(true)
+    expect(within(connectors).getByRole<HTMLInputElement>('checkbox', { name: '飞书' }).checked).toBe(true)
+    expect(within(connectors).getByRole<HTMLInputElement>('checkbox', { name: '钉钉' }).checked).toBe(false)
+    const skills = screen.getByRole('group', { name: 'Skill' })
+    fireEvent.click(within(skills).getByRole('radio', { name: '仅选中' }))
+    fireEvent.click(within(skills).getByRole('checkbox', { name: 'weekly-report' }))
+    fireEvent.click(within(skills).getByRole('checkbox', { name: 'pdf' }))
+    fireEvent.click(within(skills).getByRole('checkbox', { name: 'pdf' }))
+    expect(within(screen.getByRole('group', { name: '知识库' })).queryByText('暂无可选项')).toBeNull()
+    fireEvent.click(within(screen.getByRole('group', { name: '知识库' })).getByRole('radio', { name: '仅选中' }))
+    expect(within(screen.getByRole('group', { name: '知识库' })).getByText('暂无可选项')).toBeTruthy()
+    next()
     fireEvent.change(screen.getByRole('textbox', { name: '如何称呼你' }), { target: { value: '小明' } })
     fireEvent.change(screen.getByRole('textbox', { name: '偏好语言' }), { target: { value: '中文' } })
     fireEvent.change(screen.getByRole('textbox', { name: '备注' }), { target: { value: '杭州' } })
@@ -142,6 +163,7 @@ describe('creation wizard', () => {
     expect(props.onCreate).toHaveBeenCalledWith({
       templateId: 'ecommerce', name: '电商管家', description: '综合店铺管家', avatar: { kind: 'preset', key: 'ocean' },
       model: { provider: 'acme', model: 'think', reasoningEffort: 'low' }, preset: 'minimal',
+      subsets: { connectors: ['feishu'], skills: ['weekly-report'], knowledgeBases: [] },
       user: { name: '小明', language: '中文', notes: '杭州', background: '天猫店运营' },
     })
     expect(props.onClose).toHaveBeenCalledOnce()
@@ -154,12 +176,56 @@ describe('creation wizard', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '名称' }), { target: { value: '空白助手' } })
     fireEvent.change(screen.getByRole('combobox', { name: '模型' }), { target: { value: '["acme","think"]' } })
     fireEvent.change(screen.getByRole('combobox', { name: '思考级别' }), { target: { value: '' } })
-    next(); next()
+    next(); next(); next()
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '创建' })) })
-    expect(props.onCreate.mock.calls[0]![0]).toMatchObject({ templateId: null, model: { provider: 'acme', model: 'think' } })
+    expect(props.onCreate.mock.calls[0]![0]).toMatchObject({ templateId: null, model: { provider: 'acme', model: 'think' }, subsets: {} })
     expect(props.onCreate.mock.calls[0]![0]).not.toHaveProperty('preset')
     expect(props.onCreate.mock.calls[0]![0].model).not.toHaveProperty('reasoningEffort')
     expect(screen.getByRole('alert').textContent).toBe('创建失败：gone')
     expect(props.onClose).not.toHaveBeenCalled()
+  })
+})
+
+describe('subset choices', () => {
+  it('waits for the choices, and goes back to All when switched', async () => {
+    const props = {
+      t: makeTranslate(zh), open: true, templates, onClose: vi.fn(), onCreate: vi.fn(async () => undefined),
+      onLoadOptions: vi.fn(async () => ({ models: [], presets: [] })), squareAvatar: vi.fn(async () => ''),
+    }
+    render(<CreateAssistantWizard {...props} />)
+    await act(async () => { await Promise.resolve() })
+    fireEvent.click(screen.getByRole('radio', { name: /电商管家/ }))
+    next(); next(); next()
+    const connectors = screen.getByRole('group', { name: '连接器' })
+    expect(within(connectors).getByText('正在读取可选项…')).toBeTruthy()
+    expect(within(connectors).queryByText('已失效')).toBeNull()
+    fireEvent.click(within(connectors).getByRole('radio', { name: '全部（跟随全局）' }))
+    expect(within(connectors).queryByRole('checkbox')).toBeNull()
+  })
+})
+
+describe('subset search', () => {
+  it('filters a long list by name and description and counts the selection', async () => {
+    const many = Array.from({ length: 10 }, (_, index) => ({ id: `skill-${String(index)}`, name: `skill-${String(index)}`, ...index === 3 ? { description: '写周报' } : {} }))
+    const props = {
+      t: makeTranslate(zh), open: true, templates: [], onClose: vi.fn(), onCreate: vi.fn(async () => undefined),
+      onLoadOptions: vi.fn(async () => ({ models: [], presets: [], capabilities: { skills: many, connectors: [], knowledgeBases: [] } })),
+      squareAvatar: vi.fn(async () => ''),
+    }
+    render(<CreateAssistantWizard {...props} />)
+    await act(async () => { await Promise.resolve() })
+    next()
+    fireEvent.change(screen.getByRole('textbox', { name: '名称' }), { target: { value: '多' } })
+    next(); next()
+    const skills = screen.getByRole('group', { name: 'Skill' })
+    expect(within(skills).queryByRole('textbox')).toBeNull()
+    fireEvent.click(within(skills).getByRole('radio', { name: '仅选中' }))
+    expect(within(skills).getAllByRole('checkbox')).toHaveLength(10)
+    fireEvent.change(within(skills).getByRole('textbox', { name: 'Skill 搜索' }), { target: { value: '周报' } })
+    expect(within(skills).getAllByRole('checkbox').map(box => box.closest('label')?.textContent)).toEqual(['skill-3'])
+    fireEvent.click(within(skills).getByRole('checkbox', { name: 'skill-3' }))
+    expect(within(skills).getByText('已选 1 项')).toBeTruthy()
+    fireEvent.change(within(skills).getByRole('textbox', { name: 'Skill 搜索' }), { target: { value: '' } })
+    expect(within(skills).getAllByRole('checkbox')).toHaveLength(10)
   })
 })

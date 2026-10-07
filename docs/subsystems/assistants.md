@@ -12,6 +12,10 @@ Assistants belong to the tenant of the current Hub sign-in and live under `<dshH
 
 The detail page edits an assistant's fields and its four core files through the `assistants` Remote. Saved core files and a new name reach every session bound to the assistant on its next step, including sessions in progress; a new model or preset applies to sessions bound afterward. Setting another default moves blank sessions bound to the previous default to it. A copy carries the configuration and core files under the name `<name> 副本`, without sessions. Deleting an assistant keeps its sessions, which continue without its core files: since earlier turns stay in the conversation, their next turn tells the model that those core files no longer apply; the first remaining assistant becomes the default, and with none left new sessions bind no assistant.
 
+## Capability subsets
+
+An assistant can limit the Skills, connectors, and knowledge bases of its sessions: each kind either follows global, including items added later, or allows only the items selected. Each limit is enforced by the service that decides that capability — the skill registry's view filter, the connectors service, and the knowledge selection service — so the model sees and uses only the allowed items, and an item that is later uninstalled, switched off, or deleted simply drops out. The E-commerce Manager template starts with only Feishu among the connectors.
+
 ## Session binding
 
 A main session binds one assistant while it is blank, recorded as `assistant/selected`; a blank session without one takes the tenant's default, and the new-session picker binds another before the first turn. An assistant with an Agent preset switches the session to it first. Before each turn step, the bound assistant's core files are read and, when they changed, recorded as `assistant/instructions`; the `assistant:core-files` prompt section after the deployment persona carries the recorded text, so the model sees an edit on the next step and the session log reconstructs every prompt. Subagent sessions bind no assistant.
@@ -52,6 +56,15 @@ Host owner of the assistants and of the `assistants` Remote namespace.
  *   `assistants/invalid-description`, `assistants/invalid-avatar`, or `assistants/preset-unavailable`.
  */
 @Remote createAssistant(input: CreateAssistantInput): Promise<CreateAssistantResult>
+
+/**
+ * List the Skills, connectors, and knowledge bases available now, which subsets can name.
+ * Skills are those a new session's default Agent preset discovers outside any project; a
+ * service the deployment does not compose offers none.
+ * @returns enabled model-usable Skills other than connector Skills, connectors installed and
+ *   switched on for the tenant (named by id), and the tenant's knowledge bases.
+ */
+@Remote async capabilityOptions(): Promise<AssistantCapabilityOptions>
 
 /**
  * Read one assistant with the text of its core files.

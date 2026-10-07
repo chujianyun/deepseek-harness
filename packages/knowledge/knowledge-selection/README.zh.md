@@ -26,6 +26,8 @@ kind: "package-reference"
 
 `select(sessionId, baseIds)` 把会话的选择设为当前登录租户的这些知识库，保持给出的顺序并去除重复；空列表表示不选择，每个新会话也都从不选择开始。租户没有对应知识库的 id 会以 `knowledge-selection/unknown-base` 拒绝。两轮之间，选择会立即写入日志，结果为 `applies: 'now'`。一轮进行中，结果为 `applies: 'next-step'`：本轮下一次请求会立即按新选择带上或去掉工具，选择则在下一个被接受的步骤、该请求发出之前写入日志。与已记录选择相同的选择不写入任何内容。
 
+`allowedBases(sessionId)` 列出会话可以选择的租户知识库 id。`restrict(filter)` 收窄这一范围，例如只允许会话的智能体允许的知识库：`select()` 以 `knowledge-selection/not-allowed` 拒绝过滤器不允许的知识库，检索会跳过已选中但不再允许的知识库，过滤后选择为空的会话会失去该工具。添加或移除过滤器时会重新检查每个存活的 agent，每一步之前也会检查。返回的 disposer 移除该过滤器。
+
 `knowledge_search({ query })` 按每个选中知识库自己的 `documentCount` 和 `threshold` 检索，把片段按得分从高到低合并，保留的数量取被检索知识库中最大的 `documentCount`。无法检索的知识库不会让调用失败：选择后被删除的报告为 `missing`，正在为新嵌入模型重建的报告为 `rebuilding`，本地嵌入模型尚未安装的报告为 `unavailable`，检索抛出错误的报告为 `failed` 并附带消息。结果值包含每个片段的知识库、条目、条目类型、来源（文件夹中文件的相对路径或网页地址）、块序号、得分和正文；其展示元数据中的 `citations` 包含相同字段，并以正文前 160 个字符作为 `snippet`。客户端由此推导每个 Turn 的来源，因此重新加载或回放的会话显示相同的来源。
 
 -----
@@ -37,7 +39,7 @@ kind: "package-reference"
 
 #### 模型看到的内容
 
-没有选择知识库的会话看不到本包的任何工具。有选择时，模型看到 [`knowledge_search` 的 schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-knowledge-selection)，其描述固定，只有一个 `query` 参数；知识库名称不会出现在 schema 中。其结果为文本：每个片段列为 `[n] item (source) — knowledge base "name", chunk n, relevance 0.00`，后接片段正文，或说明没有匹配的片段；最后对每个无法检索的知识库给出一行 `Not searched: "name" — reason.`。
+没有选择知识库、或过滤器一个都不允许的会话看不到本包的任何工具。有选择时，模型看到 [`knowledge_search` 的 schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-knowledge-selection)，其描述固定，只有一个 `query` 参数；知识库名称不会出现在 schema 中。其结果为文本：每个片段列为 `[n] item (source) — knowledge base "name", chunk n, relevance 0.00`，后接片段正文，或说明没有匹配的片段；最后对每个无法检索的知识库给出一行 `Not searched: "name" — reason.`。
 
 ##### 结果示例
 

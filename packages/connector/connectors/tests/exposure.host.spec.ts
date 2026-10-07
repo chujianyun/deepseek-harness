@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import type { ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import type { PreToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import type { SkillCandidate, SkillProvider } from '@deepseek-ai/dsh-skill'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
@@ -236,5 +236,40 @@ describe('connector Skills', () => {
     await vi.waitFor(async () => { expect(lark(await t.ctx.skills.list(scope))).toEqual([]) })
     expect((await t.ctx.skills.get('lark-calendar', scope))?.content).toBe('Stale instructions.')
     await preset.dispose()
+  })
+})
+
+describe('restricting connectors per session', () => {
+  runs('keeps a refused connector\'s CLI, Skills, and commands out of that session only', async () => {
+    const t = await connected()
+    const blocked: NonNullable<ToolExecution['agent']> = { id: 'blocked' } as never
+    const open: NonNullable<ToolExecution['agent']> = { id: 'open' } as never
+    t.ctx.provide('agents', { list: () => [blocked, open] } as never)
+    const seen: string[] = []
+    const dispose = t.service.restrict((agent, id) => {
+      seen.push(id)
+      return agent !== blocked
+    })
+    const call = (agent: typeof blocked | undefined, command: string): ToolExecution => ({
+      ...execution, arguments: { command }, ...agent === undefined ? {} : { agent },
+    })
+    const gate = (exec: ToolExecution) => t.ctx.waterfall('tools/pre-execute', exec, () => Promise.resolve<PreToolDecision>({ kind: 'allow' }))
+    expect(t.ctx.shellEnv.collectPath(call(blocked, 'ls'))).toEqual([])
+    expect(t.ctx.shellEnv.collectPath(call(open, 'ls'))).toEqual([join(t.root, 'bin', 't-a')])
+    expect(t.ctx.shellEnv.collectPath(call(undefined, 'ls'))).toEqual([join(t.root, 'bin', 't-a')])
+    expect(seen).toContain('feishu')
+    expect(await gate(call(blocked, '/opt/bin/lark-cli calendar +agenda'))).toEqual({
+      kind: 'deny', reason: 'The Feishu connector (lark-cli) is not available in this session.',
+    })
+    expect(await gate(call(blocked, 'echo hi'))).toEqual({ kind: 'allow' })
+    // A call that hides how it runs the CLI is not refused here; the approval below still asks.
+    expect(await gate(call(blocked, 'eval "$(echo lark-cli)"'))).toMatchObject({ kind: 'ask' })
+    expect(await gate(call(open, 'lark-cli calendar +agenda'))).toEqual({ kind: 'allow' })
+    expect(lark(await t.ctx.skills.list({ scope: blocked }))).toEqual([])
+    expect(lark(await t.ctx.skills.list({ scope: open }))).toHaveLength(2)
+    expect(lark(await t.ctx.skills.list({ scope: {} }))).toHaveLength(2)
+    dispose()
+    expect(lark(await t.ctx.skills.list({ scope: blocked }))).toHaveLength(2)
+    expect(t.ctx.shellEnv.collectPath(call(blocked, 'ls'))).toEqual([join(t.root, 'bin', 't-a')])
   })
 })

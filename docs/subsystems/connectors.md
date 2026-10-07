@@ -113,6 +113,16 @@ Host owner of the connectors and of the `connectors` Remote namespace.
  *   Error when mounted without Settings or a profile entry.
  */
 @Remote async revokeAlwaysAllowed(id: string, command: string): Promise<ConnectorsState>
+
+/**
+ * Keep sessions from using connectors. Every added filter applies to each model shell call: a
+ * connector a filter refuses for the call's agent puts no CLI on that call's `PATH`, gives the
+ * session none of its Skills, and a call that names its CLI is denied. Calls without an agent
+ * and reads without a session are not filtered.
+ * @param filter - returns false for a connector the agent's session must not use.
+ * @returns the disposer that removes the filter.
+ */
+restrict(filter: ConnectorFilter): () => void
 ```
 
 Source: [`packages/connector/connectors/src/index.ts`](../../packages/connector/connectors/src/index.ts)

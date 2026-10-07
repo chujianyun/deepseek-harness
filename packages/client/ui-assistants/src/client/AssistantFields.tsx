@@ -1,11 +1,13 @@
 /**
- * Assistant form fields shared by the creation wizard and the detail page: identity and model, and
- * the capability base.
+ * Assistant form fields shared by the creation wizard and the detail page: identity and model, the
+ * capability base, and the capability subsets.
  */
 
 import { useState } from 'react'
-import type { AssistantAvatar as Avatar, AssistantModel } from '@deepseek-ai/dsh-assistants/types'
-import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
+import type {
+  AssistantAvatar as Avatar, AssistantCapabilityOption, AssistantCapabilityOptions, AssistantModel, AssistantSubsets,
+} from '@deepseek-ai/dsh-assistants/types'
+import { Button, Checkbox, Input, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { AssistantAvatar, PRESET_AVATAR_KEYS } from './AssistantAvatar.tsx'
 import type { WizardModel, WizardPreset } from './assistants-source.ts'
@@ -193,6 +195,108 @@ export function PresetChoices({ t, presets, value, onChange }: PresetChoicesProp
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+/** The kinds a subset names, with the copy key of each group. */
+const SUBSET_GROUPS = [
+  ['skills', 'subsetSkills'], ['connectors', 'subsetConnectors'], ['knowledgeBases', 'subsetKnowledge'],
+] as const
+
+/** More choices than this get a search box. */
+const SEARCHABLE = 8
+
+/** Copy keys of the connectors the client names. */
+const CONNECTOR_NAMES: Readonly<Record<string, 'connectorFeishu' | 'connectorDingtalk'>> = { feishu: 'connectorFeishu', dingtalk: 'connectorDingtalk' }
+
+/** Props of {@link SubsetFields}. */
+export interface SubsetFieldsProps {
+  readonly t: TranslateNS<'assistants'>
+  readonly value: AssistantSubsets
+  readonly onChange: (subsets: AssistantSubsets) => void
+  /** What can be chosen now; undefined until read. */
+  readonly options: AssistantCapabilityOptions | undefined
+}
+
+/**
+ * Render the Skill, connector, and knowledge base subsets: each All (follow global) or Only
+ * selected, with a checklist of what is available now. A selected id no longer available shows as
+ * unavailable, so it can be cleared.
+ * @param props - copy, the subsets, and the available items.
+ * @returns the three groups.
+ */
+export function SubsetFields({ t, value, onChange, options }: SubsetFieldsProps) {
+  const [queries, setQueries] = useState<Partial<Record<keyof AssistantSubsets, string>>>({})
+  // Ordered by the selection the form opened with, so a box does not jump when ticked.
+  const [opened] = useState(value)
+  const label = (kind: keyof AssistantSubsets, option: AssistantCapabilityOption): string => {
+    const key = kind === 'connectors' ? CONNECTOR_NAMES[option.id] : undefined
+    return key === undefined ? option.name : t(key)
+  }
+  const set = (kind: keyof AssistantSubsets, ids: readonly string[] | undefined): void => {
+    const { [kind]: _old, ...rest } = value
+    onChange(ids === undefined ? rest : { ...rest, [kind]: ids })
+  }
+  return (
+    <div className={css.form}>
+      <p className={css.hint}>{t('subsetIntro')}</p>
+      {SUBSET_GROUPS.map(([kind, title]) => {
+        const chosen = value[kind]
+        const available = options?.[kind] ?? []
+        const needle = (queries[kind] ?? '').trim().toLowerCase()
+        const matching = needle === '' ? available : available.filter(option => `${option.name}\n${option.description ?? ''}`.toLowerCase().includes(needle))
+        const first = (option: AssistantCapabilityOption): number => Number(opened[kind]?.includes(option.id) ?? false)
+        const ordered = [...matching].sort((a, b) => first(b) - first(a))
+        const gone = options === undefined ? [] : (chosen ?? []).filter(id => !available.some(option => option.id === id))
+        return (
+          <fieldset key={kind} className={css.group}>
+            <legend className={css.label}>{t(title)}</legend>
+            <div className={css.modes}>
+              <label className={css.mode}>
+                <input type="radio" name={`subset-${kind}`} checked={chosen === undefined} onChange={() => { set(kind, undefined) }} />
+                {t('subsetAll')}
+              </label>
+              <label className={css.mode}>
+                <input type="radio" name={`subset-${kind}`} checked={chosen !== undefined} onChange={() => { set(kind, []) }} />
+                {t('subsetSelected')}
+              </label>
+            </div>
+            {chosen !== undefined && available.length > SEARCHABLE && (
+              <div className={css.searchRow}>
+                <Input
+                  value={queries[kind] ?? ''} placeholder={t('subsetSearch')} aria-label={`${t(title)} ${t('subsetSearch')}`}
+                  onChange={(event) => { setQueries({ ...queries, [kind]: event.target.value }) }}
+                />
+                <span className={css.hint}>{t('subsetCount', { count: chosen.length })}</span>
+              </div>
+            )}
+            {chosen !== undefined && (
+              <div className={css.checklist}>
+                {options === undefined && <span className={css.hint}>{t('subsetLoading')}</span>}
+                {options !== undefined && available.length === 0 && gone.length === 0 && <span className={css.hint}>{t('subsetNone')}</span>}
+                {/* Unavailable and selected items come first, so a long list never hides them. */}
+                {gone.map(id => (
+                  <span key={id} className={css.gone}>
+                    <Checkbox
+                      label={label(kind, { id, name: id })} checked
+                      onChange={() => { set(kind, chosen.filter(item => item !== id)) }}
+                    />
+                    <Tag tone="warning">{t('subsetGone')}</Tag>
+                  </span>
+                ))}
+                {ordered.map(option => (
+                  <Checkbox
+                    key={option.id} label={label(kind, option)} checked={chosen.includes(option.id)}
+                    {...(option.description === undefined ? {} : { title: option.description })}
+                    onChange={(on) => { set(kind, on ? [...chosen, option.id] : chosen.filter(id => id !== option.id)) }}
+                  />
+                ))}
+              </div>
+            )}
+          </fieldset>
+        )
+      })}
     </div>
   )
 }

@@ -440,6 +440,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RemoteError `hub-account/signed-out`, `assistants/template-not-found`, `assistants/invalid-name`, `assistants/invalid-description`, `assistants/invalid-avatar`, or `assistants/preset-unavailable`.'],
       },
       {
+        signature: '@Remote async capabilityOptions(): Promise<AssistantCapabilityOptions>',
+        description: 'List the Skills, connectors, and knowledge bases available now, which subsets can name. Skills are those a new session\'s default Agent preset discovers outside any project; a service the deployment does not compose offers none.',
+        parameters: [],
+        returns: 'enabled model-usable Skills other than connector Skills, connectors installed and switched on for the tenant (named by id), and the tenant\'s knowledge bases.',
+      },
+      {
         signature: '@Remote getAssistant(assistantId: string): Promise<AssistantDetail>',
         description: 'Read one assistant with the text of its core files.',
         parameters: [{ name: 'assistantId', description: 'the assistant to read.' }],
@@ -929,6 +935,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'id', description: 'the connector.' }, { name: 'command', description: 'the command words, as the view lists them.' }],
         returns: 'the state once the setting is saved.',
         throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
+      },
+      {
+        signature: 'restrict(filter: ConnectorFilter): () => void',
+        description: 'Keep sessions from using connectors. Every added filter applies to each model shell call: a connector a filter refuses for the call\'s agent puts no CLI on that call\'s `PATH`, gives the session none of its Skills, and a call that names its CLI is denied. Calls without an agent and reads without a session are not filtered.',
+        parameters: [{ name: 'filter', description: 'returns false for a connector the agent\'s session must not use.' }],
+        returns: 'the disposer that removes the filter.',
       },
     ],
   },
@@ -1795,7 +1807,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select the knowledge bases a session searches; an empty list selects none. Between turns the selection is logged at once; during a turn it applies from the turn\'s next step.',
         parameters: [{ name: 'sessionId', description: 'the session.' }, { name: 'baseIds', description: 'knowledge bases of the signed-in tenant, in the order to show them.' }],
         returns: 'the selection and when it applies.',
-        throws: ['RemoteError `knowledge-selection/unknown-base`, or the session\'s resolution failure.'],
+        throws: ['RemoteError `knowledge-selection/unknown-base`, `knowledge-selection/not-allowed` for a knowledge base the session may not search, or the session\'s resolution failure.'],
+      },
+      {
+        signature: '@Remote async allowedBases(sessionId: SessionId): Promise<readonly string[]>',
+        description: 'List the signed-in tenant\'s knowledge bases a session may select.',
+        parameters: [{ name: 'sessionId', description: 'the session.' }],
+        returns: 'the ids, in the tenant\'s order.',
+        throws: ['the session\'s resolution failure.'],
+      },
+      {
+        signature: 'restrict(filter: KnowledgeFilter): () => void',
+        description: 'Narrow the knowledge bases sessions may select and search. A session can no longer select a knowledge base a filter refuses, and its search skips one already selected; the search tool leaves a session whose selection the filters empty. Every live agent is checked again when a filter is added or removed, and each agent before every step.',
+        parameters: [{ name: 'filter', description: 'returns false for a knowledge base the agent\'s session must not search.' }],
+        returns: 'the disposer that removes the filter.',
       },
     ],
   },
@@ -3245,6 +3270,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Switch one user-level skill on or off by persisting the profile\'s `disabledSkills` list. Writes are queued, so concurrent calls never overwrite each other\'s change; a request that matches the state committed by the previous write writes nothing.',
         parameters: [{ name: 'name', description: 'kebab-case skill name; it need not be currently discovered.' }, { name: 'disabled', description: 'whether the skill should be disabled.' }],
         throws: ['when the registry was mounted without Settings or a profile entry.'],
+      },
+      {
+        signature: 'addViewFilter(filter: SkillViewFilter): () => void',
+        description: 'Leave skills out of reads made for a viewing scope. Every scoped `list()`, `snapshot()`, and `get()` applies every added filter on read, after the cache, so a filter may consult state that changes between reads; a read without a scope applies none. Adding or removing a filter emits `skills/change`.',
+        parameters: [{ name: 'filter', description: 'returns false for a skill the scope must not see.' }],
+        returns: 'the disposer that removes the filter.',
       },
       {
         signature: 'registerProvider(create: (control: SkillProviderControl) => SkillProvider, options: SkillProviderRegistrationOptions = {}): () => void',
@@ -5261,6 +5292,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AssistantAvatar = AssistantPresetAvatar | AssistantImageAvatar;',
   },
   {
+    name: 'AssistantCapabilityOption',
+    declaration: 'export interface AssistantCapabilityOption {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n}',
+  },
+  {
+    name: 'AssistantCapabilityOptions',
+    declaration: 'export interface AssistantCapabilityOptions {\n    readonly skills: readonly AssistantCapabilityOption[];\n    readonly connectors: readonly AssistantCapabilityOption[];\n    readonly knowledgeBases: readonly AssistantCapabilityOption[];\n}',
+  },
+  {
     name: 'AssistantDetail',
     declaration: 'export interface AssistantDetail {\n    readonly assistant: AssistantView;\n    readonly files: Readonly<Record<CoreFileName, string>>;\n}',
   },
@@ -5297,8 +5336,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AssistantStreamRecord = {\n    readonly type: \'text-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly texts: readonly string[];\n} | {\n    readonly type: \'reasoning-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly texts: readonly string[];\n} | {\n    readonly type: \'tool-call-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly id: ToolCallId;\n    readonly name?: string;\n    readonly args: readonly string[];\n} | {\n    readonly type: \'chunk\';\n    readonly time: number;\n    readonly chunk: StreamChunk;\n};',
   },
   {
+    name: 'AssistantSubsets',
+    declaration: 'export interface AssistantSubsets {\n    readonly skills?: readonly string[];\n    readonly connectors?: readonly string[];\n    readonly knowledgeBases?: readonly string[];\n}',
+  },
+  {
     name: 'AssistantTemplateView',
-    declaration: 'export interface AssistantTemplateView {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly avatar: AssistantAvatar;\n}',
+    declaration: 'export interface AssistantTemplateView {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly avatar: AssistantAvatar;\n    readonly subsets?: AssistantSubsets;\n}',
   },
   {
     name: 'AssistantUserInfo',
@@ -5306,7 +5349,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AssistantView',
-    declaration: 'export interface AssistantView {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly avatar: AssistantAvatar;\n    readonly preset?: string;\n    readonly model?: AssistantModel;\n    readonly templateId?: string;\n    readonly createdAt: string;\n}',
+    declaration: 'export interface AssistantView {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly avatar: AssistantAvatar;\n    readonly preset?: string;\n    readonly model?: AssistantModel;\n    readonly subsets?: AssistantSubsets;\n    readonly templateId?: string;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'AtInput',
@@ -5581,6 +5624,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ConnectionTrustRequest {\n    readonly headers: Headers | Readonly<Record<string, string | readonly string[] | undefined>>;\n}',
   },
   {
+    name: 'ConnectorFilter',
+    declaration: 'export type ConnectorFilter = (agent: CallingAgent, connectorId: ConnectorId) => boolean;',
+  },
+  {
     name: 'ConnectorId',
     declaration: 'export type ConnectorId = \'feishu\' | \'dingtalk\';',
   },
@@ -5722,7 +5769,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CreateAssistantInput',
-    declaration: 'export interface CreateAssistantInput {\n    readonly templateId: string | null;\n    readonly name: string;\n    readonly description: string;\n    readonly avatar: AssistantAvatar;\n    readonly model?: AssistantModel;\n    readonly preset?: string;\n    readonly user: AssistantUserInfo;\n}',
+    declaration: 'export interface CreateAssistantInput {\n    readonly templateId: string | null;\n    readonly name: string;\n    readonly description: string;\n    readonly avatar: AssistantAvatar;\n    readonly model?: AssistantModel;\n    readonly preset?: string;\n    readonly subsets?: AssistantSubsets;\n    readonly user: AssistantUserInfo;\n}',
   },
   {
     name: 'CreateAssistantResult',
@@ -6415,6 +6462,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'KnowledgeChunkStrategy',
     declaration: 'export type KnowledgeChunkStrategy = \'structured\' | \'delimiter\';',
+  },
+  {
+    name: 'KnowledgeFilter',
+    declaration: 'export type KnowledgeFilter = (agent: Agent, baseId: string) => boolean;',
   },
   {
     name: 'KnowledgeItemError',
@@ -8193,6 +8244,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SkillSummary {\n    readonly path?: string;\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly invocation: SkillInvocationPolicy;\n    readonly source: SkillSource;\n    readonly provider: string;\n    readonly resourceBase?: SkillResourceBase;\n    readonly disabled?: true;\n}',
   },
   {
+    name: 'SkillViewFilter',
+    declaration: 'export type SkillViewFilter = (skill: SkillSummary, scope: ScopeKey) => boolean;',
+  },
+  {
     name: 'SkillViewOptions',
     declaration: 'export interface SkillViewOptions extends SkillLookupOptions {\n    readonly scope?: ScopeKey | undefined;\n}',
   },
@@ -9006,7 +9061,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'UpdateAssistantInput',
-    declaration: 'export interface UpdateAssistantInput {\n    readonly name?: string;\n    readonly description?: string;\n    readonly avatar?: AssistantAvatar;\n    readonly model?: AssistantModel | null;\n    readonly preset?: string | null;\n    readonly files?: Readonly<Partial<Record<CoreFileName, string>>>;\n}',
+    declaration: 'export interface UpdateAssistantInput {\n    readonly name?: string;\n    readonly description?: string;\n    readonly avatar?: AssistantAvatar;\n    readonly model?: AssistantModel | null;\n    readonly preset?: string | null;\n    readonly subsets?: AssistantSubsets;\n    readonly files?: Readonly<Partial<Record<CoreFileName, string>>>;\n}',
   },
   {
     name: 'UpdateTeamTaskRequest',

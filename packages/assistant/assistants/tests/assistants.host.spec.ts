@@ -7,6 +7,7 @@ import AgentRegistry, { assembleContextFor, type Agent } from '@deepseek-ai/dsh-
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SkillRegistry from '@deepseek-ai/dsh-skill'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
@@ -647,5 +648,115 @@ describe('managing assistants', () => {
     await env.settle(s => s.tenantId === null)
     expect(await code(env.service.getAssistant('x'))).toBe('hub-account/signed-out')
     expect(await code(env.service.deleteAssistant('x'))).toBe('hub-account/signed-out')
+  })
+})
+
+const memorySkill = (name: string, source = 'memory', modelInvocable = true) => ({
+  name, description: `${name} 说明`, invocation: { modelInvocable, userInvocable: true }, provider: 'memory', source, rank: 10, locator: name,
+})
+const withSkills = (...skills: ReturnType<typeof memorySkill>[]) => async (ctx: Context) => {
+  await ctx.plugin(SkillRegistry)
+  ctx.skills.registerProvider(() => ({
+    name: 'memory', list: async () => skills, get: async (candidate: { name: string }) => ({ ...skills.find(skill => skill.name === candidate.name)!, content: 'body' }),
+  }))
+}
+
+describe('capability subsets', () => {
+  it('stores subsets from the input or the template, without empty or repeated ids, and edits and copies them', async () => {
+    const env = await setup()
+    await env.settle(s => s.assistants.length === 1)
+    expect((await env.service.getState()).templates.find(t => t.id === 'ecommerce')!.subsets).toEqual({ connectors: ['feishu'] })
+    const { assistantId: shop } = await env.service.createAssistant(input())
+    const { assistantId: chosen } = await env.service.createAssistant(input({ subsets: { skills: ['a', 'a', ''], knowledgeBases: [] } }))
+    const { assistantId: blank } = await env.service.createAssistant(input({ templateId: null, name: '空白' }))
+    let state = await env.service.getState()
+    const view = (id: string) => state.assistants.find(item => item.id === id)!
+    expect(view(shop).subsets).toEqual({ connectors: ['feishu'] })
+    expect(view(chosen).subsets).toEqual({ skills: ['a'], knowledgeBases: [] })
+    expect(view(blank)).not.toHaveProperty('subsets')
+    const again = await setup({ home: env.home })
+    expect((await again.settle(s => s.assistants.length === 4)).assistants.find(item => item.id === chosen)!.subsets).toEqual({ skills: ['a'], knowledgeBases: [] })
+    state = await env.service.updateAssistant(shop, { subsets: { skills: ['b'] } })
+    expect(view(shop).subsets).toEqual({ skills: ['b'] })
+    state = await env.service.updateAssistant(shop, { description: '只改描述' })
+    expect(view(shop).subsets).toEqual({ skills: ['b'] })
+    state = (await env.service.duplicateAssistant(shop)).state
+    expect(state.assistants.at(-1)!.subsets).toEqual({ skills: ['b'] })
+    state = await env.service.updateAssistant(shop, { subsets: {} })
+    expect(view(shop)).not.toHaveProperty('subsets')
+  })
+
+  it('shows a session only the Skills its assistant allows, leaves connector Skills to the connector subset, and limits subagents too', async () => {
+    const env = await setup({ before: withSkills(memorySkill('alpha'), memorySkill('beta'), memorySkill('lark-im', 'connector-feishu')) })
+    const daily = (await env.settle(s => s.assistants.length === 1)).defaultId!
+    const { assistantId: narrow } = await env.service.createAssistant(input({ subsets: { skills: ['alpha'] } }))
+    const names = async (scope: object) => (await env.ctx.skills.list({ scope })).map(skill => skill.name)
+    const free = await env.agent('free')
+    expect(await names(free)).toEqual(['alpha', 'beta', 'lark-im'])
+    const agent = await env.agent('narrow')
+    await env.service.select(agent, narrow)
+    expect(await names(agent)).toEqual(['alpha', 'lark-im'])
+    expect(await env.ctx.skills.get('beta', { scope: agent })).toBeUndefined()
+    const child = (await env.ctx.agents.create({ sessionId: SessionId('narrow-child'), parentAgent: agent, meta: { parentSession: agent.session.id } })).agent
+    expect(await names(child)).toEqual(['alpha', 'lark-im'])
+    const orphan = (await env.ctx.agents.create({ sessionId: SessionId('orphan'), meta: { parentSession: SessionId('gone') } })).agent
+    expect(await names(orphan)).toEqual(['alpha', 'beta', 'lark-im'])
+    expect(await names({})).toEqual(['alpha', 'beta', 'lark-im'])
+    // Editing the subset reaches the session's next read; deleting the assistant lifts it.
+    await env.service.updateAssistant(narrow, { subsets: { skills: [] } })
+    expect(await names(agent)).toEqual(['lark-im'])
+    await env.service.select(free, daily)
+    await env.service.deleteAssistant(narrow)
+    expect(await names(agent)).toEqual(['alpha', 'beta', 'lark-im'])
+  })
+
+  it('limits the connectors and knowledge bases of a session through their services', async () => {
+    let connectorFilter: ((agent: Agent, id: string) => boolean) | undefined
+    let knowledgeFilter: ((agent: Agent, id: string) => boolean) | undefined
+    const env = await setup({ before: async (ctx) => {
+      ctx.provide('connectors', { restrict: (filter: typeof connectorFilter) => { connectorFilter = filter; return () => { connectorFilter = undefined } } } as never)
+      ctx.provide('knowledgeSelection', { restrict: (filter: typeof knowledgeFilter) => { knowledgeFilter = filter; return () => { knowledgeFilter = undefined } } } as never)
+    } })
+    await env.settle(s => s.assistants.length === 1)
+    const { assistantId } = await env.service.createAssistant(input({ subsets: { connectors: ['feishu'], knowledgeBases: ['kb1'] } }))
+    const agent = await env.agent('s1')
+    await env.service.select(agent, assistantId)
+    expect(connectorFilter!(agent, 'feishu')).toBe(true)
+    expect(connectorFilter!(agent, 'dingtalk')).toBe(false)
+    expect(knowledgeFilter!(agent, 'kb1')).toBe(true)
+    expect(knowledgeFilter!(agent, 'kb2')).toBe(false)
+    const free = await env.agent('free')
+    expect(connectorFilter!(free, 'dingtalk')).toBe(true)
+    await env.ctx.fiber.dispose()
+    expect(connectorFilter).toBeUndefined()
+    expect(knowledgeFilter).toBeUndefined()
+  })
+
+  it('offers the Skills, connectors, and knowledge bases available now, and none from a service not composed', async () => {
+    let released = 0
+    const env = await setup({ before: async (ctx) => {
+      await withSkills(memorySkill('alpha'), memorySkill('hidden', 'memory', false), memorySkill('lark-im', 'connector-feishu'))(ctx)
+      ctx.provide('connectors', {
+        restrict: () => () => {},
+        getState: async () => ({ connectors: [
+          { id: 'feishu', status: 'connected', enabled: true }, { id: 'dingtalk', status: 'not-installed', enabled: true },
+        ] }),
+      } as never)
+      ctx.provide('knowledgeBases', { getState: async () => ({ bases: [{ id: 'kb1', name: '公司制度' }] }) } as never)
+      ctx.provide('agentPresets', { acquireScope: async () => ({ key: {}, [Symbol.asyncDispose]: async () => { released += 1 } }) } as never)
+    } })
+    await env.settle(s => s.assistants.length === 1)
+    expect(await env.service.capabilityOptions()).toEqual({
+      skills: [{ id: 'alpha', name: 'alpha', description: 'alpha 说明' }],
+      connectors: [{ id: 'feishu', name: 'feishu' }],
+      knowledgeBases: [{ id: 'kb1', name: '公司制度' }],
+    })
+    expect(released).toBe(1)
+    const bare = await setup()
+    await bare.settle(s => s.assistants.length === 1)
+    expect(await bare.service.capabilityOptions()).toEqual({ skills: [], connectors: [], knowledgeBases: [] })
+    const presetless = await setup({ before: withSkills(memorySkill('alpha')) })
+    await presetless.settle(s => s.assistants.length === 1)
+    expect((await presetless.service.capabilityOptions()).skills.map(skill => skill.id)).toEqual(['alpha'])
   })
 })

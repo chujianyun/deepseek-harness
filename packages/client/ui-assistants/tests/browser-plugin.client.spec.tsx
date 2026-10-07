@@ -48,6 +48,7 @@ async function bench() {
     setDefault: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
     duplicateAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: { assistantId: 'a8', state } })),
     deleteAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
+    capabilityOptions: vi.fn(() => Promise.resolve({ ok: true as const, value: { skills: [], connectors: [{ id: 'feishu', name: 'feishu' }], knowledgeBases: [] } })),
     watch: vi.fn(),
   }
   const session = {
@@ -167,9 +168,11 @@ describe('ui-assistants browser plugin', () => {
         { provider: 'acme', providerName: 'Acme', id: 'plain', name: 'Plain', efforts: [] },
       ],
       presets: [{ id: 'standard', name: '标准', description: '日常' }, { id: 'ptc', name: 'ptc' }],
+      capabilities: { skills: [], connectors: [{ id: 'feishu', name: 'feishu' }], knowledgeBases: [] },
     })
     b.session.modelCatalog.mockResolvedValueOnce({ ok: false, error: new Error('down') } as never)
     b.agentPresets.list.mockRejectedValueOnce(new Error('absent'))
+    b.assistants.capabilityOptions.mockRejectedValueOnce(new Error('absent'))
     expect(await injected.onLoadOptions()).toEqual({ models: [], presets: [] })
     expect(typeof injected.squareAvatar).toBe('function')
   })

@@ -12,6 +12,10 @@
 
 详情页通过 `assistants` Remote 编辑智能体的字段和四份核心文件。保存后的核心文件和新名称会在下一步到达所有绑定该智能体的会话，进行中的会话也一样；新的模型或 preset 对之后绑定的会话生效。把另一个智能体设为默认时，绑定旧默认智能体的空白会话会改绑到它。副本带着配置和核心文件，名称为 `<名称> 副本`，不带会话。删除智能体会保留它的会话，这些会话继续进行但不再带它的核心文件：由于之前的轮次仍留在对话中，下一轮会告诉模型那些核心文件不再适用；剩下的第一个智能体成为默认，全部删光后新会话不绑定智能体。
 
+## 能力子集
+
+智能体可以限制其会话的 Skill、连接器和知识库：每一类要么跟随全局（包括之后新增的），要么只允许选中的项目。每项限制由决定该能力的服务执行——skill 注册表的视图过滤器、连接器服务和知识库选择服务——所以模型只能看到、只能使用允许的项目；之后被卸载、关闭或删除的项目只是不再出现。电商管家模板的连接器默认只有飞书。
+
 ## 会话绑定
 
 主会话在空白时绑定一个智能体，记录为 `assistant/selected`；没有绑定的空白会话使用租户的默认智能体，新会话选择器可以在第一轮之前改绑另一个。带 Agent preset 的智能体会先把会话切换到该 preset。每个轮次步骤开始前，读取所绑定智能体的核心文件，有变化时记录为 `assistant/instructions`；位于部署人设之后的 `assistant:core-files` 提示词段落携带记录下来的文本，所以模型在下一步就能看到修改，会话日志可以还原每个提示词。子智能体会话不绑定智能体。
@@ -52,6 +56,15 @@ Host owner of the assistants and of the `assistants` Remote namespace.
  *   `assistants/invalid-description`, `assistants/invalid-avatar`, or `assistants/preset-unavailable`.
  */
 @Remote createAssistant(input: CreateAssistantInput): Promise<CreateAssistantResult>
+
+/**
+ * List the Skills, connectors, and knowledge bases available now, which subsets can name.
+ * Skills are those a new session's default Agent preset discovers outside any project; a
+ * service the deployment does not compose offers none.
+ * @returns enabled model-usable Skills other than connector Skills, connectors installed and
+ *   switched on for the tenant (named by id), and the tenant's knowledge bases.
+ */
+@Remote async capabilityOptions(): Promise<AssistantCapabilityOptions>
 
 /**
  * Read one assistant with the text of its core files.

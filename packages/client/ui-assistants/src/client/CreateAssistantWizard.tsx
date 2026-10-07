@@ -1,19 +1,19 @@
 /**
- * The creation wizard: four steps — start (a template or blank), identity and model, capability
- * base, and what the assistant should know about the user — then create.
+ * The creation wizard: five steps — start (a template or blank), identity and model, capability
+ * base, capability subsets, and what the assistant should know about the user — then create.
  */
 
 import { useEffect, useState } from 'react'
-import type { AssistantTemplateView, CreateAssistantInput } from '@deepseek-ai/dsh-assistants/types'
+import type { AssistantSubsets, AssistantTemplateView, CreateAssistantInput } from '@deepseek-ai/dsh-assistants/types'
 import { Button, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { AssistantAvatar, PRESET_AVATAR_KEYS } from './AssistantAvatar.tsx'
-import { IdentityFields, modelOf, nameValid, PresetChoices, type IdentityValue } from './AssistantFields.tsx'
+import { IdentityFields, modelOf, nameValid, PresetChoices, SubsetFields, type IdentityValue } from './AssistantFields.tsx'
 import type { WizardOptions } from './assistants-source.ts'
 import css from './CreateAssistantWizard.module.css'
 import form from './form.module.css'
 
-const STEPS = ['stepStart', 'stepIdentity', 'stepPreset', 'stepUser'] as const
+const STEPS = ['stepStart', 'stepIdentity', 'stepPreset', 'stepSubsets', 'stepUser'] as const
 
 /** Props of the wizard. */
 export interface CreateAssistantWizardProps {
@@ -41,6 +41,7 @@ export function CreateAssistantWizard({ t, open, templates, onClose, onCreate, o
   })
   const [options, setOptions] = useState<WizardOptions>({ models: [], presets: [] })
   const [preset, setPreset] = useState('')
+  const [subsets, setSubsets] = useState<AssistantSubsets>(first?.subsets ?? {})
   const [user, setUser] = useState({ name: '', language: '', notes: '', background: '' })
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
@@ -54,13 +55,14 @@ export function CreateAssistantWizard({ t, open, templates, onClose, onCreate, o
     setIdentity({
       ...identity, name: template?.name ?? '', description: template?.description ?? '', avatar: template?.avatar ?? { kind: 'preset', key: PRESET_AVATAR_KEYS[0] },
     })
+    setSubsets(template?.subsets ?? {})
   }
   const submit = async (): Promise<void> => {
     setBusy(true)
     setFailure(null)
     const model = modelOf(identity.model, identity.effort)
     const refusal = await onCreate({
-      templateId, name: identity.name, description: identity.description, avatar: identity.avatar, user,
+      templateId, name: identity.name, description: identity.description, avatar: identity.avatar, user, subsets,
       ...(model === undefined ? {} : { model }),
       ...(preset === '' ? {} : { preset }),
     })
@@ -116,7 +118,8 @@ export function CreateAssistantWizard({ t, open, templates, onClose, onCreate, o
         />
       )}
       {step === 2 && <PresetChoices t={t} presets={options.presets} value={preset} onChange={setPreset} />}
-      {step === 3 && (
+      {step === 3 && <SubsetFields t={t} value={subsets} onChange={setSubsets} options={options.capabilities} />}
+      {step === 4 && (
         <div className={form.form}>
           <p className={form.hint}>{t('userIntro')}</p>
           <div className={form.row}>

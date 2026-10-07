@@ -218,9 +218,28 @@ Host owner of the knowledge selection and of the `knowledgeSelection` Remote nam
  * @param sessionId - the session.
  * @param baseIds - knowledge bases of the signed-in tenant, in the order to show them.
  * @returns the selection and when it applies.
- * @throws RemoteError `knowledge-selection/unknown-base`, or the session's resolution failure.
+ * @throws RemoteError `knowledge-selection/unknown-base`, `knowledge-selection/not-allowed` for a
+ *   knowledge base the session may not search, or the session's resolution failure.
  */
 @Remote async select(sessionId: SessionId, baseIds: readonly string[]): Promise<KnowledgeSelectionResult>
+
+/**
+ * List the signed-in tenant's knowledge bases a session may select.
+ * @param sessionId - the session.
+ * @returns the ids, in the tenant's order.
+ * @throws the session's resolution failure.
+ */
+@Remote async allowedBases(sessionId: SessionId): Promise<readonly string[]>
+
+/**
+ * Narrow the knowledge bases sessions may select and search. A session can no longer select a
+ * knowledge base a filter refuses, and its search skips one already selected; the search tool
+ * leaves a session whose selection the filters empty. Every live agent is checked again when a
+ * filter is added or removed, and each agent before every step.
+ * @param filter - returns false for a knowledge base the agent's session must not search.
+ * @returns the disposer that removes the filter.
+ */
+restrict(filter: KnowledgeFilter): () => void
 ```
 
 Types: [SessionId](core.md)

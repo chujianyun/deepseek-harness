@@ -98,7 +98,7 @@ describe('knowledge selection', () => {
   it('publishes the namespace and its method', async () => {
     const { ctx } = await harness(new MockAdapter([]))
     expect(ctx.knowledgeSelection.typertRemote.namespace).toBe('knowledgeSelection')
-    expect(remoteMethods(ctx.knowledgeSelection).map(method => method.method)).toEqual(['select'])
+    expect(remoteMethods(ctx.knowledgeSelection).map(method => method.method)).toEqual(['select', 'allowedBases'])
   })
 
   it('offers knowledge_search only once knowledge bases are selected, and searches only those', async () => {
@@ -161,6 +161,36 @@ describe('knowledge selection', () => {
     const folded = log.reduce(fold, { bases: [] })
     expect(folded.bases.map(entry => entry.name)).toEqual(['公司制度', '产品资料', '重建中'])
     expect(ctx.sessionProjections.stateOf(agent.session, 'knowledgeSelection')).toEqual(folded)
+  })
+
+  it('keeps a session to the knowledge bases a filter allows: selection, listing, tool, and search', async () => {
+    const adapter = new MockAdapter([
+      toolCallResponse('call-1', KNOWLEDGE_SEARCH, { query: '年假' }, '查一下。'),
+      textResponse('好的。'),
+    ])
+    const { ctx } = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('kb-restrict'), { provider: 'mock', model: 'mock' })
+    await ctx.agentLoop.create(SessionId('kb-other'), { provider: 'mock', model: 'mock' })
+    await ctx.knowledgeSelection.select(SessionId('kb-restrict'), ['b1', 'b2'])
+    const dispose = ctx.knowledgeSelection.restrict((subject, id) => subject !== agent || id === 'b2')
+    expect(await ctx.knowledgeSelection.allowedBases(SessionId('kb-restrict'))).toEqual(['b2'])
+    expect(await ctx.knowledgeSelection.allowedBases(SessionId('kb-other'))).toHaveLength(7)
+    const refused = await ctx.knowledgeSelection.select(SessionId('kb-restrict'), ['b1']).catch((error: unknown) => error)
+    expect(remoteErrorOf(refused)).toMatchObject({ code: 'knowledge-selection/not-allowed', details: { id: 'b1' } })
+    expect(await ctx.knowledgeSelection.select(SessionId('kb-other'), ['b1'])).toMatchObject({ applies: 'now' })
+    // The logged selection still names b1, but the search reaches only b2.
+    ask(agent, '年假？')
+    await idle(ctx, agent)
+    const result = of(agent.session.snapshotEvents(), 'tool/result').at(-1)!
+    expect(textOf(result.data.message as Message)).toContain('knowledge base "产品资料"')
+    expect(textOf(result.data.message as Message)).not.toContain('公司制度')
+    // A filter that leaves nothing withdraws the tool; removing the filters brings it back.
+    const none = ctx.knowledgeSelection.restrict(subject => subject !== agent)
+    expect(ctx.tools.get(KNOWLEDGE_SEARCH, agent)).toBeUndefined()
+    none()
+    dispose()
+    expect(ctx.tools.get(KNOWLEDGE_SEARCH, agent)).toBeDefined()
+    expect(await ctx.knowledgeSelection.allowedBases(SessionId('kb-restrict'))).toHaveLength(7)
   })
 
   it('pins the tool\'s TypeScript and Python SDK bindings', async () => {

@@ -1,6 +1,6 @@
 /** Built-in assistant templates: starting points whose core files and display fields a new assistant copies. */
 
-import type { AssistantAvatar } from './types.ts'
+import type { AssistantAvatar, AssistantSubsets } from './types.ts'
 
 /** The four core files, by their file names. */
 export interface CoreFiles {
@@ -19,6 +19,8 @@ export interface AssistantTemplate {
   readonly name: string
   readonly description: string
   readonly avatar: AssistantAvatar
+  /** Subsets a new assistant starts with; absent allows everything. */
+  readonly subsets?: AssistantSubsets
   readonly files: CoreFiles
 }
 
@@ -88,6 +90,7 @@ export const ECOMMERCE_MANAGER: AssistantTemplate = {
   name: '电商管家',
   description: '综合店铺管家：选品、上架文案、推广、数据复盘、竞品分析，以及咨询回复、退款和评价分析，面向天猫、拼多多、抖店。',
   avatar: { kind: 'preset', key: 'ocean' },
+  subsets: { connectors: ['feishu'] },
   files: {
     'IDENTITY.md': [
       '# 身份',

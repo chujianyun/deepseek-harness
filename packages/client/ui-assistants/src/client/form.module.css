@@ -138,3 +138,46 @@
 .select {
   height: 32px;
 }
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+}
+
+.modes {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+}
+
+.mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gone {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

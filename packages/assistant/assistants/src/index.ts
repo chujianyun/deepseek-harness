@@ -27,6 +27,10 @@ import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-hub-account'
+import type {} from '@deepseek-ai/dsh-connectors'
+import type {} from '@deepseek-ai/dsh-knowledge-base'
+import type {} from '@deepseek-ai/dsh-knowledge-selection'
+import type {} from '@deepseek-ai/dsh-skill'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -35,8 +39,8 @@ import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { BLANK_FILES, CORE_FILE_NAMES, DAILY_ASSISTANT, TEMPLATES, type AssistantTemplate, type CoreFiles } from './templates.ts'
 import type {
-  AssistantAvatar, AssistantDetail, AssistantProjectionState, AssistantsState, AssistantTemplateView, AssistantUserInfo,
-  AssistantView, CreateAssistantInput, CreateAssistantResult, UpdateAssistantInput,
+  AssistantAvatar, AssistantCapabilityOptions, AssistantDetail, AssistantProjectionState, AssistantsState, AssistantSubsets,
+  AssistantTemplateView, AssistantUserInfo, AssistantView, CreateAssistantInput, CreateAssistantResult, UpdateAssistantInput,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -93,6 +97,11 @@ const assistantFileSchema = z.object({
   avatar: avatarSchema,
   preset: z.string().min(1).optional(),
   model: modelSchema.optional(),
+  subsets: z.object({
+    skills: z.array(z.string()).optional(),
+    connectors: z.array(z.string()).optional(),
+    knowledgeBases: z.array(z.string()).optional(),
+  }).optional(),
   templateId: z.string().min(1).optional(),
   createdAt: z.string(),
 })
@@ -194,8 +203,33 @@ function jsonText(value: object): string {
   return `${JSON.stringify(value, null, 2)}\n`
 }
 
+/** The kinds of capability a subset names. */
+const SUBSET_KINDS = ['skills', 'connectors', 'knowledgeBases'] as const
+
+/**
+ * Keep the lists a subset sets, without empty or repeated ids.
+ * @param subsets - subsets as given or stored.
+ * @returns the subsets, or undefined when every kind allows everything.
+ */
+export function normalizeSubsets(
+  subsets: Readonly<Partial<Record<keyof AssistantSubsets, readonly string[] | undefined>>> | undefined,
+): AssistantSubsets | undefined {
+  const kept: Partial<Record<keyof AssistantSubsets, readonly string[]>> = {}
+  for (const kind of SUBSET_KINDS) {
+    const ids = subsets?.[kind]
+    if (ids !== undefined) kept[kind] = [...new Set(ids.filter(id => id !== ''))]
+  }
+  return Object.keys(kept).length === 0 ? undefined : kept
+}
+
+/** Connector states without an installed CLI. */
+const NOT_INSTALLED: ReadonlySet<string> = new Set(['unsupported', 'not-installed', 'installing'])
+
+/** Skill sources that belong to a connector, which the connector subset governs. */
+const CONNECTOR_SKILL_SOURCE = /^connector-/u
+
 const TEMPLATE_VIEWS: readonly AssistantTemplateView[] = [...TEMPLATES.values()]
-  .map(({ id, name, description, avatar }) => ({ id, name, description, avatar }))
+  .map(({ id, name, description, avatar, subsets }) => ({ id, name, description, avatar, ...(subsets === undefined ? {} : { subsets }) }))
 
 /** Host owner of the assistants and of the `assistants` Remote namespace. */
 export class AssistantsService extends TypertRemoteService {
@@ -229,6 +263,7 @@ export class AssistantsService extends TypertRemoteService {
     for (const agent of ctx.agents.list()) {
       if (agent.session.header.parentSession === undefined) this.installPrompt(agent)
     }
+    this.installSubsets()
     ctx.on('agent/created', async ({ agent }) => {
       if (agent.session.header.parentSession !== undefined) return
       this.installPrompt(agent)
@@ -306,10 +341,12 @@ export class AssistantsService extends TypertRemoteService {
       this.checkAvatar(input.avatar)
       if (input.preset !== undefined) await this.checkPreset(input.preset)
       const files = template?.files ?? BLANK_FILES
+      const subsets = normalizeSubsets(input.subsets ?? template?.subsets)
       const view = await this.writeAssistant(tenantId, {
         id: randomUUID(), name, description, avatar: input.avatar,
         ...(input.preset === undefined ? {} : { preset: input.preset }),
         ...(input.model === undefined ? {} : { model: input.model }),
+        ...(subsets === undefined ? {} : { subsets }),
         ...(template === undefined ? {} : { templateId: template.id }),
         createdAt: new Date().toISOString(),
       }, { ...files, 'IDENTITY.md': withName(files['IDENTITY.md'], name), 'USER.md': renderUser(input.user) })
@@ -317,6 +354,29 @@ export class AssistantsService extends TypertRemoteService {
       this.changed()
       return { assistantId: view.id, state: await this.getState() }
     })
+  }
+
+  /**
+   * List the Skills, connectors, and knowledge bases available now, which subsets can name.
+   * Skills are those a new session's default Agent preset discovers outside any project; a
+   * service the deployment does not compose offers none.
+   * @returns enabled model-usable Skills other than connector Skills, connectors installed and
+   *   switched on for the tenant (named by id), and the tenant's knowledge bases.
+   */
+  @Remote
+  async capabilityOptions(): Promise<AssistantCapabilityOptions> {
+    // Skill discovery mounts with an Agent preset, so read through the default preset's scope, as a new session sees it.
+    await using lease = await this.ctx.get('agentPresets')?.acquireScope()
+    const skills = (await this.ctx.get('skills')?.list(lease === undefined ? {} : { scope: lease.key }) ?? [])
+      .filter(skill => skill.invocation.modelInvocable && !CONNECTOR_SKILL_SOURCE.test(skill.source))
+      .map(skill => ({ id: skill.name, name: skill.name, description: skill.description }))
+    // The client names each connector in its own language.
+    const connectors = (await this.ctx.get('connectors')?.getState())?.connectors
+      .filter(item => item.enabled && !NOT_INSTALLED.has(item.status))
+      .map(item => ({ id: item.id, name: item.id })) ?? []
+    const knowledgeBases = (await this.ctx.get('knowledgeBases')?.getState())?.bases
+      .map(base => ({ id: base.id, name: base.name })) ?? []
+    return { skills, connectors, knowledgeBases }
   }
 
   /**
@@ -363,13 +423,15 @@ export class AssistantsService extends TypertRemoteService {
       }
       const dir = this.dirOf(assistantId)
       if (name !== previous.name) files['IDENTITY.md'] = withName(files['IDENTITY.md'] ?? await readOptional(join(dir, 'IDENTITY.md')) ?? '', name)
-      const { preset: _preset, model: _model, ...kept } = previous
+      const { preset: _preset, model: _model, subsets: _subsets, ...kept } = previous
       const preset = input.preset === undefined ? previous.preset : input.preset ?? undefined
       const model = input.model === undefined ? previous.model : input.model ?? undefined
+      const subsets = input.subsets === undefined ? previous.subsets : normalizeSubsets(input.subsets)
       const next: AssistantView = {
         ...kept, name, description, avatar: input.avatar ?? previous.avatar,
         ...(preset === undefined ? {} : { preset }),
         ...(model === undefined ? {} : { model }),
+        ...(subsets === undefined ? {} : { subsets }),
       }
       for (const [file, text] of Object.entries(files)) await this.writeAtomic(join(dir, file), text)
       await this.writeAtomic(join(dir, 'assistant.json'), jsonText({ version: 1, ...next }))
@@ -547,6 +609,41 @@ export class AssistantsService extends TypertRemoteService {
     return boundary === undefined || (boundary.openTurnStartSeq === null && boundary.lastTurn === 0)
   }
 
+  /**
+   * Keep each session to its assistant's subsets: Skills through the skill registry, connectors and
+   * knowledge bases through their services, each where the deployment composes it.
+   */
+  private installSubsets(): void {
+    this.ctx.inject(['skills'], (scope) => {
+      scope.effect(() => scope.skills.addViewFilter((skill, viewer) => {
+        if (CONNECTOR_SKILL_SOURCE.test(skill.source)) return true
+        const agent = this.ctx.agents.list().find(item => item === viewer)
+        return agent === undefined || this.permits(agent, 'skills', skill.name)
+      }), 'assistants: Skill subsets')
+    })
+    this.ctx.inject(['connectors'], (scope) => {
+      scope.effect(() => scope.connectors.restrict((agent, id) => this.permits(agent, 'connectors', id)), 'assistants: connector subsets')
+    })
+    this.ctx.inject(['knowledgeSelection'], (scope) => {
+      scope.effect(() => scope.knowledgeSelection.restrict((agent, id) => this.permits(agent, 'knowledgeBases', id)), 'assistants: knowledge subsets')
+    })
+  }
+
+  /**
+   * Whether the assistant of an agent's session allows one item. A subagent follows the session it
+   * works for; a session bound to no assistant, or to one no longer in the tenant, is not limited.
+   */
+  private permits(agent: Agent, kind: keyof AssistantSubsets, id: string): boolean {
+    let main = agent
+    for (let parent = main.session.header.parentSession; parent !== undefined; parent = main.session.header.parentSession) {
+      const found = this.ctx.agents.get(parent)
+      if (found === undefined) break
+      main = found
+    }
+    const ids = this.list.find(item => item.id === this.boundId(main))?.subsets?.[kind]
+    return ids === undefined || ids.includes(id)
+  }
+
   private installPrompt(agent: Agent): void {
     agent.ctx.inject(['systemPrompt'], (scope) => {
       scope.systemPrompt.section({
@@ -629,9 +726,11 @@ export class AssistantsService extends TypertRemoteService {
         this.ctx.logger.warn(`assistants: skipped malformed ${join(dir, entry.name, 'assistant.json')}`)
         continue
       }
-      const { version: _version, preset, model, templateId, ...view } = parsed.data
+      const { version: _version, preset, model, subsets: stored, templateId, ...view } = parsed.data
+      const subsets = normalizeSubsets(stored)
       found.push({
         ...view,
+        ...(subsets === undefined ? {} : { subsets }),
         ...(preset === undefined ? {} : { preset }),
         ...(model === undefined ? {} : {
           model: {

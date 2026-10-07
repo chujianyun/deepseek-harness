@@ -77,7 +77,7 @@ async function bench() {
     watch: vi.fn(),
   }
   const embedding = { watch: vi.fn() }
-  const knowledgeSelection = { select: vi.fn(() => ok({ bases: [], applies: 'now' as const })) }
+  const knowledgeSelection = { select: vi.fn(() => ok({ bases: [], applies: 'now' as const })), allowedBases: vi.fn(() => ok(['b1'])) }
   const remote = new TestRemote(ctx, { knowledgeBases, embedding, knowledgeSelection })
   const events = new ConversationEventRegistry(ctx)
   const chat = createSnapshotStore<ChatSnapshot | undefined>(EMPTY_CHAT_SNAPSHOT)
@@ -194,6 +194,10 @@ describe('ui-knowledge browser plugin', () => {
     expect(b.knowledgeSelection.select).toHaveBeenCalledWith(sid, ['b1'])
     b.knowledgeSelection.select.mockResolvedValueOnce({ ok: false, error: { message: 'no knowledge base b1' } } as never)
     expect(await pick.select(['b1'])).toEqual({ failure: 'no knowledge base b1' })
+    expect(await pick.allowed()).toEqual(['b1'])
+    expect(b.knowledgeSelection.allowedBases).toHaveBeenCalledWith(sid)
+    b.knowledgeSelection.allowedBases.mockResolvedValueOnce({ ok: false, error: { message: 'gone' } } as never)
+    expect(await pick.allowed()).toBeUndefined()
     const card = b.slots.entries('conversation.chat.turnTail')[0]!
     expect(card.component).toBe(KnowledgeCitationsCard)
     const resolve: (sessionId: SessionId) => KnowledgeCitationsInjected = card.inject as never

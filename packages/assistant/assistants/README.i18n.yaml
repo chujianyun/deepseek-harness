@@ -9,14 +9,14 @@
   en: 5315e8d24bc488da
   zh: 42cba3a9e9f7134c
 /assistants/summary:
-  en: fa62b39f43b35eb3
-  zh: 1517d67208cc7f68
+  en: 667c2560bfbf14ce
+  zh: 5c5fef5bba71b9b7
 /assistants/table-of-contents:
   en: 3a654e12f423946b
   zh: 4e3a19aaee58f8a7
 /assistants/use-this-package:
-  en: 0bcce59cac0eb78b
-  zh: 32c50d577fecc60b
+  en: a7be0c6b0dbf8a91
+  zh: fee072d0d8a108df
 /assistants/configuration:
   en: 58649fec4f623df7
   zh: acc5c12e206123c8
@@ -41,9 +41,21 @@
 /assistants/model-experience/bound-assistant-s-core-files/kv-cache-effect:
   en: cee46cf173139851
   zh: 21ab304ea041a009
+/assistants/model-experience/capability-subsets:
+  en: 01c1906297bc98d7
+  zh: e569029433476f34
+/assistants/model-experience/capability-subsets/what-the-model-sees:
+  en: 8320b9e8fdec8133
+  zh: 0ce89dae1225739e
+/assistants/model-experience/capability-subsets/token-effect:
+  en: c56ace3a60a16820
+  zh: 203ebcbdc011847e
+/assistants/model-experience/capability-subsets/kv-cache-effect:
+  en: cf5548382367ab88
+  zh: 50281e81a13a372b
 /assistants/known-limitations-and-deferred-work:
-  en: fd7e49744f2eefb2
-  zh: bd2633c371b85ebb
+  en: 620168da7a4d16a3
+  zh: f61d7789d6eccba4
 /assistants/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: e88aeb617ffb74ea

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { AssistantDetail, AssistantView, UpdateAssistantInput } from '@deepseek-ai/dsh-assistants/types'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { AssistantDetailPage } from '../src/client/AssistantDetail.tsx'
@@ -20,6 +20,11 @@ const options: WizardOptions = {
     { provider: 'acme', providerName: 'Acme', id: 'think', name: 'Think', efforts: [{ id: 'low', name: '低' }, { id: 'high', name: '高' }], defaultEffort: 'high' },
   ],
   presets: [{ id: 'standard', name: '标准' }, { id: 'ptc', name: 'PTC' }],
+  capabilities: {
+    skills: [{ id: 'aaa', name: 'aaa' }, { id: 'weekly-report', name: 'weekly-report' }],
+    connectors: [{ id: 'feishu', name: 'feishu' }, { id: 'wecom', name: '企业微信' }],
+    knowledgeBases: [{ id: 'kb1', name: '公司制度' }],
+  },
 }
 
 async function mount(view: AssistantView = assistant, read?: () => Promise<AssistantDetail | string>) {
@@ -130,5 +135,33 @@ describe('assistant detail page', () => {
     await act(async () => { fireEvent.change(file, { target: { files: [new File(['x'], 'a.png', { type: 'image/png' })] } }) })
     await act(async () => { fireEvent.click(save()) })
     expect(props.onUpdate).toHaveBeenCalledWith('a1', { avatar: { kind: 'image', dataUrl: 'data:image/webp;base64,AAAA' } })
+  })
+})
+
+describe('subsets on the detail page', () => {
+  it('marks an item that is gone, clears it, and saves only a real change', async () => {
+    const props = await mount({ ...assistant, subsets: { skills: ['weekly-report', 'old-skill'], connectors: ['wecom', 'feishu'] } })
+    const skills = screen.getByRole('group', { name: 'Skill' })
+    expect(within(skills).getByRole<HTMLInputElement>('checkbox', { name: 'old-skill' }).checked).toBe(true)
+    expect(within(skills).getByText('已失效')).toBeTruthy()
+    // What is gone, then what was selected, come first.
+    const order = () => within(skills).getAllByRole('checkbox').map(box => box.closest('label')?.textContent)
+    expect(order()).toEqual(['old-skill', 'weekly-report', 'aaa'])
+    fireEvent.click(within(skills).getByRole('checkbox', { name: 'aaa' }))
+    expect(order()).toEqual(['old-skill', 'weekly-report', 'aaa'])
+    fireEvent.click(within(skills).getByRole('checkbox', { name: 'aaa' }))
+    const connectors = screen.getByRole('group', { name: '连接器' })
+    expect(within(connectors).getByRole('checkbox', { name: '飞书' })).toBeTruthy()
+    expect(within(connectors).getByRole('checkbox', { name: '企业微信' })).toBeTruthy()
+    // Unchecking and checking again in another order is no change.
+    fireEvent.click(within(connectors).getByRole('checkbox', { name: '飞书' }))
+    fireEvent.click(within(connectors).getByRole('checkbox', { name: '飞书' }))
+    expect(save().disabled).toBe(true)
+    fireEvent.click(within(skills).getByRole('checkbox', { name: 'old-skill' }))
+    expect(within(skills).queryByText('已失效')).toBeNull()
+    fireEvent.click(within(screen.getByRole('group', { name: '知识库' })).getByRole('radio', { name: '仅选中' }))
+    fireEvent.click(within(screen.getByRole('group', { name: '知识库' })).getByRole('checkbox', { name: '公司制度' }))
+    await act(async () => { fireEvent.click(save()) })
+    expect(props.onUpdate).toHaveBeenCalledWith('a1', { subsets: { skills: ['weekly-report'], connectors: ['wecom', 'feishu'], knowledgeBases: ['kb1'] } })
   })
 })

@@ -26,6 +26,8 @@ Mount this package as a Loader entry beside `knowledge-base`; it injects `agents
 
 `select(sessionId, baseIds)` sets the session's selection to the listed knowledge bases of the signed-in tenant, in that order and without repeats; an empty list selects none, which is also where every new session starts. An id the tenant has no knowledge base for is refused with `knowledge-selection/unknown-base`. Between turns the selection is logged at once and the result says `applies: 'now'`. During a turn the result says `applies: 'next-step'`: the turn's next request is assembled with or without the tool at once, and the selection is logged by the next accepted step, before that request is sent. A selection equal to the logged one writes nothing.
 
+`allowedBases(sessionId)` lists the ids of the tenant's knowledge bases the session may select. `restrict(filter)` narrows them, such as to the knowledge bases a session's assistant allows: `select()` refuses one a filter refuses with `knowledge-selection/not-allowed`, the search skips one already selected, and a session whose selection the filters leave empty loses the tool. Every live agent is checked again when a filter is added or removed, and each agent before every step. The returned disposer removes the filter.
+
 `knowledge_search({ query })` searches each selected knowledge base under its own `documentCount` and `threshold`, merges the passages best first, and keeps as many as the largest `documentCount` among the searched knowledge bases. A knowledge base it cannot search does not fail the call: one deleted since it was selected is reported as `missing`, one being rebuilt for a new embedding model as `rebuilding`, one whose local embedding model is not installed as `unavailable`, and one whose search throws as `failed` with the message. The result value carries each passage's knowledge base, item, item kind, source (a folder file's relative path or a page's address), chunk number, score, and text; its presentation metadata carries `citations` — the same fields with the first 160 characters of the text as `snippet` — from which clients derive the sources of a Turn, so a reloaded or replayed session shows the same sources.
 
 -----
@@ -37,7 +39,7 @@ Mount this package as a Loader entry beside `knowledge-base`; it injects `agents
 
 #### What the model sees
 
-A session without selected knowledge bases sees no tool from this package. With a selection, the model sees the [`knowledge_search` schema](../../../docs/tool-catalog.md#deepseek-aidsh-knowledge-selection) with a fixed description and one `query` parameter; knowledge base names never appear in the schema. Its result is text that lists each passage as `[n] item (source) — knowledge base "name", chunk n, relevance 0.00` followed by the passage, or says no passage matched, and ends with one `Not searched: "name" — reason.` line per knowledge base it could not search.
+A session without selected knowledge bases, or whose filters allow none of them, sees no tool from this package. With a selection, the model sees the [`knowledge_search` schema](../../../docs/tool-catalog.md#deepseek-aidsh-knowledge-selection) with a fixed description and one `query` parameter; knowledge base names never appear in the schema. Its result is text that lists each passage as `[n] item (source) — knowledge base "name", chunk n, relevance 0.00` followed by the passage, or says no passage matched, and ends with one `Not searched: "name" — reason.` line per knowledge base it could not search.
 
 ##### Result example
 

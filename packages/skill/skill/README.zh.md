@@ -52,6 +52,7 @@ kind: "package-reference"
 - **按需加载。** 按名称查询某个 skill，会从拥有胜出候选项的提供方返回完整指令正文；注册表会重新验证加载的定义，并拒绝在发现与加载之间名称发生变化的陈旧选择。
 - **嵌入式 skill。** 插件可用 `ctx.skills.register(...)` 注册内存中的 skill；注册表会补入默认调用策略与 `runtime` 提供方标签。同层同名运行时注册采用先到先得，并记录警告。
 - **停用的 skill。** `ctx.skills.setDisabled(name, disabled)` 通过设置服务排队持久化 volatile 的 `disabledSkills` 列表。停用的 skill 仍以 `disabled: true` 出现在列表中，但 `list()`、`snapshot()` 与 `get()` 返回时会把两个调用控制都强制为 `false`，因此所有消费方都会拒绝它；变更会发出 `skills/change`。只影响用户级 skill（`user-dsh`、`user-agents`）；同名的项目级、随包附带或 runtime skill 仍可调用。与当前状态一致的请求不写入任何内容；真正的变更在缺少设置服务或 profile 条目时抛错。
+- **视图过滤器。** `ctx.skills.addViewFilter(filter)` 让某些 skill 不出现在为某个查看 scope 进行的读取中：每次带 scope 的 `list()`、`snapshot()` 与 `get()` 都会去掉任一过滤器对该 scope 拒绝的 skill，过滤在缓存之后进行；不带 scope 的读取不应用任何过滤器。返回的 disposer 移除该过滤器；添加或移除过滤器都会发出 `skills/change`。智能体服务用它让会话只看到其智能体允许的 Skill。
 - **提供方注册。** 提供方用 `ctx.skills.registerProvider(...)` 贡献目录；注册是同步的，返回的 disposer（资源释放）会移除该提供方。`runtime` 是保留的提供方名称。
 
 每个 skill 上的调用策略决定哪些接口可以展示并加载它：`modelInvocable` 用于面向模型的工具与目录，`userInvocable` 用于面向用户的命令。注册表保留全部四种组合，因此一次发现结果可以同时服务两个接口，而不会混淆各自的目录。
