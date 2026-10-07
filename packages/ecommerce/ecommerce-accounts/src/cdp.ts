@@ -1,8 +1,8 @@
 /**
  * The few Chrome DevTools Protocol calls an e-commerce account needs, over the browser-level
  * WebSocket of a Chrome that DSH started with a remote-debugging port: open a background tab and
- * read the platform's own sign-in response there, show the sign-in tab, and move every window off
- * screen. Page sessions use flat mode, so one socket carries every tab.
+ * read the platform's own sign-in response there, show the sign-in tab, and minimize every window.
+ * Page sessions use flat mode, so one socket carries every tab.
  */
 
 import WebSocket from 'ws'
@@ -171,7 +171,8 @@ export async function showSignIn(cdp: Cdp, url: string): Promise<string> {
 }
 
 /**
- * Move every window of the browser off screen, so it keeps running unseen.
+ * Minimize every window of the browser, so it keeps running unseen. Minimizing rather than moving
+ * off screen: macOS keeps part of any window on screen.
  * @param cdp - the browser connection.
  */
 export async function hideWindows(cdp: Cdp): Promise<void> {
@@ -182,6 +183,6 @@ export async function hideWindows(cdp: Cdp): Promise<void> {
   }
   for (const windowId of windows) {
     await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } })
-    await cdp.send('Browser.setWindowBounds', { windowId, bounds: { left: -32000, top: -32000 } })
+    await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } })
   }
 }

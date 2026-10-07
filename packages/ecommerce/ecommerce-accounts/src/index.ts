@@ -9,8 +9,8 @@
  * Signing in opens the platform's sign-in page in the account's Chrome. DSH watches that tab and,
  * once it leaves the sign-in page or every half minute, opens the platform's business page in a
  * background tab and reads the platform's own sign-in response there, retrying once. A signed-in
- * account's Chrome keeps running with its windows off screen, and survives DSH: the next DSH
- * reattaches to it, or, when it is gone, starts it again off screen restoring the last session.
+ * account's Chrome keeps running with its windows minimized, and survives DSH: the next DSH
+ * reattaches to it, or, when it is gone, starts it again minimized, restoring the last session.
  *
  * @module @deepseek-ai/dsh-ecommerce-accounts
  */
@@ -347,8 +347,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
 
   /**
    * Ask the platform whether the account is signed in, retrying once, and record the answer. A
-   * signed-in account's Chrome goes off screen. A Chrome gone since an earlier sign-in is started
-   * again off screen, restoring its last session; an account never signed in starts no Chrome.
+   * signed-in account's Chrome is minimized. A Chrome gone since an earlier sign-in is started
+   * again minimized, restoring its last session; an account never signed in starts no Chrome.
    */
   private check(entry: Entry): Promise<ProbeResult> {
     this.setStatus(entry.id, 'checking')
@@ -385,6 +385,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const dir = this.dirOf(entry.id)
     const record = await readRecord(dir)
     let port = record !== undefined && await alive(record.port) ? record.port : undefined
+    // A Chrome started here in the background is minimized whatever the platform answers.
+    const started = port === undefined
     if (port === undefined) {
       if (entry.everSignedIn !== true || this.chrome === undefined) return { kind: 'signed-out' }
       port = await this.ensureChrome(entry, this.chrome, true, 'about:blank')
@@ -395,7 +397,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
       const spec = PLATFORMS[entry.platform]
       let result = await probe(cdp, spec, this.options.checkTimeoutMs)
       if (result.kind !== 'signed-in') result = await probe(cdp, spec, this.options.checkTimeoutMs)
-      if (result.kind === 'signed-in') await hideWindows(cdp)
+      if (started || result.kind === 'signed-in') await hideWindows(cdp)
       return result
     } finally {
       cdp.close()

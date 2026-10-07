@@ -14,11 +14,11 @@
 
 ## 检查
 
-一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的登录响应（天猫为 `mtop.user.getusersimple`），失败时重试一次。响应中带有账号 nick 即为已登录；没有 nick 为未登录；超时没有响应为检查失败。登录后，该账号的 Chrome 窗口移到屏幕外，Chrome 继续运行。租户的账号加载时以及设置分区打开时，都会检查每个账号。
+一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的登录响应（天猫为 `mtop.user.getusersimple`），失败时重试一次。响应中带有账号 nick 即为已登录；没有 nick 为未登录；超时没有响应为检查失败。登录后，该账号的 Chrome 窗口被最小化，Chrome 继续运行。租户的账号加载时以及设置分区打开时，都会检查每个账号。
 
 ## 重启之后
 
-Chrome 的生命周期长于 DSH。之后启动的 DSH 会重新连上记录中的 Chrome；它已不在时（例如电脑重启后），曾经登录过的账号会在屏幕外重新启动 Chrome 并恢复上次会话，再由检查判断平台是否保留了登录。删除账号会先关闭其 Chrome 让它写入 cookie，再删除其数据。
+Chrome 的生命周期长于 DSH。之后启动的 DSH 会重新连上记录中的 Chrome；它已不在时（例如电脑重启后），曾经登录过的账号会重新启动 Chrome、将其最小化并恢复上次会话，再由检查判断平台是否保留了登录。删除账号会先关闭其 Chrome 让它写入 cookie，再删除其数据。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

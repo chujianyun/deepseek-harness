@@ -206,7 +206,7 @@ describe('e-commerce accounts', () => {
     await env.signIn(accountId, '名流旗舰店:运营')
     const signedIn = await env.settle(s => s.accounts[0]!.status === 'signed-in')
     expect(signedIn.accounts[0]).toMatchObject({ signedInAs: '名流旗舰店:运营', checkedAt: expect.any(String) as string })
-    expect(JSON.parse(await readFile(join(env.browserDir(accountId), 'user-data', 'fake-window.json'), 'utf8'))).toMatchObject({ left: -32000, top: -32000 })
+    expect(JSON.parse(await readFile(join(env.browserDir(accountId), 'user-data', 'fake-window.json'), 'utf8'))).toMatchObject({ windowState: 'minimized' })
     const ledger = JSON.parse(await readFile(join(env.home, 'ecommerce', 't-a', 'accounts.json'), 'utf8')) as { accounts: object[] }
     expect(ledger.accounts[0]).toMatchObject({ signedInAs: '名流旗舰店:运营', everSignedIn: true })
     expect(await readdir(join(env.browserDir(accountId), 'user-data'))).not.toContain('cookies.json')
@@ -234,7 +234,7 @@ describe('e-commerce accounts', () => {
     await env.settle(s => s.accounts[0]!.status === 'signed-out')
   })
 
-  it('reattaches to the running Chrome after a restart, and restarts a Chrome that is gone off screen', async () => {
+  it('reattaches to the running Chrome after a restart, and restarts a Chrome that is gone, minimized', async () => {
     const first = await setup()
     const { accountId } = await first.service.addAccount(merchant)
     await first.service.startSignIn(accountId)
@@ -247,7 +247,7 @@ describe('e-commerce accounts', () => {
     const second = await setup({ home: first.home })
     await second.settle(s => s.accounts[0]?.status === 'signed-in')
     expect(await readRecord(first.browserDir(accountId))).toEqual(record)
-    // The computer restarted: Chrome is gone and starts again off screen, restoring its session.
+    // The computer restarted: Chrome is gone and starts again minimized, restoring its session.
     process.kill(record!.pid, 'SIGKILL')
     await new Promise(resolve => setTimeout(resolve, 300))
     expect((await second.service.refresh()).accounts[0]!.status).toBe('signed-in')
@@ -258,6 +258,12 @@ describe('e-commerce accounts', () => {
     // A restart that lost the session shows the account signed out.
     await rm(join(first.browserDir(accountId), 'user-data', 'fake-signed-in'))
     expect((await second.service.refresh()).accounts[0]!.status).toBe('signed-out')
+    // A Chrome started again in the background is minimized even when the session is lost.
+    process.kill(again!.pid, 'SIGKILL')
+    await new Promise(resolve => setTimeout(resolve, 300))
+    await rm(join(first.browserDir(accountId), 'user-data', 'fake-window.json'), { force: true })
+    expect((await second.service.refresh()).accounts[0]!.status).toBe('signed-out')
+    expect(JSON.parse(await readFile(join(first.browserDir(accountId), 'user-data', 'fake-window.json'), 'utf8'))).toMatchObject({ windowState: 'minimized' })
   })
 
   it('shows a check that got no answer as failed, reads base64 bodies, and leaves a never-signed-in account without Chrome', async () => {

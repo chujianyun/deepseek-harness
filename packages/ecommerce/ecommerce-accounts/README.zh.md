@@ -33,9 +33,9 @@ kind: "package-reference"
 
 `startSignIn(id)` 先检查 Chrome（`ecommerce-accounts/chrome-missing`、`ecommerce-accounts/chrome-outdated`），重新连上该账号的 Chrome 或启动它，在新标签页打开平台登录页，并把窗口移到屏幕上；Chrome 无法启动或连接时以 `ecommerce-accounts/browser-failed` 拒绝。Chrome 以脱离方式启动：`--user-data-dir` 指向该账号的数据，远程调试端口只监听 `127.0.0.1`，带 `--restore-last-session`，偏好设置为恢复上次会话，并从其环境中去掉 DSH 自己的变量。账号保持 `signing-in`，直到平台表示已登录，或超过 `signInTimeoutMs` 后回到 `signed-out`。服务每隔 `signInPollMs` 查看登录标签页；标签页离开登录页或被关闭后，或每隔 `signInCheckEveryMs`，检查该账号。**我已完成登录**按钮背后的 `confirmSignIn(id)` 立即检查。
 
-一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的结果，失败时重试一次：天猫读取 `mtop.user.getusersimple` 响应及其中的 nick。之后关闭该标签页。已登录的账号为 `signed-in` 并带上该 nick，其 Chrome 窗口移到屏幕外，Chrome 在看不见的地方继续运行；响应中没有 nick 为 `signed-out`；在 `checkTimeoutMs` 内没有响应为 `check-failed`，保留上次的 nick。同一账号的检查不会同时进行。租户的账号加载时以及调用 `refresh()` 时检查每个账号；设置分区打开时会调用 `refresh()`，它也会重新查找 Chrome。
+一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的结果，失败时重试一次：天猫读取 `mtop.user.getusersimple` 响应及其中的 nick。之后关闭该标签页。已登录的账号为 `signed-in` 并带上该 nick，其 Chrome 窗口被最小化，Chrome 在看不见的地方继续运行（macOS 会让移到屏幕外的窗口始终露出一部分）；响应中没有 nick 为 `signed-out`；在 `checkTimeoutMs` 内没有响应为 `check-failed`，保留上次的 nick。同一账号的检查不会同时进行。租户的账号加载时以及调用 `refresh()` 时检查每个账号；设置分区打开时会调用 `refresh()`，它也会重新查找 Chrome。
 
-Chrome 的生命周期长于 DSH。下一次启动的 DSH 通过记录重新连上账号的 Chrome；该 Chrome 已不在时，曾经登录过的账号会在屏幕外重新启动 Chrome 并恢复上次会话，从未登录过的账号保持 `signed-out`，不启动 Chrome。`deleteAccount(id)` 停止进行中的登录，通过 `Browser.close` 关闭该账号的 Chrome 让其写入 cookie（之后依次 `SIGTERM`、`SIGKILL`），再删除该账号的浏览器数据及其账本行。未知 id 以 `ecommerce-accounts/not-found` 拒绝。
+Chrome 的生命周期长于 DSH。下一次启动的 DSH 通过记录重新连上账号的 Chrome；该 Chrome 已不在时，曾经登录过的账号会重新启动 Chrome、将其最小化并恢复上次会话，从未登录过的账号保持 `signed-out`，不启动 Chrome。`deleteAccount(id)` 停止进行中的登录，通过 `Browser.close` 关闭该账号的 Chrome 让其写入 cookie（之后依次 `SIGTERM`、`SIGKILL`），再删除该账号的浏览器数据及其账本行。未知 id 以 `ecommerce-accounts/not-found` 拒绝。
 
 -----
 
@@ -72,7 +72,7 @@ Chrome 的生命周期长于 DSH。下一次启动的 DSH 通过记录重新连�
 - **仅支持天猫商家账号** — 淘宝、京东、拼多多、抖音以及买家账号暂不能添加。
 - **模型尚未使用** — 还没有工具通过已登录账号读取店铺数据。
 - **平台会话时长** — 登录态的有效期取决于平台保留会话的时长；电脑重启后，只有平台保留的会话 cookie 才会被 Chrome 恢复，否则账号显示 `signed-out`，需要重新登录。
-- **Chrome 持续运行** — DSH 退出后，已登录账号的 Chrome 仍在屏幕外运行，用户可能在程序坞中看到它。
+- **Chrome 持续运行** — DSH 退出后，已登录账号的 Chrome 仍以最小化状态运行，用户会在程序坞中看到它。
 - **本地调试端口** — 已登录账号的 Chrome 在 `127.0.0.1` 上监听远程调试端口，运行期间用户运行的任何程序都能操控它。
 - **未在 Windows 上验证** — Windows 只在 CI 中运行，未在真机上测试登录。
 

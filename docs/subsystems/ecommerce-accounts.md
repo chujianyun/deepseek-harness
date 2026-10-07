@@ -14,11 +14,11 @@ Signing in starts the system Google Chrome detached on the account's data, with 
 
 ## Checking
 
-A check opens the platform's business page in a background tab and reads the platform's own sign-in response there — for Tmall, `mtop.user.getusersimple` — retrying once. A response with the account's nick is signed in; one without is signed out; none in time is a failed check. Once signed in, the account's Chrome windows move off screen and Chrome keeps running. Every account is checked when the tenant's accounts load and when the Settings section opens.
+A check opens the platform's business page in a background tab and reads the platform's own sign-in response there — for Tmall, `mtop.user.getusersimple` — retrying once. A response with the account's nick is signed in; one without is signed out; none in time is a failed check. Once signed in, the account's Chrome windows are minimized and Chrome keeps running. Every account is checked when the tenant's accounts load and when the Settings section opens.
 
 ## Across restarts
 
-Chrome outlives DSH. A later DSH reattaches to the recorded Chrome; when it is gone, as after a computer restart, an account that was ever signed in has Chrome started again off screen with its last session restored, and the check tells whether the platform kept the sign-in. Deleting an account closes its Chrome so it writes its cookies, then deletes its data.
+Chrome outlives DSH. A later DSH reattaches to the recorded Chrome; when it is gone, as after a computer restart, an account that was ever signed in has Chrome started again, minimized, with its last session restored, and the check tells whether the platform kept the sign-in. Deleting an account closes its Chrome so it writes its cookies, then deletes its data.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

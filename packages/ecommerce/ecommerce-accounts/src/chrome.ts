@@ -138,7 +138,7 @@ export interface LaunchOptions {
   readonly dir: string
   /** Page to open. */
   readonly url: string
-  /** Start with the window off screen. */
+  /** Start with the window as far off screen as the system allows; DSH minimizes it once it answers. */
   readonly hidden: boolean
   /** How long to wait for Chrome to answer. */
   readonly timeoutMs: number
