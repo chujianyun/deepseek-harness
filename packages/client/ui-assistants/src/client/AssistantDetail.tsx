@@ -64,7 +64,8 @@ function changesOf(saved: Draft, draft: Draft): UpdateAssistantInput {
     ...(identity.model === saved.identity.model && identity.effort === saved.identity.effort
       ? {}
       : { model: modelOf(identity.model, identity.effort) ?? null }),
-    ...(draft.preset === saved.preset ? {} : { preset: draft.preset === '' ? null : draft.preset }),
+    // The only other choice offered is the default capability base.
+    ...(draft.preset === saved.preset ? {} : { preset: null }),
     ...(sameSubsets(draft.subsets, saved.subsets) ? {} : { subsets: draft.subsets }),
     ...(files.length === 0 ? {} : { files: Object.fromEntries(files.map(file => [file, draft.files[file]])) }),
   }

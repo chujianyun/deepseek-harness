@@ -40,7 +40,6 @@ export function CreateAssistantWizard({ t, open, templates, onClose, onCreate, o
     name: first?.name ?? '', description: first?.description ?? '', avatar: first?.avatar ?? { kind: 'preset', key: PRESET_AVATAR_KEYS[0] }, model: '', effort: '',
   })
   const [options, setOptions] = useState<WizardOptions>({ models: [], presets: [] })
-  const [preset, setPreset] = useState('')
   const [subsets, setSubsets] = useState<AssistantSubsets>(first?.subsets ?? {})
   const [user, setUser] = useState({ name: '', language: '', notes: '', background: '' })
   const [busy, setBusy] = useState(false)
@@ -64,7 +63,6 @@ export function CreateAssistantWizard({ t, open, templates, onClose, onCreate, o
     const refusal = await onCreate({
       templateId, name: identity.name, description: identity.description, avatar: identity.avatar, user, subsets,
       ...(model === undefined ? {} : { model }),
-      ...(preset === '' ? {} : { preset }),
     })
     setBusy(false)
     if (refusal === undefined) onClose()
@@ -117,7 +115,8 @@ export function CreateAssistantWizard({ t, open, templates, onClose, onCreate, o
           onChange={(patch) => { setIdentity({ ...identity, ...patch }) }}
         />
       )}
-      {step === 2 && <PresetChoices t={t} presets={options.presets} value={preset} onChange={setPreset} />}
+      {/* A new assistant follows the default capability base; Agent presets are not offered. */}
+      {step === 2 && <PresetChoices t={t} presets={options.presets} value="" onChange={() => {}} />}
       {step === 3 && <SubsetFields t={t} value={subsets} onChange={setSubsets} options={options.capabilities} />}
       {step === 4 && (
         <div className={form.form}>

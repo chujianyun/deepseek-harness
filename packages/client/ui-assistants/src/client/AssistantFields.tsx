@@ -169,16 +169,17 @@ export interface PresetChoicesProps {
 }
 
 /**
- * Render the capability base choices: Follow default, then each preset.
+ * Render the capability base choices: Follow default, and the preset an assistant already names.
  * @param props - copy, the presets, and the chosen one.
  * @returns the choices; a chosen preset the deployment no longer offers shows as unavailable.
  */
 export function PresetChoices({ t, presets, value, onChange }: PresetChoicesProps) {
-  const missing = value !== '' && !presets.some(item => item.id === value)
+  // Agent presets are a developer concept: only following the default is offered. An assistant
+  // that already names a preset keeps it on display, so it can be seen and moved back.
+  const current = presets.find(item => item.id === value) ?? { id: value, name: t('presetUnavailable', { id: value }) }
   const items: readonly WizardPreset[] = [
     { id: '', name: t('followDefault'), description: t('followDefaultDescription') },
-    ...presets,
-    ...(missing ? [{ id: value, name: t('presetUnavailable', { id: value }) }] : []),
+    ...(value === '' ? [] : [current]),
   ]
   return (
     <div className={css.form}>

@@ -130,7 +130,7 @@ describe('creation wizard', () => {
     expect(screen.getByRole('alert').textContent).toBe('无法读取这张图片')
   })
 
-  it('creates with the chosen model, effort, preset, and user information, then closes', async () => {
+  it('creates with the chosen model, effort, and user information, offering only the default capability base, then closes', async () => {
     const props = await mount()
     fireEvent.click(screen.getByRole('radio', { name: /电商管家/ }))
     next()
@@ -140,7 +140,12 @@ describe('creation wizard', () => {
     expect(screen.getByRole<HTMLSelectElement>('combobox', { name: '思考级别' }).value).toBe('high')
     fireEvent.change(screen.getByRole('combobox', { name: '思考级别' }), { target: { value: 'low' } })
     next()
-    fireEvent.click(screen.getByRole('radio', { name: /极简/ }))
+    // Agent presets are not offered: the capability base follows the default.
+    const bases = screen.getByRole('radiogroup', { name: '能力底座' })
+    expect(within(bases).getAllByRole('radio').map(radio => radio.textContent)).toEqual(['跟随默认使用新会话的默认组合。'])
+    expect(within(bases).getByRole('radio').getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(within(bases).getByRole('radio'))
+    expect(within(bases).getByRole('radio').getAttribute('aria-checked')).toBe('true')
     next()
     const connectors = screen.getByRole('group', { name: '连接器' })
     expect(within(connectors).getByRole<HTMLInputElement>('radio', { name: '仅选中' }).checked).toBe(true)
@@ -162,7 +167,7 @@ describe('creation wizard', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '创建' })) })
     expect(props.onCreate).toHaveBeenCalledWith({
       templateId: 'ecommerce', name: '电商管家', description: '综合店铺管家', avatar: { kind: 'preset', key: 'ocean' },
-      model: { provider: 'acme', model: 'think', reasoningEffort: 'low' }, preset: 'minimal',
+      model: { provider: 'acme', model: 'think', reasoningEffort: 'low' },
       subsets: { connectors: ['feishu'], skills: ['weekly-report'], knowledgeBases: [] },
       user: { name: '小明', language: '中文', notes: '杭州', background: '天猫店运营' },
     })

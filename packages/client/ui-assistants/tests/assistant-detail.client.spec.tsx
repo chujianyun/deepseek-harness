@@ -64,7 +64,10 @@ describe('assistant detail page', () => {
     expect(screen.getByRole<HTMLInputElement>('textbox', { name: '名称' }).value).toBe('电商管家')
     expect(screen.getByRole<HTMLSelectElement>('combobox', { name: '模型' }).value).toBe('["acme","think"]')
     expect(screen.getByRole<HTMLSelectElement>('combobox', { name: '思考级别' }).value).toBe('low')
+    // An assistant that names a preset keeps it on display beside Follow default, and no other preset is offered.
     expect(screen.getByRole('radio', { name: '标准' }).getAttribute('aria-checked')).toBe('true')
+    expect(within(screen.getByRole('radiogroup', { name: '能力底座' })).getAllByRole('radio')).toHaveLength(2)
+    expect(screen.queryByRole('radio', { name: 'PTC' })).toBeNull()
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '身份 IDENTITY.md' }).value).toBe('# 身份\n')
     expect(save().disabled).toBe(true)
     expect(discard().disabled).toBe(true)
@@ -85,14 +88,13 @@ describe('assistant detail page', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '描述' }), { target: { value: '新描述' } })
     fireEvent.click(screen.getByRole('button', { name: '头像 3' }))
     fireEvent.change(screen.getByRole('combobox', { name: '思考级别' }), { target: { value: 'high' } })
-    fireEvent.click(screen.getByRole('radio', { name: 'PTC' }))
     fireEvent.click(screen.getByRole('tab', { name: '人格' }))
     fireEvent.change(screen.getByRole('textbox', { name: '人格 SOUL.md' }), { target: { value: '# 人格\n\n说话像海盗。\n' } })
     expect(discard().disabled).toBe(false)
     await act(async () => { fireEvent.click(save()) })
     expect(props.onUpdate).toHaveBeenCalledWith('a1', {
       name: '海盗', description: '新描述', avatar: { kind: 'preset', key: 'forest' },
-      model: { provider: 'acme', model: 'think', reasoningEffort: 'high' }, preset: 'ptc', files: { 'SOUL.md': '# 人格\n\n说话像海盗。\n' },
+      model: { provider: 'acme', model: 'think', reasoningEffort: 'high' }, files: { 'SOUL.md': '# 人格\n\n说话像海盗。\n' },
     })
     expect(props.onRead).toHaveBeenCalledTimes(2)
     expect(screen.getByRole('status').textContent).toBe('已保存')
