@@ -123,6 +123,8 @@ describe('Chrome processes', () => {
     // An empty Chrome gets a tab back.
     for (const tab of await pageTabs(cdp)) await cdp.send('Target.closeTarget', { targetId: tab.targetId })
     await ensureTab(port)
+    // The closed tabs are listed one last time, then only the new one.
+    expect(await pageTabs(cdp)).toHaveLength(3)
     expect(await pageTabs(cdp)).toHaveLength(1)
     await expect(cdp.send('Browser.close')).resolves.toEqual({})
     cdp.close()
@@ -255,6 +257,9 @@ describe('e-commerce accounts', () => {
     expect(again!.pid).not.toBe(record!.pid)
     const args = JSON.parse(await readFile(join(first.browserDir(accountId), 'user-data', 'fake-args.json'), 'utf8')) as string[]
     expect(args).toContain('--window-position=-32000,-32000')
+    // The blank tabs it gathered on each start are closed; the restored sign-in tab stays.
+    const tabs = await (await fetch(`http://127.0.0.1:${String(again!.port)}/json`)).json() as { url: string }[]
+    expect(tabs.map(tab => tab.url)).toEqual(['https://www.tmall.com/'])
     // A restart that lost the session shows the account signed out.
     await rm(join(first.browserDir(accountId), 'user-data', 'fake-signed-in'))
     expect((await second.service.refresh()).accounts[0]!.status).toBe('signed-out')

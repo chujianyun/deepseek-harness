@@ -4,7 +4,9 @@
 // sends `mtop.user.getusersimple`, signed in while `<user-data-dir>/fake-signed-in` holds a nick.
 // FAKE_CHROME_VERSION sets the reported version (empty prints none); FAKE_CHROME_SILENT never sends
 // the check response; FAKE_CHROME_BASE64 encodes bodies; FAKE_CHROME_STUBBORN ignores Browser.close;
-// FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs.
+// FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs. Its tabs are
+// kept in `<user-data-dir>/fake-tabs.json` and come back with --restore-last-session. As in Chrome, a
+// closed tab is still listed once by Target.getTargets, but has no window any more.
 import { createServer } from 'node:http'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -25,12 +27,18 @@ const signedInAs = () => existsSync(join(dataDir, 'fake-signed-in')) ? readFileS
 const CHECK = 'https://h5api.m.tmall.com/h5/mtop.user.getusersimple/1.0/'
 
 const targets = new Map()
+/** Tabs closed since the last Target.getTargets, which still lists them. */
+let closing = []
+const tabsFile = join(dataDir, 'fake-tabs.json')
+const saveTabs = () => { writeFileSync(tabsFile, JSON.stringify([...targets.values()].map(target => target.url))) }
 let next = 1
 const addTarget = (url) => {
   const id = `t${String(next++)}`
   targets.set(id, { id, url })
+  saveTabs()
   return id
 }
+if (args.includes('--restore-last-session') && existsSync(tabsFile)) for (const url of JSON.parse(readFileSync(tabsFile, 'utf8'))) addTarget(url)
 addTarget(args.at(-1)?.startsWith('-') ? 'about:blank' : args.at(-1))
 // A sign-in tab moves on to the home page once the user has signed in.
 const urlOf = target => target.url.startsWith('https://login.') && signedInAs() !== undefined ? 'https://www.tmall.com/' : target.url
@@ -57,10 +65,16 @@ wss.on('connection', (socket) => {
       case 'Target.attachToTarget': return reply({ sessionId: `s-${params.targetId}` })
       case 'Target.closeTarget':
         if (process.env.FAKE_CHROME_NO_CLOSE !== undefined) return socket.send(JSON.stringify({ id, error: { message: 'No target with given id found' } }))
+        if (targets.has(params.targetId)) closing.push(targets.get(params.targetId))
         targets.delete(params.targetId)
+        saveTabs()
         return reply({ success: true })
       case 'Target.activateTarget': return reply({})
-      case 'Target.getTargets': return reply({ targetInfos: [...targets.values()].map(t => ({ targetId: t.id, type: 'page', url: urlOf(t) })) })
+      case 'Target.getTargets': {
+        const listed = [...targets.values(), ...closing]
+        closing = []
+        return reply({ targetInfos: listed.map(t => ({ targetId: t.id, type: 'page', url: urlOf(t) })) })
+      }
       case 'Network.enable': return reply({})
       case 'Page.navigate': {
         target.url = params.url
@@ -84,7 +98,9 @@ wss.on('connection', (socket) => {
         const base64 = process.env.FAKE_CHROME_BASE64 !== undefined
         return reply({ body: base64 ? Buffer.from(body).toString('base64') : body, base64Encoded: base64 })
       }
-      case 'Browser.getWindowForTarget': return reply({ windowId: 1 })
+      case 'Browser.getWindowForTarget':
+        if (!targets.has(params.targetId)) return socket.send(JSON.stringify({ id, error: { message: 'No target with given id found' } }))
+        return reply({ windowId: 1 })
       case 'Browser.setWindowBounds': {
         const path = join(dataDir, 'fake-window.json')
         const bounds = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}

@@ -178,11 +178,27 @@ export async function showSignIn(cdp: Cdp, url: string): Promise<string> {
 export async function hideWindows(cdp: Cdp): Promise<void> {
   const windows = new Set<number>()
   for (const tab of await pageTabs(cdp)) {
-    const { windowId } = await cdp.send<{ windowId: number }>('Browser.getWindowForTarget', { targetId: tab.targetId })
-    windows.add(windowId)
+    // Chrome still lists a tab that is closing, though it has no window any more.
+    const found = await cdp.send<{ windowId: number }>('Browser.getWindowForTarget', { targetId: tab.targetId }).catch(() => undefined)
+    if (found !== undefined) windows.add(found.windowId)
   }
   for (const windowId of windows) {
     await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } })
     await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } })
+  }
+}
+
+/**
+ * Close the blank tabs a started Chrome gathers: the page it was started on, beside the tabs it
+ * restored from its last session. One blank tab stays when every tab is blank, so the browser
+ * keeps a tab to drive.
+ * @param cdp - the browser connection.
+ */
+export async function closeBlankTabs(cdp: Cdp): Promise<void> {
+  const tabs = await pageTabs(cdp)
+  const blank = tabs.filter(tab => tab.url === 'about:blank')
+  for (const tab of blank.length === tabs.length ? blank.slice(1) : blank) {
+    // A tab that closed meanwhile is already gone.
+    await cdp.send('Target.closeTarget', { targetId: tab.targetId }).catch(() => undefined)
   }
 }

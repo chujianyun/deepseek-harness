@@ -25,7 +25,7 @@ import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
-import { Cdp, hideWindows, pageTabs, probe, showSignIn, type ProbeResult } from './cdp.ts'
+import { Cdp, closeBlankTabs, hideWindows, pageTabs, probe, showSignIn, type ProbeResult } from './cdp.ts'
 import { alive, closeChrome, ensureTab, findChrome, launchChrome, readRecord, type ChromeInfo } from './chrome.ts'
 import { PLATFORMS, type PlatformSpec } from './platforms.ts'
 import type {
@@ -411,6 +411,12 @@ export class EcommerceAccountsService extends TypertRemoteService {
     if (record !== undefined && await alive(record.port)) return record.port
     const timeoutMs = this.options.chromeTimeoutMs
     const started = await launchChrome({ chrome: chrome.path, dir, url, hidden, timeoutMs, env: scrubbedParentEnv() })
+    const cdp = await Cdp.connect(started.port, timeoutMs)
+    try {
+      await closeBlankTabs(cdp)
+    } finally {
+      cdp.close()
+    }
     return started.port
   }
 

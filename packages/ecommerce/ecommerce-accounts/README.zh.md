@@ -31,7 +31,7 @@ kind: "package-reference"
 
 `addAccount(input)` 添加一个初始为未登录的账号。只能添加 `tmall` / `merchant`，其余以 `ecommerce-accounts/unsupported` 拒绝。店铺名和账号会去掉首尾空白，长度须为 1 到 `maxNameLength` 个字符，否则以 `ecommerce-accounts/invalid-field` 指出字段；平台、类型和账号都相同的账号再次添加时以 `ecommerce-accounts/duplicate` 拒绝。同一店铺的主账号和子账号是两个账号。
 
-`startSignIn(id)` 先检查 Chrome（`ecommerce-accounts/chrome-missing`、`ecommerce-accounts/chrome-outdated`），重新连上该账号的 Chrome 或启动它，在新标签页打开平台登录页，并把窗口移到屏幕上；Chrome 无法启动或连接时以 `ecommerce-accounts/browser-failed` 拒绝。Chrome 以脱离方式启动：`--user-data-dir` 指向该账号的数据，远程调试端口只监听 `127.0.0.1`，带 `--restore-last-session`，偏好设置为恢复上次会话，并从其环境中去掉 DSH 自己的变量。账号保持 `signing-in`，直到平台表示已登录，或超过 `signInTimeoutMs` 后回到 `signed-out`。服务每隔 `signInPollMs` 查看登录标签页；标签页离开登录页或被关闭后，或每隔 `signInCheckEveryMs`，检查该账号。**我已完成登录**按钮背后的 `confirmSignIn(id)` 立即检查。
+`startSignIn(id)` 先检查 Chrome（`ecommerce-accounts/chrome-missing`、`ecommerce-accounts/chrome-outdated`），重新连上该账号的 Chrome 或启动它，在新标签页打开平台登录页，并把窗口移到屏幕上；Chrome 无法启动或连接时以 `ecommerce-accounts/browser-failed` 拒绝。Chrome 以脱离方式启动：`--user-data-dir` 指向该账号的数据，远程调试端口只监听 `127.0.0.1`，带 `--restore-last-session`，偏好设置为恢复上次会话，并从其环境中去掉 DSH 自己的变量。启动的 Chrome 能连上后，DSH 会关闭它在恢复的标签之外积累的空白页；所有标签都是空白页时保留一个。账号保持 `signing-in`，直到平台表示已登录，或超过 `signInTimeoutMs` 后回到 `signed-out`。服务每隔 `signInPollMs` 查看登录标签页；标签页离开登录页或被关闭后，或每隔 `signInCheckEveryMs`，检查该账号。**我已完成登录**按钮背后的 `confirmSignIn(id)` 立即检查。
 
 一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的结果，失败时重试一次：天猫读取 `mtop.user.getusersimple` 响应及其中的 nick。之后关闭该标签页。已登录的账号为 `signed-in` 并带上该 nick，其 Chrome 窗口被最小化，Chrome 在看不见的地方继续运行（macOS 会让移到屏幕外的窗口始终露出一部分）；响应中没有 nick 为 `signed-out`；在 `checkTimeoutMs` 内没有响应为 `check-failed`，保留上次的 nick。同一账号的检查不会同时进行。租户的账号加载时以及调用 `refresh()` 时检查每个账号；设置分区打开时会调用 `refresh()`，它也会重新查找 Chrome。
 
