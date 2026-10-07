@@ -71,3 +71,9 @@ DeepSeek Harness 的领域词汇为每个概念规定一个规范术语。各术
 - **智能体**：用户创建的具名角色：有名称、头像和自己的[核心文件](#assistant-core-files)，选定一个 Agent preset 作为能力底座，并可以只带上部分 Skill、[连接器](#connector)和[知识库](#knowledge-base)。会话在创建时绑定一个智能体，之后不能更换；要换智能体就开新会话。它不同于运行时的 agent 实例，也不同于 Cordis 配置 profile。_避免_：角色、助手、persona、profile。<a id="assistant"></a>
 - **核心文件**：定义一个[智能体](#assistant)是谁的几份 Markdown 文件：身份（IDENTITY）、人格（SOUL）、用户信息（USER）和工作方法（AGENTS）。用户可以直接查看和编辑。<a id="assistant-core-files"></a>
 - **智能体模板**：创建[智能体](#assistant)时可选的起点，预先填好核心文件和能力选择。内置日常助手和电商管家两个模板；也可以从空白开始。<a id="assistant-template"></a>
+
+## 电商账号
+
+- **电商账号**：用户在 DSH 中登录的一个电商平台账号，分为[商家账号](#merchant-account)和[买家账号](#buyer-account)。每个电商账号使用一份独立的 Google Chrome 浏览器数据，登录态由这份浏览器自己保存，DSH 从不保存密码或 cookie。同一店铺的主账号和子账号是两个电商账号。电商账号属于当前 [Hub 登录](#skill-hub)所在的租户。它不同于[连接器](#connector)：连接器通过官方 CLI 接入办公平台，电商账号通过浏览器登录电商平台。_避免_：店铺账号、店铺、平台账号。<a id="ecommerce-account"></a>
+- **商家账号**：能进入店铺后台的[电商账号](#ecommerce-account)，有店铺名，用于读取该店铺自己的经营数据。商家账号从不用于抓取公开商品页面，以免连累店铺后台账号被风控。<a id="merchant-account"></a>
+- **买家账号**：普通买家身份的[电商账号](#ecommerce-account)，只用于查看公开商品页面。DSH 限制每个买家账号每天打开的页数，遇到平台风控就让它冷却一段时间；有多个买家账号时由 DSH 挑选可用的一个。<a id="buyer-account"></a>
