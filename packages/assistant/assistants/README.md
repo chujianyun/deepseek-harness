@@ -33,7 +33,7 @@ Assistants belong to the tenant of the current [Hub sign-in](../../../docs/gloss
 
 A main session binds one assistant while it is blank, recorded as `assistant/selected` (`assistantId`). When the service sees a blank main session that has no assistant, it binds the tenant's default. `select(sessionId, assistantId)` binds another one before the first turn: an assistant with a `preset` first switches the session to that Agent preset through `agentPresets.select()`, and one with a `model` installs it for the session through `sessionController.useModel()`, which never changes the global default. Binding happens the same way for the default assistant of a new session. A preset the deployment no longer composes, or a model removed from Settings, is skipped, and the session keeps the deployment's default preset or the global model. Picking, in the same blank session, an assistant without a preset or model after one that set it returns the session to the deployment's default preset or the global model; otherwise binding leaves the session's own choice alone. It refuses while signed out with `hub-account/signed-out`, an id the tenant lacks with `assistants/not-found`, and a session that already started a turn with `assistants/locked`. Subagent sessions bind no assistant. The `assistant` Session projection carries the bound id to the client's session summaries.
 
-Every main session gets the `assistant:core-files` prompt section at order `ASSISTANT_CORE_FILES`, after the deployment persona. Before each turn step, an assembly listener in the session's scope reads the bound assistant's core files, renders them, and, when the text differs from the last record, appends `assistant/instructions` (`text`); the section carries the recorded text, so an edit made on disk reaches the model on the next step and every prompt is reconstructable from the session log. A core file deleted on disk contributes nothing; one that cannot be read fails the step. An assistant deleted, or not in the signed-in tenant, renders an empty text, which drops the section. Assemblies outside a turn, such as an inspection, record nothing and use the last recorded text.
+Every main session gets the `assistant:core-files` prompt section at order `ASSISTANT_CORE_FILES`, after the deployment persona. Before each turn step, an assembly listener in the session's scope reads the bound assistant's core files, renders them, and, when the text differs from the last record, appends `assistant/instructions` (`text`); the section carries the recorded text, so an edit made on disk reaches the model on the next step and every prompt is reconstructable from the session log. A core file deleted on disk contributes nothing; one that cannot be read fails the step. An assistant deleted, or not in the signed-in tenant, renders an empty text, as does one whose core files are all blank. Because every turn's system prompt stays in the conversation, a session that already carried core files then gets the `CORE_FILES_WITHDRAWN` text instead, telling the model that the earlier core files no longer apply; a session that never carried any gets no section. Assemblies outside a turn, such as an inspection, record nothing and use the last recorded text.
 
 -----
 
@@ -57,12 +57,18 @@ Every main session gets the `assistant:core-files` prompt section at order `ASSI
 
 #### What the model sees
 
-A main session bound to an assistant whose core files are not all blank gets the `assistant:core-files` section after the deployment persona: the introduction below with the assistant's name, then each non-blank core file trimmed in a `<core_file name="…">` block, in the order `IDENTITY.md`, `SOUL.md`, `USER.md`, `AGENTS.md`. The text is literal; `{{…}}` in a core file is not interpolated. Unbound sessions, subagent sessions, and assistants deleted or outside the signed-in tenant get no section.
+A main session bound to an assistant whose core files are not all blank gets the `assistant:core-files` section after the deployment persona: the introduction below with the assistant's name, then each non-blank core file trimmed in a `<core_file name="…">` block, in the order `IDENTITY.md`, `SOUL.md`, `USER.md`, `AGENTS.md`. The text is literal; `{{…}}` in a core file is not interpolated. Unbound sessions and subagent sessions get no section. Once the bound assistant is deleted, leaves the signed-in tenant, or has every core file emptied, a session that already carried core files gets the withdrawal notice below instead; one that never carried any gets no section.
 
 ##### Section introduction
 
 ```markdown
-You are the assistant "<name>". The user wrote the core files below to define your identity, personality, what you know about them, and how you work. Follow them in this session.
+You are the assistant "<name>". The user wrote the core files below to define your identity, personality, what you know about them, and how you work. They replace any earlier version in this conversation; follow them.
+```
+
+##### Withdrawal notice
+
+```markdown
+The core files given earlier in this conversation no longer apply: the assistant they defined is no longer available or no longer has them. Stop following their identity, personality, user information, and working method, including any required openings, signatures, or formats, and work as a general assistant.
 ```
 
 #### Token effect

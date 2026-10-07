@@ -10,7 +10,7 @@ Assistants belong to the tenant of the current Hub sign-in and live under `<dshH
 
 ## Managing assistants
 
-The detail page edits an assistant's fields and its four core files through the `assistants` Remote. Saved core files and a new name reach every session bound to the assistant on its next step, including sessions in progress; a new model or preset applies to sessions bound afterward. Setting another default moves blank sessions bound to the previous default to it. A copy carries the configuration and core files under the name `<name> 副本`, without sessions. Deleting an assistant keeps its sessions, which continue without its core files; the first remaining assistant becomes the default, and with none left new sessions bind no assistant.
+The detail page edits an assistant's fields and its four core files through the `assistants` Remote. Saved core files and a new name reach every session bound to the assistant on its next step, including sessions in progress; a new model or preset applies to sessions bound afterward. Setting another default moves blank sessions bound to the previous default to it. A copy carries the configuration and core files under the name `<name> 副本`, without sessions. Deleting an assistant keeps its sessions, which continue without its core files: since earlier turns stay in the conversation, their next turn tells the model that those core files no longer apply; the first remaining assistant becomes the default, and with none left new sessions bind no assistant.
 
 ## Session binding
 

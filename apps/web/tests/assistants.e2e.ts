@@ -293,6 +293,8 @@ it('edits core files on the detail page, moves the default, copies, and deletes 
     await expect.poll(answers, { timeout: 30_000 }).toBe(3)
     expect(lastPrompt()).not.toContain('SOUL_FROM_PAGE')
     expect(lastPrompt()).not.toContain('<core_file')
+    // Providers that keep earlier system prompts still show the old core files; this turn says they no longer apply.
+    expect(lastPrompt()).toContain('The core files given earlier in this conversation no longer apply')
 
     // With every assistant deleted, a new session has no picker and no core files, as before assistants.
     await openAssistants()

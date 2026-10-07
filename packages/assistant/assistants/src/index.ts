@@ -12,7 +12,8 @@
  * bound assistant's core files and records them with `assistant/instructions` whenever they
  * differ from the previous record; the `assistant:core-files` prompt section carries the recorded
  * text, so an edit reaches the model on the next turn and every prompt stays reconstructable from
- * the session log. A session whose assistant was deleted keeps its binding and loses the section.
+ * the session log. A session whose assistant was deleted keeps its binding; once it carried core
+ * files, the section then says they no longer apply.
  *
  * @module @deepseek-ai/dsh-assistants
  */
@@ -122,6 +123,13 @@ export const assistantProjectionDefinition = {
 } satisfies ProjectionDefinition<'assistant', AssistantProjectionState>
 
 /**
+ * Section text once core files that earlier turns carried no longer apply, because the assistant was
+ * deleted, left the signed-in tenant, or had every core file emptied. Earlier turns stay in the
+ * conversation, so the model is told to stop following them.
+ */
+export const CORE_FILES_WITHDRAWN = 'The core files given earlier in this conversation no longer apply: the assistant they defined is no longer available or no longer has them. Stop following their identity, personality, user information, and working method, including any required openings, signatures, or formats, and work as a general assistant.'
+
+/**
  * Render an assistant's core files as the prompt section text.
  * @param name - the assistant's display name.
  * @param files - core file contents by file name, in model reading order.
@@ -131,7 +139,7 @@ export function renderInstructions(name: string, files: ReadonlyArray<readonly [
   const blocks = files.filter(([, text]) => text.trim() !== '').map(([file, text]) => `<core_file name="${file}">\n${text.trim()}\n</core_file>`)
   if (blocks.length === 0) return ''
   return [
-    `You are the assistant "${name}". The user wrote the core files below to define your identity, personality, what you know about them, and how you work. Follow them in this session.`,
+    `You are the assistant "${name}". The user wrote the core files below to define your identity, personality, what you know about them, and how you work. They replace any earlier version in this conversation; follow them.`,
     ...blocks,
   ].join('\n\n')
 }
@@ -552,7 +560,9 @@ export class AssistantsService extends TypertRemoteService {
         const state = this.ctx.sessionProjections.stateOf(agent.session, 'assistant')
         const assistantId = state?.assistantId ?? null
         if (assistantId === null) return next()
-        const text = await this.instructionsFor(assistantId)
+        const rendered = await this.instructionsFor(assistantId)
+        // Core files that earlier turns carried stay in the conversation; say they no longer apply.
+        const text = rendered === '' && (state?.instructions ?? '') !== '' ? CORE_FILES_WITHDRAWN : rendered
         if (text !== (state?.instructions ?? null)) agent.session.append('assistant/instructions', { text })
         assembly.sections = assembly.sections.map(section => section.name === ASSISTANT_SECTION ? { ...section, text } : section)
         return next()

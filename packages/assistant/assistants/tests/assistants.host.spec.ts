@@ -11,7 +11,9 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-import AssistantsService, { ASSISTANT_SECTION, assistantProjectionDefinition, ECOMMERCE_MANAGER, renderInstructions, renderUser, withName } from '../src/index.ts'
+import AssistantsService, {
+  ASSISTANT_SECTION, assistantProjectionDefinition, CORE_FILES_WITHDRAWN, ECOMMERCE_MANAGER, renderInstructions, renderUser, withName,
+} from '../src/index.ts'
 import type { CreateAssistantInput } from '../src/types.ts'
 import { hubStub } from '../../../connector/connectors/tests/support.ts'
 
@@ -142,7 +144,7 @@ describe('session binding', () => {
     expect(env.events(agent, 'assistant/instructions')).toEqual([])
   })
 
-  it('drops the section once the bound assistant is deleted', async () => {
+  it('says the earlier core files no longer apply once the bound assistant is deleted, and records that once', async () => {
     const env = await setup()
     const state = await env.settle(s => s.assistants.length === 1)
     const agent = await env.agent('s1')
@@ -152,8 +154,23 @@ describe('session binding', () => {
     await env.settle(s => s.tenantId === 't-b')
     env.hub.set('t-a')
     await env.settle(s => s.tenantId === 't-a' && s.assistants.length === 0)
-    expect(await env.turnPrompt(agent)).toBe('')
-    expect(env.events(agent, 'assistant/instructions').at(-1)).toEqual({ text: '' })
+    expect(await env.turnPrompt(agent)).toBe(CORE_FILES_WITHDRAWN)
+    expect(await env.turnPrompt(agent)).toBe(CORE_FILES_WITHDRAWN)
+    const recorded = env.events(agent, 'assistant/instructions')
+    expect(recorded).toHaveLength(2)
+    expect(recorded[0]).toMatchObject({ text: expect.stringContaining('<core_file') as string })
+    expect(recorded[1]).toEqual({ text: CORE_FILES_WITHDRAWN })
+  })
+
+  it('says the earlier core files no longer apply once the user empties every one of them', async () => {
+    const env = await setup()
+    const id = (await env.settle(s => s.assistants.length === 1)).defaultId!
+    const agent = await env.agent('s1')
+    expect(await env.turnPrompt(agent)).toContain('<core_file')
+    await env.service.updateAssistant(id, { files: { 'IDENTITY.md': '', 'SOUL.md': ' ', 'USER.md': '', 'AGENTS.md': '' } })
+    expect(await env.turnPrompt(agent)).toBe(CORE_FILES_WITHDRAWN)
+    await env.service.updateAssistant(id, { files: { 'SOUL.md': '# 人格\n\n回来了。\n' } })
+    expect(await env.turnPrompt(agent)).toContain('回来了。')
   })
 
   it('binds no assistant while signed out, and the prompt stays as before', async () => {
@@ -444,7 +461,7 @@ describe('core file helpers', () => {
 describe('renderInstructions', () => {
   it('skips blank files and returns empty text when every file is blank', () => {
     expect(renderInstructions('A', [['IDENTITY.md', ' \n'], ['SOUL.md', '']])).toBe('')
-    expect(renderInstructions('A', [['IDENTITY.md', 'x'], ['SOUL.md', '']])).toBe('You are the assistant "A". The user wrote the core files below to define your identity, personality, what you know about them, and how you work. Follow them in this session.\n\n<core_file name="IDENTITY.md">\nx\n</core_file>')
+    expect(renderInstructions('A', [['IDENTITY.md', 'x'], ['SOUL.md', '']])).toBe('You are the assistant "A". The user wrote the core files below to define your identity, personality, what you know about them, and how you work. They replace any earlier version in this conversation; follow them.\n\n<core_file name="IDENTITY.md">\nx\n</core_file>')
   })
 })
 
@@ -589,7 +606,7 @@ describe('managing assistants', () => {
     const state = await env.service.deleteAssistant(first)
     expect(state).toMatchObject({ defaultId: second, assistants: [{ id: second }] })
     expect(await readdir(join(env.home, 'assistants', 't-a'))).not.toContain(first)
-    expect(await env.turnPrompt(started)).toBe('')
+    expect(await env.turnPrompt(started)).toBe(CORE_FILES_WITHDRAWN)
     expect(env.events(started, 'assistant/selected')).toEqual([{ assistantId: first }])
     const again = await setup({ home: env.home })
     expect((await again.settle(s => s.assistants.length === 1)).defaultId).toBe(second)

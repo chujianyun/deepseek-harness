@@ -33,7 +33,7 @@ kind: "package-reference"
 
 主会话在空白时绑定一个智能体，记录为 `assistant/selected`（`assistantId`）。服务看到一个尚未绑定智能体的空白主会话时，会绑定租户的默认智能体。`select(sessionId, assistantId)` 在第一轮之前改绑另一个：带 `preset` 的智能体会先通过 `agentPresets.select()` 把会话切换到那个 Agent preset，带 `model` 的智能体会通过 `sessionController.useModel()` 为会话安装该模型，且从不改变全局默认。新会话绑定默认智能体时也是如此。部署已不再组合的 preset，或已从设置中删除的模型会被跳过，会话保留部署的默认 preset 或全局模型。在同一个空白会话里，先选了设置过 preset 或模型的智能体、再改选没有设置的智能体时，会话回到部署的默认 preset 或全局模型；其他情况下绑定不改动会话自己的选择。未登录时以 `hub-account/signed-out` 拒绝，租户没有该 id 时以 `assistants/not-found` 拒绝，会话已经开始过一轮时以 `assistants/locked` 拒绝。子智能体会话不绑定智能体。`assistant` 会话投影把绑定的 id 带到客户端的会话摘要中。
 
-每个主会话都有 `assistant:core-files` 提示词段落，顺序为 `ASSISTANT_CORE_FILES`，位于部署人设之后。每个轮次步骤开始前，会话作用域里的组装监听器读取所绑定智能体的核心文件并渲染；文本与上一次记录不同时追加 `assistant/instructions`（`text`）。段落携带记录下来的文本，所以在磁盘上修改的内容会在下一步到达模型，每个提示词都能从会话日志还原。在磁盘上删除的核心文件不贡献内容；无法读取的核心文件会让这一步失败。已删除的智能体，或不属于已登录租户的智能体，渲染为空文本，段落随之去掉。轮次之外的组装（例如查看提示词）不做记录，使用上一次记录的文本。
+每个主会话都有 `assistant:core-files` 提示词段落，顺序为 `ASSISTANT_CORE_FILES`，位于部署人设之后。每个轮次步骤开始前，会话作用域里的组装监听器读取所绑定智能体的核心文件并渲染；文本与上一次记录不同时追加 `assistant/instructions`（`text`）。段落携带记录下来的文本，所以在磁盘上修改的内容会在下一步到达模型，每个提示词都能从会话日志还原。在磁盘上删除的核心文件不贡献内容；无法读取的核心文件会让这一步失败。已删除的智能体、不属于已登录租户的智能体，以及核心文件全为空的智能体，都渲染为空文本。由于每一轮的系统提示词都会留在对话中，已经带过核心文件的会话此时改为得到 `CORE_FILES_WITHDRAWN` 文本，告诉模型之前的核心文件不再适用；从未带过核心文件的会话没有这个段落。轮次之外的组装（例如查看提示词）不做记录，使用上一次记录的文本。
 
 -----
 
@@ -57,12 +57,18 @@ kind: "package-reference"
 
 #### 模型看到的内容
 
-绑定了智能体、且其核心文件不全为空的主会话，会在部署人设之后得到 `assistant:core-files` 段落：先是下面带智能体名称的开场说明，再按 `IDENTITY.md`、`SOUL.md`、`USER.md`、`AGENTS.md` 的顺序，把每份非空核心文件去掉首尾空白后放进一个 `<core_file name="…">` 块。文本按原样发送；核心文件里的 `{{…}}` 不做插值。未绑定的会话、子智能体会话，以及已删除或不属于已登录租户的智能体，都没有这个段落。
+绑定了智能体、且其核心文件不全为空的主会话，会在部署人设之后得到 `assistant:core-files` 段落：先是下面带智能体名称的开场说明，再按 `IDENTITY.md`、`SOUL.md`、`USER.md`、`AGENTS.md` 的顺序，把每份非空核心文件去掉首尾空白后放进一个 `<core_file name="…">` 块。文本按原样发送；核心文件里的 `{{…}}` 不做插值。未绑定的会话和子智能体会话没有这个段落。所绑定的智能体被删除、不再属于已登录租户，或核心文件全被清空后，已经带过核心文件的会话改为得到下面的失效说明；从未带过的会话没有这个段落。
 
 ##### 段落开场说明
 
 ```markdown
-You are the assistant "<name>". The user wrote the core files below to define your identity, personality, what you know about them, and how you work. Follow them in this session.
+You are the assistant "<name>". The user wrote the core files below to define your identity, personality, what you know about them, and how you work. They replace any earlier version in this conversation; follow them.
+```
+
+##### 失效说明
+
+```markdown
+The core files given earlier in this conversation no longer apply: the assistant they defined is no longer available or no longer has them. Stop following their identity, personality, user information, and working method, including any required openings, signatures, or formats, and work as a general assistant.
 ```
 
 #### Token 影响

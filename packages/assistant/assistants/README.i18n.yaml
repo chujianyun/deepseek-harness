@@ -15,8 +15,8 @@
   en: 3a654e12f423946b
   zh: 4e3a19aaee58f8a7
 /assistants/use-this-package:
-  en: 8e9db92deb758939
-  zh: 323335d0562da749
+  en: 0bcce59cac0eb78b
+  zh: 32c50d577fecc60b
 /assistants/configuration:
   en: 58649fec4f623df7
   zh: acc5c12e206123c8
@@ -27,11 +27,14 @@
   en: ed37601999fe219c
   zh: af0f8503d607e374
 /assistants/model-experience/bound-assistant-s-core-files/what-the-model-sees:
-  en: 18367d1bac6ada40
-  zh: 38b069753857cf02
+  en: 2f5e85cb4c785278
+  zh: 79339b19f645ecea
 /assistants/model-experience/bound-assistant-s-core-files/what-the-model-sees/section-introduction:
   en: f3e2c22a009ae60e
   zh: fc8e91cd59b26b11
+/assistants/model-experience/bound-assistant-s-core-files/what-the-model-sees/withdrawal-notice:
+  en: c43a7b9908500533
+  zh: d7c81ba55c0dcf7e
 /assistants/model-experience/bound-assistant-s-core-files/token-effect:
   en: 9397fde8fa46d7b0
   zh: ef82e6de026d4620
