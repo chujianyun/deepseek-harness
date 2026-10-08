@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The ecommerce family links Desktop to the e-commerce platforms a company sells on — Tmall, Taobao, Pinduoduo, and Douyin shops — through accounts the user signs in to in the system Google Chrome, one browser data directory per account. Desktop renders it as the E-commerce accounts section of Settings. The family also holds the Tmall data skills that a tenant uploads to the Skill Hub, which read store data with those accounts.
+The ecommerce family links Desktop to the e-commerce platforms a company sells on — Tmall, Taobao, Pinduoduo, and Douyin shops — through accounts the user signs in to in the system Google Chrome, one browser data directory per account. Desktop renders it as the E-commerce accounts section of Settings. The family also holds the Tmall skills that a tenant uploads to the Skill Hub, which read store data and publish rules with those accounts.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ The ecommerce family links Desktop to the e-commerce platforms a company sells o
 | Package | Role | ctx key |
 |---|---|---|
 | [`ecommerce-accounts/`](ecommerce-accounts/README.md) | The tenant's e-commerce accounts and their Chrome sign-ins, over the `ecommerceAccounts` Remote | `ctx.ecommerceAccounts` |
-| [`tmall-skills/`](tmall-skills/README.md) | Tmall data skills (merchant reports and the buyer item report) uploaded to the Skill Hub for the tenants that need them, and their packaging | — |
+| [`tmall-skills/`](tmall-skills/README.md) | Tmall skills (merchant reports, publish categories and field rules, and the buyer item report) uploaded to the Skill Hub for the tenants that need them, and their packaging | — |
 
 -----
 

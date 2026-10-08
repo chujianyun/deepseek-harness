@@ -5,6 +5,8 @@
 // the catalog, lists the accounts, and runs the skill's script with the account in bash. The script
 // takes over the account's browser through `dsh-ecommerce`, reads the stand-in's Alimama and
 // Business Advisor figures, writes the reports into the workspace, and its summary reaches the chat.
+// The publish-category skill then finds a new item's category by product name and saves that
+// category's field rules, with the declarations the store must confirm.
 // With a signed-in buyer account instead, the item skill's script lets DSH pick the buyer account,
 // opens each item page once (counted toward the account's pages today), reads the stand-in's item,
 // 问大家, and reviews, stops at risk control keeping what it read and has DSH rest the account, and is
@@ -54,7 +56,7 @@ function streamChat(res: ServerResponse, request: ChatRequest, skillsDir: string
     id: 'chatcmpl-tmall', object: 'chat.completion.chunk', created: 0, model: 'acme-chat', choices: [],
     usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 },
   })}\n\n`
-  const lastAsk = request.messages.findLastIndex(message => message.role === 'user' && /2026-10-06 的|采集商品/u.test(JSON.stringify(message.content ?? '')))
+  const lastAsk = request.messages.findLastIndex(message => message.role === 'user' && /2026-10-06 的|采集商品|定天猫类目/u.test(JSON.stringify(message.content ?? '')))
   const asked = JSON.stringify(request.messages[lastAsk]?.content ?? '')
   const results = request.messages.slice(lastAsk + 1).filter(message => message.role === 'tool').map(message => JSON.stringify(message.content))
   const catalog = JSON.stringify(request.messages.map(message => message.content ?? ''))
@@ -71,8 +73,12 @@ function streamChat(res: ServerResponse, request: ChatRequest, skillsDir: string
     bash(`"${process.execPath}" "${join(skillsDir, 'tmall-item-report', 'scripts', 'item-report.mjs')}" ${items.join(' ')}`)
     return
   }
-  if (skill !== undefined && results.length === 0) { bash('dsh-ecommerce accounts'); return }
+  const publishing = asked.includes('定天猫类目') && catalog.includes('`tmall-publish-category`')
+  if ((skill !== undefined || publishing) && results.length === 0) { bash('dsh-ecommerce accounts'); return }
   const id = /\\"id\\": \\"([0-9a-f-]{36})\\"/u.exec(results[0] ?? '')?.[1]
+  const publish = `"${process.execPath}" "${join(skillsDir, 'tmall-publish-category', 'scripts', 'publish-category.mjs')}"`
+  if (publishing && results.length === 1 && id !== undefined) { bash(`${publish} resolve --account ${id} --keyword 避孕套`); return }
+  if (publishing && results.length === 2) { bash(`${publish} rules --account ${id as string} --cat 50024154`); return }
   if (skill !== undefined && results.length === 1 && id !== undefined) {
     bash(`"${process.execPath}" "${join(skillsDir, skill, 'scripts', SCRIPTS[skill] as string)}" --account ${id} --date 2026-10-06`)
     return
@@ -170,6 +176,20 @@ it.skipIf(process.platform === 'win32')('runs the packed Tmall data skills with 
     const day = await readFile(join(reports, '生意参谋店铺经营核心日报_名流旗舰店_2026-10-06.csv'), 'utf8')
     expect(day).toContain('支付金额,"34,000.20"')
     expect((await readFile(join(reports, '生意参谋店铺经营核心日报_名流旗舰店_2026-10-06.xlsx')).then(bytes => bytes.subarray(0, 2).toString('latin1')))).toBe('PK')
+
+    // Publishing: the category found by product name, then its field rules with the two declarations.
+    await send('新品是避孕套，请帮我定天猫类目并读取字段规则')
+    await expect.poll(() => page.getByText(ANSWER).count(), { timeout: 60_000 }).toBe(3)
+    const tools = chat.chats.at(-1)!.messages.filter(message => message.role === 'tool').slice(-2).map(message => JSON.stringify(message.content))
+    expect(tools[0]).toContain('1. 计生用品 > 避孕套（类目 id 50024154）—— 天猫类目搜索「避孕套」')
+    expect(tools[0]).toContain('另有 1 个类目这家店未授权，不能用：医疗器械 > 安全套')
+    const rules = lastResult()
+    expect(rules).toContain('类目：计生用品 > 避孕套（50024154），共 5 个字段。')
+    expect(rules).toContain('- 品牌（p-20000，select，只读），可选 1 项：名流')
+    expect(rules).toContain('- 请检查产品标签和说明书，确认发布的医疗器械可以由消费者个人自行使用。（personalUseConfirm）')
+    const publishing = join(scaffold.workspaceCwd, 'tmall-skills', '天猫发品')
+    expect(JSON.parse(await readFile(join(publishing, '字段规则_50024154.json'), 'utf8'))).toMatchObject({ store: '名流旗舰店', catId: '50024154' })
+    expect((await readdir(publishing)).sort()).toEqual(['字段规则_50024154.json', '类目缓存_名流旗舰店.json'])
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
     if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-tmall-skills')

@@ -15,7 +15,8 @@
 // APIs those skills call — Alimama's report query and Business Advisor's self-service export, whose
 // .xlsx this server hands out — with one day's figures for scenes 371 and 436. An item page renders its
 // item, fetches its description, and answers its 问大家 and review APIs, with images this server hands
-// out; on item 600000000004 the APIs answer with risk control. Its tabs are
+// out; on item 600000000004 the APIs answer with risk control. Tmall's publish entry answers its category tree
+// and search with the store's 计生用品 > 避孕套, and that category's publish page carries its form. Its tabs are
 // kept in `<user-data-dir>/fake-tabs.json` and come back with --restore-last-session. As in Chrome, a
 // closed tab is still listed once by Target.getTargets, but has no window any more.
 import { createServer } from 'node:http'
@@ -154,6 +155,23 @@ const renderedItem = () => {
     skuCore: { sku2info: { s1: { price: { priceText: '29.9' }, subPrice: { priceTitle: '券后', priceText: '19.9' }, quantityText: '有货' }, s2: { price: { priceText: '49.9' }, quantityText: '有货' } } },
   }
 }
+/** The publish entry's category nodes: one top-level category, and under it 避孕套 with a brand node and an unauthorized category. */
+const CONDOMS = { id: 50024154, name: '避孕套', path: ['计生用品', '避孕套'], idpath: [50023717, 50024154], publish: true, isAuthorized: true }
+const categoryApi = (expression) => {
+  if (expression.includes('retrievalDataAsyncOpt')) {
+    return { success: true, data: { category: [CONDOMS, { id: 125322008, name: '安全套', path: ['医疗器械', '安全套'], idpath: [1, 125322008], publish: true, isAuthorized: false }] } }
+  }
+  if (!expression.includes('catId=')) return { success: true, data: { dataSource: [{ id: 50023717, name: '计生用品', path: ['计生用品'], idpath: [50023717], publish: false, isAuthorized: true }] } }
+  return { success: true, data: { dataSource: expression.includes('catId=50023717') ? [CONDOMS, { id: 1, name: '名流', isBrand: true, publish: true }] : [] } }
+}
+/** The 避孕套 publish page's form: title, shelf time, the brand property, and the two declarations. */
+const publishForm = () => ({ form: { components: {
+  title: { type: 'input', props: { name: 'title', label: '宝贝标题', required: true } },
+  shelfTime: { type: 'radio', props: { name: 'shelfTime', label: '上架时间', required: true, dataSource: [{ value: 0, text: '立刻上架' }, { value: 2, text: '放入仓库' }] } },
+  keyProp: { type: 'catProp', props: { name: 'keyProp', dataSource: [{ name: 'p-20000', label: '品牌', uiType: 'select', required: true, readonly: true, dataSource: [{ value: 1, text: '名流' }] }] } },
+  personalUseConfirm: { type: 'checkbox', props: { name: 'personalUseConfirm', label: '', required: true, dataSource: [{ value: '1', text: '请检查产品标签和说明书，确认发布的医疗器械可以由消费者个人自行使用。' }] } },
+  productConfirm: { type: 'checkbox', props: { name: 'productConfirm', label: '产品确认', required: true, readonly: true, dataSource: [{ value: '1', text: '您已确认所发布的产品信息都准确无误。' }] } },
+}, models: {}, rules: [] } })
 /** An item page's 问大家 and review APIs: two questions, two main reviews, one negative tag, and a follow-up. */
 const itemApi = (target, expression) => {
   const success = data => ({ ret: 'SUCCESS::调用成功', data, punish: false })
@@ -175,6 +193,9 @@ const evaluateIn = (target, expression) => {
   if (expression === 'location.href') return target.url
   if (expression.includes('__ICE_APP_CONTEXT__')) return renderedItem()
   if (expression.includes('#nocaptcha')) return false
+  if (expression === "document.readyState === 'complete'") return true
+  if (expression.includes('categorySelectChildren') || expression.includes('retrievalDataAsyncOpt')) return categoryApi(expression)
+  if (expression.includes('window.Json2')) return target.url.includes('catId=50024154') ? publishForm() : { error: '类目为空或不存在' }
   if (expression.includes('window.lib.mtop.request')) return itemApi(target, expression)
   const api = [
     ['/report/query.json', { data: { list: SCENES }, info: { ok: true } }],
@@ -257,7 +278,7 @@ wss.on('connection', (socket) => {
           const scene = { queryDomains: ['scene'], queryFieldIn: ['charge'], csrfId: 'fake-csrf', loginPointId: 'fake-point' }
           return emit('Network.requestWillBeSent', { requestId: 'q1', request: { url: 'https://one.alimama.com/report/query.json?csrfId=fake-csrf', method: 'POST', postData: JSON.stringify(scene) } }, sessionId)
         }
-        if (params.url.startsWith('https://sycm.taobao.com/')) return
+        if (params.url.startsWith('https://sycm.taobao.com/') || params.url.startsWith('https://sell.publish.tmall.com/')) return
         if (params.url.includes('/item.htm?id=')) {
           const desc = { data: { components: { layout: [{ ID: 'd1' }], componentData: { d1: { model: { picUrl: `http://127.0.0.1:${String(port)}/fake-img/desc1.jpg` } } } } } }
           bodies.set('desc', `mtopjsonp3(${JSON.stringify(desc)})`)

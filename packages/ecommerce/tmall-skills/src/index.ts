@@ -26,6 +26,7 @@ export const SKILLS: readonly TmallSkill[] = [
   { name: 'tmall-alimama-scene-report', scripts: { 'alimama-scene-report.mjs': 'alimama-report.ts' } },
   { name: 'tmall-sycm-core-daily', scripts: { 'sycm-core-daily.mjs': 'sycm-report.ts' } },
   { name: 'tmall-item-report', scripts: { 'item-report.mjs': 'item-report.ts' } },
+  { name: 'tmall-publish-category', scripts: { 'publish-category.mjs': 'publish-category-cli.ts' } },
 ]
 
 const PACKAGE = fileURLToPath(new URL('..', import.meta.url))
