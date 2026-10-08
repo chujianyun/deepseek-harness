@@ -245,6 +245,13 @@ const pddApi = (expression) => {
 }
 /** A Douyin shop's drafts. */
 const dyShop = { drafts: [] }
+/** The Douyin shop's opened categories under each parent. */
+const DY_CHILDREN = {
+  0: [{ id: 1000000480, name: '医疗器械及保健用品', is_leaf: false }],
+  1000000480: [{ id: 1000000495, name: '计生用品', is_leaf: false }],
+  1000000495: [{ id: 1000000638, name: '避孕套', is_leaf: true }],
+}
+
 const DY_FORM = {
   properties: [
     { id: '1687', label: '品牌', required: true, options: [{ value_id: '1275155012', value_name: '名流', additions: { brand_cn_name: '名流' } }] },
@@ -262,7 +269,7 @@ const dyApi = (expression) => {
   const ok = data => ({ code: 0, msg: '', data })
   const line = { first_cid: 1000000480, second_cid: 1000000495, third_cid: 1000000638, fourth_cid: 0, first_name: '医疗器械及保健用品', second_name: '计生用品', third_name: '避孕套' }
   switch (`${method} ${route}`) {
-    case 'GET /product/tproduct/categoryOptionsN': return ok(params.get('cid') === '0' ? [{ id: 1000000480, name: '医疗器械及保健用品', is_leaf: false }] : [])
+    case 'GET /product/tproduct/categoryOptionsN': return ok(DY_CHILDREN[params.get('cid')] ?? [])
     case 'GET /product/tproduct/searchCategoryN': return ok([line])
     case 'GET /product/tproduct/getCategoryDetail': return ok([{ ...line, first_cname: line.first_name, second_cname: line.second_name, third_cname: line.third_name }])
     case 'GET /product/tproduct/list': {
