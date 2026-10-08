@@ -14,7 +14,7 @@ The detail page edits an assistant's fields and its four core files through the 
 
 ## Sessions and their assistant
 
-Each session row in the sidebar shows the avatar of its assistant, named on hover and in the row's hover card; a session whose assistant was deleted shows a deleted-assistant mark, and one bound to none shows nothing. An assistant's detail page lists its recent sessions, latest first, and opens one on click.
+Each session row in the sidebar shows the avatar of its assistant, named on hover and in the row's hover card; a session whose assistant belongs to another company on this machine shows an other-company mark that names nothing about it, one whose assistant was deleted shows a deleted-assistant mark, and one bound to none shows nothing. An assistant's detail page lists its recent sessions, latest first, and opens one on click.
 
 ## Capability subsets
 

@@ -1,7 +1,8 @@
 /**
  * The assistant a session belongs to, in the sidebar's session rows: an avatar before the title,
- * named on hover, and a line in the row's hover card. A session whose assistant is gone shows the
- * deleted-assistant mark instead.
+ * named on hover, and a line in the row's hover card. A session whose assistant belongs to another
+ * company on this machine shows the other-company mark, which names nothing about that assistant;
+ * one whose assistant is gone shows the deleted-assistant mark.
  */
 
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -10,8 +11,11 @@ import { AssistantAvatar } from './AssistantAvatar.tsx'
 import { assistantOf, type AssistantsInjected } from './assistants-source.ts'
 import css from './SessionAssistant.module.css'
 
-/** What a row shows: the assistant, the deleted mark, or nothing. */
-type RowAssistant = { readonly kind: 'assistant'; readonly name: string; readonly avatar: Parameters<typeof AssistantAvatar>[0]['avatar'] } | { readonly kind: 'deleted' }
+/** What a row shows: the assistant, the other-company or deleted mark, or nothing. */
+type RowAssistant =
+  | { readonly kind: 'assistant'; readonly name: string; readonly avatar: Parameters<typeof AssistantAvatar>[0]['avatar'] }
+  | { readonly kind: 'other-tenant' }
+  | { readonly kind: 'deleted' }
 
 /**
  * Resolve the assistant of a listed session.
@@ -24,7 +28,17 @@ function useRowAssistant({ sessionId, useAssistants, useSessions }: Pick<Session
   // Signed out, or before the first state, there is nothing to compare the binding with.
   if (bound === null || state === undefined || state.tenantId === null) return undefined
   const assistant = state.assistants.find(item => item.id === bound)
-  return assistant === undefined ? { kind: 'deleted' } : { kind: 'assistant', name: assistant.name, avatar: assistant.avatar }
+  if (assistant !== undefined) return { kind: 'assistant', name: assistant.name, avatar: assistant.avatar }
+  return state.otherTenantAssistantIds.includes(bound) ? { kind: 'other-tenant' } : { kind: 'deleted' }
+}
+
+/** The row's label: the assistant's name, or the text of its mark. */
+function labelOf(shown: RowAssistant, t: SessionAssistantProps['t']): string {
+  switch (shown.kind) {
+    case 'assistant': return t('rowAssistant', { name: shown.name })
+    case 'other-tenant': return t('otherTenantAssistant')
+    case 'deleted': return t('deletedAssistant')
+  }
 }
 
 /** Props of the session row seats. */
@@ -34,15 +48,17 @@ export type SessionAssistantProps =
 /**
  * Render the avatar of the session's assistant before the row's title.
  * @param props - the row's session id, the hooks, and copy.
- * @returns the avatar, the deleted mark, or nothing for a session without an assistant.
+ * @returns the avatar, the other-company or deleted mark, or nothing for a session without an assistant.
  */
 export function SessionAssistantBadge(props: SessionAssistantProps) {
   const shown = useRowAssistant(props)
   if (shown === undefined) return null
-  const label = shown.kind === 'deleted' ? props.t('deletedAssistant') : props.t('rowAssistant', { name: shown.name })
+  const label = labelOf(shown, props.t)
+  // The marks draw a neutral disc: "?" for a deleted assistant, the label's first character for another company's.
+  const avatar = shown.kind === 'assistant' ? shown.avatar : { kind: 'preset' as const, key: shown.kind }
   return (
     <span className={css.badge} title={label} aria-label={label} role="img" data-assistant-badge={shown.kind}>
-      <AssistantAvatar avatar={shown.kind === 'deleted' ? { kind: 'preset', key: 'deleted' } : shown.avatar} name={shown.kind === 'deleted' ? '?' : shown.name} size={16} />
+      <AssistantAvatar avatar={avatar} name={shown.kind === 'assistant' ? shown.name : shown.kind === 'deleted' ? '?' : label} size={16} />
     </span>
   )
 }
@@ -58,7 +74,7 @@ export function SessionAssistantHover(props: SessionAssistantProps) {
   return (
     <div className={css.hover}>
       {shown.kind === 'assistant' && <AssistantAvatar avatar={shown.avatar} name={shown.name} size={14} />}
-      <span>{shown.kind === 'deleted' ? props.t('deletedAssistant') : props.t('rowAssistant', { name: shown.name })}</span>
+      <span>{labelOf(shown, props.t)}</span>
     </div>
   )
 }

@@ -300,7 +300,7 @@ Source: [`packages/core/session/src/types.ts:355`](../packages/core/session/src/
 'assistant/instructions': { text: string }
 ```
 
-Source: [`packages/assistant/assistants/src/types.ts:199`](../packages/assistant/assistants/src/types.ts)
+Source: [`packages/assistant/assistants/src/types.ts:204`](../packages/assistant/assistants/src/types.ts)
 
 <a id="assistantmessage--surface"></a>
 
@@ -344,7 +344,7 @@ Source: [`packages/core/session/src/types.ts:341`](../packages/core/session/src/
 'assistant/selected': { assistantId: string }
 ```
 
-Source: [`packages/assistant/assistants/src/types.ts:194`](../packages/assistant/assistants/src/types.ts)
+Source: [`packages/assistant/assistants/src/types.ts:199`](../packages/assistant/assistants/src/types.ts)
 
 ### `command/*`
 
@@ -5703,7 +5703,7 @@ Sources: [`packages/core/session/src/types.ts:361`](../packages/core/session/src
 
 SHA-256: `08484270c008b80791bb5cb13b26e3e1dbab4c945e8d6699f4f41853dcbf553a`
 
-Sources: [`packages/assistant/assistants/src/types.ts:194`](../packages/assistant/assistants/src/types.ts)
+Sources: [`packages/assistant/assistants/src/types.ts:199`](../packages/assistant/assistants/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -7773,7 +7773,7 @@ Sources: [`packages/experimental/agent-team/src/types.ts:234`](../packages/exper
 
 SHA-256: `fc362d6c3bc744ee54ea7e008f30aff28f240db9d9882faec31b12982b643d5c`
 
-Sources: [`packages/assistant/assistants/src/types.ts:199`](../packages/assistant/assistants/src/types.ts)
+Sources: [`packages/assistant/assistants/src/types.ts:204`](../packages/assistant/assistants/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|

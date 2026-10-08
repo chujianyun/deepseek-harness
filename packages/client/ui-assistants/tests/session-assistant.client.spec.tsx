@@ -11,7 +11,7 @@ import { SessionAssistantBadge, SessionAssistantHover } from '../src/client/Sess
 afterEach(() => { cleanup() })
 
 const state: AssistantsState = {
-  revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [],
+  revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [], otherTenantAssistantIds: ['b1'],
   assistants: [{ id: 'a1', name: '店铺复盘助手', description: '', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:00Z' }],
 }
 
@@ -47,6 +47,16 @@ describe('session row assistant', () => {
     expect(badge.textContent).toBe('?')
   })
 
+  it('marks a session of another company\'s assistant without naming it, in English too', () => {
+    mount(SessionAssistantBadge, 'b1')
+    const badge = screen.getByRole('img', { name: '其他公司的智能体' })
+    expect(badge.getAttribute('data-assistant-badge')).toBe('other-tenant')
+    expect(badge.textContent).toBe('其')
+    cleanup()
+    mount(SessionAssistantBadge, 'b1', state, en)
+    expect(screen.getByRole('img', { name: 'Another company\'s assistant' }).textContent).toBe('A')
+  })
+
   it('shows nothing for a session without an assistant, an unlisted one, or before the state is known or while signed out', () => {
     expect(mount(SessionAssistantBadge, null).container.innerHTML).toBe('')
     cleanup()
@@ -57,12 +67,15 @@ describe('session row assistant', () => {
     expect(mount(SessionAssistantBadge, 'a1', { ...state, tenantId: null, assistants: [] }).container.innerHTML).toBe('')
   })
 
-  it('names the assistant, or the deleted one, in the hover card', () => {
+  it('names the assistant, or marks another company\'s or a deleted one, in the hover card', () => {
     mount(SessionAssistantHover, 'a1')
     expect(screen.getByText('智能体：店铺复盘助手')).toBeTruthy()
     cleanup()
     mount(SessionAssistantHover, 'gone')
     expect(screen.getByText('已删除的智能体')).toBeTruthy()
+    cleanup()
+    mount(SessionAssistantHover, 'b1')
+    expect(screen.getByText('其他公司的智能体').parentElement!.textContent).toBe('其他公司的智能体')
     cleanup()
     expect(mount(SessionAssistantHover, null).container.innerHTML).toBe('')
   })

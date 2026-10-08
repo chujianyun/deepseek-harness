@@ -7,7 +7,9 @@
 // a core file saved there reaches the next request of a session in progress, the default moves, a copy
 // keeps the core files, and a deleted assistant's session continues without them. A third run gives
 // an assistant only some Skills: its sessions' catalog lists only those, and the detail page marks one
-// that is gone.
+// that is gone. A fourth run switches to another company: a session of the first company's assistant
+// reads as another company's, without its name, while a session of a deleted assistant still reads as
+// deleted, and the second company's assistants count none of them.
 import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
@@ -129,7 +131,15 @@ async function launch() {
     await page.getByRole('menuitem', { name: /^模型/ }).click()
     await page.getByRole('menuitemradio', { name: 'acme-chat' }).click()
   }
-  return { chat, scaffold, tenantDir, page, tripwire, send, useChatModel, close }
+  const switchTenant = async (tenant: { tenantId: string; tenantName: string }) => {
+    center.tenant = tenant
+    await scaffold.ctx.hubAccount.signOut()
+    await scaffold.ctx.hubAccount.signIn()
+    await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).attempt?.authorizeUrl).toBeDefined()
+    await browse((await scaffold.ctx.hubAccount.getState()).attempt!.authorizeUrl!)
+    await expect.poll(async () => (await scaffold.ctx.assistants.getState()).tenantId).toBe(tenant.tenantId)
+  }
+  return { chat, scaffold, tenantDir, page, tripwire, send, useChatModel, switchTenant, close }
 }
 
 it('creates the default assistant, carries its core files into the chat, and lets a new session pick another', async () => {
@@ -395,6 +405,88 @@ it('gives an assistant\'s sessions only the Skills it allows, and marks a Skill 
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
     await saveFailureShot(page, 'assistants-subsets')
+    throw error
+  } finally {
+    await close()
+  }
+}, 180_000)
+
+it('tells a session of another company\'s assistant from one whose assistant was deleted', async () => {
+  const { scaffold, page, tripwire, send, useChatModel, switchTenant, close } = await launch()
+  const shot = async (name: string) => {
+    if (process.env.DSH_E2E_SHOTS !== undefined) await page.screenshot({ path: join(process.env.DSH_E2E_SHOTS, `${name}.png`) })
+  }
+  const openAssistants = async () => {
+    await page.getByRole('button', { name: '智能体', exact: true }).click()
+    await page.getByRole('heading', { level: 1, name: '智能体' }).waitFor()
+  }
+  const picker = page.getByRole('button', { name: '选择这个会话的智能体' })
+  const badge = (row: string) => page.locator(`[role="treeitem"][data-row-key="${row}"] [data-assistant-badge]`)
+  const startWith = async (name: RegExp, text: string): Promise<string> => {
+    await page.getByRole('button', { name: '新建会话' }).first().click()
+    await picker.click()
+    await page.getByRole('menuitem', { name }).click()
+    await expect.poll(() => picker.textContent()).toMatch(name)
+    await send(text)
+    await expect.poll(() => picker.count(), { timeout: 30_000 }).toBe(0)
+    return (await page.locator('[role="treeitem"][aria-selected="true"]').getAttribute('data-row-key'))!
+  }
+  try {
+    // In 甲公司: one session of 店铺测试助手, and one of a copy that is then deleted.
+    await useChatModel()
+    const shop = await startWith(/店铺测试助手/, '甲公司的会话')
+    await openAssistants()
+    await page.locator(`li[data-assistant-id="${SHOP_ID}"]`).getByRole('button', { name: '复制' }).click()
+    await expect.poll(async () => (await scaffold.ctx.assistants.getState()).assistants.length).toBe(3)
+    const gone = await startWith(/店铺测试助手 副本/, '副本的会话')
+    const copyId = (await scaffold.ctx.assistants.getState()).assistants.at(-1)!.id
+    await scaffold.ctx.assistants.deleteAssistant(copyId)
+    await expect.poll(() => badge(shop).getAttribute('title')).toBe('智能体：店铺测试助手')
+    await expect.poll(() => badge(gone).getAttribute('data-assistant-badge')).toBe('deleted')
+    await shot('01-tenant-a-rows')
+
+    // In 乙公司: the 甲公司 assistant's session reads as another company's, without its name.
+    await switchTenant({ tenantId: 't-b', tenantName: '乙公司' })
+    await expect.poll(() => badge(shop).getAttribute('data-assistant-badge')).toBe('other-tenant')
+    expect(await badge(shop).getAttribute('title')).toBe('其他公司的智能体')
+    expect(await badge(shop).textContent()).toBe('其')
+    expect(await badge(gone).getAttribute('data-assistant-badge')).toBe('deleted')
+    expect(await badge(gone).getAttribute('title')).toBe('已删除的智能体')
+    const state = await scaffold.ctx.assistants.getState()
+    expect(state.otherTenantAssistantIds).toContain(SHOP_ID)
+    expect(state.otherTenantAssistantIds).not.toContain(copyId)
+    expect(await page.locator('[role="tree"]').first().textContent()).not.toContain('店铺测试助手')
+    await shot('02-tenant-b-rows')
+    await page.locator(`[role="treeitem"][data-row-key="${shop}"]`).hover()
+    const hoverLine = page.getByText('其他公司的智能体', { exact: true })
+    await hoverLine.waitFor()
+    await shot('03-tenant-b-hover-other')
+    await page.locator(`[role="treeitem"][data-row-key="${gone}"]`).hover()
+    await page.getByText('已删除的智能体', { exact: true }).waitFor()
+    await shot('04-tenant-b-hover-deleted')
+
+    // 乙公司's own assistant counts none of these sessions.
+    const daily = state.defaultId!
+    await openAssistants()
+    await page.locator(`li[data-assistant-id="${daily}"]`).getByRole('button', { name: '查看 日常助手 的详情' }).click()
+    await page.mouse.move(900, 10)
+    const empty = page.getByText('还没有用这个智能体开始的会话。')
+    await empty.scrollIntoViewIfNeeded()
+    await shot('05-tenant-b-recent-none')
+    await page.getByRole('button', { name: '删除', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '删除智能体' })
+    await expect.poll(() => dialog.textContent()).toContain('它有 0 个会话')
+    await shot('06-tenant-b-delete-count')
+    await dialog.getByRole('button', { name: '取消' }).click()
+
+    // Back in 甲公司, the session names its assistant again.
+    await switchTenant({ tenantId: 't-a', tenantName: '甲公司' })
+    await expect.poll(() => badge(shop).getAttribute('title')).toBe('智能体：店铺测试助手')
+    expect(await badge(gone).getAttribute('data-assistant-badge')).toBe('deleted')
+    await shot('07-tenant-a-again')
+    expect(tripwire.pageErrors).toEqual([])
+  } catch (error) {
+    await saveFailureShot(page, 'assistants-other-tenant')
     throw error
   } finally {
     await close()

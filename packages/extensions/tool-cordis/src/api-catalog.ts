@@ -5400,7 +5400,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AssistantsState',
-    declaration: 'export interface AssistantsState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly defaultId: string | null;\n    readonly assistants: readonly AssistantView[];\n    readonly templates: readonly AssistantTemplateView[];\n}',
+    declaration: 'export interface AssistantsState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly defaultId: string | null;\n    readonly assistants: readonly AssistantView[];\n    readonly templates: readonly AssistantTemplateView[];\n    readonly otherTenantAssistantIds: readonly string[];\n}',
   },
   {
     name: 'AssistantStreamFrame',

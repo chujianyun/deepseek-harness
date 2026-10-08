@@ -13,7 +13,7 @@ import { zh } from '../src/client/locales.ts'
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 const state: AssistantsState = {
-  revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [{ id: 'daily', name: '日常助手', description: 'd', avatar: { kind: 'preset', key: 'sun' } }],
+  revision: 1, tenantId: 't-a', defaultId: 'a1', otherTenantAssistantIds: [], templates: [{ id: 'daily', name: '日常助手', description: 'd', avatar: { kind: 'preset', key: 'sun' } }],
   assistants: [
     { id: 'a1', name: '日常助手', description: '通用日常助手', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:00Z' },
     { id: 'a2', name: '电商管家', description: '', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:01Z' },

@@ -16,7 +16,9 @@
  * differ from the previous record; the `assistant:core-files` prompt section carries the recorded
  * text, so an edit reaches the model on the next turn and every prompt stays reconstructable from
  * the session log. A session whose assistant was deleted keeps its binding; once it carried core
- * files, the section then says they no longer apply.
+ * files, the section then says they no longer apply. The state lists the ids of the assistants other
+ * tenants keep on this machine, and nothing else about them, so a client can tell a session of
+ * another company's assistant from one whose assistant was deleted.
  *
  * @module @deepseek-ai/dsh-assistants
  */
@@ -252,6 +254,7 @@ export class AssistantsService extends TypertRemoteService {
   private tenantId: string | null = null
   private tenant: TenantFile = { version: 1, defaultId: null, seeded: false }
   private list: AssistantView[] = []
+  private otherTenantAssistantIds: string[] = []
   private writes: Promise<unknown> = Promise.resolve()
   private revision = Date.now()
   private readonly listeners = new Set<() => void>()
@@ -308,6 +311,7 @@ export class AssistantsService extends TypertRemoteService {
   getState(): Promise<AssistantsState> {
     return Promise.resolve({
       revision: this.revision, tenantId: this.tenantId, defaultId: this.tenant.defaultId, assistants: this.list, templates: TEMPLATE_VIEWS,
+      otherTenantAssistantIds: this.otherTenantAssistantIds,
     })
   }
 
@@ -743,6 +747,7 @@ export class AssistantsService extends TypertRemoteService {
     this.tenantId = tenantId
     this.tenant = { version: 1, defaultId: null, seeded: false }
     this.list = []
+    this.otherTenantAssistantIds = []
     if (tenantId !== null) {
       await mkdir(join(this.root, tenantId), { recursive: true })
       this.tenant = await this.readTenant(tenantId)
@@ -752,6 +757,11 @@ export class AssistantsService extends TypertRemoteService {
         this.list = [...this.list, created]
         this.tenant = { version: 1, defaultId: created.id, seeded: true }
         await this.writeAtomic(join(this.root, tenantId, 'tenant.json'), jsonText(this.tenant))
+      }
+      // Other tenants' assistants change only while their tenant is signed in, so reading them at a switch suffices.
+      for (const entry of await readdir(this.root, { withFileTypes: true })) {
+        if (!entry.isDirectory() || entry.name === tenantId) continue
+        this.otherTenantAssistantIds.push(...(await this.readAssistants(entry.name)).map(item => item.id))
       }
     }
     this.changed()
