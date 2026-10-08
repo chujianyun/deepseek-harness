@@ -85,6 +85,68 @@ export function extras(
   }
 }
 
+/** A detail image as uploaded. */
+export interface DetailImage {
+  readonly url: string
+  readonly width: number
+  readonly height: number
+}
+
+/** The detail as the page's 详情装修 holds it and as Douyin shop renders it. */
+export interface Detail {
+  /** The 装修 components: a root and one image component per detail image. */
+  readonly instanceMap: Readonly<Record<string, object>>
+  readonly description: string
+  readonly uri: string
+}
+
+/**
+ * The 详情装修 components for detail images, and the same images as the render call takes them.
+ * @param images - the detail images, in order.
+ * @param ids - one unique id per image.
+ * @returns the components and the render call's `prettify_info`.
+ */
+export function detailComponents(
+  images: readonly DetailImage[], ids: readonly string[],
+): { instanceMap: Record<string, object>; info: object[] } {
+  const keys = ids.map(id => `$instance-id$${id}`)
+  const instanceMap: Record<string, object> = {
+    0: { componentTypeId: 0, componentId: 9999, type: 'Root', name: 'root', configData: {}, value: {}, children: keys, id: '0' },
+  }
+  const info = images.map((image, at) => {
+    const key = keys[at] as string
+    const name = `图片${String(at + 1)}`
+    const value = { imgList: [image.url], uploadSource: 'local_upload', image, $$name$$: name }
+    instanceMap[key] = { value, showPlan: null, id: key, componentId: 2, componentTypeId: 2, type: 'Img', parentId: '0', name, children: [], snapshot: JSON.stringify(value) }
+    return {
+      front_unique_key: key, id: 2, show_plan: null, component_type_id: 2,
+      component_front_data: JSON.stringify(value), component_data: JSON.stringify({ url: image.url }), image,
+    }
+  })
+  return { instanceMap, info }
+}
+
+/**
+ * Have Douyin shop render the detail images into the item's detail, as the page does from its 详情装修
+ * before a save: the page's draft save empties a detail its 详情装修 does not hold.
+ * @param page - a seller page.
+ * @param catId - the category.
+ * @param images - the detail images, in order.
+ * @param ids - one unique id per image.
+ * @returns the detail.
+ * @throws SkillError failed when Douyin shop renders no detail.
+ */
+export async function renderDetail(page: Page, catId: string, images: readonly DetailImage[], ids: readonly string[]): Promise<Detail> {
+  const { instanceMap, info } = detailComponents(images, ids)
+  const data = await doudianCall<{ description?: string; detail_prettify_uri?: string } | null>(
+    page, 'POST', '/product/prettify/formatPrettifyForProduct', { category_id: Number(catId), prettify_info: info, check_status: 1 },
+  )
+  const description = data?.description ?? ''
+  const uri = data?.detail_prettify_uri ?? ''
+  if (description === '' || uri === '') throw new SkillError('抖店没有生成商品详情（详情图），没有保存。', EXIT.failed)
+  return { instanceMap, description, uri }
+}
+
 /** What goes into the form. */
 export interface ValuesInput {
   readonly draft: DraftFile
@@ -94,6 +156,8 @@ export interface ValuesInput {
   /** Each draft image's address, by its path under the material folder. */
   readonly images: Readonly<Record<string, string>>
   readonly extras: Extras
+  /** The rendered detail. */
+  readonly detail: Detail
   /** The stock of SKUs the table gives none. */
   readonly stock: number
   /** A number the spec and SKU ids start from, such as the time in microseconds. */
@@ -112,7 +176,7 @@ const filledOf = (checks: readonly FieldCheck[], key: string): readonly string[]
  * @returns the two passes.
  */
 export function formValues(input: ValuesInput): { readonly first: Record<string, unknown>; readonly second: Record<string, unknown> } {
-  const { draft, checks, rules, form, images, extras: given, idBase } = input
+  const { draft, checks, rules, form, images, extras: given, detail, idBase } = input
   const main = draft.images.main.slice(0, 5).map(file => images[file] as string)
   const properties: Record<string, object[]> = {}
   for (const property of form.properties) {
@@ -155,7 +219,10 @@ export function formValues(input: ValuesInput): { readonly first: Record<string,
       id: valueIds[at], code: sku.code ?? '', price: sku.price.toFixed(2), sku_status: true, spec_detail_ids: [valueIds[at]],
       stock_info: { stock_inc_num: 0, stock_num: sku.stock ?? input.stock, use_cargo_stock: false },
     })),
-    description: `<p>${draft.images.detail.map(file => `<img src="${images[file] as string}" style="max-width:100%;"/>`).join('')}</p>`,
+    // The page keeps a detail whose 装修 components are unchanged since it was rendered.
+    decorate: { module_visible: false, instance_map: detail.instanceMap, instance_map_snapshot: detail.instanceMap },
+    detail_prettify_uri: detail.uri,
+    description: detail.description,
     ...freight === undefined ? {} : { freight_id: String(freight) },
     ...delivery === undefined ? {} : { delivery_delay_day: String(delivery) },
     reference_price_enable: given.referencePrice !== undefined,
@@ -176,8 +243,9 @@ export function formValues(input: ValuesInput): { readonly first: Record<string,
  * second pass (a weight only where the freight template shows the field), checks the form is 下架 and
  * holds the reference price that was set, and runs the page's own draft save. Answers `{ product_id }`,
  * `{ refused }` with the page's error, `{ notOffSale }`, `{ needsWeight }` when the freight template asks
- * for a weight the draft lacks, `{ dropped }` naming a value the form left out, or `{ notReady }` when the
- * form could not be set; in all but the first nothing is sent.
+ * for a weight the draft lacks, `{ dropped }` naming a value the form left out (the reference price, or
+ * the detail once the page's 详情装修 has run), or `{ notReady }` when the form could not be set; in all
+ * but the first nothing is sent.
  */
 const SAVE = (first: Readonly<Record<string, unknown>>, second: Readonly<Record<string, unknown>>) => `(async () => {
   const s = window.__dshGoodsStore
@@ -196,6 +264,11 @@ const SAVE = (first: Readonly<Record<string, unknown>>, second: Readonly<Record<
   // A weight the freight template does not ask for stays out of the form; a reference price may not.
   const dropped = Object.keys(second).filter(key => key.startsWith('reference_price')).find(key => !model[key] || model[key].value == null || model[key].value === '')
   if (dropped) return { dropped }
+  try {
+    // The page's save renders the detail again unless its 装修 is unchanged; a detail it emptied is not sent.
+    await s.publishStore.saveDecorateInfo(true)
+    if (!s.formatSchemaData().model.description.value) return { dropped: 'description' }
+  } catch (e) { return { notReady: String((e && e.message) || e) } }
   try { return await s.publishStore.saveGoods({ showLoading: false }) } catch (e) { return { refused: String((e && (e.message || e.msg)) || e) } }
 })()`
 
@@ -204,7 +277,7 @@ const SAVE = (first: Readonly<Record<string, unknown>>, second: Readonly<Record<
  * @param page - the new-item page.
  * @param values - the two passes of form values.
  * @returns the saved product's id.
- * @throws NotSent when the form cannot be set, is not 下架, left out the reference price, or the freight
+ * @throws NotSent when the form cannot be set, is not 下架, left out the reference price or the detail, or the freight
  *   template asks for a weight the draft lacks; DraftRefused when Douyin shop refuses the draft; SkillError failed when
  *   no answer comes in time.
  */

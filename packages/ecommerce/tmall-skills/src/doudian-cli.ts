@@ -12,6 +12,7 @@
  * - `save --account <id> --draft <商品草稿 json> --rules <字段规则 json> [--confirmed] [--stock <n>] [--unknown-checked]` saves the draft.
  */
 
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -24,7 +25,8 @@ import {
   categoryById, childCategories, doudianRules, libraryText, predictCategories, readForm, searchCategories,
 } from './doudian-category.ts'
 import {
-  DraftRefused, extras, findProducts, formValues, listDrafts, NotSent, onSale, saveDraft, uploadDoudianImage,
+  DraftRefused, extras, findProducts, formValues, listDrafts, NotSent, onSale, renderDetail, saveDraft, uploadDoudianImage,
+  type DetailImage,
 } from './doudian-publish.ts'
 import { EXIT, SkillError } from './errors.ts'
 import { readImage } from './images.ts'
@@ -222,9 +224,12 @@ async function save(page: Page, account: MerchantBrowser, draft: DraftFile, opti
     progress('打开抖店发品页')
     await openDoudian(page, createUrl(rules.catId), FIND_STORE)
     const form = await readForm(page)
-    const images = await uploadAll(page, draft, given.proofFile, progress)
+    const { images, sizes } = await uploadAll(page, draft, given.proofFile, progress)
     const idBase = deps.now().getTime() * 1000
-    values = formValues({ draft, checks, rules, form, images, extras: given, stock: options.stock ?? 0, idBase })
+    progress('生成商品详情')
+    const detailImages = draft.images.detail.map(file => ({ url: images[file] as string, ...sizes[file] as DetailSize }))
+    const detail = await renderDetail(page, rules.catId, detailImages, detailImages.map(() => randomUUID()))
+    values = formValues({ draft, checks, rules, form, images, extras: given, detail, stock: options.stock ?? 0, idBase })
   } catch (error) {
     // Nothing was saved yet.
     await writeRecord(recordPath, { ...record, status: 'failed', at: deps.now().toISOString(), message: (error as Error).message })
@@ -267,20 +272,26 @@ async function draftState(page: Page, productId: string): Promise<'saved' | 'on-
   return (await findProducts(page, productId)).some(row => row.productId === productId && row.draftStatus !== 1) ? 'not-draft' : 'unknown'
 }
 
+/** An uploaded image's size, in pixels. */
+type DetailSize = Pick<DetailImage, 'width' | 'height'>
+
 /** Upload every image the form uses: up to 5 main images, the detail images, the SKU images, and the reference price's proof. */
 async function uploadAll(
   page: Page, draft: DraftFile, proof: string | undefined, progress: (step: string) => void,
-): Promise<Record<string, string>> {
+): Promise<{ images: Record<string, string>; sizes: Record<string, DetailSize> }> {
   const skuImages = draft.skus.flatMap(sku => sku.image === undefined ? [] : [sku.image])
   const files = new Set([...draft.images.main.slice(0, 5), ...draft.images.detail, ...skuImages, ...proof === undefined ? [] : [proof]])
   progress(`上传 ${String(files.size)} 张图片`)
   const images: Record<string, string> = {}
+  const sizes: Record<string, DetailSize> = {}
   for (const file of files) {
     const bytes = await readFile(join(draft.folder, file))
+    const { format, width, height } = readImage(bytes)
+    sizes[file] = { width, height }
     // The name carries the real format, whatever the file was called.
-    images[file] = await uploadDoudianImage(page, bytes, `${basename(file).replace(/\.[^.]+$/u, '')}.${readImage(bytes).format === 'png' ? 'png' : 'jpg'}`)
+    images[file] = await uploadDoudianImage(page, bytes, `${basename(file).replace(/\.[^.]+$/u, '')}.${format === 'png' ? 'png' : 'jpg'}`)
   }
-  return images
+  return { images, sizes }
 }
 
 /**

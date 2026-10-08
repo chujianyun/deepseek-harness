@@ -9,7 +9,7 @@ import {
   type DoudianForm,
 } from '../src/doudian-category.ts'
 import {
-  extras, findProducts, formValues, listDrafts, onSale, saveDraft, uploadDoudianImage,
+  detailComponents, extras, findProducts, formValues, listDrafts, onSale, renderDetail, saveDraft, uploadDoudianImage, type Detail,
 } from '../src/doudian-publish.ts'
 import { createUrl, DOUDIAN_CREATE_URL, DOUDIAN_DRAFTS_URL, doudianCall, DoudianRefusal, FIND_STORE, GUARD, isDoudianSignIn, openDoudian } from '../src/doudian.ts'
 import { EXIT, SkillError } from '../src/errors.ts'
@@ -83,9 +83,11 @@ class Shop {
     { product_id: '3837442346664984946', name: '名流天使玻尿酸避孕套', draft_status: 1, status: 0, check_status: 1 },
   ]
   readonly uploads: string[] = []
+  /** How many images each detail render was given. */
+  readonly rendered: number[] = []
   readonly saves: { first: Record<string, unknown>; second: Record<string, unknown> }[] = []
   /** What the page's own save does. */
-  saving: 'drafts' | 'on-sale' | 'not-draft' | 'nowhere' | 'refused' | 'silent' | 'lost' | 'not-off-sale' | 'needs-weight' | 'dropped' = 'drafts'
+  saving: 'drafts' | 'on-sale' | 'not-draft' | 'no-detail' | 'nowhere' | 'refused' | 'silent' | 'lost' | 'not-off-sale' | 'needs-weight' | 'dropped' = 'drafts'
   signedOut = false
   hasStore = true
   /** Polls a prediction takes. */
@@ -111,6 +113,7 @@ class Shop {
         const id = `38471${String(this.saves.length).padStart(14, '0')}`
         switch (this.saving) {
           case 'not-off-sale': return { notOffSale: true }
+          case 'no-detail': return { dropped: 'description' }
           case 'needs-weight': return { needsWeight: true }
           case 'dropped': return { dropped: 'reference_price' }
           case 'refused': return { refused: '设置参考价时须提供相关凭证' }
@@ -157,6 +160,12 @@ class Shop {
         const at = Number(params.get('page'))
         return ok(rows.slice(at * 50, at * 50 + 50))
       }
+      case 'POST /product/prettify/formatPrettifyForProduct': {
+        const info = (body?.prettify_info ?? []) as { image: { url: string } }[]
+        this.rendered.push(info.length)
+        return ok(info.length === 0 ? { description: '', detail_prettify_uri: '' }
+          : { description: `<p>${info.map(item => `<img src="${item.image.url}"/>`).join('')}</p>`, detail_prettify_uri: 'detail_prettify_1' })
+      }
       default: return { code: 10_004, msg: `no route ${route}` }
     }
   }
@@ -169,6 +178,11 @@ class Shop {
 const filled = (key: string, label: string, values: readonly string[], status: FieldCheck['status'] = '已填'): FieldCheck => ({
   key, label, required: true, status, value: values.join('、'), filled: values,
 })
+
+/** A rendered detail of one image. */
+const DETAIL: Detail = {
+  ...detailComponents([{ url: 'd1', width: 750, height: 1000 }], ['a']), description: '<p><img src="d1"/></p>', uri: 'detail_prettify_1',
+}
 
 const RULES: PublishRules = doudianRules('1000000638', ['医疗器械及保健用品', '计生用品', '避孕套'], FORM)
 
@@ -321,7 +335,10 @@ describe('Douyin shop form', () => {
     const { path } = await sampleDraft()
     const draft = JSON.parse(await readFile(path, 'utf8')) as DraftFile
     const images = { '方图/1.png': 'u1', '方图/2.png': 'u2', '详情页/1.png': 'd1', 'sku图/a.png': 's1', '素材图/吊牌.jpeg': 'p1' }
-    const values = formValues({ draft, checks: CHECKS, rules: RULES, form: FORM, images, extras: { weightGrams: 50, referencePrice: 99.9, proofType: '2', proofFile: '素材图/吊牌.jpeg' }, stock: 1000, idBase: 100 })
+    const given = { weightGrams: 50, referencePrice: 99.9, proofType: '2', proofFile: '素材图/吊牌.jpeg' }
+    const values = formValues({
+      draft, checks: CHECKS, rules: RULES, form: FORM, images, extras: given, detail: DETAIL, stock: 1000, idBase: 100,
+    })
     expect(values.first).toEqual({
       pic: [{ url: 'u1' }, { url: 'u2' }], title: '名流水多多三合一玻尿酸避孕套',
       category_properties: {
@@ -338,15 +355,27 @@ describe('Douyin shop form', () => {
         { id: '101', code: 'mldx238a', price: '42.90', sku_status: true, spec_detail_ids: ['101'], stock_info: { stock_inc_num: 0, stock_num: 1000, use_cargo_stock: false } },
         { id: '102', code: 'mldx238b', price: '69.90', sku_status: true, spec_detail_ids: ['102'], stock_info: { stock_inc_num: 0, stock_num: 1000, use_cargo_stock: false } },
       ],
-      description: '<p><img src="d1" style="max-width:100%;"/></p>', freight_id: '0', delivery_delay_day: '2', reference_price_enable: true, start_sale_type: '1',
+      decorate: { module_visible: false, instance_map: DETAIL.instanceMap, instance_map_snapshot: DETAIL.instanceMap },
+      detail_prettify_uri: 'detail_prettify_1', description: '<p><img src="d1"/></p>', freight_id: '0', delivery_delay_day: '2', reference_price_enable: true, start_sale_type: '1',
     })
     expect(values.second).toEqual({ weight_unit: '1', weight_value: '50', reference_price: '99.90', reference_price_certificate_type: '2', reference_price_certificate_urls: ['p1'] })
     const bare = formValues({
-      draft: { ...draft, skus: [{ index: '1', name: 'a', price: 1, stock: 3 }] }, checks: [filled('q-699', 'q', ['别的资质'])], rules: { ...RULES, fields: [] }, form: FORM, images, extras: {}, stock: 0, idBase: 1,
+      draft: { ...draft, skus: [{ index: '1', name: 'a', price: 1, stock: 3 }] }, checks: [filled('q-699', 'q', ['别的资质'])], rules: { ...RULES, fields: [] }, form: FORM, images, extras: {}, detail: DETAIL, stock: 0, idBase: 1,
     })
     expect(bare.first).toMatchObject({ category_properties: {}, qualification: {}, reference_price_enable: false, sku_detail: [{ code: '', stock_info: { stock_num: 3 } }] })
     expect(bare.first.freight_id).toBeUndefined()
     expect(bare.second).toEqual({})
+  })
+
+  it('renders detail images as the page\'s 详情装修 holds them', async () => {
+    const { instanceMap, info } = detailComponents([{ url: 'd1', width: 750, height: 1000 }, { url: 'd2', width: 750, height: 800 }], ['a', 'b'])
+    expect(instanceMap[0]).toMatchObject({ type: 'Root', children: ['$instance-id$a', '$instance-id$b'] })
+    expect(instanceMap['$instance-id$b']).toMatchObject({ type: 'Img', name: '图片2', value: { imgList: ['d2'], image: { url: 'd2', width: 750, height: 800 } } })
+    expect(info[0]).toMatchObject({ front_unique_key: '$instance-id$a', component_type_id: 2, component_data: '{"url":"d1"}', image: { url: 'd1', width: 750, height: 1000 } })
+    const shop = new Shop()
+    expect(await renderDetail(shop.page(), '1000000638', [{ url: 'd1', width: 1, height: 1 }], ['a'])).toMatchObject({ description: '<p><img src="d1"/></p>', uri: 'detail_prettify_1' })
+    expect((await stopped(renderDetail(shop.page(), '1000000638', [], []))).message).toBe('抖店没有生成商品详情（详情图），没有保存。')
+    expect((await stopped(renderDetail(new FakePage([on('XMLHttpRequest', ok(null))]), '1', [], []))).message).toContain('没有生成商品详情')
   })
 
   it('uploads images, saves through the page store, and lists drafts and products', async () => {
@@ -477,7 +506,8 @@ describe('doudian-publish script', () => {
       '已保存到店铺 名流欣屹专卖店 的草稿箱（商品状态：下架，没有提交审核）：商品 ID 3847100000000000001，标题「名流水多多三合一玻尿酸避孕套」。',
       `- 草稿箱：${DOUDIAN_DRAFTS_URL}`, '请到抖店后台草稿箱确认后再由用户自己提交发布。', '',
     ].join('\n'))
-    expect(saved.err).toBe(['[2026-10-08 11:00] 打开抖店发品页', '[2026-10-08 11:00] 上传 5 张图片', '[2026-10-08 11:00] 保存到草稿箱（商品状态：下架）', ''].join('\n'))
+    expect(shop.rendered).toEqual([1])
+    expect(saved.err).toBe(['[2026-10-08 11:00] 打开抖店发品页', '[2026-10-08 11:00] 上传 5 张图片', '[2026-10-08 11:00] 生成商品详情', '[2026-10-08 11:00] 保存到草稿箱（商品状态：下架）', ''].join('\n'))
     expect(shop.uploads).toEqual(['1.png', '2.png', '1.png', 'a.png', '吊牌.jpg'])
     expect(shop.saves[0]?.first).toMatchObject({ start_sale_type: '1', freight_id: '0', title: '名流水多多三合一玻尿酸避孕套' })
     expect(shop.saves[0]?.second).toMatchObject({ reference_price: '99.90', reference_price_certificate_urls: ['https://p3-aio.ecombdimg.com/吊牌.jpg'] })
@@ -551,6 +581,7 @@ describe('doudian-publish script', () => {
     for (const [saving, message] of [
       ['refused', '抖店没有保存草稿，原因：设置参考价时须提供相关凭证'], ['not-off-sale', '表单的商品状态不是「下架」，没有保存。'],
       ['needs-weight', '选的运费模板要按重量计费'], ['dropped', '抖店发品页没有接受 reference_price 的值'], ['silent', '抖店没有保存草稿，原因：无应答'],
+      ['no-detail', '抖店发品页没有接受 description 的值'],
     ] as const) {
       shop.saving = saving
       expect((await run(shop, save(setup))).err).toContain(message)

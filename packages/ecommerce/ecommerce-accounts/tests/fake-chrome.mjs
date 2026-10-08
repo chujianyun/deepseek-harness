@@ -277,6 +277,7 @@ const dyApi = (expression) => {
       const rows = params.get('check_status') === '3' ? [] : dyShop.drafts
       return ok(query === null ? rows : rows.filter(row => row.product_id === query || row.name.includes(query)))
     }
+    case 'POST /product/prettify/formatPrettifyForProduct': return ok({ detail_prettify_uri: 'detail_prettify_fake', description: '<p><img src="https://p3-aio.ecombdimg.com/fake-detail.png"/></p>' })
     default: return { code: 10004, msg: `fake chrome has no ${route}` }
   }
 }
@@ -314,7 +315,7 @@ const evaluateIn = (target, expression) => {
   if (expression.includes("extra('category_properties')")) return DY_FORM
   if (expression.includes('publishStore.saveGoods')) return dySave(expression)
   if (expression.includes('/product/img/batchupload')) return { code: 0, data: [`https://p3-aio.ecombdimg.com/fake-${String(Date.now())}.png`] }
-  if (expression.includes('new XMLHttpRequest()') && expression.includes('/product/tproduct/')) return dyApi(expression)
+  if (expression.includes('new XMLHttpRequest()') && /\/product\/(tproduct|prettify)\//.test(expression)) return dyApi(expression)
   if (expression.includes('if (window.__dshPdd) return true')) return true
   if (expression.startsWith('window.__dshPdd(')) return pddApi(expression)
   if (expression.includes('file.pinduoduo.com/v3/store_image')) return { url: `https://pfs.pinduoduo.com/fake-${String(Date.now())}.png` }

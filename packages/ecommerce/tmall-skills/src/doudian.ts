@@ -60,15 +60,15 @@ export const FIND_STORE = `(() => {
 
 /**
  * Makes the page refuse to send an item submit that is not a draft save, whichever way the page sends
- * it (`XMLHttpRequest`, `fetch`, or `sendBeacon`): the item submits `addWithSchema` and `editWithSchema`
- * go out only with `check_status=1`, the page's draft save.
+ * it (`XMLHttpRequest`, `fetch`, or `sendBeacon`): the item submits (`addWithSchema`, `editWithSchema`,
+ * `partialEditWithSchema`, and any other `…WithSchema`) go out only with `check_status=1`, the page's draft save.
  */
 export const GUARD = `(() => {
   if (window.__dshDraftGuard) return true
   const refused = (url) => {
     const address = String(url && url.url || url)
     const path = address.split('?')[0]
-    return /\\/(addWithSchema|editWithSchema)$/.test(path) && !/[?&]check_status=1(&|$)/.test(address)
+    return /WithSchema$/.test(path) && !/[?&]check_status=1(&|$)/.test(address)
   }
   const stop = (url) => { throw new Error('DSH 只允许保存草稿，已拦截：' + String(url && url.url || url).split('?')[0]) }
   const open = XMLHttpRequest.prototype.open
