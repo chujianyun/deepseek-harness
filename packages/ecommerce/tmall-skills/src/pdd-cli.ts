@@ -19,6 +19,7 @@ import { realDeps, withMerchantPage, type Deps } from './cli.ts'
 import { beijingTime } from './dates.ts'
 import type { FieldCheck } from './draft.ts'
 import { EXIT, SkillError } from './errors.ts'
+import { readImage } from './images.ts'
 import type { Page } from './page.ts'
 import {
   categoryById, childCategories, createSession, pddRules, predictCategories, readLimits, readTemplate, searchCategories, setCategory,
@@ -93,9 +94,9 @@ export function parseCategoryOptions(argv: readonly string[]): CategoryOptions {
   if (command === 'rules') return { command, account: values.account, catId: id(values.cat, '--cat'), out: values.out ?? OUT }
   const given = (['keyword', 'line', 'cat', 'image'] as const).filter(name => values[name] !== undefined && values[name] !== '')
   if (given.length !== 1) throw new SkillError(`resolve 需要且只能给一个来源：--keyword、--line、--cat 或 --image。\n${USAGE}`, EXIT.usage)
-  const source: PddSource = values.keyword !== undefined ? { kind: 'keyword', keyword: values.keyword }
-    : values.line !== undefined ? { kind: 'line', line: values.line }
-      : values.cat !== undefined ? { kind: 'id', id: id(values.cat, '--cat') }
+  const source: PddSource = given[0] === 'keyword' ? { kind: 'keyword', keyword: values.keyword as string }
+    : given[0] === 'line' ? { kind: 'line', line: values.line as string }
+      : given[0] === 'cat' ? { kind: 'id', id: id(values.cat, '--cat') }
         : { kind: 'image', image: values.image as string, title: values.title ?? '' }
   return { command: 'resolve', account: values.account, source }
 }
@@ -242,7 +243,14 @@ async function save(page: Page, account: MerchantBrowser, draft: DraftFile, opti
     if (refused) throw error
     throw new SkillError(`保存后没有拿到拼多多的答复（${(error as Error).message}），结果不明。不要重试，先运行 check 查店里。`, EXIT.failed)
   }
-  const listed = await draftListed(page, ids.draftId)
+  let listed: boolean
+  try {
+    listed = await draftListed(page, ids.draftId)
+  } catch (error) {
+    // The save was answered; only the lookup failed.
+    await writeRecord(recordPath, { ...record, ...ids, status: 'unknown', at: deps.now().toISOString(), message: (error as Error).message })
+    throw new SkillError(`拼多多答复已保存（草稿 ID ${ids.draftId}），但核验草稿箱时出错（${(error as Error).message}）。不要重试，稍后运行 check 查店里。`, EXIT.failed)
+  }
   await writeRecord(recordPath, { ...record, ...ids, status: listed ? 'saved' : 'unknown', at: deps.now().toISOString() })
   if (!listed) throw new SkillError(`拼多多答复已保存（草稿 ID ${ids.draftId}），但草稿箱里暂时查不到它。不要重试，稍后运行 check 查店里。`, EXIT.failed)
   return [
@@ -252,9 +260,9 @@ async function save(page: Page, account: MerchantBrowser, draft: DraftFile, opti
   ].join('\n')
 }
 
-/** Whether the 草稿箱 lists a draft, which takes a few seconds after the save. */
+/** Whether the 草稿箱's newest page lists a draft, which takes a few seconds after the save. */
 async function draftListed(page: Page, draftId: string): Promise<boolean> {
-  return page.waitFor(async () => (await listDrafts(page)).some((row: DraftRow) => row.draftId === draftId), 30_000)
+  return page.waitFor(async () => (await listDrafts(page, 50)).some((row: DraftRow) => row.draftId === draftId), 30_000)
 }
 
 /** Upload every image the form uses: up to 10 carousel images, the detail images, and the SKU images. */
@@ -263,7 +271,11 @@ async function uploadAll(page: Page, draft: DraftFile, progress: (step: string) 
   const files = new Set([...draft.images.main.slice(0, 10), ...draft.images.detail, ...skuImages])
   progress(`上传 ${String(files.size)} 张图片`)
   const images: Record<string, string> = {}
-  for (const file of files) images[file] = await uploadPddImage(page, await readFile(join(draft.folder, file)), basename(file))
+  for (const file of files) {
+    const bytes = await readFile(join(draft.folder, file))
+    // The name carries the real format, whatever the file was called.
+    images[file] = await uploadPddImage(page, bytes, `${basename(file).replace(/\.[^.]+$/u, '')}.${readImage(bytes).format === 'png' ? 'png' : 'jpg'}`)
+  }
   return images
 }
 

@@ -96,21 +96,28 @@ export interface DraftRow {
   readonly title: string
 }
 
+/** The most drafts a duplicate check reads. */
+export const MOST_DRAFTS = 2000
+
 /**
- * Every draft in the store's 草稿箱.
+ * The drafts in the store's 草稿箱, newest first.
  * @param page - a seller page.
- * @returns the drafts, newest first.
+ * @param most - how many to read; a page of 50 at a time.
+ * @returns the drafts.
+ * @throws SkillError failed when the 草稿箱 holds more than `most` and `most` is {@link MOST_DRAFTS}.
  */
-export async function listDrafts(page: Page): Promise<DraftRow[]> {
+export async function listDrafts(page: Page, most = MOST_DRAFTS): Promise<DraftRow[]> {
   const rows: DraftRow[] = []
-  for (let start = 0; start < 1000; start += 50) {
-    const found = await pddCall<{ total: number; list?: readonly { id: number; goods_id: number; goods_name: string }[] | null }>(
+  for (let start = 0; start < most; start += 50) {
+    const found = await pddCall<{ list?: readonly { id: number; goods_id: number; goods_name: string }[] | null }>(
       page, 'POST', '/glide/v2/mms/query/commit/list', { start, length: 50 },
     )
-    for (const row of found.list ?? []) rows.push({ draftId: String(row.id), goodsId: String(row.goods_id), title: row.goods_name })
-    if (start + 50 >= found.total) break
+    const list = found.list ?? []
+    for (const row of list) rows.push({ draftId: String(row.id), goodsId: String(row.goods_id), title: row.goods_name })
+    if (list.length < 50) return rows
   }
-  return rows
+  if (most < MOST_DRAFTS) return rows
+  throw new SkillError(`草稿箱里的草稿超过 ${String(MOST_DRAFTS)} 份，没法确认有没有同一商品；请用户到拼多多后台草稿箱确认。`, EXIT.failed)
 }
 
 /**

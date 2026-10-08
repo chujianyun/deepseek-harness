@@ -37,12 +37,13 @@ interface CategoryLine {
 /**
  * Read a category line.
  * @param line - one entry of a search or prediction answer.
- * @returns the category, its deepest level as its id.
+ * @returns the category, its deepest level as its id; nothing for a line without one.
  */
-export function categoryOfLine(line: CategoryLine): PddCategory {
+export function categoryOfLine(line: CategoryLine): PddCategory | undefined {
   const ids = [line.cat_id_1, line.cat_id_2, line.cat_id_3, line.cat_id_4]
   const names = [line.cat_name_1, line.cat_name_2, line.cat_name_3, line.cat_name_4]
   const depth = ids.findLastIndex(id => typeof id === 'number' && id > 0)
+  if (depth < 0) return undefined
   return {
     id: String(ids[depth]), path: names.slice(0, depth + 1).map(name => name ?? ''),
     usable: line.optional !== false && line.cat_qualification_detail?.inValid !== true,
@@ -57,7 +58,7 @@ export function categoryOfLine(line: CategoryLine): PddCategory {
  */
 export async function searchCategories(page: Page, keyword: string): Promise<PddCategory[]> {
   const found = await pddCall<{ cat_info_v2_lists?: readonly CategoryLine[] | null }>(page, 'GET', `/vodka/v2/mms/search/categories/v2?keyword=${encodeURIComponent(keyword)}`)
-  return (found.cat_info_v2_lists ?? []).map(categoryOfLine)
+  return (found.cat_info_v2_lists ?? []).flatMap(line => categoryOfLine(line) ?? [])
 }
 
 /**
@@ -70,7 +71,7 @@ export async function searchCategories(page: Page, keyword: string): Promise<Pdd
  */
 export async function predictCategories(page: Page, goodsId: number, imageUrl: string, title: string): Promise<PddCategory[]> {
   const found = await pddCall<readonly CategoryLine[] | null>(page, 'POST', '/vodka/v2/mms/category/predict/list', { goodsId, imageUrl, source: 0, goodsName: title })
-  return (found ?? []).map(categoryOfLine)
+  return (found ?? []).flatMap(line => categoryOfLine(line) ?? [])
 }
 
 /** One level of the category tree. */
@@ -95,7 +96,7 @@ export async function childCategories(page: Page, parentId: string): Promise<Pdd
  * A category's path, by its id.
  * @param page - a seller page.
  * @param catId - the category.
- * @returns the category; a level the store may publish in is a leaf.
+ * @returns the category; whether the store holds the category's qualification is not known here, so it reads usable.
  * @throws SkillError usage when Pinduoduo has no such category.
  */
 export async function categoryById(page: Page, catId: string): Promise<PddCategory> {
@@ -105,10 +106,10 @@ export async function categoryById(page: Page, catId: string): Promise<PddCatego
     page, 'GET', `/vodka/v2/mms/category/detail?catId=${encodeURIComponent(catId)}`,
   )
   if (detail?.id === undefined) throw new SkillError(`拼多多没有类目 ${catId}。`, EXIT.usage)
-  return categoryOfLine({
+  return categoryOfLine({ optional: true,
     cat_id_1: detail.cat_id_1, cat_id_2: detail.cat_id_2, cat_id_3: detail.cat_id_3, cat_id_4: detail.cat_id_4,
     cat_name_1: detail.cat_id_1_name, cat_name_2: detail.cat_id_2_name, cat_name_3: detail.cat_id_3_name, cat_name_4: detail.cat_id_4_name,
-  })
+  }) ?? { id: catId, path: [], usable: true }
 }
 
 /** An edit session: the item and commit ids a new item gets before anything is saved. */

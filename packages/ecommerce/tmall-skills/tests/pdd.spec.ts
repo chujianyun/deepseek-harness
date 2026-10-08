@@ -12,13 +12,13 @@ import {
   type Template,
 } from '../src/pdd-category.ts'
 import {
-  buildGoods, extraPrices, goodsProperties, listDrafts, listGoods, PACKAGE_SPEC, readSession, saveDraft, SESSION_FIELDS, shelfDays,
-  specIdFor, uploadPddImage,
+  buildGoods, extraPrices, goodsProperties, listDrafts, listGoods, MOST_DRAFTS, PACKAGE_SPEC, readSession, saveDraft, SESSION_FIELDS,
+  shelfDays, specIdFor, uploadPddImage,
 } from '../src/pdd-publish.ts'
 import { INSTALL, isPddSignIn, openPdd, PDD_GOODS_URL, pddCall, PddRefusal } from '../src/pdd.ts'
 import { commonPrefix, type DraftFile, type PublishRecord } from '../src/publish-common.ts'
 import type { PublishRules } from '../src/publish-rules.ts'
-import { png } from './images.ts'
+import { jpeg, png } from './images.ts'
 import { fakeDeps, FakePage, on, tempDir, type Route } from './support.ts'
 
 const cleanups: (() => Promise<void>)[] = []
@@ -74,6 +74,8 @@ class Mall {
   readonly calls: string[] = []
   /** What a save does: lists the draft, lists nothing, is refused, or never answers. */
   saving: 'drafts' | 'nowhere' | 'refused' | 'lost' = 'drafts'
+  /** The 草稿箱 refuses to list after a save. */
+  listingRefused = false
   signedOut = false
 
   routes(): Route[] {
@@ -128,6 +130,7 @@ class Mall {
         return ok(true)
       }
       case '/glide/v2/mms/query/commit/list': {
+        if (this.listingRefused && this.saves.length > 0) return { success: false, error_code: 54_001, error_msg: '操作过于频繁' }
         const start = Number(body?.start)
         const list = this.drafts.slice(start, start + Number(body?.length))
         const rows = list.map(row => ({ id: Number(row.draftId), goods_id: Number(row.goodsId), goods_name: row.title }))
@@ -172,7 +175,8 @@ async function sampleDraft(overrides: Partial<DraftFile> = {}): Promise<{ dir: s
   const dir = await folder()
   for (const file of ['方图/1.png', '方图/2.png', '详情页/1.png', 'sku图/a.png']) {
     await mkdir(dirname(join(dir, file)), { recursive: true })
-    await writeFile(join(dir, file), png(20, 20))
+    // The detail image is a JPEG named .png.
+    await writeFile(join(dir, file), file.startsWith('详情页') ? jpeg(20, 20) : png(20, 20))
   }
   const draft: DraftFile = {
     folder: dir,
@@ -208,19 +212,25 @@ describe('Pinduoduo pages', () => {
   it('answers a call result and names a refusal in both spellings', async () => {
     const page = new FakePage([on('__dshPdd', (e: string) => e.includes('/a') ? ok(1)
       : e.includes('/b') ? { success: false, errorCode: 3, errorMsg: '参数不规范' }
-        : e.includes('/c') ? { success: true, error_code: 54_001, error_msg: '操作太过频繁' } : null)])
+        : e.includes('/c') ? { success: true, error_code: 54_001, error_msg: '操作太过频繁' } : e.includes('/e') ? { success: false } : null)])
     expect(await pddCall(page, 'GET', '/a')).toBe(1)
     expect(await stopped(pddCall(page, 'POST', '/b?x=1', {}))).toBeInstanceOf(PddRefusal)
     expect((await stopped(pddCall(page, 'POST', '/b', {}))).message).toBe('拼多多接口 /b 拒绝了请求（参数不规范）。')
     expect((await stopped(pddCall(page, 'GET', '/c'))).message).toContain('操作太过频繁')
-    expect((await stopped(pddCall(page, 'GET', '/d'))).message).toContain('无应答')
+    expect((await stopped(pddCall(page, 'GET', '/e'))).message).toBe('拼多多接口 /e 拒绝了请求（无应答）。')
+    expect(await stopped(pddCall(page, 'GET', '/d'))).not.toBeInstanceOf(PddRefusal)
+    expect((await stopped(pddCall(page, 'GET', '/d'))).message).toBe('拼多多接口 /d 没有给出可读的答复（无应答）。')
+    const gateway = new FakePage([on('__dshPdd', (e: string) => e.includes('/504') ? { unanswered: 'HTTP 504' } : { success: false, error_msg: '会话已过期，请重新登录' })])
+    expect((await stopped(pddCall(gateway, 'POST', '/504', {})))).toMatchObject({ exitCode: EXIT.failed, message: '拼多多接口 /504 没有给出可读的答复（HTTP 504）。' })
+    expect((await stopped(pddCall(gateway, 'GET', '/x'))).exitCode).toBe(EXIT.signedOut)
   })
 })
 
 describe('Pinduoduo categories', () => {
   it('reads category lines, deepest level first', () => {
     expect(categoryOfLine({ cat_id_1: 1, cat_id_2: 2, cat_id_3: 0, cat_name_1: '甲', cat_name_2: null })).toEqual({ id: '2', path: ['甲', ''], usable: true })
-    expect(categoryOfLine({ cat_id_1: 1, cat_name_1: '甲', optional: false }).usable).toBe(false)
+    expect(categoryOfLine({ cat_id_1: 1, cat_name_1: '甲', optional: false })?.usable).toBe(false)
+    expect(categoryOfLine({ cat_id_1: 0, cat_id_2: null })).toBeUndefined()
   })
 
   it('searches, predicts, walks, and reads categories', async () => {
@@ -238,6 +248,10 @@ describe('Pinduoduo categories', () => {
     await setCategory(page, session, '18770')
     expect(await readTemplate(page, '18770')).toEqual(TEMPLATE)
     expect(await readLimits(page, '18770')).toEqual(LIMITS)
+    const blank = new FakePage([on('__dshPdd', (e: string) => ok(e.includes('search') ? { cat_info_v2_lists: [{ cat_id_1: 0 }] } : e.includes('predict') ? [{}] : { id: 5 }))])
+    expect(await searchCategories(blank, 'x')).toEqual([])
+    expect(await predictCategories(blank, 1, 'u', 't')).toEqual([])
+    expect(await categoryById(blank, '5')).toEqual({ id: '5', path: [], usable: true })
     const empty = new FakePage([on('__dshPdd', (e: string) => ok(e.includes('search') ? {} : null))])
     expect(await searchCategories(empty, 'x')).toEqual([])
     expect(await predictCategories(empty, 1, 'u', 't')).toEqual([])
@@ -326,6 +340,9 @@ describe('Pinduoduo form', () => {
     expect(await listDrafts(page)).toContainEqual({ draftId: '5', goodsId: '6', title: 't' })
     mall.drafts = Array.from({ length: 120 }, (_, at) => ({ draftId: String(at), goodsId: String(at), title: `t${String(at)}` }))
     expect(await listDrafts(page)).toHaveLength(120)
+    expect(await listDrafts(page, 50)).toHaveLength(50)
+    mall.drafts = Array.from({ length: MOST_DRAFTS + 1 }, (_, at) => ({ draftId: String(at), goodsId: String(at), title: 't' }))
+    expect((await stopped(listDrafts(page))).message).toBe('草稿箱里的草稿超过 2000 份，没法确认有没有同一商品；请用户到拼多多后台草稿箱确认。')
     mall.goods = [{ goodsId: '7', title: '名流水多多' }]
     expect(await listGoods(page, '水多多')).toEqual([{ goodsId: '7', title: '名流水多多' }])
     expect(await listGoods(new FakePage([on('__dshPdd', ok({}))]), 'x')).toEqual([])
@@ -344,6 +361,7 @@ describe('pdd-publish script', () => {
     expect(parseCategoryOptions(['children', '--account', 'a', '--parent', '18768'])).toMatchObject({ parent: '18768' })
     expect(parseCategoryOptions(['rules', '--account', 'a', '--cat', '1', '--out', 'o'])).toEqual({ command: 'rules', account: 'a', catId: '1', out: 'o' })
     expect(parseCategoryOptions(['rules', '--account', 'a', '--cat', '1'])).toMatchObject({ out: '拼多多发品' })
+    expect(parseCategoryOptions(['resolve', '--account', 'a', '--keyword', '', '--cat', '18770'])).toMatchObject({ source: { kind: 'id', id: '18770' } })
     for (const argv of [
       ['resolve', '--bogus'], ['resolve'], ['resolve', '--account', ''], ['resolve', '--account', 'a'], ['resolve', '--account', 'a', '--keyword', 'x', '--line', 'y'],
       ['resolve', '--account', 'a', '--cat', 'x'], ['rules', '--account', 'a'], ['children', '--account', 'a', '--parent', 'x'],
@@ -433,7 +451,7 @@ describe('pdd-publish script', () => {
       '请到拼多多后台草稿箱确认后再由用户自己提交发布。', '',
     ].join('\n'))
     expect(saved.err).toBe(['[2026-10-08 11:00] 新建编辑并选类目', '[2026-10-08 11:00] 上传 4 张图片', '[2026-10-08 11:00] 保存到草稿箱', ''].join('\n'))
-    expect(mall.uploads).toEqual(['1.png', '2.png', '1.png', 'a.png'])
+    expect(mall.uploads).toEqual(['1.png', '2.png', '1.jpg', 'a.png'])
     expect(mall.saves[0]).toMatchObject({ goods_name: '名流水多多玻尿酸三合一避孕套', cat_id: 18770, goods_commit_id: '203110000' })
     expect((await records(setup.out)).map(record => [record.status, record.draftId, record.itemId])).toEqual([
       ['submitting', undefined, undefined], ['saved', '203110000', '1013940001'],
@@ -513,6 +531,11 @@ describe('pdd-publish script', () => {
     mall.saving = 'nowhere'
     expect((await run(mall, save(setup))).err).toContain('拼多多答复已保存（草稿 ID 203110000），但草稿箱里暂时查不到它。')
     expect((await records(setup.out)).at(-1)).toMatchObject({ status: 'unknown', draftId: '203110000' })
+    const busy = new Mall()
+    busy.listingRefused = true
+    const lookup = await sampleDraft()
+    expect((await run(busy, save(lookup))).err).toContain('拼多多答复已保存（草稿 ID 203110000），但核验草稿箱时出错（拼多多接口 /glide/v2/mms/query/commit/list 拒绝了请求（操作过于频繁）。）')
+    expect((await records(lookup.out)).at(-1)).toMatchObject({ status: 'unknown', draftId: '203110000', itemId: '1013940001' })
     const bad = await sampleDraft({ images: { main: ['方图/1.png'], main34: [], white: [], transparent: [], detail: ['bad.png'], sku: [], other: [], unknown: [] } })
     await writeFile(join(bad.dir, 'bad.png'), png(2, 2))
     const failed = await run(new Mall(), save(bad))

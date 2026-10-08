@@ -12,7 +12,7 @@ description: 拼多多发品存草稿：把用户给的新品素材文件夹存�
 1. 选账号：按 `ecommerce-accounts` 技能的规则选目标拼多多店铺的商家账号；`<店铺名>` 用 `dsh-ecommerce accounts` 里该账号的 `store`。运行 `dsh-ecommerce memory` 看公司记住了什么。调用 `load_workspace_dependencies` 取 `node` 路径；下面的脚本都相对本技能目录，每条命令一次 bash 调用。
 2. 定类目：`"<node>" "<本技能目录>/scripts/pdd-publish.mjs" resolve --account <账号 id>` 加一个来源：
    - 记住过产品线就先用 `--line <产品线>`；
-   - 否则 `--keyword <商品名>`（拼多多类目搜索），或 `--image <主图文件> --title <标题>`（拼多多按主图和标题推荐）；
+   - 否则 `--keyword <商品名>`（拼多多类目搜索）；搜不准时再用一次 `--image <主图文件> --title <标题>`（拼多多按主图和标题推荐，每次都会新建编辑，拼多多限制频率，不要反复调用）；
    - 用户给了类目 id 就 `--cat <类目 id>`；要逐层看就用 `children [--parent <类目 id>]`。
    除了用户给的类目 id 和记住的产品线，候选类目都要请用户确认；确认后用 `dsh-ecommerce remember` 记下产品线的类目（平台写 `pinduoduo`）。
 3. 读字段规则：`... rules --account <账号 id> --cat <类目 id>`，得到 `拼多多发品/字段规则_<类目 id>.json`（含类目属性、发货时间可选值、标题长度上限）。
