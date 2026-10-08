@@ -1,0 +1,7 @@
+# For the assistant knowledge e2e (`assistant-knowledge.e2e.ts`), beside the Hub sign-in, knowledge,
+# and knowledge chat rows: the Desktop assistant rows. The spec writes the assistants row's `dshHome`
+# into the home profile patch.
+- id: assistants
+  disabled: false
+- id: ui-assistants
+  disabled: false

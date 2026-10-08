@@ -8,7 +8,9 @@
  * logged at once; one made during a turn changes the tool at once — the turn's next request is
  * assembled with it — and is logged by the next accepted step, before that request is sent. The
  * tool searches only the logged selection, each knowledge base under its own retrieval settings,
- * and reports a knowledge base it cannot search instead of failing the call.
+ * and reports a knowledge base it cannot search instead of failing the call. A filter added with
+ * `restrict()`, such as a session assistant's allowed knowledge bases, narrows what a session may
+ * select and search.
  *
  * @module @deepseek-ai/dsh-knowledge-selection
  */
@@ -54,6 +56,14 @@ export const knowledgeSelectionProjection = {
 const sameBases = (a: readonly KnowledgeSelectionBase[], b: readonly KnowledgeSelectionBase[]): boolean =>
   a.length === b.length && a.every((base, index) => base.id === b[index]?.id && base.name === b[index].name)
 
+/**
+ * Decides whether a session's agent may search a knowledge base.
+ * @param agent - the agent of the session.
+ * @param baseId - the knowledge base.
+ * @returns false to keep the knowledge base out of that session.
+ */
+export type KnowledgeFilter = (agent: Agent, baseId: string) => boolean
+
 /** Host owner of the knowledge selection and of the `knowledgeSelection` Remote namespace. */
 export class KnowledgeSelectionService extends TypertRemoteService {
   static inject = ['agents', 'tools', 'sessionProjections', 'knowledgeBases']
@@ -62,6 +72,8 @@ export class KnowledgeSelectionService extends TypertRemoteService {
   private readonly pending = new WeakMap<Session, KnowledgeSelectionBase[]>()
   /** Disposers of the tool registered in an agent's scope. */
   private readonly installed = new Map<Agent, () => void>()
+  /** Filters every session's knowledge bases pass; see {@link KnowledgeSelectionService.restrict}. */
+  private readonly filters = new Set<KnowledgeFilter>()
 
   /** @param ctx - Host with agents, tools, session projections, and knowledge bases. */
   constructor(ctx: Context) {
@@ -91,7 +103,8 @@ export class KnowledgeSelectionService extends TypertRemoteService {
    * @param sessionId - the session.
    * @param baseIds - knowledge bases of the signed-in tenant, in the order to show them.
    * @returns the selection and when it applies.
-   * @throws RemoteError `knowledge-selection/unknown-base`, or the session's resolution failure.
+   * @throws RemoteError `knowledge-selection/unknown-base`, `knowledge-selection/not-allowed` for a
+   *   knowledge base the session may not search, or the session's resolution failure.
    */
   @Remote
   async select(sessionId: SessionId, baseIds: readonly string[]): Promise<KnowledgeSelectionResult> {
@@ -102,6 +115,10 @@ export class KnowledgeSelectionService extends TypertRemoteService {
       return { id, name: base.name }
     })
     const agent = await this.resolveAgent(sessionId)
+    const refused = bases.find(base => !this.allowed(agent, base.id))
+    if (refused !== undefined) {
+      throw new RemoteError('knowledge-selection/not-allowed', `this session may not search the knowledge base ${refused.name}`, { id: refused.id })
+    }
     const session = agent.session
     const turnOpen = (this.ctx.sessionProjections.stateOf(session, 'turnBoundary')?.openTurnStartSeq ?? null) !== null
     if (turnOpen) {
@@ -113,6 +130,47 @@ export class KnowledgeSelectionService extends TypertRemoteService {
     if (!sameBases(bases, this.logged(session))) session.append('knowledge/selection', { bases })
     this.sync(agent)
     return { bases, applies: 'now' }
+  }
+
+  /**
+   * List the signed-in tenant's knowledge bases a session may select.
+   * @param sessionId - the session.
+   * @returns the ids, in the tenant's order.
+   * @throws the session's resolution failure.
+   */
+  @Remote
+  async allowedBases(sessionId: SessionId): Promise<readonly string[]> {
+    const { bases } = await this.ctx.knowledgeBases.getState()
+    const agent = await this.resolveAgent(sessionId)
+    return bases.filter(base => this.allowed(agent, base.id)).map(base => base.id)
+  }
+
+  /**
+   * Narrow the knowledge bases sessions may select and search. A session can no longer select a
+   * knowledge base a filter refuses, and its search skips one already selected; the search tool
+   * leaves a session whose selection the filters empty. Every live agent is checked again when a
+   * filter is added or removed, and each agent before every step.
+   * @param filter - returns false for a knowledge base the agent's session must not search.
+   * @returns the disposer that removes the filter.
+   */
+  restrict(filter: KnowledgeFilter): () => void {
+    this.filters.add(filter)
+    for (const agent of this.ctx.agents.list()) this.sync(agent)
+    return () => {
+      this.filters.delete(filter)
+      for (const agent of this.ctx.agents.list()) this.sync(agent)
+    }
+  }
+
+  /** Whether every filter lets the agent's session search the knowledge base. */
+  private allowed(agent: Agent, baseId: string): boolean {
+    for (const filter of this.filters) if (!filter(agent, baseId)) return false
+    return true
+  }
+
+  /** The selection, pending or logged, without the knowledge bases the session may not search. */
+  private effective(agent: Agent, selection = this.pending.get(agent.session) ?? this.logged(agent.session)): KnowledgeSelectionBase[] {
+    return selection.filter(base => this.allowed(agent, base.id))
   }
 
   private async resolveAgent(sessionId: SessionId): Promise<Agent> {
@@ -142,10 +200,10 @@ export class KnowledgeSelectionService extends TypertRemoteService {
 
   /** Offer the tool in an agent's scope exactly while its session's selection, pending or logged, is not empty. */
   private sync(agent: Agent): void {
-    const wanted = (this.pending.get(agent.session) ?? this.logged(agent.session)).length > 0
+    const wanted = this.effective(agent).length > 0
     if (wanted === this.installed.has(agent)) return
     if (!wanted) { this.uninstall(agent); return }
-    const tool = knowledgeSearchTool(async (session, query) => this.search(this.logged(session), query))
+    const tool = knowledgeSearchTool(async (session, query) => this.search(this.effective(agent, this.logged(session)), query))
     this.installed.set(agent, agent.ctx.tools.register(tool))
   }
 

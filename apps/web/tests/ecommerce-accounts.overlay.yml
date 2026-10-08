@@ -1,0 +1,7 @@
+# Enables the Desktop e-commerce account rows for the keyless Web e2e (`ecommerce-accounts.e2e.ts`)
+# beside the Hub sign-in rows (`hub-account.overlay.yml`). The spec points the Host row at the
+# stand-in Chrome through the home profile patch.
+- id: ecommerce-accounts
+  disabled: false
+- id: ui-ecommerce-accounts
+  disabled: false

@@ -207,6 +207,18 @@
       name: '@deepseek-ai/dsh-connectors'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
+    # Assistants for Desktop, per tenant of the Hub sign-in: named roles whose core
+    # files reach the model in the sessions bound to them.
+    - id: assistants
+      name: '@deepseek-ai/dsh-assistants'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # E-commerce accounts for Desktop, per tenant of the Hub sign-in: platform sign-ins
+    # kept by the system Google Chrome on each account's own browser data.
+    - id: ecommerce-accounts
+      name: '@deepseek-ai/dsh-ecommerce-accounts'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'
@@ -394,6 +406,18 @@
     # over the `connectors` Remote; mounted exactly when the connectors row is.
     - id: ui-connectors
       name: '@deepseek-ai/dsh-client-ui-connectors'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # Assistants page and the new-session assistant picker: the sidebar entry below
+    # Connectors over the `assistants` Remote; mounted exactly when the assistants row is.
+    - id: ui-assistants
+      name: '@deepseek-ai/dsh-client-ui-assistants'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # Settings → E-commerce accounts over the `ecommerceAccounts` Remote; mounted
+    # exactly when the ecommerce-accounts row is.
+    - id: ui-ecommerce-accounts
+      name: '@deepseek-ai/dsh-client-ui-ecommerce-accounts'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
     # Settings → Embedding models over the `embedding` Remote; mounted exactly

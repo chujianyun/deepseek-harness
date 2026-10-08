@@ -80,6 +80,10 @@ flowchart LR
   svc_knowledgeSelection["ctx.knowledgeSelection<br/>Knowledge selection"]
   pkg_connectors["connectors"]
   svc_connectors["ctx.connectors<br/>Connectors"]
+  pkg_assistants["assistants"]
+  svc_assistants["ctx.assistants<br/>Assistants"]
+  pkg_ecommerce_accounts["ecommerce-accounts"]
+  svc_ecommerceAccounts["ctx.ecommerceAccounts<br/>E-commerce accounts"]
   pkg_skill_market["skill-market"]
   svc_skillMarket["ctx.skillMarket<br/>Skill Hub market"]
   pkg_skill_controller["skill-controller"]
@@ -305,6 +309,7 @@ flowchart LR
   pkg_api_workspace_controller --> svc_workspaceController
   pkg_api_workspace_files --> svc_workspaceFiles
   pkg_app_boot --> svc_profileContext
+  pkg_assistants --> svc_assistants
   pkg_attachment --> svc_attachments
   pkg_attachment_local --> svc_attachments
   pkg_authorization --> svc_authorization
@@ -331,6 +336,7 @@ flowchart LR
   pkg_deepseek_account --> svc_deepseekAccount
   pkg_deepseek_account_platform --> svc_deepseekAccount
   pkg_deepseek_llm_api_extensions --> svc_deepseekLlmApiExtensions
+  pkg_ecommerce_accounts --> svc_ecommerceAccounts
   pkg_embedding --> svc_embedding
   pkg_experimental_agent_team --> svc_agentTeams
   pkg_experimental_api_speech_to_text --> svc_speechController
@@ -617,6 +623,8 @@ flowchart LR
 | `ctx.knowledgeBases` | `core` | [`knowledge-base`](../packages/knowledge/knowledge-base) | - | - | - | Keeps the signed-in tenant's knowledge bases, processes added files into embedded chunks, and searches them with hybrid vector and keyword scoring. |
 | `ctx.knowledgeSelection` | `core` | [`knowledge-selection`](../packages/knowledge/knowledge-selection) | - | - | - | Logs the knowledge bases each session may search and offers the `knowledge_search` tool over them only while a session has selected any. |
 | `ctx.connectors` | `core` | [`connectors`](../packages/connector/connectors) | - | - | - | Lists the built-in connectors and installs and uninstalls their official CLIs at the versions a release pins. |
+| `ctx.assistants` | `core` | [`assistants`](../packages/assistant/assistants) | - | - | - | Keeps the signed-in tenant's assistants with their core files, binds each blank main session to one, and records the bound assistant's core files for its prompt section. |
+| `ctx.ecommerceAccounts` | `core` | [`ecommerce-accounts`](../packages/ecommerce/ecommerce-accounts) | - | - | - | Keeps the signed-in tenant's e-commerce accounts, signs each in to its platform in its own system Chrome, and checks the sign-in through the platform's own response. |
 | `ctx.skillMarket` | `core` | [`skill-market`](../packages/skill/skill-market) | - | - | - | Discovers the signed-in tenant's market Skills as the `market` source, browses the Skill Hub as the signed-in employee, and installs a validated package in one move. |
 | `ctx.skillController` | `core` | [`skill-controller`](../packages/skill/skill-controller) | - | - | - | Lists the user-level skills on this machine and applies the Desktop Skills page actions: switch, reveal, edit, and move to the trash. |
 | `ctx.jobController` | `core` | [`api-job-controller`](../packages/api/job-controller) | - | - | - | Streams one background job's observation record over the generated Remote namespace; the roster stays on the session control stream. |

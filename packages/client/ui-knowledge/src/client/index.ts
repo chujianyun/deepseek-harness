@@ -95,6 +95,10 @@ export function apply(ctx: ClientContext): void {
         const result = await ctx.remote.knowledgeSelection.select(sessionId, baseIds)
         return result.ok ? result.value.applies : { failure: result.error.message }
       },
+      allowed: async () => {
+        const result = await ctx.remote.knowledgeSelection.allowedBases(sessionId)
+        return result.ok ? result.value : undefined
+      },
     }),
   }, KnowledgePicker))
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({

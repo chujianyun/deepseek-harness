@@ -86,6 +86,8 @@ GUI model selection requires the exact provider/model pair in the available cata
 
 A successful `selectModel` response acknowledges the Session-local selection without waiting for the default profile setting to save. Default saves run in the background in submission order; a failure logs a warning and leaves the Session selection intact. New Sessions read the last successfully saved default.
 
+A Host plugin that binds a model to a Session it composes, such as an assistant's, calls `ctx.sessionController.useModel(agent, selection)`: it validates and installs the selection like `selectModel`, on an Agent that may still be unpublished, but never saves it as the default. It resolves `false` and changes nothing when the model is not available, such as one removed from Settings.
+
 -----
 
 <a id="configuration"></a>

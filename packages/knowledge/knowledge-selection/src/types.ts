@@ -69,5 +69,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
     /** A knowledge base to select is not one of the signed-in tenant's. */
     'knowledge-selection/unknown-base': { readonly id: string }
+    /** The session may not search this knowledge base, such as one its assistant leaves out. */
+    'knowledge-selection/not-allowed': { readonly id: string }
   }
 }

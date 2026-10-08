@@ -766,6 +766,35 @@ describe('SkillRegistry registry', () => {
     expect(changes).toBe(5)
   })
 
+  it('hides skills a view filter refuses from scoped reads only, and restores them when removed', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    registerProvider(ctx, new MemoryProvider([memorySkill('alpha', 'Alpha', 10), memorySkill('beta', 'Beta', 10)]))
+    let changes = 0
+    ctx.on('skills/change', () => { changes += 1 })
+    const viewer = {}
+    const other = {}
+    const seen: [string, object][] = []
+    const dispose = ctx.skills.addViewFilter((skill, scope) => {
+      seen.push([skill.name, scope])
+      return scope !== viewer || skill.name === 'alpha'
+    })
+    expect(changes).toBe(1)
+    expect((await ctx.skills.list({ scope: viewer })).map(skill => skill.name)).toEqual(['alpha'])
+    expect(seen).toContainEqual(['beta', viewer])
+    expect(await ctx.skills.get('beta', { scope: viewer })).toBeUndefined()
+    expect((await ctx.skills.get('alpha', { scope: viewer }))?.content).toBe('alpha body.')
+    expect((await ctx.skills.list({ scope: other })).map(skill => skill.name)).toEqual(['alpha', 'beta'])
+    seen.length = 0
+    expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['alpha', 'beta'])
+    expect(await ctx.skills.get('beta')).toBeDefined()
+    expect(seen).toEqual([])
+    dispose()
+    dispose()
+    expect(changes).toBe(2)
+    expect((await ctx.skills.list({ scope: viewer })).map(skill => skill.name)).toEqual(['alpha', 'beta'])
+  })
+
   it('contains synchronous and asynchronous catalog observer failures', async () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)

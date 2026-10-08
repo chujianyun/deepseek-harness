@@ -117,15 +117,19 @@ describe('KnowledgePicker', () => {
     settings: { chunkStrategy: 'structured', chunkSeparator: '\\n\\n', chunkSize: 1024, chunkOverlap: 200, documentCount: 6, threshold: 0 },
   })
 
-  function mount(state: KnowledgeState | undefined, selection: KnowledgeSelectionProjection | undefined, outcome: () => Promise<'now' | 'next-step' | { failure: string }>) {
+  function mount(
+    state: KnowledgeState | undefined, selection: KnowledgeSelectionProjection | undefined,
+    outcome: () => Promise<'now' | 'next-step' | { failure: string }>, permitted?: readonly string[],
+  ) {
     const store = createSnapshotStore<KnowledgeSnapshot>({
       state, embedding: undefined, selectedId: null, busy: false, failure: null, added: null, recall: null,
     })
     const select = vi.fn(async (_ids: string[]) => outcome())
     const useKnowledge = bindSnapshotSelector(store)
-    const props = { useProjection: () => selection, useKnowledge, select, t } as Parameters<typeof KnowledgePicker>[0]
+    const allowed = vi.fn(async () => permitted)
+    const props = { useProjection: () => selection, useKnowledge, select, allowed, t } as Parameters<typeof KnowledgePicker>[0]
     render(<KnowledgePicker {...props} />)
-    return { select }
+    return { select, allowed }
   }
 
   it('shows nothing while signed out', () => {
@@ -169,6 +173,19 @@ describe('KnowledgePicker', () => {
     expect(screen.getByRole('status').textContent).toBe('no knowledge base b9')
     expect(screen.getByRole('checkbox', { name: '旧库' })).toHaveProperty('checked', false)
     expect(screen.getByRole('checkbox', { name: '公司制度' })).toHaveProperty('checked', true)
+  })
+
+  it('lists only the knowledge bases the session may select, keeping a selected one so it can be cleared', async () => {
+    const { allowed } = mount(
+      { revision: 1, tenantId: 't', bases: [base('b1', '公司制度'), base('b2', '产品资料'), base('b3', '店铺知识')] },
+      { bases: [{ id: 'b1', name: '公司制度' }] },
+      async () => 'now' as const,
+      ['b3'],
+    )
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '知识库 1' })) })
+    expect(allowed).toHaveBeenCalledOnce()
+    expect(screen.getAllByRole('checkbox').map(box => box.getAttribute('aria-label') ?? box.closest('label')?.textContent)).toEqual(['公司制度', '店铺知识'])
+    expect(screen.getByText('这个会话的智能体只允许检索部分知识库。')).toBeTruthy()
   })
 
   it('starts from no selection when the session has logged none', async () => {

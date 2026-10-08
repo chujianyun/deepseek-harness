@@ -564,6 +564,19 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('installs a Host-chosen model for one Session without saving the default, and refuses an unavailable one', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const controller = createSessionTestController(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+    const defaultBefore = ctx.agentDefaultModel.currentSelection()
+    expect(await controller.useModel(agent, { provider: 'deepseek-official', model: 'deepseek-reasoner', reasoningEffort: 'max' })).toBe(true)
+    expect(currentSelection(ctx, sessionId)).toEqual({ provider: 'deepseek-official', model: 'deepseek-reasoner', reasoningEffort: 'max' })
+    expect(await controller.useModel(agent, { provider: 'missing', model: 'model' })).toBe(false)
+    expect(currentSelection(ctx, sessionId)).toEqual({ provider: 'deepseek-official', model: 'deepseek-reasoner', reasoningEffort: 'max' })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(ctx.agentDefaultModel.currentSelection()).toEqual(defaultBefore)
+    await ctx.fiber.dispose()
+  })
+
   it('reads the Agent default live for a session whose log names no selection', async () => {
     const { ctx, sessionId } = await harness()
     let stored = { provider: 'deepseek-official', model: 'deepseek-chat' }

@@ -16,7 +16,7 @@
 
 ## 在对话中使用
 
-[知识库选择](../glossary.zh.md#knowledge-selection)按会话记录为完整值的 `knowledge/selection` 事件，由 `knowledgeSelection` 投影折叠；新会话不选择任何知识库。会话的选择不为空时，其智能体会获得 `knowledge_search` 工具：它对每个选中的知识库按该知识库保存的返回数量与阈值执行同样的检索，把片段按得分从高到低合并，并对已删除、重建中、不可用或检索失败的知识库给出说明，而不是让调用失败。每次检索记录为 `tool/call` 和 `tool/result`；结果的展示元数据带有片段来源，客户端据此在重新加载或回放后显示该 Turn 的来源。一轮进行中修改的选择从该轮下一次请求开始生效，并在该请求发出前写入日志。
+[知识库选择](../glossary.zh.md#knowledge-selection)按会话记录为完整值的 `knowledge/selection` 事件，由 `knowledgeSelection` 投影折叠；新会话不选择任何知识库，除非它的智能体只允许部分知识库，此时由 `dsh-assistants` 为它选中这些知识库。会话的选择不为空时，其智能体会获得 `knowledge_search` 工具：它对每个选中的知识库按该知识库保存的返回数量与阈值执行同样的检索，把片段按得分从高到低合并，并对已删除、重建中、不可用或检索失败的知识库给出说明，而不是让调用失败。每次检索记录为 `tool/call` 和 `tool/result`；结果的展示元数据带有片段来源，客户端据此在重新加载或回放后显示该 Turn 的来源。一轮进行中修改的选择从该轮下一次请求开始生效，并在该请求发出前写入日志。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -218,9 +218,28 @@ Host owner of the knowledge selection and of the `knowledgeSelection` Remote nam
  * @param sessionId - the session.
  * @param baseIds - knowledge bases of the signed-in tenant, in the order to show them.
  * @returns the selection and when it applies.
- * @throws RemoteError `knowledge-selection/unknown-base`, or the session's resolution failure.
+ * @throws RemoteError `knowledge-selection/unknown-base`, `knowledge-selection/not-allowed` for a
+ *   knowledge base the session may not search, or the session's resolution failure.
  */
 @Remote async select(sessionId: SessionId, baseIds: readonly string[]): Promise<KnowledgeSelectionResult>
+
+/**
+ * List the signed-in tenant's knowledge bases a session may select.
+ * @param sessionId - the session.
+ * @returns the ids, in the tenant's order.
+ * @throws the session's resolution failure.
+ */
+@Remote async allowedBases(sessionId: SessionId): Promise<readonly string[]>
+
+/**
+ * Narrow the knowledge bases sessions may select and search. A session can no longer select a
+ * knowledge base a filter refuses, and its search skips one already selected; the search tool
+ * leaves a session whose selection the filters empty. Every live agent is checked again when a
+ * filter is added or removed, and each agent before every step.
+ * @param filter - returns false for a knowledge base the agent's session must not search.
+ * @returns the disposer that removes the filter.
+ */
+restrict(filter: KnowledgeFilter): () => void
 ```
 
 Types: [SessionId](core.zh.md)

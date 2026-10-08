@@ -416,6 +416,86 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'assistants',
+    summary: 'Host owner of the assistants and of the `assistants` Remote namespace.',
+    description: 'Host owner of the assistants and of the `assistants` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote getState(): Promise<AssistantsState>',
+        description: 'Read the signed-in tenant\'s assistants.',
+        parameters: [],
+        returns: 'the state the Assistants page and the new-session picker show.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<AssistantsState>',
+        description: 'Stream the state.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change.',
+      },
+      {
+        signature: '@Remote createAssistant(input: CreateAssistantInput): Promise<CreateAssistantResult>',
+        description: 'Create an assistant for the signed-in tenant from a template or blank.',
+        parameters: [{ name: 'input', description: 'the wizard\'s choices: start, identity, avatar, model, preset, and user information.' }],
+        returns: 'the new assistant\'s id and the state with it last.',
+        throws: ['RemoteError `hub-account/signed-out`, `assistants/template-not-found`, `assistants/invalid-name`, `assistants/invalid-description`, `assistants/invalid-avatar`, or `assistants/preset-unavailable`.'],
+      },
+      {
+        signature: '@Remote async capabilityOptions(): Promise<AssistantCapabilityOptions>',
+        description: 'List the Skills, connectors, and knowledge bases available now, which subsets can name. Skills are those a new session\'s default Agent preset discovers outside any project; a service the deployment does not compose offers none.',
+        parameters: [],
+        returns: 'enabled model-usable Skills other than connector Skills, connectors installed and switched on for the tenant (named by id), and the tenant\'s knowledge bases.',
+      },
+      {
+        signature: '@Remote async otherTenantAssistants(assistantIds: readonly string[]): Promise<string[]>',
+        description: 'Pick, from assistant ids that sessions are bound to, those another tenant keeps on this machine, so a client can tell a session of another company\'s assistant from one whose assistant was deleted. Only the existence of each `<tenant>/<id>/assistant.json` is checked, nothing in it is read or returned, and a folder that cannot be read counts as not holding the assistant.',
+        parameters: [{ name: 'assistantIds', description: 'the ids to look for; one that is not a single path segment is never found.' }],
+        returns: 'the ids found under a tenant other than the signed-in one; none while signed out.',
+      },
+      {
+        signature: '@Remote getAssistant(assistantId: string): Promise<AssistantDetail>',
+        description: 'Read one assistant with the text of its core files.',
+        parameters: [{ name: 'assistantId', description: 'the assistant to read.' }],
+        returns: 'the assistant and its core files.',
+        throws: ['RemoteError `hub-account/signed-out` or `assistants/not-found`.'],
+      },
+      {
+        signature: '@Remote updateAssistant(assistantId: string, input: UpdateAssistantInput): Promise<AssistantsState>',
+        description: 'Change an assistant. Core files and the name reach every session bound to it on its next turn; a changed model or preset applies to sessions bound afterward and to blank sessions bound now. Renaming also rewrites the `**名称**` line of the identity file.',
+        parameters: [{ name: 'assistantId', description: 'the assistant to change.' }, { name: 'input', description: 'the fields to change.' }],
+        returns: 'the state with the change.',
+        throws: ['RemoteError `hub-account/signed-out`, `assistants/not-found`, `assistants/invalid-name`, `assistants/invalid-description`, `assistants/invalid-avatar`, `assistants/preset-unavailable`, or `assistants/invalid-file`.'],
+      },
+      {
+        signature: '@Remote setDefault(assistantId: string): Promise<AssistantsState>',
+        description: 'Make an assistant the one new sessions bind; blank sessions bound to the previous default move to it.',
+        parameters: [{ name: 'assistantId', description: 'the new default.' }],
+        returns: 'the state with the new default.',
+        throws: ['RemoteError `hub-account/signed-out` or `assistants/not-found`.'],
+      },
+      {
+        signature: '@Remote duplicateAssistant(assistantId: string): Promise<CreateAssistantResult>',
+        description: 'Copy an assistant\'s configuration and core files into a new assistant named «name 副本»; sessions are not copied.',
+        parameters: [{ name: 'assistantId', description: 'the assistant to copy.' }],
+        returns: 'the copy\'s id and the state with it last.',
+        throws: ['RemoteError `hub-account/signed-out` or `assistants/not-found`.'],
+      },
+      {
+        signature: '@Remote deleteAssistant(assistantId: string): Promise<AssistantsState>',
+        description: 'Delete an assistant. Its sessions remain and carry no core files from their next turn. Deleting the default makes the first remaining assistant the default; blank sessions bound to the deleted one move to the default, or bind none when no assistant remains.',
+        parameters: [{ name: 'assistantId', description: 'the assistant to delete.' }],
+        returns: 'the state without it.',
+        throws: ['RemoteError `hub-account/signed-out` or `assistants/not-found`.'],
+      },
+      {
+        signature: '@Remote(\'select\') select(agent: Agent, assistantId: string): Promise<string>',
+        description: 'Bind a blank session to one of the signed-in tenant\'s assistants.',
+        parameters: [{ name: 'agent', description: 'the session\'s Agent.' }, { name: 'assistantId', description: 'the assistant to bind.' }],
+        returns: 'the bound assistant id.',
+        throws: ['RemoteError `hub-account/signed-out`, `assistants/not-found`, or `assistants/locked` once the session started.'],
+      },
+    ],
+  },
+  {
     key: 'attachments',
     summary: 'Immutable binary attachment service.',
     description: 'Immutable binary attachment service. Implementations validate bytes before publishing a reference.',
@@ -862,6 +942,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the state once the setting is saved.',
         throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
       },
+      {
+        signature: 'restrict(filter: ConnectorFilter): () => void',
+        description: 'Keep sessions from using connectors. Every added filter applies to each model shell call: a connector a filter refuses for the call\'s agent puts no CLI on that call\'s `PATH`, gives the session none of its Skills, and a call that names its CLI is denied. Calls without an agent and reads without a session are not filtered.',
+        parameters: [{ name: 'filter', description: 'returns false for a connector the agent\'s session must not use.' }],
+        returns: 'the disposer that removes the filter.',
+      },
     ],
   },
   {
@@ -1087,6 +1173,73 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Create one child directory for a Remote caller\'s in-app browser.',
         parameters: [{ name: 'path', description: 'absolute existing parent directory.' }, { name: 'name', description: 'single non-blank path segment.' }],
         returns: 'the created directory\'s absolute path.',
+      },
+    ],
+  },
+  {
+    key: 'ecommerceAccounts',
+    summary: 'Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote namespace.',
+    description: 'Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote getState(): Promise<EcommerceAccountsState>',
+        description: 'Read the signed-in tenant\'s accounts and whether Chrome can run them.',
+        parameters: [],
+        returns: 'the state the settings page shows.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<EcommerceAccountsState>',
+        description: 'Stream the state.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change.',
+      },
+      {
+        signature: '@Remote addAccount(input: AddEcommerceAccountInput): Promise<AddEcommerceAccountResult>',
+        description: 'Add an account for the signed-in tenant; it starts signed out.',
+        parameters: [{ name: 'input', description: 'platform, kind, store name, and account.' }],
+        returns: 'the new account\'s id and the state with it last.',
+        throws: ['RemoteError `hub-account/signed-out`, `ecommerce-accounts/unsupported`, `ecommerce-accounts/invalid-field`, or `ecommerce-accounts/duplicate`.'],
+      },
+      {
+        signature: '@Remote async startSignIn(accountId: string): Promise<EcommerceAccountsState>',
+        description: 'Open the platform\'s sign-in page in the account\'s own Chrome and wait for the user to sign in; the account turns signed in by itself once the platform says so.',
+        parameters: [{ name: 'accountId', description: 'the account.' }],
+        returns: 'the state with the account signing in.',
+        throws: ['RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`, `ecommerce-accounts/chrome-missing`, `ecommerce-accounts/chrome-outdated`, `ecommerce-accounts/browser-busy`, or `ecommerce-accounts/browser-failed`.'],
+      },
+      {
+        signature: '@Remote async confirmSignIn(accountId: string): Promise<EcommerceAccountsState>',
+        description: 'Check now whether the user finished signing in, as the "I have signed in" button asks.',
+        parameters: [{ name: 'accountId', description: 'the account.' }],
+        returns: 'the state after the check.',
+        throws: ['RemoteError `hub-account/signed-out` or `ecommerce-accounts/not-found`.'],
+      },
+      {
+        signature: '@Remote async refresh(): Promise<EcommerceAccountsState>',
+        description: 'Check every account that is not signing in, and look for Chrome again.',
+        parameters: [],
+        returns: 'the state after the checks.',
+      },
+      {
+        signature: '@Remote setBuyerDailyPages(pages: number): Promise<EcommerceAccountsState>',
+        description: 'Set the tenant\'s daily page limit for buyer accounts.',
+        parameters: [{ name: 'pages', description: 'the most pages a task may open with one buyer account in a calendar day.' }],
+        returns: 'the state with the new limit.',
+        throws: ['RemoteError `hub-account/signed-out`, or `ecommerce-accounts/invalid-field` for a limit that is not a whole number from 1 to 1000.'],
+      },
+      {
+        signature: '@Remote renameAccount(accountId: string, changes: RenameEcommerceAccountInput): Promise<EcommerceAccountsState>',
+        description: 'Change the account or store name the user entered, such as to the name the platform reports.',
+        parameters: [{ name: 'accountId', description: 'the account.' }, { name: 'changes', description: 'the new account name, store name, or both; a field left out stays.' }],
+        returns: 'the state with the account renamed.',
+        throws: ['RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`, `ecommerce-accounts/invalid-field`, or `ecommerce-accounts/duplicate`.'],
+      },
+      {
+        signature: '@Remote async deleteAccount(accountId: string): Promise<EcommerceAccountsState>',
+        description: 'Delete an account and its browser data, closing its Chrome first.',
+        parameters: [{ name: 'accountId', description: 'the account.' }],
+        returns: 'the state without it.',
+        throws: ['RemoteError `hub-account/signed-out` or `ecommerce-accounts/not-found`.'],
       },
     ],
   },
@@ -1727,7 +1880,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select the knowledge bases a session searches; an empty list selects none. Between turns the selection is logged at once; during a turn it applies from the turn\'s next step.',
         parameters: [{ name: 'sessionId', description: 'the session.' }, { name: 'baseIds', description: 'knowledge bases of the signed-in tenant, in the order to show them.' }],
         returns: 'the selection and when it applies.',
-        throws: ['RemoteError `knowledge-selection/unknown-base`, or the session\'s resolution failure.'],
+        throws: ['RemoteError `knowledge-selection/unknown-base`, `knowledge-selection/not-allowed` for a knowledge base the session may not search, or the session\'s resolution failure.'],
+      },
+      {
+        signature: '@Remote async allowedBases(sessionId: SessionId): Promise<readonly string[]>',
+        description: 'List the signed-in tenant\'s knowledge bases a session may select.',
+        parameters: [{ name: 'sessionId', description: 'the session.' }],
+        returns: 'the ids, in the tenant\'s order.',
+        throws: ['the session\'s resolution failure.'],
+      },
+      {
+        signature: 'restrict(filter: KnowledgeFilter): () => void',
+        description: 'Narrow the knowledge bases sessions may select and search. A session can no longer select a knowledge base a filter refuses, and its search skips one already selected; the search tool leaves a session whose selection the filters empty. Every live agent is checked again when a filter is added or removed, and each agent before every step.',
+        parameters: [{ name: 'filter', description: 'returns false for a knowledge base the agent\'s session must not search.' }],
+        returns: 'the disposer that removes the filter.',
       },
     ],
   },
@@ -2332,6 +2498,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select one Session-local model after explicitly resuming the Session; save the default in the background.',
         parameters: [{ name: 'request', description: 'Session identity and requested model selection.' }],
         returns: 'the normalized selection installed for the Session, without waiting for default persistence.',
+      },
+      {
+        signature: 'useModel(agent: Agent, selection: ModelSelection): Promise<boolean>',
+        description: 'Install one model for a Session without saving it as the default, for a Host plugin that binds a model to a Session it composes, such as an assistant\'s.',
+        parameters: [{ name: 'agent', description: 'live Agent of the Session, which may still be unpublished.' }, { name: 'selection', description: 'requested provider, model, and optional reasoning effort.' }],
+        returns: 'whether the model was available and installed; an unavailable model changes nothing.',
       },
       {
         signature: '@Remote async initializeDefaultModel(): Promise<void>',
@@ -3171,6 +3343,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Switch one user-level skill on or off by persisting the profile\'s `disabledSkills` list. Writes are queued, so concurrent calls never overwrite each other\'s change; a request that matches the state committed by the previous write writes nothing.',
         parameters: [{ name: 'name', description: 'kebab-case skill name; it need not be currently discovered.' }, { name: 'disabled', description: 'whether the skill should be disabled.' }],
         throws: ['when the registry was mounted without Settings or a profile entry.'],
+      },
+      {
+        signature: 'addViewFilter(filter: SkillViewFilter): () => void',
+        description: 'Leave skills out of reads made for a viewing scope. Every scoped `list()`, `snapshot()`, and `get()` applies every added filter on read, after the cache, so a filter may consult state that changes between reads; a read without a scope applies none. Adding or removing a filter emits `skills/change`.',
+        parameters: [{ name: 'filter', description: 'returns false for a skill the scope must not see.' }],
+        returns: 'the disposer that removes the filter.',
       },
       {
         signature: 'registerProvider(create: (control: SkillProviderControl) => SkillProvider, options: SkillProviderRegistrationOptions = {}): () => void',
@@ -5019,6 +5197,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
   {
+    name: 'AddEcommerceAccountInput',
+    declaration: 'export interface AddEcommerceAccountInput {\n    readonly platform: EcommercePlatform;\n    readonly kind: EcommerceAccountKind;\n    readonly storeName?: string;\n    readonly account: string;\n}',
+  },
+  {
+    name: 'AddEcommerceAccountResult',
+    declaration: 'export interface AddEcommerceAccountResult {\n    readonly accountId: string;\n    readonly state: EcommerceAccountsState;\n}',
+  },
+  {
     name: 'AdmittedPromptContentPart',
     declaration: 'export type AdmittedPromptContentPart = {\n    readonly type: \'text\';\n    readonly text: string;\n} | {\n    readonly type: \'image\';\n    readonly attachment: ImageAttachmentRef;\n} | {\n    readonly type: \'file\';\n    readonly attachment: FileAttachmentRef;\n};',
   },
@@ -5183,12 +5369,44 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AssembledSection {\n    name: string;\n    text: string;\n    interpolate?: boolean;\n}',
   },
   {
+    name: 'AssistantAvatar',
+    declaration: 'export type AssistantAvatar = AssistantPresetAvatar | AssistantImageAvatar;',
+  },
+  {
+    name: 'AssistantCapabilityOption',
+    declaration: 'export interface AssistantCapabilityOption {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n}',
+  },
+  {
+    name: 'AssistantCapabilityOptions',
+    declaration: 'export interface AssistantCapabilityOptions {\n    readonly skills: readonly AssistantCapabilityOption[];\n    readonly connectors: readonly AssistantCapabilityOption[];\n    readonly knowledgeBases: readonly AssistantCapabilityOption[];\n}',
+  },
+  {
+    name: 'AssistantDetail',
+    declaration: 'export interface AssistantDetail {\n    readonly assistant: AssistantView;\n    readonly files: Readonly<Record<CoreFileName, string>>;\n}',
+  },
+  {
+    name: 'AssistantImageAvatar',
+    declaration: 'export interface AssistantImageAvatar {\n    readonly kind: \'image\';\n    readonly dataUrl: string;\n}',
+  },
+  {
     name: 'AssistantMessage',
     declaration: 'export interface AssistantMessage extends MessageBase {\n    readonly role: \'assistant\';\n    readonly source: ModelMessageSource;\n}',
   },
   {
+    name: 'AssistantModel',
+    declaration: 'export interface AssistantModel {\n    readonly provider: string;\n    readonly model: string;\n    readonly reasoningEffort?: string;\n}',
+  },
+  {
+    name: 'AssistantPresetAvatar',
+    declaration: 'export interface AssistantPresetAvatar {\n    readonly kind: \'preset\';\n    readonly key: string;\n}',
+  },
+  {
     name: 'AssistantProviderMetadata',
     declaration: 'export interface AssistantProviderMetadata {\n    provider: string;\n    model: string;\n    replayState?: unknown;\n}',
+  },
+  {
+    name: 'AssistantsState',
+    declaration: 'export interface AssistantsState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly defaultId: string | null;\n    readonly assistants: readonly AssistantView[];\n    readonly templates: readonly AssistantTemplateView[];\n}',
   },
   {
     name: 'AssistantStreamFrame',
@@ -5197,6 +5415,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AssistantStreamRecord',
     declaration: 'export type AssistantStreamRecord = {\n    readonly type: \'text-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly texts: readonly string[];\n} | {\n    readonly type: \'reasoning-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly texts: readonly string[];\n} | {\n    readonly type: \'tool-call-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly id: ToolCallId;\n    readonly name?: string;\n    readonly args: readonly string[];\n} | {\n    readonly type: \'chunk\';\n    readonly time: number;\n    readonly chunk: StreamChunk;\n};',
+  },
+  {
+    name: 'AssistantSubsets',
+    declaration: 'export interface AssistantSubsets {\n    readonly skills?: readonly string[];\n    readonly connectors?: readonly string[];\n    readonly knowledgeBases?: readonly string[];\n}',
+  },
+  {
+    name: 'AssistantTemplateView',
+    declaration: 'export interface AssistantTemplateView {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly avatar: AssistantAvatar;\n    readonly subsets?: AssistantSubsets;\n}',
+  },
+  {
+    name: 'AssistantUserInfo',
+    declaration: 'export interface AssistantUserInfo {\n    readonly name: string;\n    readonly language: string;\n    readonly notes: string;\n    readonly background: string;\n}',
+  },
+  {
+    name: 'AssistantView',
+    declaration: 'export interface AssistantView {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly avatar: AssistantAvatar;\n    readonly preset?: string;\n    readonly model?: AssistantModel;\n    readonly subsets?: AssistantSubsets;\n    readonly templateId?: string;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'AtInput',
@@ -5317,6 +5551,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ChangeResult',
     declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\' | \'cancelled\';\n    stage: \'install\' | \'enable\' | \'remove\';\n    target: string;\n    enabled?: boolean;\n    error?: ManagementError;\n    warnings?: string[];\n    packageResult?: PackageResult;\n    bundle?: string;\n    version?: string;\n    pendingBuilds?: string[];\n    approvedBuilds?: string[];\n    registries?: Registry[];\n    failedAt?: \'registry\' | \'spec-host\';\n}',
+  },
+  {
+    name: 'ChromeView',
+    declaration: 'export interface ChromeView {\n    readonly status: \'ready\' | \'missing\' | \'outdated\';\n    readonly version?: string;\n    readonly minVersion: number;\n    readonly downloadUrl: string;\n}',
   },
   {
     name: 'ClientArtifactBaseline',
@@ -5471,6 +5709,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ConnectionTrustRequest {\n    readonly headers: Headers | Readonly<Record<string, string | readonly string[] | undefined>>;\n}',
   },
   {
+    name: 'ConnectorFilter',
+    declaration: 'export type ConnectorFilter = (agent: CallingAgent, connectorId: ConnectorId) => boolean;',
+  },
+  {
     name: 'ConnectorId',
     declaration: 'export type ConnectorId = \'feishu\' | \'dingtalk\';',
   },
@@ -5603,8 +5845,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CordisRuntimeTreeReader {\n    getTree(): Promise<CordisRuntimeTree>;\n}',
   },
   {
+    name: 'CoreFileName',
+    declaration: 'export type CoreFileName = \'IDENTITY.md\' | \'SOUL.md\' | \'USER.md\' | \'AGENTS.md\';',
+  },
+  {
     name: 'CreateAgentOptions',
     declaration: 'export interface CreateAgentOptions {\n    readonly sessionId: SessionId;\n    readonly parentAgent?: Agent;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly isSeeded?: boolean;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n    readonly inheritedEventCount?: SessionLogOffset;\n    readonly seed?: readonly SessionEvent[];\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
+  },
+  {
+    name: 'CreateAssistantInput',
+    declaration: 'export interface CreateAssistantInput {\n    readonly templateId: string | null;\n    readonly name: string;\n    readonly description: string;\n    readonly avatar: AssistantAvatar;\n    readonly model?: AssistantModel;\n    readonly preset?: string;\n    readonly subsets?: AssistantSubsets;\n    readonly user: AssistantUserInfo;\n}',
+  },
+  {
+    name: 'CreateAssistantResult',
+    declaration: 'export interface CreateAssistantResult {\n    readonly assistantId: string;\n    readonly state: AssistantsState;\n}',
   },
   {
     name: 'CreateGoalRequest',
@@ -5789,6 +6043,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DynamicCordisRunRequest',
     declaration: 'export interface DynamicCordisRunRequest {\n    requestId: ApprovalRequestId;\n    agentId: SessionId;\n    pluginId: CordisDynamicPluginId;\n    packageId: CordisDynamicPackageId;\n    mode: CordisDynamicRunMode;\n    name: string;\n    purpose: string;\n    requiresApproval: boolean;\n}',
+  },
+  {
+    name: 'EcommerceAccountKind',
+    declaration: 'export type EcommerceAccountKind = \'merchant\' | \'buyer\';',
+  },
+  {
+    name: 'EcommerceAccountsState',
+    declaration: 'export interface EcommerceAccountsState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly chrome: ChromeView;\n    readonly buyerDailyPages: number;\n    readonly accounts: readonly EcommerceAccountView[];\n}',
+  },
+  {
+    name: 'EcommerceAccountStatus',
+    declaration: 'export type EcommerceAccountStatus = \'signed-in\' | \'signed-out\' | \'signing-in\' | \'checking\' | \'check-failed\';',
+  },
+  {
+    name: 'EcommerceAccountView',
+    declaration: 'export interface EcommerceAccountView {\n    readonly id: string;\n    readonly platform: EcommercePlatform;\n    readonly kind: EcommerceAccountKind;\n    readonly storeName?: string;\n    readonly account: string;\n    readonly status: EcommerceAccountStatus;\n    readonly problem?: EcommerceCheckProblem;\n    readonly signedInAs?: string;\n    readonly signedInStore?: string;\n    readonly expired: boolean;\n    readonly inUse: boolean;\n    readonly pagesToday?: number;\n    readonly cooldownUntil?: string;\n    readonly checkedAt?: string;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'EcommerceCheckProblem',
+    declaration: 'export type EcommerceCheckProblem = \'timeout\' | \'network\' | \'busy\';',
+  },
+  {
+    name: 'EcommercePlatform',
+    declaration: 'export type EcommercePlatform = \'tmall\' | \'taobao\' | \'pinduoduo\' | \'doudian\';',
   },
   {
     name: 'EditGoalRequest',
@@ -6293,6 +6571,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'KnowledgeChunkStrategy',
     declaration: 'export type KnowledgeChunkStrategy = \'structured\' | \'delimiter\';',
+  },
+  {
+    name: 'KnowledgeFilter',
+    declaration: 'export type KnowledgeFilter = (agent: Agent, baseId: string) => boolean;',
   },
   {
     name: 'KnowledgeItemError',
@@ -7129,6 +7411,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RemoteEventHostInfo',
     declaration: 'export interface RemoteEventHostInfo {\n    readonly home: string;\n}',
+  },
+  {
+    name: 'RenameEcommerceAccountInput',
+    declaration: 'export interface RenameEcommerceAccountInput {\n    readonly account?: string;\n    readonly storeName?: string;\n}',
   },
   {
     name: 'RenderedDocumentBytes',
@@ -8071,6 +8357,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SkillSummary {\n    readonly path?: string;\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly invocation: SkillInvocationPolicy;\n    readonly source: SkillSource;\n    readonly provider: string;\n    readonly resourceBase?: SkillResourceBase;\n    readonly disabled?: true;\n}',
   },
   {
+    name: 'SkillViewFilter',
+    declaration: 'export type SkillViewFilter = (skill: SkillSummary, scope: ScopeKey) => boolean;',
+  },
+  {
     name: 'SkillViewOptions',
     declaration: 'export interface SkillViewOptions extends SkillLookupOptions {\n    readonly scope?: ScopeKey | undefined;\n}',
   },
@@ -8881,6 +9171,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UiRenderResult',
     declaration: 'export type UiRenderResult = UiNode;',
+  },
+  {
+    name: 'UpdateAssistantInput',
+    declaration: 'export interface UpdateAssistantInput {\n    readonly name?: string;\n    readonly description?: string;\n    readonly avatar?: AssistantAvatar;\n    readonly model?: AssistantModel | null;\n    readonly preset?: string | null;\n    readonly subsets?: AssistantSubsets;\n    readonly files?: Readonly<Partial<Record<CoreFileName, string>>>;\n}',
   },
   {
     name: 'UpdateTeamTaskRequest',

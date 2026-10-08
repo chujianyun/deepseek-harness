@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-hub-account",
   "description": "Skill Hub account for the dsh Desktop client: the sidebar account launcher and the Settings section with sign-in, tenant switch, and sign-out",
-  "version": "0.2.0-rc.2",
+  "version": "0.2.1-alpha.1",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

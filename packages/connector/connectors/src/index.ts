@@ -161,6 +161,18 @@ function bashCommand(exec: Pick<ToolExecution, 'name' | 'arguments'>): string | 
   return exec.name === 'bash' && typeof command === 'string' ? command : undefined
 }
 
+/** The agent of a model shell call. */
+type CallingAgent = NonNullable<ToolExecution['agent']>
+
+/**
+ * Decides whether a session's agent may use a connector, such as when the session's assistant
+ * allows only some connectors.
+ * @param agent - the agent of the session.
+ * @param connectorId - the connector.
+ * @returns false to keep the connector out of that session.
+ */
+export type ConnectorFilter = (agent: CallingAgent, connectorId: ConnectorId) => boolean
+
 /** What a bash call does through one connected connector. */
 interface Classified {
   readonly id: ConnectorId
@@ -295,6 +307,8 @@ export class ConnectorsService extends TypertRemoteService {
   private provider: ConnectorSkillProvider | undefined
   /** Calls whose high-risk connector commands wait for, or have, the user's approval, with those commands one per line. */
   private readonly confirmed = new Map<ToolCallId, string>()
+  /** Filters each session's use of a connector passes; see {@link ConnectorsService.restrict}. */
+  private readonly filters = new Set<ConnectorFilter>()
   /** Reads a command's stated risk from the installed CLI, per CLI. */
   private readonly riskReaders = new Map<string, RiskReader>()
   /** What the skill provider was last told about, so it is invalidated only on a change. */
@@ -331,7 +345,7 @@ export class ConnectorsService extends TypertRemoteService {
       return this.provider
     }, { everyLayer: true })
     for (const entry of this.installables.values()) {
-      ctx.shellEnv.registerPath({ name: `connectors-${entry.id}`, resolve: () => this.scriptDir(entry) })
+      ctx.shellEnv.registerPath({ name: `connectors-${entry.id}`, resolve: exec => this.allowed(exec.agent, entry.id) ? this.scriptDir(entry) : undefined })
     }
     // A connected CLI writes its sign-in state (locks, refreshed tokens) from the model's confined
     // shell: the current tenant's directory joins the sandbox's writable roots while it runs there.
@@ -340,6 +354,12 @@ export class ConnectorsService extends TypertRemoteService {
         scope.sandboxPolicy.registerWritableRoot({ name: `connectors-${entry.id}`, resolve: () => this.tenantDir(entry) })
       }
     })
+    // A connector a session may not use gives that session none of its Skills.
+    ctx.effect(() => ctx.skills.addViewFilter((skill, scope) => {
+      const entry = [...this.installables.values()].find(item => skill.source === `connector-${item.id}`)
+      const agent = this.ctx.get('agents')?.list().find(item => item === scope)
+      return entry === undefined || this.allowed(agent, entry.id)
+    }), 'connectors: session Skills')
     ctx.on('loader/volatile-update', () => { this.changed() })
     // A bash call of a connector's CLI that fails may mean the sign-in broke: check it.
     ctx.on('tools/result', (exec, result) => {
@@ -358,6 +378,14 @@ export class ConnectorsService extends TypertRemoteService {
       const decision = await next()
       const command = bashCommand(exec)
       if (decision.kind !== 'allow' || command === undefined) return decision
+      // A connector the session may not use is refused before anything runs, even through another copy of its CLI.
+      for (const entry of this.installables.values()) {
+        if (this.allowed(exec.agent, entry.id)) continue
+        const found = invocations(command, entry.spec.binary)
+        if (found !== 'opaque' && found.length > 0) {
+          return { kind: 'deny', reason: `The ${entry.driver.name.en} connector (${entry.spec.binary}) is not available in this session.` }
+        }
+      }
       const parts: Classified[] = []
       for (const entry of this.installables.values()) {
         if (this.exposure(entry)?.mode !== 'run') continue
@@ -684,6 +712,26 @@ export class ConnectorsService extends TypertRemoteService {
   }
 
   /** The tenant and script the model shell gets for a connector now: installed, signed in to the Hub, and switched on. */
+  /**
+   * Keep sessions from using connectors. Every added filter applies to each model shell call: a
+   * connector a filter refuses for the call's agent puts no CLI on that call's `PATH`, gives the
+   * session none of its Skills, and a call that names its CLI is denied. Calls without an agent
+   * and reads without a session are not filtered.
+   * @param filter - returns false for a connector the agent's session must not use.
+   * @returns the disposer that removes the filter.
+   */
+  restrict(filter: ConnectorFilter): () => void {
+    this.filters.add(filter)
+    return () => { this.filters.delete(filter) }
+  }
+
+  /** Whether every filter lets the agent use the connector; no agent means no session to restrict. */
+  private allowed(agent: CallingAgent | undefined, id: ConnectorId): boolean {
+    if (agent === undefined) return true
+    for (const filter of this.filters) if (!filter(agent, id)) return false
+    return true
+  }
+
   private exposure(entry: Installable): Exposure | undefined {
     if (entry.install !== 'installed' || entry.removing || this.tenantId === null || !this.enabled(entry)) return undefined
     const live = entry.connection.state === 'connected' || entry.connection.state === 'degraded'

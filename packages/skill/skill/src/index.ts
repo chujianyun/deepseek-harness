@@ -23,7 +23,8 @@ import z from '@deepseek-ai/schemastery'
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const DEFAULT_COLLECT_CACHE_ENTRIES = 128
 const MAX_COLLECT_ATTEMPTS = 2
-const RUNTIME_PROVIDER = 'runtime'
+/** Provider of the skills plugins register through `ctx.skills.register()` without naming one. */
+export const RUNTIME_PROVIDER = 'runtime'
 const RUNTIME_RANK = 250
 
 /** Standard precedence rank for packaged skill providers and local bundled roots. */
@@ -352,6 +353,15 @@ interface CollectResult {
   cacheable: boolean
 }
 
+/**
+ * Decides whether a skill reaches one viewing scope, such as the agent of a session whose
+ * assistant allows only some skills.
+ * @param skill - the winning summary, after the disabled list applied.
+ * @param scope - the viewing scope of the read.
+ * @returns false to leave the skill out of that read.
+ */
+export type SkillViewFilter = (skill: SkillSummary, scope: ScopeKey) => boolean
+
 /** One scope's complete skill-registry contribution. */
 class SkillLayer implements ScopeLayer {
   /** Providers registered through contexts carrying this scope, insertion-ordered. */
@@ -404,6 +414,8 @@ export class SkillRegistry extends Service {
   private readonly disabledSkills: Volatile<readonly string[]> | undefined
   /** Profile-local entry id used by Settings; absent when the plugin was mounted without Loader. */
   private readonly entryId: string | undefined
+  /** Filters every scoped read applies; see {@link SkillRegistry.addViewFilter}. */
+  private readonly viewFilters = new Set<SkillViewFilter>()
   /** Serializes `setDisabled()` writes: each one reads the list the previous write committed. */
   private disabledWrites: Promise<void> = Promise.resolve()
 
@@ -440,6 +452,27 @@ export class SkillRegistry extends Service {
     // A failed write must not block the ones queued after it; the caller still sees its own failure.
     this.disabledWrites = write.catch(() => {})
     return write
+  }
+
+  /**
+   * Leave skills out of reads made for a viewing scope. Every scoped `list()`, `snapshot()`, and
+   * `get()` applies every added filter on read, after the cache, so a filter may consult state
+   * that changes between reads; a read without a scope applies none. Adding or removing a filter
+   * emits `skills/change`.
+   * @param filter - returns false for a skill the scope must not see.
+   * @returns the disposer that removes the filter.
+   */
+  addViewFilter(filter: SkillViewFilter): () => void {
+    this.viewFilters.add(filter)
+    this.notifyChange()
+    return () => { if (this.viewFilters.delete(filter)) this.notifyChange() }
+  }
+
+  /** Whether every view filter lets the skill reach the read's scope. */
+  private visible(skill: SkillSummary, scope: ScopeKey | undefined): boolean {
+    if (scope === undefined) return true
+    for (const filter of this.viewFilters) if (!filter(skill, scope)) return false
+    return true
   }
 
   /** Force a disabled skill's invocation policy closed and mark it, leaving enabled skills untouched. */
@@ -562,6 +595,7 @@ export class SkillRegistry extends Service {
     return {
       skills: [...collected.entries.values()]
         .map(entry => this.applyDisabled(toSummary(entry.candidate)))
+        .filter(skill => this.visible(skill, options.scope))
         .sort(compareSkillSummary),
       complete: collected.cacheable,
     }
@@ -581,7 +615,7 @@ export class SkillRegistry extends Service {
     const collected = await this.collect(options)
     throwIfAborted(options.signal)
     const match = collected.entries.get(name)
-    if (match === undefined) return undefined
+    if (match === undefined || !this.visible(this.applyDisabled(toSummary(match.candidate)), options.scope)) return undefined
     const definition = await waitWithAbort(
       match.provider.get(match.candidate, options),
       options.signal,

@@ -224,7 +224,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-session-controller`
 
 - `inject`: `agentDefaultModel` · `agents` · `attachments` · `fileUploads` · `fs` · `llm` · `sessions` · `sessionProjections` · `sessionQuery` · `typert` · `workspaceRegistry`
-- `source`: [`packages/api/session-controller/src/index.ts:79`](../packages/api/session-controller/src/index.ts)
+- `source`: [`packages/api/session-controller/src/index.ts:80`](../packages/api/session-controller/src/index.ts)
 
 ```ts config-catalog
 /** Session Controller deployment policy. */
@@ -346,6 +346,31 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-files -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-assistants -->
+<a id="deepseek-aidsh-assistants"></a>
+
+## `@deepseek-ai/dsh-assistants`
+
+- `inject`: `hubAccount` · `sessionProjections` · `agents`
+- `source`: [`packages/assistant/assistants/src/index.ts:61`](../packages/assistant/assistants/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** DeepSeek Harness home; assistants live under `<dshHome>/assistants`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** Longest assistant name, in characters. */
+  maxNameLength?: number
+  /** Longest assistant description, in characters. */
+  maxDescriptionLength?: number
+  /** Largest uploaded avatar, as the length of its data URL. */
+  maxAvatarLength?: number
+  /** Longest core file the detail page may save, in characters; every turn carries the core files. */
+  maxCoreFileLength?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-assistants -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-attachment-local -->
 <a id="deepseek-aidsh-attachment-local"></a>
@@ -890,6 +915,45 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-deepseek-account-platform -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-ecommerce-accounts -->
+<a id="deepseek-aidsh-ecommerce-accounts"></a>
+
+## `@deepseek-ai/dsh-ecommerce-accounts`
+
+- `inject`: `hubAccount` · `skills` · `shellEnv`
+- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:65`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** DeepSeek Harness home; accounts live under `<dshHome>/ecommerce`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** Chrome executable to use instead of the platform's standard Google Chrome install. */
+  chromePath?: string
+  /** Oldest Chrome major version accounts run on. */
+  minChromeVersion?: number
+  /** How long a sign-in waits for the user before giving up, in milliseconds. */
+  signInTimeoutMs?: number
+  /** How long one check waits for the platform's response, in milliseconds. */
+  checkTimeoutMs?: number
+  /** How long DSH waits for Chrome to start or close, in milliseconds. */
+  chromeTimeoutMs?: number
+  /** Time between looks at the sign-in tab, in milliseconds. */
+  signInPollMs?: number
+  /** Time after which a sign-in is checked even before its tab leaves the sign-in page, in milliseconds. */
+  signInCheckEveryMs?: number
+  /** Time between background checks of every merchant account, in milliseconds. */
+  checkIntervalMs?: number
+  /** Most pages a task may open with one buyer account in a calendar day, until a tenant sets its own. */
+  buyerDailyPages?: number
+  /** How long a buyer account rests after the platform's risk control showed, in hours. */
+  cooldownHours?: number
+  /** Longest store or account name, in characters. */
+  maxNameLength?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-ecommerce-accounts -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-embedding -->
 <a id="deepseek-aidsh-embedding"></a>
@@ -3068,7 +3132,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-skill`
 
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/skill/skill/src/index.ts:282`](../packages/skill/skill/src/index.ts)
+- `source`: [`packages/skill/skill/src/index.ts:283`](../packages/skill/skill/src/index.ts)
 
 ```ts config-catalog
 /** Skill registry configuration. */
@@ -3606,7 +3670,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-system-prompt`
 
-- `source`: [`packages/core/system-prompt/src/index.ts:247`](../packages/core/system-prompt/src/index.ts)
+- `source`: [`packages/core/system-prompt/src/index.ts:248`](../packages/core/system-prompt/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: the deployment-authored fragment of the system prompt (see {@link Config.personaPrefix} for its contract). */
@@ -4640,6 +4704,7 @@ export interface Config {
 | `@deepseek-ai/dsh-client-resources` | — | [`packages/client/resources/src/index.ts`](../packages/client/resources/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-agent-preset` | — | [`packages/client/ui-agent-preset/src/index.ts`](../packages/client/ui-agent-preset/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-approval` | — | [`packages/client/ui-approval/src/index.ts`](../packages/client/ui-approval/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-assistants` | — | [`packages/client/ui-assistants/src/index.ts`](../packages/client/ui-assistants/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-attachment` | — | [`packages/client/ui-attachment/src/index.ts`](../packages/client/ui-attachment/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-brand-official` | — | [`packages/client/ui-brand-official/src/index.ts`](../packages/client/ui-brand-official/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-chat` | — | [`packages/client/ui-chat/src/index.ts`](../packages/client/ui-chat/src/index.ts) |
@@ -4650,6 +4715,7 @@ export interface Config {
 | `@deepseek-ai/dsh-client-ui-deliverables` | `systemPrompt` · `connection` · `sessionQuery` · `sessionController` · `workspaceFiles` · `fs` · `sandboxPolicy` · `workspaceChanges` | [`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-directory-picker-browse` | — | [`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-directory-picker-native` | — | [`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-ecommerce-accounts` | — | [`packages/client/ui-ecommerce-accounts/src/index.ts`](../packages/client/ui-ecommerce-accounts/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-goal` | — | [`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-hub-account` | — | [`packages/client/ui-hub-account/src/index.ts`](../packages/client/ui-hub-account/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-input-trigger` | — | [`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts) |
@@ -4817,6 +4883,7 @@ export interface Config {
 | `@deepseek-ai/dsh-session-title-llm` | — | [`packages/session/session-title-llm/src/index.ts`](../packages/session/session-title-llm/src/index.ts) |
 | `@deepseek-ai/dsh-subagent-in-process-driver` | — | [`packages/subagent/subagent-in-process-driver/src/index.ts`](../packages/subagent/subagent-in-process-driver/src/index.ts) |
 | `@deepseek-ai/dsh-timeout` | — | [`packages/util/timeout/src/index.ts`](../packages/util/timeout/src/index.ts) |
+| `@deepseek-ai/dsh-tmall-skills` | — | [`packages/ecommerce/tmall-skills/src/index.ts`](../packages/ecommerce/tmall-skills/src/index.ts) |
 | `@deepseek-ai/dsh-typert-generator` | — | [`packages/typert/generator/src/index.ts`](../packages/typert/generator/src/index.ts) |
 | `@deepseek-ai/dsh-typert-protocol` | — | [`packages/typert/protocol/src/index.ts`](../packages/typert/protocol/src/index.ts) |
 | `@deepseek-ai/dsh-typert-registry` | — | [`packages/typert/registry/src/index.ts`](../packages/typert/registry/src/index.ts) |

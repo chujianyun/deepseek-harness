@@ -827,6 +827,15 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspectio
 @Remote('selectModel') selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue>
 
 /**
+ * Install one model for a Session without saving it as the default, for a Host plugin that
+ * binds a model to a Session it composes, such as an assistant's.
+ * @param agent - live Agent of the Session, which may still be unpublished.
+ * @param selection - requested provider, model, and optional reasoning effort.
+ * @returns whether the model was available and installed; an unavailable model changes nothing.
+ */
+useModel(agent: Agent, selection: ModelSelection): Promise<boolean>
+
+/**
  * Select the first available account model after login when no provider API key is configured.
  * @returns after saving the first available model or retaining the existing default.
  */
@@ -947,7 +956,7 @@ workspaceDesktop(): { name: string; available: boolean; fileManager: 'finder' | 
 @Remote({ mode: 'stream' }) control(signal: AbortSignal): AsyncIterable<SessionControlFrame>
 ```
 
-Types: [SessionId](core.md) · [SessionInspection](persistence.md) · [SessionSearchRequest](session-query.md)
+Types: [Agent](core.md) · [ModelSelection](core.md) · [SessionId](core.md) · [SessionInspection](persistence.md) · [SessionSearchRequest](session-query.md)
 
 Source: [`packages/api/session-controller/src/index.ts`](../../packages/api/session-controller/src/index.ts)
 

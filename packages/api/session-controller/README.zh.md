@@ -86,6 +86,8 @@ GUI 模型选择要求确切提供方／模型对出现在可用目录中；不�
 
 `selectModel` 成功返回表示会话级模型选择已生效，不等待默认 profile 设置保存。默认设置在后台按提交顺序保存；保存失败会记录警告，并保留会话选择。新会话读取最近一次成功保存的默认值。
 
+为自己组装的会话绑定模型的 Host 插件（例如智能体）调用 `ctx.sessionController.useModel(agent, selection)`：它像 `selectModel` 一样校验并安装选择，作用于可能尚未发布的 Agent，但从不把它保存为默认值。模型不可用时（例如已从设置中删除）返回 `false`，不做任何改变。
+
 -----
 
 <a id="configuration"></a>

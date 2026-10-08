@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The harness is assembled from npm packages under `packages/`, grouped by capability family: sessions and the agent loop, model-facing tools, shell and filesystem execution, web access, subagents, and the rest. Find the owning group here, then open its README. Every package is scoped `@deepseek-ai/dsh-*` and lives in exactly one group; each group README is the authoritative package map for its family.
+The harness is assembled from npm packages under `packages/`, grouped by capability family. Find the owning group here, then open its README. Every package is scoped `@deepseek-ai/dsh-*` and lives in exactly one group; each group README is the authoritative package map for its family.
 
 ## Table of Contents
 
@@ -51,6 +51,8 @@ Every package lives in exactly one group; new packages join existing groups, and
 | [`skill/`](skill/README.md) | Skill capability family: provider registry, local provider, model-facing catalog/loader |
 | [`knowledge/`](knowledge/README.md) | Per-tenant local knowledge bases, hybrid search |
 | [`connector/`](connector/README.md) | Office platform connectors over official CLIs |
+| [`assistant/`](assistant/README.md) | Named assistants with core files, bound to sessions |
+| [`ecommerce/`](ecommerce/README.md) | E-commerce accounts signed in through the system Google Chrome |
 | [`compaction/`](compaction/README.md) | Compaction capability family: Service Definition + basic provider + command Consumer |
 | [`context/`](context/README.md) | Model-visible request context: workspace instructions, time context, references |
 | [`subagent/`](subagent/README.md) | Subagent capability family: provider-registry contract and model-facing delegation tools |

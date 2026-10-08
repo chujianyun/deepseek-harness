@@ -109,6 +109,7 @@ export function ConversationContent(props: ConversationContentProps) {
 
   const heroWorkspaceRow = (
     <div className={css.heroWorkspaceRow}>
+      {renderSlot('conversation.hero.assistant', {})}
       <WorkspaceChip
         buttonRef={pickerAnchor}
         label={chipTitle}

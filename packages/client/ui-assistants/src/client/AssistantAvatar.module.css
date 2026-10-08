@@ -1,0 +1,33 @@
+/* Assistant avatar: an uploaded image, or a round disc with the name's first character. */
+
+.avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  corner-shape: round;
+  font-weight: 600;
+  line-height: 1;
+  color: #fff;
+  background: var(--dsw-alias-label-tertiary);
+  object-fit: cover;
+  user-select: none;
+}
+
+.avatar[data-tone='sun'] { background: linear-gradient(135deg, #f8b84a, #ef7d32); }
+.avatar[data-tone='ocean'] { background: linear-gradient(135deg, #4fa3f7, #2563eb); }
+.avatar[data-tone='forest'] { background: linear-gradient(135deg, #5cc78a, #1f8a4c); }
+.avatar[data-tone='grape'] { background: linear-gradient(135deg, #a47cf3, #6d3fd6); }
+.avatar[data-tone='rose'] { background: linear-gradient(135deg, #f58aa8, #db3f6c); }
+.avatar[data-tone='slate'] { background: linear-gradient(135deg, #8a94a6, #4b5563); }
+.avatar[data-tone='amber'] { background: linear-gradient(135deg, #f5c542, #c98a06); }
+.avatar[data-tone='mint'] { background: linear-gradient(135deg, #6ee7c8, #14a37f); }
+.avatar[data-tone='sky'] { background: linear-gradient(135deg, #7dd3fc, #0284c7); }
+.avatar[data-tone='berry'] { background: linear-gradient(135deg, #e879c9, #a21caf); }
+.avatar[data-tone='coral'] { background: linear-gradient(135deg, #fb9a7a, #e4572e); }
+.avatar[data-tone='olive'] { background: linear-gradient(135deg, #b5c45a, #6b7d1e); }
+.avatar[data-tone='ink'] { background: linear-gradient(135deg, #5b6b8c, #1e2a44); }
+.avatar[data-tone='peach'] { background: linear-gradient(135deg, #fdc49a, #f08a4b); }
+.avatar[data-tone='teal'] { background: linear-gradient(135deg, #4fd1c5, #0f766e); }
+.avatar[data-tone='lilac'] { background: linear-gradient(135deg, #c4b5fd, #7c3aed); }

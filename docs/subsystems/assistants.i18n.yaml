@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for assistants.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/subsystems/assistants.md
+/assistants:
+  en: 3c3ea1667b9606f0
+  zh: 4028eb2dc41a7b3e
+/assistants/storage:
+  en: c4f0702f4069aec8
+  zh: 0cacc23526087af8
+/assistants/managing-assistants:
+  en: a8e4305105dd5f1d
+  zh: e623440ad1b36dce
+/assistants/sessions-and-their-assistant:
+  en: 68b6dfe3da9f6991
+  zh: 5c5219a82b8687f9
+/assistants/capability-subsets:
+  en: 3afe652732132d2e
+  zh: 932a302b13ab0f58
+/assistants/session-binding:
+  en: ef3f64cef403d0b8
+  zh: e015d663f60d0874

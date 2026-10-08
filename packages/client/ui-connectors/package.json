@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-connectors",
   "description": "Connectors page of the dsh Desktop client: the sidebar entry and the connector cards that install their CLIs, over the connectors Remote",
-  "version": "0.2.0-rc.2",
+  "version": "0.2.1-alpha.1",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

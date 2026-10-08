@@ -32,9 +32,9 @@
  * client plugin's action lands beside them by `order` and needs nothing from
  * the browser beyond the row identity.
  *
- * The browser entry additionally declares two `list` seats per Session row
- * (`sidebar.session.row.leading` / `sidebar.session.row.hover`) for ambient
- * row decorations. Both take the row's Session identity and nothing else: a
+ * The browser entry additionally declares three `list` seats per Session row
+ * (`sidebar.session.row.leading` / `sidebar.session.row.badge` /
+ * `sidebar.session.row.hover`) for ambient row decorations. All take the row's Session identity and nothing else: a
  * session-scoped seat would force a Session binding, which would activate and
  * retain every listed Session.
  */
@@ -132,6 +132,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * its trailing status line. Mounted only while that card is open.
      */
     'sidebar.session.row.hover': { kind: 'list'; scope: 'root'; owner: SessionRowScheduleOwnerProps }
+    /**
+     * Small marks between a Session row's leading cell and its title, such as
+     * the assistant the Session belongs to. Unlike the leading seat it stays
+     * mounted whatever the row's state, archived rows included; a blank New
+     * Session row mounts none. An occupant renders at most 16px tall and stops
+     * its own clicks when it acts on them.
+     */
+    'sidebar.session.row.badge': { kind: 'list'; scope: 'root'; owner: SessionRowScheduleOwnerProps }
     /**
      * The rows of one Session's "..." menu, in ascending `order`. ui-workspace
      * registers the shipped rows here — `pin` (100), `rename` (200), `fork`
@@ -459,6 +467,7 @@ export type WorkspaceBrowserProps =
     | 'sidebar.workspaces.session.row.action'
     | 'sidebar.session.row.leading'
     | 'sidebar.session.row.hover'
+    | 'sidebar.session.row.badge'
   >
   & PropsStore<WorkspaceViewStoreHandle>
   & Omit<WorkspaceBrowserInjected, 'hooks'>

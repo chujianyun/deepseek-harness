@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for 2026-10-07-ecommerce-accounts-over-store-session.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.md
+/agent-note-e-commerce-accounts-over-resident-chrome-profiles-and-page-apis:
+  en: 46acf914b2ad7665
+  zh: 5728cdf082b5b33f
+/agent-note-e-commerce-accounts-over-resident-chrome-profiles-and-page-apis/problem:
+  en: aeecf5feaa8d3247
+  zh: 64bf4d750b5b7d77
+/agent-note-e-commerce-accounts-over-resident-chrome-profiles-and-page-apis/proposal:
+  en: 5dc1535e4e9f18ed
+  zh: b3592c116a2023f1
+/agent-note-e-commerce-accounts-over-resident-chrome-profiles-and-page-apis/alternatives-considered:
+  en: 6119e2aff3b6be5a
+  zh: 4237c596c10e1ee9
+/agent-note-e-commerce-accounts-over-resident-chrome-profiles-and-page-apis/alternatives-considered/why-not-accio-s-rpa-dsl-and-an-executor-for-it:
+  en: fbbaae87071cf920
+  zh: 21aaefc3748653d2
+/agent-note-e-commerce-accounts-over-resident-chrome-profiles-and-page-apis/alternatives-considered/why-not-save-cookies-or-use-playwright-s-bundled-chromium:
+  en: d2deda962e565410
+  zh: 47bf9295a46599b6
+/agent-note-e-commerce-accounts-over-resident-chrome-profiles-and-page-apis/alternatives-considered/why-not-keep-the-python-scripts:
+  en: b45c821be5e86eb1
+  zh: 1471879fe49b77cf
+/agent-note-e-commerce-accounts-over-resident-chrome-profiles-and-page-apis/alternatives-considered/why-not-leave-buyer-account-limits-to-the-skill-instructions:
+  en: f1918a0de4f939de
+  zh: e543fabf77ed88c8
+/agent-note-e-commerce-accounts-over-resident-chrome-profiles-and-page-apis/acceptance-criteria:
+  en: caf4f609ff61a849
+  zh: ed50e06f379c9a36
+/agent-note-e-commerce-accounts-over-resident-chrome-profiles-and-page-apis/risks:
+  en: 1bc9ae5ad81adf4e
+  zh: 806c09c119b52dd8

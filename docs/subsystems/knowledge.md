@@ -16,7 +16,7 @@ Search embeds the query with the knowledge base's model and blends cosine simila
 
 ## Use in conversations
 
-A [knowledge selection](../glossary.md#knowledge-selection) is logged per session as the whole-value `knowledge/selection` event and folded by the `knowledgeSelection` projection; a new session selects none. While a session's selection is not empty, its agent is offered the `knowledge_search` tool, which runs the same search on each selected knowledge base under that knowledge base's saved result count and threshold, merges the passages best first, and reports knowledge bases that are deleted, rebuilding, unavailable, or failing instead of failing the call. Each result is recorded as `tool/call` and `tool/result`; the result's presentation metadata carries the passages' sources, from which clients show the Turn's sources after a reload or replay. A selection changed during a turn applies from that turn's next request and is logged before it is sent.
+A [knowledge selection](../glossary.md#knowledge-selection) is logged per session as the whole-value `knowledge/selection` event and folded by the `knowledgeSelection` projection; a new session selects none, unless its assistant allows only some knowledge bases, which `dsh-assistants` then selects for it. While a session's selection is not empty, its agent is offered the `knowledge_search` tool, which runs the same search on each selected knowledge base under that knowledge base's saved result count and threshold, merges the passages best first, and reports knowledge bases that are deleted, rebuilding, unavailable, or failing instead of failing the call. Each result is recorded as `tool/call` and `tool/result`; the result's presentation metadata carries the passages' sources, from which clients show the Turn's sources after a reload or replay. A selection changed during a turn applies from that turn's next request and is logged before it is sent.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -218,9 +218,28 @@ Host owner of the knowledge selection and of the `knowledgeSelection` Remote nam
  * @param sessionId - the session.
  * @param baseIds - knowledge bases of the signed-in tenant, in the order to show them.
  * @returns the selection and when it applies.
- * @throws RemoteError `knowledge-selection/unknown-base`, or the session's resolution failure.
+ * @throws RemoteError `knowledge-selection/unknown-base`, `knowledge-selection/not-allowed` for a
+ *   knowledge base the session may not search, or the session's resolution failure.
  */
 @Remote async select(sessionId: SessionId, baseIds: readonly string[]): Promise<KnowledgeSelectionResult>
+
+/**
+ * List the signed-in tenant's knowledge bases a session may select.
+ * @param sessionId - the session.
+ * @returns the ids, in the tenant's order.
+ * @throws the session's resolution failure.
+ */
+@Remote async allowedBases(sessionId: SessionId): Promise<readonly string[]>
+
+/**
+ * Narrow the knowledge bases sessions may select and search. A session can no longer select a
+ * knowledge base a filter refuses, and its search skips one already selected; the search tool
+ * leaves a session whose selection the filters empty. Every live agent is checked again when a
+ * filter is added or removed, and each agent before every step.
+ * @param filter - returns false for a knowledge base the agent's session must not search.
+ * @returns the disposer that removes the filter.
+ */
+restrict(filter: KnowledgeFilter): () => void
 ```
 
 Types: [SessionId](core.md)

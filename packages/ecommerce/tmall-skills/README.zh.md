@@ -1,0 +1,73 @@
+---
+description: "Skill Hub 只下发给需要的租户的天猫取数技能：用天猫商家账号读取的万相台营销场景报表与生意参谋店铺经营核心日报、用买家账号读取的单品报告，以及生成其上传包的打包步骤。"
+kind: "package-reference"
+---
+# 天猫取数技能
+
+[English](README.md) | 中文
+
+## 概述
+
+`@deepseek-ai/dsh-tmall-skills` 存放三个 DSH 不随包发布的只读 Skill，由租户管理员上传到 [Skill Hub](../../../docs/glossary.zh.md#skill-hub)。用天猫[商家账号](../../../docs/glossary.zh.md#merchant-account)：`tmall-alimama-scene-report` 读取万相台某一天各场景的数据，`tmall-sycm-core-daily` 导出生意参谋「店铺经营核心日报」并与万相台核对。用 DSH 挑选的[买家账号](../../../docs/glossary.zh.md#buyer-account)：`tmall-item-report` 读取公开商品并写出事实层报告。每个技能都以单个 ES 模块由 DSH 自带的 Node 运行。技能为何调用页面接口，见[电商账号 Agent Note](../../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.zh.md)。
+
+## 目录
+
+- [使用本包](#use-this-package)
+- [模型体验](#model-experience)
+- [已知限制与待办](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## 使用本包
+
+`packSkills(outDir)` 把 `SKILLS` 中的每个技能构建到 `<outDir>/<name>/`：`SKILL.md` 取自 `skills/<name>/`，`scripts/` 下每个脚本是用 tsdown 从 `src/` 打包出的单个自包含 ES 模块；再把每个文件夹以 `<name>/` 为根压缩成 `<outDir>/<name>.zip`，即 Skill Hub 接受的格式；之前的构建会被替换。在仓库根目录运行：
+
+```sh
+node --input-type=module -e "import { packSkills } from './packages/ecommerce/tmall-skills/src/index.ts'; console.log(await packSkills('dist/tmall-skills'))"
+```
+
+两个商家技能的脚本接受 `--account <id>`（`dsh-ecommerce accounts` 列出的 id）、`--date YYYY-MM-DD`（按北京时间已经结束的一天，默认昨天）和 `--out <目录>`（默认工作目录下的 `天猫报表`）。脚本运行 `dsh-ecommerce browser <id>`，DSH 只在租户已登录时的 bash 调用中应答；不是天猫商家账号的账号会被拒绝；脚本在该账号的 Chrome 中打开一个后台标签页，用完即关闭；最后打印一段 Markdown 摘要和所写文件的路径。成功时退出码为 `0`，平台还没算完当天数据时为 `2`（不写任何文件），账号在平台上已退出登录时为 `3`，命令行有误时为 `64`，其他情况为 `1`，原因写到 stderr。
+
+- `scripts/alimama-scene-report.mjs` 打开万相台当天的账户报表页，截获页面自己发出的场景查询（其中的 `csrfId` 和 `loginPointId` 在运行时生成），带上自己要读的字段再发一次。页面被送到登录框且登录框提供「进入后台」时，进入一次。取昨天（北京时间）的数据时，没有任何场景，或所有场景的去重成交人数（`alipayInshopUv`，约在次日上午 10 点后算完）都是 0，以数据未就绪停止；更早的日期按实际数据输出。否则写出 `万相台营销场景报表_<店铺>_<日期>.csv`（每个场景一行：花费、展现、点击、成交、加购和自然流量，比率用未舍入的数值重新计算）以及带合计的 `.md` 摘要；所有场景的自然流量曝光量都为 0 时（万相台算自然流量比其他指标晚），摘要提示两列自然流量数据尚未算完。
+- `scripts/sycm-core-daily.mjs` 调用自助取数的接口：查找「店铺经营核心日报」模板、发起导出、取下载地址（最多轮询两分钟），然后从这个签名地址下载 .xlsx（最近 30 天）。文件里没有这一天，或生意参谋显示的数据更新日期（`commDateByLocation`）早于这一天，即为未就绪，提示中写明文件覆盖的日期和数据更新日期；早于文件第一天的日期为参数错误。询问万相台时出错，报告标为未经核对，而不是整体失败。随后在同一标签页中，把关键词推广、精准人群推广、全站推广的花费与万相台场景 371、372、436 比较，允许 1 分钱误差。写出 `生意参谋店铺经营核心日报_<店铺>_<日期>.csv`（这一天的全部列）、导出的 `.xlsx` 和 `.md` 摘要；摘要标题下方的校验行是 ✅ 一致、❌ 及每一处差异，或 ⚠️ 及未能询问万相台的原因。不是数字的花费单元格按没有花费计。
+
+`scripts/item-report.mjs` 接受商品链接或 id，以及 `--questions`（100）、`--reviews`（200）、`--appends`（100）、`--per-tag`（100）和 `--out <目录>`（`天猫报表`）。它运行 `dsh-ecommerce buyer`，由 DSH 挑选可用且当天打开页面最少的买家号；每个商品打开 1 个商品页（`item.taobao.com/item.htm?id=…`，无论跳转几次 DSH 只计 1 次），每个商品开始前若买家号当天剩余页数已用完就停止。在商品页上读取服务端渲染的数据（`__ICE_APP_CONTEXT__`：标题、店铺、价格、主图、视频，以及 SKU 的价格、库存和选项图），从页面自己发出的 `mtop.taobao.detail.getdesc` 响应读取详情图（重放会被拒绝），再通过页面自己的 `lib.mtop.request` 调用接口，每次间隔 4.5~6 秒：问大家（`mtop.taobao.wdj.list.merge.search`，每次 20 条）和评价（`mtop.taobao.rate.detaillist.get`，每次 50 条）——按平台默认排序的主列表、每个负面印象标签（labelId 以 -13 结尾或 gray）以及追评 tab，每条都标明来源。遇到滑块、身份验证、`RGV587`，或接口 20 秒没有应答，整次运行立即停止，不重试、不验证、不换号，并用 `dsh-ecommerce risk <id>` 让 DSH 把这个账号冷却；DSH 拒绝页面（`ERR_BLOCKED_BY_CLIENT`）也同样停止。问大家或评价的其他失败只丢失那一部分，不是标准详情页或没有 SKU 数据的商品会被跳过；两者都会写明，运行继续。已读到的内容写入 `单品_<id>/`（`item.json`、`skus.csv`、`questions.csv`、`reviews.csv`、`reviews_negative.csv`、`facts.json`、`报告.md`，以及带天猫 Referer 下载的 `images/`），并列出没有采集到的商品。`facts.json` 和 `报告.md` 只含带样本口径的统计和逐字引用：按只数折算的 SKU 价格阶梯、主列表里已购 SKU 的占比、按月的好中差分布、按类归纳的负面评价（中差评、负面标签、负面追评）、好评主题和问大家顾虑。全部商品完整读完退出码为 `0`，被风控或页数上限停止为 `4`，买家号已退出登录为 `3`，命令行有误为 `64`，有商品没有完整读完或其他失败为 `1`。
+
+-----
+
+<a id="model-experience"></a>
+## 模型体验
+
+间接影响，经由 Skill Hub 安装和 bash 工具；DSH 不加载本包。已安装技能在技能目录中的描述就是其 `SKILL.md` 的 `description`，用中文写给租户员工。商家技能的正文告诉模型：按 `ecommerce-accounts` 的规则选账号，从 `load_workspace_dependencies` 取得 Node 路径，在一次 bash 调用中按技能基础目录运行脚本，以及各退出码的含义：转述摘要和文件路径；数据未就绪时如实说明，不拼凑数字；已退出登录时请用户到设置页，不换店；花费不一致时把两边的数字都告诉用户。单品技能的正文告诉模型：bash 超时设为 600000 毫秒（买家号只在这次调用内被占用），只在用户要求时调大数量，结论只基于报告里的统计和逐字引用并注明样本，遇到风控后不重试、不验证、不换号。脚本把摘要（几行的表格）打印到 stdout，停止时把一行原因打印到 stderr。
+
+#### KV Cache 影响
+
+无直接影响；安装或移除技能时，技能目录的变化与任何已安装技能相同。
+
+## 已知限制与待办
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- **只支持天猫和淘宝** —— 拼多多、抖店的数据不在本包；商家数据只有天猫。
+- **只计页面加载** —— DSH 计入商品页；问大家和评价的接口调用不计入每日页数。
+- **买家号只被一次 bash 调用占用** —— 超过 bash 超时被转为后台运行时，占用和 DSH 的监视都会结束；默认数量让每个商品约 1~2 分钟跑完。
+- **关键词表针对一个品类** —— 负面分类、好评主题和问大家顾虑是为第一个租户经营的成人用品品类调的。
+- **没有全部回答和关键词搜索** —— 每个问大家问题只保留列表给出的置顶回答；搜索页、价格监控、竞品监控以后再做。
+- **页面接口随平台变化** —— 报表查询及其会话字段、自助取数模板名和导出接口都属于万相台和生意参谋；它们改动时脚本会说明原因并停止，直到更新。
+- **各凭一个信号判断就绪** —— 昨天的万相台数据以任一场景有成交人数为就绪，因此昨天有投放但没有成交时，要到次日才会输出。
+- **归因数据会变化** —— 万相台会把点击之后几天的成交算进来，同一天稍后再取，成交数字可能更大。
+- **生意参谋只有最近 30 天** —— 模板只导出最近 30 天。
+- **只交叉校验花费** —— 访客、支付和买家数在这里没有第二个来源。
+- **导出会留下记录** —— 每次运行生意参谋技能都会在店铺的自助取数下载列表里多一条导出。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文 —— 点击展开</summary>
+
+脚本复用 `@deepseek-ai/dsh-ecommerce-accounts` 的 `Cdp`，因此 `ws` 被打包进每个脚本；打包结果除 Node 内置模块外不得有其他 import，`tests/pack.spec.ts` 会检查这一点。
+
+</details>
