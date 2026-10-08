@@ -380,7 +380,7 @@ describe('checkDraft', () => {
   it('takes a declaration the store confirmed for the category, and asks again when its text changed', () => {
     const confirmed = { personalUseConfirm: { text: '确认个人可自行使用。', confirmedAt: '2026-10-08T11:00:00.000Z' }, productConfirm: { text: '旧的产品确认', confirmedAt: 't' } }
     const checks = Object.fromEntries(checkDraft(draftOf(), RULES, confirmed).map(check => [check.key, check]))
-    expect(checks.personalUseConfirm).toMatchObject({ status: '已确认', source: '店铺确认', value: '确认个人可自行使用。', note: '店铺已于 2026-10-08T11:00:00.000Z 确认' })
+    expect(checks.personalUseConfirm).toMatchObject({ status: '已确认', source: '店铺确认', value: '确认个人可自行使用。', note: '店铺已于 2026-10-08 19:00（北京时间）确认' })
     expect(checks.productConfirm).toMatchObject({ status: '待店铺确认', note: '声明文字已变，需要重新确认' })
   })
 
@@ -502,15 +502,15 @@ describe('publishing memory', () => {
   }
 
   it('fills what the answers leave out from the store\'s memory, the answers winning', () => {
-    const merged = withMemory({ values: { 产地: { value: '香港进口', source: '店铺资料' } }, columns: { 到手价: 'ignore' } }, MEMORY, '名流旗舰店', '50024154')
-    expect(merged.answers.values).toEqual({
-      品牌: { value: '名流', source: '店铺资料' }, 产地: { value: '香港进口', source: '店铺资料' }, 产品标准: { value: 'GB/T7544-2019', source: '店铺资料' },
-    })
+    const merged = withMemory({ values: { 品牌: { value: '名流 Pro', source: '店铺资料' } }, columns: { 到手价: 'ignore' } }, MEMORY, '名流旗舰店', RULES)
+    // 产地 is no field of these rules, so it stays out.
+    expect(merged.answers.values).toEqual({ 品牌: { value: '名流 Pro', source: '店铺资料' }, 产品标准: { value: 'GB/T7544-2019', source: '店铺资料' } })
     expect(merged.answers.columns).toEqual({ 到手价: 'ignore', 规格名: 'name' })
     expect(merged.confirmed).toEqual(MEMORY.declarations['名流旗舰店'][50024154])
-    expect(merged.notes).toEqual(['店铺资料取自 DSH 记忆（2026-10-08T11:00:00.000Z 保存）：品牌、产品标准'])
+    expect(merged.notes).toEqual(['店铺资料取自 DSH 记忆（2026-10-08 19:00 北京时间保存）：产品标准'])
+    expect(Object.keys(withMemory({}, MEMORY, '名流旗舰店').answers.values ?? {})).toEqual(['品牌', '产地', '产品标准'])
     expect(withMemory({}, MEMORY, '名流旗舰店').confirmed).toEqual({})
-    expect(withMemory({}, MEMORY, '名流旗舰店', '1').confirmed).toEqual({})
+    expect(withMemory({}, MEMORY, '名流旗舰店', { ...RULES, catId: '1' }).confirmed).toEqual({})
     expect(withMemory({ values: { 品牌: { value: 'x', source: '店铺资料' }, 产地: { value: 'x', source: '店铺资料' }, 产品标准: { value: 'x', source: '店铺资料' } } }, MEMORY, '名流旗舰店').notes).toEqual([])
     expect(withMemory({}, MEMORY, '别家店').notes).toEqual(['DSH 里还没有「别家店」的店铺资料'])
   })
@@ -525,9 +525,9 @@ describe('publishing memory', () => {
     expect(await main(argv, deps)).toBe(0)
     const text = deps.out.join('')
     expect(text).toContain('- 列名对应取自 DSH 记忆：到手价→price、上架名称→name')
-    expect(text).toContain('- 店铺资料取自 DSH 记忆（2026-10-08T11:00:00.000Z 保存）：品牌、产地、产品标准')
+    expect(text).toContain('- 店铺资料取自 DSH 记忆（2026-10-08 19:00 北京时间保存）：品牌、产品标准')
     expect(text).toContain('- 品牌（p-20000）：名流〔店铺资料〕')
-    expect(text).toContain('已确认（1）：\n- personalUseConfirm：确认个人可自行使用。〔店铺确认〕 —— 店铺已于 2026-10-08T11:00:00.000Z 确认')
+    expect(text).toContain('已确认（1）：\n- personalUseConfirm：确认个人可自行使用。〔店铺确认〕 —— 店铺已于 2026-10-08 19:00（北京时间）确认')
     expect(text).toContain('| SKU1 | 1盒【18只】 | m-a | 18 |')
     const empty = { stores: {}, categories: {}, columns: {}, declarations: {} }
     const plain = fakeDeps(new FakePage([]), { memory: () => Promise.resolve(empty) })

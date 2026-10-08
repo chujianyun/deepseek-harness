@@ -7,6 +7,7 @@
  */
 
 import type { PublishMemory } from './account.ts'
+import { beijingTime } from './dates.ts'
 import type { FieldRule, PublishRules } from './publish-rules.ts'
 import { KIND_LABEL, SKU_FIELD_LABEL, type ImageEntry, type ImageKind, type Inventory, type SkuField, type TableEntry } from './materials.ts'
 
@@ -321,7 +322,9 @@ function checkField(field: FieldRule, draft: Draft, confirmed: Confirmed): Field
   if (field.declaration === true) {
     const text = field.options?.[0]?.text ?? field.label
     const remembered = confirmed[field.key]
-    if (remembered?.text === text) return { ...base, status: '已确认', source: '店铺确认', value: text, note: `店铺已于 ${remembered.confirmedAt} 确认` }
+    if (remembered?.text === text) {
+      return { ...base, status: '已确认', source: '店铺确认', value: text, note: `店铺已于 ${beijingTime(new Date(remembered.confirmedAt))}（北京时间）确认` }
+    }
     return { ...base, status: '待店铺确认', value: text, ...remembered === undefined ? {} : { note: '声明文字已变，需要重新确认' } }
   }
   switch (field.key) {
@@ -400,24 +403,28 @@ export interface Remembered {
 /**
  * Apply what the company remembered for a store under the model's answers: the store's values and the
  * remembered table headers fill what the answers leave out, and the store's confirmed declarations for
- * the category are passed on. The answers win where both have an entry.
+ * the category are passed on. The answers win where both have an entry. With rules, only values of
+ * fields the category's form shows are taken, so a value remembered for another category stays out.
  * @param answers - the model's answers.
  * @param memory - the company's publishing memory.
  * @param store - the store the item is for.
- * @param catId - the category, when rules are checked.
+ * @param rules - the category's rules, when they are checked.
  * @returns the merged answers, the confirmed declarations, and what was taken from the memory.
  */
-export function withMemory(answers: Answers, memory: PublishMemory, store: string, catId?: string): Remembered {
+export function withMemory(answers: Answers, memory: PublishMemory, store: string, rules?: PublishRules): Remembered {
   const notes: string[] = []
   const saved = memory.stores[store]
+  const shown = rules === undefined ? undefined : new Set(rules.fields.filter(field => field.visible).map(field => optionKey(field.label)))
   const values: Record<string, SourcedValue> = {}
-  for (const [label, value] of Object.entries(saved?.values ?? {})) values[label] = { value, source: '店铺资料' }
-  const fromStore = Object.keys(values).filter(label => answers.values?.[label] === undefined)
+  for (const [label, value] of Object.entries(saved?.values ?? {})) {
+    if (answers.values?.[label] === undefined && (shown === undefined || shown.has(optionKey(label)))) values[label] = { value, source: '店铺资料' }
+  }
+  const fromStore = Object.keys(values)
   if (saved === undefined) notes.push(`DSH 里还没有「${store}」的店铺资料`)
-  else if (fromStore.length > 0) notes.push(`店铺资料取自 DSH 记忆（${saved.updatedAt} 保存）：${fromStore.join('、')}`)
+  else if (fromStore.length > 0) notes.push(`店铺资料取自 DSH 记忆（${beijingTime(new Date(saved.updatedAt))} 北京时间保存）：${fromStore.join('、')}`)
   const columns: Record<string, SkuField | 'ignore'> = {}
   for (const [header, { field }] of Object.entries(memory.columns)) columns[header] = field as SkuField | 'ignore'
-  const confirmed = catId === undefined ? {} : memory.declarations[store]?.[catId] ?? {}
+  const confirmed = rules === undefined ? {} : memory.declarations[store]?.[rules.catId] ?? {}
   return {
     answers: { ...answers, columns: { ...columns, ...answers.columns }, values: { ...values, ...answers.values } },
     confirmed, notes,

@@ -184,7 +184,7 @@ describe('resolveCategory', () => {
 
   it('takes the category the company remembered for a product line, while the store may still publish in it', async () => {
     const line = (name: string) => resolveCategory(new FakePage([]), { kind: 'line', line: name }, context)
-    expect((await line('水多多')).candidates).toEqual([{ category: CONDOMS, reason: '记住的产品线「水多多」类目（2026-10-08T11:00:00.000Z 保存）' }])
+    expect((await line('水多多')).candidates).toEqual([{ category: CONDOMS, reason: '记住的产品线「水多多」类目（2026-10-08 19:00 北京时间保存）' }])
     expect((await line('无')).note).toBe('DSH 里还没有记住产品线「无」的类目。')
     expect((await line('颗粒')).note).toBe('记住的产品线「颗粒」类目 126198864 现在不能在这家店发布（可能授权已变化）。')
     expect((await line('拼团')).note).toBe('记住的产品线「拼团」类目在 pinduoduo（18770），不是天猫的。')

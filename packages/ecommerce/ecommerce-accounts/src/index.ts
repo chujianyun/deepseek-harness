@@ -24,7 +24,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-hub-account'
@@ -37,7 +37,8 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Bridge, SCRIPT, type BridgeReply, type Grant } from './bridge.ts'
-import { applyUpdate, MemoryUpdate, readMemory, writeMemory } from './memory.ts'
+import { writeJsonAtomic } from './files.ts'
+import { applyUpdate, DamagedMemory, MemoryUpdate, readMemory } from './memory.ts'
 import { Cdp, closeBlankTabs, hideWindows, pageTabs, probe, showSignIn, type ProbeResult } from './cdp.ts'
 import { alive, closeChrome, ensureTab, findChrome, launchChrome, profileHolder, readRecord, type ChromeInfo } from './chrome.ts'
 import { guardBrowser, type GuardRules } from './guard.ts'
@@ -140,6 +141,15 @@ const today = (): string => new Date().toLocaleDateString('sv')
 
 /** A refusal the command prints to stderr. */
 const refused = (message: string): BridgeReply => ({ status: 409, body: message })
+
+/**
+ * The reply for a memory file that cannot be read, which DSH leaves as it is.
+ * @param error - what reading it threw, a {@link DamagedMemory}.
+ * @returns the refusal.
+ */
+function damaged(error: unknown): BridgeReply {
+  return refused(`DSH: the publishing memory file is damaged (${(error as DamagedMemory).message}), so nothing was read or changed. Tell the user; it is publish-memory.json beside the e-commerce accounts.`)
+}
 
 /** What makes two accounts the same: platform, kind, and account name. */
 const identity = (item: Pick<EcommerceAccountView, 'platform' | 'kind' | 'account'>): string => `${item.platform}/${item.kind}/${item.account}`
@@ -601,7 +611,11 @@ export class EcommerceAccountsService extends TypertRemoteService {
   /** Answer `dsh-ecommerce memory`: the tenant's publishing memory. */
   private async modelMemory(grant: Grant): Promise<BridgeReply> {
     if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
-    return { status: 200, body: JSON.stringify(await readMemory(this.memoryPath(grant.tenantId)), null, 2) }
+    try {
+      return { status: 200, body: JSON.stringify(await readMemory(this.memoryPath(grant.tenantId)), null, 2) }
+    } catch (error) {
+      return damaged(error)
+    }
   }
 
   /**
@@ -609,22 +623,28 @@ export class EcommerceAccountsService extends TypertRemoteService {
    * @returns the memory after the change, or why the file was refused.
    */
   private modelRemember(grant: Grant, body: string): Promise<BridgeReply> {
-    if (grant.tenantId !== this.tenantId) return Promise.resolve(refused(SIGNED_OUT_OF_HUB))
-    let json: unknown
-    try {
-      json = JSON.parse(body)
-    } catch (error) {
-      return Promise.resolve(refused(`DSH: what to remember is not JSON: ${(error as Error).message}`))
-    }
-    const update = MemoryUpdate.safeParse(json)
-    if (!update.success) {
-      const problems = update.error.issues.map(issue => `${issue.path.join('.') || '(top level)'}: ${issue.message}`)
-      return Promise.resolve(refused(`DSH: nothing was remembered, the file is not as described: ${problems.join('; ')}`))
-    }
-    const path = this.memoryPath(grant.tenantId)
+    // Checked in the queue, so a switch of tenant queued ahead of this write signs the call's tenant out.
     return this.serialized(async () => {
-      const memory = applyUpdate(await readMemory(path), update.data, new Date().toISOString())
-      await writeMemory(path, memory)
+      if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
+      let json: unknown
+      try {
+        json = JSON.parse(body)
+      } catch (error) {
+        return refused(`DSH: what to remember is not JSON: ${(error as Error).message}`)
+      }
+      const update = MemoryUpdate.safeParse(json)
+      if (!update.success) {
+        const problems = update.error.issues.map(issue => `${issue.path.join('.') || '(top level)'}: ${issue.message}`)
+        return refused(`DSH: nothing was remembered, the file is not as described: ${problems.join('; ')}`)
+      }
+      const path = this.memoryPath(grant.tenantId)
+      let memory
+      try {
+        memory = applyUpdate(await readMemory(path), update.data, new Date().toISOString())
+      } catch (error) {
+        return damaged(error)
+      }
+      await writeJsonAtomic(path, memory)
       return { status: 200, body: JSON.stringify(memory, null, 2) }
     })
   }
@@ -903,11 +923,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
   }
 
   private async saveLedger(tenantId: string): Promise<void> {
-    const path = join(this.root, tenantId, 'accounts.json')
-    await mkdir(join(this.root, tenantId), { recursive: true })
     const ledger = { version: 1, accounts: this.entries, ...this.dailyPages === undefined ? {} : { buyerDailyPages: this.dailyPages } }
-    await writeFile(`${path}.tmp`, `${JSON.stringify(ledger, null, 2)}\n`)
-    await rename(`${path}.tmp`, path)
+    await writeJsonAtomic(join(this.root, tenantId, 'accounts.json'), ledger)
   }
 
   private setStatus(accountId: string, status: EcommerceAccountStatus): void {

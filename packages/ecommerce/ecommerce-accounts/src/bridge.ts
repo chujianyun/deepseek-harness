@@ -117,12 +117,12 @@ export class Bridge {
 async function readBody(request: AsyncIterable<Buffer>): Promise<string | undefined> {
   const chunks: Buffer[] = []
   let size = 0
+  // The whole body is read even when too large, so the connection stays open for the refusal.
   for await (const chunk of request) {
     size += chunk.length
-    if (size > MAX_BODY) return undefined
-    chunks.push(chunk)
+    if (size <= MAX_BODY) chunks.push(chunk)
   }
-  return Buffer.concat(chunks).toString('utf8')
+  return size > MAX_BODY ? undefined : Buffer.concat(chunks).toString('utf8')
 }
 
 /** The `dsh-ecommerce` command: POSIX shell and curl, so it needs nothing DSH ships. */

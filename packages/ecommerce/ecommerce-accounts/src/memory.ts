@@ -6,8 +6,7 @@
  * at `<dshHome>/ecommerce/<tenantId>/publish-memory.json`, so one company never sees another's.
  */
 
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 
 /** A field value: one text, or several for a multi-choice field. */
@@ -53,24 +52,46 @@ export const EMPTY_MEMORY: PublishMemory = { stores: {}, categories: {}, columns
 /** The SKU fields a header can be remembered for, as the product-draft skill names them. */
 export const SKU_FIELDS = ['index', 'name', 'code', 'count', 'price', 'stock', 'unitPrice', 'ignore'] as const
 
-const text = z.string().trim().min(1).max(500)
-const value = z.union([text, z.array(text).min(1).max(50)])
+/** Names that would reach an object's prototype instead of being a key. */
+const RESERVED: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype'])
 
-/** What `dsh-ecommerce remember` accepts: any of the four parts; a null value forgets that entry. */
+const text = z.string().trim().min(1).max(500)
+const key = text.refine(name => !RESERVED.has(name), 'this name cannot be used')
+const value = z.union([text, z.array(text).min(1).max(50)])
+const catId = z.string().regex(/^\d+$/u)
+
+/**
+ * What `dsh-ecommerce remember` accepts: any of these parts. In `store.values` and `columns` a null value
+ * forgets that entry; `forget` removes remembered categories and declarations.
+ */
 export const MemoryUpdate = z.object({
-  store: z.object({ name: text, values: z.record(text, value.nullable()) }).strict().optional(),
-  category: z.object({ line: text, platform: text, catId: z.string().regex(/^\d+$/u), categoryPath: z.string().max(500).default('') }).strict().optional(),
-  columns: z.record(text, z.enum(SKU_FIELDS).nullable()).optional(),
+  store: z.object({ name: key, values: z.record(key, value.nullable()) }).strict().optional(),
+  category: z.object({ line: key, platform: text, catId, categoryPath: z.string().max(500).default('') }).strict().optional(),
+  columns: z.record(key, z.enum(SKU_FIELDS).nullable()).optional(),
   declarations: z.object({
-    store: text, catId: z.string().regex(/^\d+$/u), confirmed: z.array(z.object({ key: text, text: z.string().max(2000) }).strict()).min(1),
+    store: key, catId, confirmed: z.array(z.object({ key, text: z.string().max(2000) }).strict()).min(1),
+  }).strict().optional(),
+  forget: z.object({
+    categories: z.array(key).min(1).optional(),
+    /** Declarations of a store and category; without keys, all of them. */
+    declarations: z.array(z.object({ store: key, catId, keys: z.array(key).min(1).optional() }).strict()).min(1).optional(),
   }).strict().optional(),
 }).strict().refine(update => Object.values(update).some(part => part !== undefined), 'nothing to remember')
 
 /** A checked update. */
 export type MemoryUpdate = z.infer<typeof MemoryUpdate>
 
+/** The memory file, as written. */
+const byName = <T extends z.ZodType>(entry: T) => z.record(z.string(), entry)
+const MemoryFile = z.object({
+  stores: byName(z.object({ values: byName(value), updatedAt: z.string() })).default({}),
+  categories: byName(z.object({ platform: z.string(), catId: z.string(), categoryPath: z.string(), updatedAt: z.string() })).default({}),
+  columns: byName(z.object({ field: z.string(), updatedAt: z.string() })).default({}),
+  declarations: byName(byName(byName(z.object({ text: z.string(), confirmedAt: z.string() })))).default({}),
+})
+
 /**
- * Apply an update: values are set, a null value forgets its entry, and everything touched gets the time.
+ * Apply an update: values are set, a null value or `forget` removes entries, and everything touched gets the time.
  * @param memory - the memory now.
  * @param update - what to remember or forget.
  * @param now - the time, ISO.
@@ -92,44 +113,55 @@ export function applyUpdate(memory: PublishMemory, update: MemoryUpdate, now: st
     const { line, ...category } = update.category
     categories[line] = { ...category, updatedAt: now }
   }
+  for (const line of update.forget?.categories ?? []) Reflect.deleteProperty(categories, line)
   const columns = { ...memory.columns }
   for (const [header, field] of Object.entries(update.columns ?? {})) {
     if (field === null) Reflect.deleteProperty(columns, header)
     else columns[header] = { field, updatedAt: now }
   }
-  const declarations = { ...memory.declarations }
+  const declarations: Record<string, Record<string, Record<string, DeclarationMemory>>> = {}
+  for (const [store, byCategory] of Object.entries(memory.declarations)) declarations[store] = { ...byCategory }
   if (update.declarations !== undefined) {
-    const { store, catId, confirmed } = update.declarations
-    const byCategory = { ...declarations[store] }
+    const { store, catId: category, confirmed } = update.declarations
     const added = Object.fromEntries(confirmed.map(item => [item.key, { text: item.text, confirmedAt: now }]))
-    byCategory[catId] = { ...byCategory[catId], ...added }
-    declarations[store] = byCategory
+    declarations[store] = { ...declarations[store], [category]: { ...declarations[store]?.[category], ...added } }
+  }
+  for (const { store, catId: category, keys } of update.forget?.declarations ?? []) {
+    const byCategory = declarations[store]
+    if (byCategory?.[category] === undefined) continue
+    const kept = keys === undefined ? {} : Object.fromEntries(Object.entries(byCategory[category]).filter(([name]) => !keys.includes(name)))
+    if (Object.keys(kept).length === 0) Reflect.deleteProperty(byCategory, category)
+    else byCategory[category] = kept
+    if (Object.keys(byCategory).length === 0) Reflect.deleteProperty(declarations, store)
   }
   return { stores, categories, columns, declarations }
 }
 
-/**
- * Read a company's memory; a missing or damaged file reads as empty.
- * @param path - the file.
- * @returns the memory.
- */
-export async function readMemory(path: string): Promise<PublishMemory> {
-  try {
-    const parsed = JSON.parse(await readFile(path, 'utf8')) as Partial<PublishMemory>
-    return { ...EMPTY_MEMORY, ...parsed }
-  } catch {
-    // A company that remembered nothing has no file; a damaged one starts over rather than block publishing.
-    return EMPTY_MEMORY
-  }
-}
+/** The memory file exists but cannot be read as a memory; it is left as it is. */
+export class DamagedMemory extends Error {}
 
 /**
- * Write a company's memory, replacing the file whole.
+ * Read a company's memory; a missing file reads as empty.
  * @param path - the file.
- * @param memory - the memory.
+ * @returns the memory.
+ * @throws DamagedMemory when the file is not a memory, so nothing overwrites what it held.
  */
-export async function writeMemory(path: string, memory: PublishMemory): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(`${path}.tmp`, `${JSON.stringify(memory, null, 2)}\n`)
-  await rename(`${path}.tmp`, path)
+export async function readMemory(path: string): Promise<PublishMemory> {
+  let raw: string
+  try {
+    raw = await readFile(path, 'utf8')
+  } catch (error) {
+    // A company that remembered nothing has no file yet.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return EMPTY_MEMORY
+    throw new DamagedMemory((error as Error).message)
+  }
+  let json: unknown
+  try {
+    json = JSON.parse(raw)
+  } catch (error) {
+    throw new DamagedMemory((error as Error).message)
+  }
+  const parsed = MemoryFile.safeParse(json)
+  if (!parsed.success) throw new DamagedMemory(parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; '))
+  return parsed.data
 }

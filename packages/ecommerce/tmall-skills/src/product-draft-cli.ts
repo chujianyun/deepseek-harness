@@ -204,7 +204,7 @@ export async function main(argv: readonly string[], deps: Pick<Deps, 'stdout' | 
     let confirmed: Confirmed = {}
     const remembered: string[] = []
     if (options.store !== undefined) {
-      const merged = withMemory(answers, await deps.memory(), options.store, rules?.catId)
+      const merged = withMemory(answers, await deps.memory(), options.store, rules)
       const headers = inventory.tables.flatMap(table => table.columns.map(column => column.header))
       const columns = merged.answers.columns as Readonly<Record<string, string>>
       const fromMemory = Object.keys(columns).filter(header => answers.columns?.[header] === undefined && headers.includes(header))

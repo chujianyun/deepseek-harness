@@ -7,6 +7,7 @@
  */
 
 import type { PublishMemory } from './account.ts'
+import { beijingTime } from './dates.ts'
 import { EXIT, SkillError } from './errors.ts'
 import { itemIdOf } from './item.ts'
 import { fetchJson, signedOut, sleep, type Page } from './page.ts'
@@ -313,7 +314,7 @@ export async function resolveCategory(page: Page, source: CategorySource, contex
       const category = (await context.categories([remembered.catId])).find(c => c.id === remembered.catId)
       return category === undefined
         ? { source, candidates: [], note: `记住的产品线「${source.line}」类目 ${remembered.catId} 现在不能在这家店发布（可能授权已变化）。` }
-        : { source, candidates: [{ category, reason: `记住的产品线「${source.line}」类目（${remembered.updatedAt} 保存）` }] }
+        : { source, candidates: [{ category, reason: `记住的产品线「${source.line}」类目（${beijingTime(new Date(remembered.updatedAt))} 北京时间保存）` }] }
     }
     case 'keyword': {
       await openEntry(page)

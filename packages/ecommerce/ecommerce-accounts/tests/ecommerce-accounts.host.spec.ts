@@ -9,7 +9,8 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { Bridge } from '../src/bridge.ts'
-import { applyUpdate, EMPTY_MEMORY, readMemory, writeMemory } from '../src/memory.ts'
+import { writeJsonAtomic } from '../src/files.ts'
+import { applyUpdate, DamagedMemory, EMPTY_MEMORY, readMemory } from '../src/memory.ts'
 import { SKILL_CONTENT } from '../src/skill.ts'
 import EcommerceAccountsService, {
   DOUDIAN, matchesCheckApi, mtopUserNick, parseJsonOrJsonp, PINDUODUO, PUBLIC_PAGE, RISK_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL,
@@ -960,6 +961,43 @@ describe('publishing memory', () => {
     expect(saved.categories['水多多']).toBeDefined()
   })
 
+  it('forgets a remembered category and declarations, and leaves a damaged file as it is', async () => {
+    const env = await setup()
+    const dir = await tempDir()
+    const run = async (json: unknown) => runCommand(env, varsOf(env, bashCall(`c-${String(Math.random())}`)), 'remember', await write(dir, 'x.json', json))
+    const confirmed = (keys: string[]) => keys.map(key => ({ key, text: key }))
+    await run({
+      category: { line: '水多多', platform: 'tmall', catId: '50024154' },
+      declarations: { store: '名流', catId: '1', confirmed: confirmed(['a', 'b']) },
+    })
+    await run({ declarations: { store: '名流', catId: '2', confirmed: confirmed(['c']) } })
+    const forget = { categories: ['水多多', '无'], declarations: [{ store: '名流', catId: '1', keys: ['a'] }, { store: '别家', catId: '1' }] }
+    type Forgot = { categories: object; declarations: Record<string, Record<string, object>> }
+    const forgot = JSON.parse((await run({ forget })).stdout) as Forgot
+    expect(forgot.categories).toEqual({})
+    expect(Object.keys(forgot.declarations['名流']!['1']!)).toEqual(['b'])
+    const rest = JSON.parse((await run({ forget: { declarations: [{ store: '名流', catId: '1', keys: ['b'] }, { store: '名流', catId: '2' }] } })).stdout) as { declarations: object }
+    expect(rest.declarations).toEqual({})
+    const path = join(env.home, 'ecommerce', 't-a', 'publish-memory.json')
+    await writeFile(path, '{"stores": [')
+    const message = 'DSH: the publishing memory file is damaged'
+    expect((await runCommand(env, varsOf(env, bashCall('c-9')), 'memory')).stderr).toContain(message)
+    expect((await run({ columns: { 价: 'price' } })).stderr).toContain(message)
+    expect(await readFile(path, 'utf8')).toBe('{"stores": [')
+  })
+
+  it('refuses a remember that waited behind a switch of company', async () => {
+    const env = await setup()
+    const dir = await tempDir()
+    const started = varsOf(env, bashCall('c-1'))
+    const file = await write(dir, 'a.json', { columns: { 价: 'price' } })
+    env.hub.set('t-b')
+    expect(await runCommand(env, started, 'remember', file)).toMatchObject({ code: 1, stderr: 'DSH: DSH is signed out of the user center, so there are no e-commerce accounts.\n' })
+    env.hub.set('t-a')
+    await env.settle(s => s.tenantId === 't-a')
+    expect(JSON.parse((await runCommand(env, varsOf(env, bashCall('c-2')), 'memory')).stdout)).toMatchObject({ columns: {} })
+  })
+
   it('keeps each company\'s memory to itself', async () => {
     const env = await setup()
     const dir = await tempDir()
@@ -987,6 +1025,9 @@ describe('publishing memory', () => {
     expect((await run({ store: { name: '名流', values: { 品牌: '' } } })).stderr).toContain('store.values.品牌')
     expect((await run({ declarations: { store: '名流', catId: '1', confirmed: [] } })).stderr).toContain('declarations.confirmed')
     expect((await run({ shops: {} })).code).toBe(1)
+    expect(JSON.parse((await run('{"store":{"name":"名流","values":{"__proto__":"x"}}}')).stdout)).toMatchObject({ stores: {} })
+    expect((await run({ store: { name: 'prototype', values: { a: 'x' } } })).stderr).toContain('this name cannot be used')
+    expect((await run({ columns: { constructor: 'price' } })).stderr).toContain('columns.constructor')
     expect(await runCommand(env, varsOf(env, bashCall('c-1')), 'remember')).toMatchObject({ code: 2 })
     expect(await runCommand(env, varsOf(env, bashCall('c-1')), 'remember', join(dir, 'none.json'))).toMatchObject({ code: 2 })
     const big = await write(dir, 'big.json', JSON.stringify({ store: { name: 'x', values: { a: 'y'.repeat(300 * 1024) } } }))
@@ -994,17 +1035,20 @@ describe('publishing memory', () => {
     expect(JSON.parse((await runCommand(env, varsOf(env, bashCall('c-3')), 'memory')).stdout)).toEqual({ stores: {}, categories: {}, columns: {}, declarations: {} })
   })
 
-  it('reads a damaged memory file as empty, and fills in parts an older file lacks', async () => {
+  it('reads a missing memory as empty, refuses a damaged one, and fills in parts an older file lacks', async () => {
     const dir = await tempDir()
     expect(await readMemory(join(dir, 'none.json'))).toEqual(EMPTY_MEMORY)
     await writeFile(join(dir, 'bad.json'), '{')
-    expect(await readMemory(join(dir, 'bad.json'))).toEqual(EMPTY_MEMORY)
+    await expect(readMemory(join(dir, 'bad.json'))).rejects.toBeInstanceOf(DamagedMemory)
+    await writeFile(join(dir, 'shape.json'), '{"stores":null}')
+    await expect(readMemory(join(dir, 'shape.json'))).rejects.toThrow('stores')
+    await expect(readMemory(dir)).rejects.toBeInstanceOf(DamagedMemory)
     await writeFile(join(dir, 'old.json'), '{"stores":{"a":{"values":{"b":"c"},"updatedAt":"t"}}}')
     expect(await readMemory(join(dir, 'old.json'))).toEqual({ ...EMPTY_MEMORY, stores: { a: { values: { b: 'c' }, updatedAt: 't' } } })
     const memory = applyUpdate(EMPTY_MEMORY, { declarations: { store: 's', catId: '1', confirmed: [{ key: 'k', text: 't' }] } }, 'now')
     expect(applyUpdate(memory, { declarations: { store: 's', catId: '1', confirmed: [{ key: 'j', text: 'u' }] } }, 'later').declarations)
       .toEqual({ s: { 1: { k: { text: 't', confirmedAt: 'now' }, j: { text: 'u', confirmedAt: 'later' } } } })
-    await writeMemory(join(dir, 'deep', 'm.json'), memory)
+    await writeJsonAtomic(join(dir, 'deep', 'm.json'), memory)
     expect(await readMemory(join(dir, 'deep', 'm.json'))).toEqual(memory)
   })
 })
