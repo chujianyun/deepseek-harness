@@ -102,11 +102,18 @@ export async function searchCategories(page: Page, keyword: string): Promise<Dou
  * @throws SkillError usage when Douyin shop has no such category.
  */
 export async function categoryById(page: Page, catId: string): Promise<DoudianCategory> {
-  const opened = await openedTops(page)
   const data = await doudianCall<readonly CategoryLine[] | null>(page, 'GET', `/product/tproduct/getCategoryDetail?category_leaf_ids=${encodeURIComponent(catId)}`)
-  const found = data?.[0] === undefined ? undefined : categoryOfLine(data[0], opened)
-  if (found === undefined) throw new SkillError(`抖店没有类目 ${catId}。`, EXIT.usage)
-  return found
+  const line = data?.[0]
+  const found = line === undefined ? undefined : categoryOfLine(line, new Set())
+  if (line === undefined || found === undefined) throw new SkillError(`抖店没有类目 ${catId}。`, EXIT.usage)
+  // The store may open a top-level category only in part, so every level must be among the store's own children of the one above.
+  const ids = [line.first_cid, line.second_cid, line.third_cid, line.fourth_cid].slice(0, found.path.length).map(String)
+  let parent = '0'
+  for (const id of ids) {
+    if (!(await childCategories(page, parent)).some(child => child.id === id)) return { ...found, usable: false }
+    parent = id
+  }
+  return { ...found, usable: true }
 }
 
 /** A prediction task's state. */
@@ -214,12 +221,14 @@ export const READ_FORM = `(() => {
  */
 export async function readForm(page: Page): Promise<DoudianForm> {
   const read: { form: DoudianForm | null } = { form: null }
-  await page.waitFor(async () => {
+  const loaded = await page.waitFor(async () => {
     read.form = await page.evaluate<DoudianForm | null>(READ_FORM)
     const { form } = read
     return form !== null && form.properties.length > 0 && form.qualifications.every(item => !item.required || item.options.length > 0)
   }, 30_000)
   if (read.form === null) throw new SkillError('抖店发品页没有给出表单，页面可能已改版。', EXIT.failed)
+  // A form that never listed its category properties has not loaded; an empty qualification library is the store's own state.
+  if (!loaded && read.form.properties.length === 0) throw new SkillError('抖店发品页 30 秒内没有加载出类目属性，请稍后重试。', EXIT.failed)
   return read.form
 }
 
@@ -228,6 +237,17 @@ export const propertyKey = (id: string): string => `p-${id}`
 
 /** The key a qualification is checked under. */
 export const qualificationKey = (id: string): string => `q-${id}`
+
+/**
+ * The text a qualification library entry is chosen by: its name, with its id when another entry of the
+ * same qualification has the same name.
+ * @param item - the qualification.
+ * @param option - one of its library entries.
+ * @returns the text.
+ */
+export function libraryText(item: FormQualification, option: FormQualification['options'][number]): string {
+  return item.options.filter(entry => entry.label === option.label).length > 1 ? `${option.label}（${option.value}）` : option.label
+}
 
 /**
  * Write a category's form as field rules: title, main and detail images, the category properties,
@@ -250,7 +270,7 @@ export function doudianRules(catId: string, path: readonly string[], form: Doudi
   })
   const qualifications = form.qualifications.filter(item => item.required || item.options.length > 0).map((item): FieldRule => ({
     key: qualificationKey(item.id), label: `资质：${item.label}`, uiType: 'select', required: item.required, propGroup: 'qualification', visible: true,
-    options: item.options.map(option => ({ value: option.value, text: option.label })),
+    options: item.options.map(option => ({ value: option.value, text: libraryText(item, option) })),
   }))
   const choices = (items: readonly Choice[]) => items.map(item => ({ value: item.value, text: item.label }))
   return {

@@ -59,17 +59,24 @@ export const FIND_STORE = `(() => {
 })()`
 
 /**
- * Makes the page refuse to send an item submit that is not a draft save: `addWithSchema` and
- * `editWithSchema` go out only with `check_status=1`, whatever the page's code asks for.
+ * Makes the page refuse to send an item submit that is not a draft save, whichever way the page sends
+ * it (`XMLHttpRequest`, `fetch`, or `sendBeacon`): the item submits `addWithSchema` and `editWithSchema`
+ * go out only with `check_status=1`, the page's draft save.
  */
 export const GUARD = `(() => {
   if (window.__dshDraftGuard) return true
-  const open = XMLHttpRequest.prototype.open
-  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-    const address = String(url)
-    if (/\\/(addWithSchema|editWithSchema)/.test(address) && !/[?&]check_status=1(&|$)/.test(address)) throw new Error('DSH 只允许保存草稿，已拦截：' + address.split('?')[0])
-    return open.call(this, method, url, ...rest)
+  const refused = (url) => {
+    const address = String(url && url.url || url)
+    const path = address.split('?')[0]
+    return /\\/(addWithSchema|editWithSchema)$/.test(path) && !/[?&]check_status=1(&|$)/.test(address)
   }
+  const stop = (url) => { throw new Error('DSH 只允许保存草稿，已拦截：' + String(url && url.url || url).split('?')[0]) }
+  const open = XMLHttpRequest.prototype.open
+  XMLHttpRequest.prototype.open = function (method, url, ...rest) { if (refused(url)) stop(url); return open.call(this, method, url, ...rest) }
+  const fetch = window.fetch
+  window.fetch = function (input, init) { if (refused(input)) return Promise.reject(new Error('DSH 只允许保存草稿，已拦截')); return fetch.call(this, input, init) }
+  const beacon = navigator.sendBeacon && navigator.sendBeacon.bind(navigator)
+  if (beacon) navigator.sendBeacon = (url, data) => refused(url) ? false : beacon(url, data)
   window.__dshDraftGuard = true
   return true
 })()`

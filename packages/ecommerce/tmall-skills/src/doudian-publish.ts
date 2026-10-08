@@ -8,7 +8,7 @@
 
 import type { FieldCheck } from './draft.ts'
 import { doudianCall, FIND_STORE, GUARD } from './doudian.ts'
-import { propertyKey, qualificationKey, type DoudianForm } from './doudian-category.ts'
+import { libraryText, propertyKey, qualificationKey, type DoudianForm } from './doudian-category.ts'
 import { EXIT, SkillError } from './errors.ts'
 import type { Page } from './page.ts'
 import { titleOf, type DraftFile } from './publish-common.ts'
@@ -127,7 +127,7 @@ export function formValues(input: ValuesInput): { readonly first: Record<string,
   const qualifications: Record<string, object> = {}
   for (const item of form.qualifications) {
     const chosen = filledOf(checks, qualificationKey(item.id))?.[0]
-    const option = item.options.find(entry => entry.label === chosen)
+    const option = item.options.find(entry => libraryText(item, entry) === chosen)
     if (option === undefined) continue
     qualifications[item.id] = { select_attachments: [{
       quality_attachment_id: option.value, quality_attachments: option.urls.map(url => ({ media_type: 1, url })),
@@ -173,20 +173,26 @@ export function formValues(input: ValuesInput): { readonly first: Record<string,
 
 /**
  * Sets the first pass into the page's form store, lets the page open the fields it depends on, sets the
- * second pass, checks the form is 下架 and holds the reference price that was set, and runs the page's own draft save.
- * Answers `{ product_id }`, `{ refused }` with the page's error, `{ notOffSale }`, `{ needsWeight }` when
- * the freight template asks for a weight the draft lacks, or `{ dropped }` naming a value the form left out.
+ * second pass (a weight only where the freight template shows the field), checks the form is 下架 and
+ * holds the reference price that was set, and runs the page's own draft save. Answers `{ product_id }`,
+ * `{ refused }` with the page's error, `{ notOffSale }`, `{ needsWeight }` when the freight template asks
+ * for a weight the draft lacks, `{ dropped }` naming a value the form left out, or `{ notReady }` when the
+ * form could not be set; in all but the first nothing is sent.
  */
 const SAVE = (first: Readonly<Record<string, unknown>>, second: Readonly<Record<string, unknown>>) => `(async () => {
   const s = window.__dshGoodsStore
-  for (const [key, value] of Object.entries(${JSON.stringify(first)})) s.form.node(key).setValue(value)
-  await new Promise(resolve => setTimeout(resolve, 4000))
   const second = ${JSON.stringify(second)}
-  for (const [key, value] of Object.entries(second)) s.form.node(key).setValue(value)
-  await new Promise(resolve => setTimeout(resolve, 1500))
-  const model = s.formatSchemaData().model
-  if (!model.start_sale_type || model.start_sale_type.value !== '1') return { notOffSale: true }
-  if (model.weight_unit && !('weight_value' in second)) return { needsWeight: true }
+  let model
+  try {
+    for (const [key, value] of Object.entries(${JSON.stringify(first)})) s.form.node(key).setValue(value)
+    await new Promise(resolve => setTimeout(resolve, 4000))
+    const weightShown = (() => { const n = s.form.node('weight_unit'); return !!n && n.state.visible !== false && 'weight_unit' in s.formatSchemaData().model })()
+    for (const [key, value] of Object.entries(second)) if (!key.startsWith('weight') || weightShown) s.form.node(key).setValue(value)
+    await new Promise(resolve => setTimeout(resolve, 1500))
+    model = s.formatSchemaData().model
+    if (!model.start_sale_type || model.start_sale_type.value !== '1') return { notOffSale: true }
+    if (weightShown && !('weight_value' in second)) return { needsWeight: true }
+  } catch (e) { return { notReady: String((e && e.message) || e) } }
   // A weight the freight template does not ask for stays out of the form; a reference price may not.
   const dropped = Object.keys(second).filter(key => key.startsWith('reference_price')).find(key => !model[key] || model[key].value == null || model[key].value === '')
   if (dropped) return { dropped }
@@ -198,20 +204,21 @@ const SAVE = (first: Readonly<Record<string, unknown>>, second: Readonly<Record<
  * @param page - the new-item page.
  * @param values - the two passes of form values.
  * @returns the saved product's id.
- * @throws NotSent when the form is not 下架, left out the reference price, or the freight template asks
- *   for a weight the draft lacks; DraftRefused when Douyin shop refuses the draft; SkillError failed when
+ * @throws NotSent when the form cannot be set, is not 下架, left out the reference price, or the freight
+ *   template asks for a weight the draft lacks; DraftRefused when Douyin shop refuses the draft; SkillError failed when
  *   no answer comes in time.
  */
 export async function saveDraft(page: Page, values: ReturnType<typeof formValues>): Promise<string> {
   if (!await page.evaluate<boolean>(FIND_STORE)) throw new SkillError('抖店发品页没有给出表单，页面可能已改版。', EXIT.failed)
   await page.evaluate<boolean>(GUARD)
-  type Answer = { product_id?: string; refused?: string; notOffSale?: boolean; needsWeight?: boolean; dropped?: string }
+  type Answer = { product_id?: string; refused?: string; notOffSale?: boolean; needsWeight?: boolean; dropped?: string; notReady?: string }
   const answer = await within(page.evaluate<Answer>(
     SAVE(values.first, values.second),
   ), 180_000, '保存草稿')
   if (answer.notOffSale === true) throw new NotSent('表单的商品状态不是「下架」，没有保存。', EXIT.failed)
   if (answer.needsWeight === true) throw new NotSent('选的运费模板要按重量计费，需要商品重量（克）；没有保存。请用户补上重量后再存。', EXIT.usage)
   if (answer.dropped !== undefined) throw new NotSent(`抖店发品页没有接受 ${answer.dropped} 的值，没有保存。`, EXIT.failed)
+  if (answer.notReady !== undefined) throw new NotSent(`抖店发品页的表单写不进去（${answer.notReady}），没有保存。`, EXIT.failed)
   if (answer.product_id === undefined) throw new DraftRefused(`抖店没有保存草稿，原因：${answer.refused ?? '无应答'}`, EXIT.failed)
   return answer.product_id
 }

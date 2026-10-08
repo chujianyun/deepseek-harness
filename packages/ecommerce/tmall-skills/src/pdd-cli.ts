@@ -23,7 +23,6 @@ import { readImage } from './images.ts'
 import type { Page } from './page.ts'
 import {
   categoryById, childCategories, createSession, pddRules, predictCategories, readLimits, readTemplate, searchCategories, setCategory,
-  type PddCategory,
 } from './pdd-category.ts'
 import {
   buildGoods, extraPrices, listDrafts, listGoods, readSession, saveDraft, specIdFor, uploadPddImage, type DraftRow,
@@ -31,7 +30,8 @@ import {
 import { openPdd, PDD_GOODS_URL, PddRefusal } from './pdd.ts'
 import { parseRulesFile } from './product-draft-cli.ts'
 import {
-  blockers, codesOf, parsePublishOptions, readRecords, sameProduct, titleOf, unsettled, writeRecord, type DraftFile, type PublishOptions,
+  blockers, categoriesText as listCategories, codesOf, parsePublishOptions, readRecords, sameProduct, titleOf, unsettled, writeRecord,
+  type CandidateCategory, type DraftFile, type PublishOptions,
   type PublishRecord,
 } from './publish-common.ts'
 
@@ -102,13 +102,7 @@ export function parseCategoryOptions(argv: readonly string[]): CategoryOptions {
 }
 
 /** The category lines for the model. */
-function categoriesText(categories: readonly PddCategory[], reason: string): string {
-  if (categories.length === 0) return `没有找到类目（${reason}）。`
-  const usable = categories.filter(category => category.usable)
-  const lines = usable.map((category, at) => `${String(at + 1)}. ${category.path.join(' > ')}（类目 id ${category.id}）—— ${reason}`)
-  const refused = categories.filter(category => !category.usable).map(category => category.path.join(' > '))
-  return [lines.length === 0 ? '这家店都不能在这些类目发布。' : lines.join('\n'), ...refused.length === 0 ? [] : [`这家店不能用（缺资质）：${refused.join('；')}`]].join('\n')
-}
+const categoriesText = (categories: readonly CandidateCategory[], reason: string): string => listCategories(categories, reason, '缺资质')
 
 async function resolveCategory(page: Page, source: PddSource, deps: Deps): Promise<string> {
   switch (source.kind) {

@@ -21,7 +21,7 @@ import { beijingTime } from './dates.ts'
 import type { FieldCheck } from './draft.ts'
 import { createUrl, DOUDIAN_CREATE_URL, DOUDIAN_DRAFTS_URL, FIND_STORE, openDoudian } from './doudian.ts'
 import {
-  categoryById, childCategories, doudianRules, predictCategories, readForm, searchCategories, type DoudianCategory,
+  categoryById, childCategories, doudianRules, libraryText, predictCategories, readForm, searchCategories,
 } from './doudian-category.ts'
 import {
   DraftRefused, extras, findProducts, formValues, listDrafts, NotSent, onSale, saveDraft, uploadDoudianImage,
@@ -31,7 +31,8 @@ import { readImage } from './images.ts'
 import type { Page } from './page.ts'
 import { parseRulesFile } from './product-draft-cli.ts'
 import {
-  blockers, codesOf, parsePublishOptions, readRecords, sameProduct, titleOf, unsettled, writeRecord, type DraftFile, type PublishOptions,
+  blockers, categoriesText as listCategories, codesOf, parsePublishOptions, readRecords, sameProduct, titleOf, unsettled, writeRecord,
+  type CandidateCategory, type DraftFile, type PublishOptions,
   type PublishRecord,
 } from './publish-common.ts'
 
@@ -102,14 +103,7 @@ export function parseCategoryOptions(argv: readonly string[]): CategoryOptions {
 }
 
 /** The category lines for the model. */
-function categoriesText(categories: readonly DoudianCategory[], reason: string): string {
-  if (categories.length === 0) return `没有找到类目（${reason}）。`
-  const usable = categories.filter(category => category.usable)
-  const lines = usable.map((category, at) => `${String(at + 1)}. ${category.path.join(' > ')}（类目 id ${category.id}）—— ${reason}`)
-  const refused = categories.filter(category => !category.usable).map(category => category.path.join(' > '))
-  const more = refused.length > 5 ? ` 等 ${String(refused.length)} 个` : ''
-  return [lines.length === 0 ? '这家店都没有开通这些类目。' : lines.join('\n'), ...refused.length === 0 ? [] : [`这家店没有开通：${refused.slice(0, 5).join('；')}${more}`]].join('\n')
-}
+const categoriesText = (categories: readonly CandidateCategory[], reason: string): string => listCategories(categories, reason, '未开通')
 
 async function resolveCategory(page: Page, source: DoudianSource, deps: Deps): Promise<string> {
   switch (source.kind) {
@@ -147,7 +141,9 @@ async function categoryCommand(page: Page, options: CategoryOptions, deps: Deps,
       const form = await readForm(page)
       const rules = doudianRules(options.catId, category.path, form)
       // The library's entries are named by upload time; their images tell them apart.
-      const images = Object.fromEntries(form.qualifications.flatMap(item => item.options.map(option => [option.label, option.urls])))
+      const images = Object.fromEntries(form.qualifications.flatMap(
+        item => item.options.map(option => [libraryText(item, option), option.urls]),
+      ))
       const out = resolve(options.out)
       await mkdir(out, { recursive: true })
       const path = join(out, `字段规则_${options.catId}.json`)
@@ -177,6 +173,9 @@ async function alreadySaved(
   }
   const same = (await findProducts(page, title)).find(row => row.title === title)
   if (same !== undefined) return { id: same.productId, how: same.draftStatus === 1 ? '草稿箱里已有同名草稿' : '商品列表里已有同名商品' }
+  // The product search may leave out drafts, so the 草稿箱 is read as well.
+  const draft = (await listDrafts(page)).find(row => row.title === title)
+  if (draft !== undefined) return { id: draft.productId, how: '草稿箱里已有同名草稿' }
   return undefined
 }
 
@@ -241,7 +240,7 @@ async function save(page: Page, account: MerchantBrowser, draft: DraftFile, opti
     if (refused) throw error
     throw new SkillError(`保存后没有拿到抖店的答复（${(error as Error).message}），结果不明。不要重试，先运行 check 查店里。`, EXIT.failed)
   }
-  let state: 'saved' | 'on-sale' | 'unknown'
+  let state: Awaited<ReturnType<typeof draftState>>
   try {
     state = await draftState(page, productId)
   } catch (error) {
@@ -251,6 +250,7 @@ async function save(page: Page, account: MerchantBrowser, draft: DraftFile, opti
   }
   await writeRecord(recordPath, { ...record, itemId: productId, status: state, at: deps.now().toISOString() })
   if (state === 'on-sale') throw new SkillError(`抖店把商品 ID ${productId} 放到了「售卖中」！请用户立即到抖店后台下架它。`, EXIT.failed)
+  if (state === 'not-draft') throw new SkillError(`抖店把商品 ID ${productId} 存成了草稿以外的状态！请用户立即到抖店后台查看它，确认没有提交审核或上架。`, EXIT.failed)
   if (state === 'unknown') throw new SkillError(`抖店答复已保存（商品 ID ${productId}），但草稿箱里暂时查不到它。不要重试，稍后运行 check 查店里。`, EXIT.failed)
   return [
     `已保存到店铺 ${account.store} 的草稿箱（商品状态：下架，没有提交审核）：商品 ID ${productId}，标题「${title}」。`,
@@ -259,11 +259,12 @@ async function save(page: Page, account: MerchantBrowser, draft: DraftFile, opti
   ].join('\n')
 }
 
-/** Where a saved product is: on sale, a draft, or not listed yet. */
-async function draftState(page: Page, productId: string): Promise<'saved' | 'on-sale' | 'unknown'> {
+/** Where a saved product is: on sale, a draft, a product that is not a draft, or not listed yet. */
+async function draftState(page: Page, productId: string): Promise<'saved' | 'on-sale' | 'not-draft' | 'unknown'> {
   if ((await onSale(page, productId)).some(row => row.productId === productId)) return 'on-sale'
   const listed = await page.waitFor(async () => (await listDrafts(page, 50)).some(row => row.productId === productId), 30_000)
-  return listed ? 'saved' : 'unknown'
+  if (listed) return 'saved'
+  return (await findProducts(page, productId)).some(row => row.productId === productId && row.draftStatus !== 1) ? 'not-draft' : 'unknown'
 }
 
 /** Upload every image the form uses: up to 5 main images, the detail images, the SKU images, and the reference price's proof. */

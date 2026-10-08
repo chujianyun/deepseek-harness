@@ -429,7 +429,7 @@ describe('pdd-publish script', () => {
     const deps = () => fakeDeps(page())
     const search = deps()
     expect(await main(['resolve', '--account', 'a', '--keyword', 'x'], search)).toBe(0)
-    expect(search.out.join('')).toBe('这家店都不能在这些类目发布。\n这家店不能用（缺资质）：医疗\n')
+    expect(search.out.join('')).toBe('这家店都不能用这些类目。\n这家店不能用（缺资质）：医疗\n')
     const empty = fakeDeps(new FakePage([on('__dshPdd', ok({ cat_info_v2_lists: [] })), on('', true)]))
     expect(await main(['resolve', '--account', 'a', '--keyword', 'x'], empty)).toBe(0)
     expect(empty.out.join('')).toBe('没有找到类目（拼多多类目搜索「x」）。\n')

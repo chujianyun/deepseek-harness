@@ -60,6 +60,23 @@ const FORM: DoudianForm = {
 
 const LINE = { first_cid: 1000000480, second_cid: 1000000495, third_cid: 1000000638, fourth_cid: 0, first_name: '医疗器械及保健用品', second_name: '计生用品', third_name: '避孕套' }
 
+/** The store's opened categories under each parent. */
+const CHILDREN: Record<string, object[]> = {
+  0: [{ id: 1000000480, name: '医疗器械及保健用品', is_leaf: false }],
+  1000000480: [{ id: 1000000495, name: '计生用品', is_leaf: false }],
+  1000000495: [{ id: 1000000638, name: '避孕套', is_leaf: true }, { id: 7, name: '更多', is_leaf: false }],
+}
+
+/** Category paths by leaf id; `5` sits under an opened top-level category the store did not open below. */
+const DETAILS: Record<string, object[]> = {
+  1000000638: [{
+    first_cid: 1000000480, second_cid: 1000000495, third_cid: 1000000638, fourth_cid: 0,
+    first_cname: '医疗器械及保健用品', second_cname: '计生用品', third_cname: '避孕套',
+  }],
+  9: [{ first_cid: 9, first_cname: '药品' }],
+  5: [{ first_cid: 1000000480, second_cid: 5, first_cname: '医疗器械及保健用品', second_cname: '理疗' }],
+}
+
 /** The Douyin shop backend as its seller pages call it. */
 class Shop {
   products: { product_id: string; name: string; draft_status: number; status: number; check_status: number }[] = [
@@ -68,7 +85,7 @@ class Shop {
   readonly uploads: string[] = []
   readonly saves: { first: Record<string, unknown>; second: Record<string, unknown> }[] = []
   /** What the page's own save does. */
-  saving: 'drafts' | 'on-sale' | 'nowhere' | 'refused' | 'silent' | 'lost' | 'not-off-sale' | 'needs-weight' | 'dropped' = 'drafts'
+  saving: 'drafts' | 'on-sale' | 'not-draft' | 'nowhere' | 'refused' | 'silent' | 'lost' | 'not-off-sale' | 'needs-weight' | 'dropped' = 'drafts'
   signedOut = false
   hasStore = true
   /** Polls a prediction takes. */
@@ -100,6 +117,9 @@ class Shop {
           case 'silent': return {}
           case 'lost': return new Error('Network Error')
           case 'nowhere': return { product_id: id }
+          case 'not-draft':
+            this.products.unshift({ product_id: id, name: String(first.title), draft_status: 0, status: 1, check_status: 1 })
+            return { product_id: id }
           default:
             this.products.unshift({ product_id: id, name: String(first.title), draft_status: this.saving === 'drafts' ? 1 : 0, status: 0, check_status: this.saving === 'drafts' ? 1 : 3 })
             return { product_id: id }
@@ -118,14 +138,11 @@ class Shop {
     const params = new URLSearchParams(query)
     switch (`${method} ${route}`) {
       case 'GET /product/tproduct/categoryOptionsN':
-        return ok(params.get('cid') === '0' ? [{ id: 1000000480, name: '医疗器械及保健用品', is_leaf: false }]
-          : params.get('cid') === '1000000495' ? [{ id: 1000000638, name: '避孕套', is_leaf: true }, { id: 7, name: '更多', is_leaf: false }] : null)
+        return ok(CHILDREN[params.get('cid') ?? ''] ?? null)
       case 'GET /product/tproduct/searchCategoryN':
         return ok([LINE, { first_cid: 1000005784, second_cid: 1000005794, third_cid: 1000005946, first_name: '母婴用品', second_name: '孕产妇用品', third_name: '待产用品' }, { first_cid: 0 }])
       case 'GET /product/tproduct/getCategoryDetail':
-        return ok(params.get('category_leaf_ids') === '1000000638'
-          ? [{ first_cid: 1000000480, second_cid: 1000000495, third_cid: 1000000638, fourth_cid: 0, first_cname: '医疗器械及保健用品', second_cname: '计生用品', third_cname: '避孕套' }]
-          : params.get('category_leaf_ids') === '9' ? [{ first_cid: 9, first_cname: '药品' }] : [])
+        return ok(DETAILS[params.get('category_leaf_ids') ?? ''] ?? [])
       case 'POST /product/tproduct/predictCategoryN': {
         if (body?.async_task_id === undefined) return ok({ async_task_id: 't1', async_task_status: 'init', candidate_category_details: null })
         this.predictPolls -= 1
@@ -244,6 +261,7 @@ describe('Douyin shop categories', () => {
     expect((await searchCategories(page, '避孕套')).map(category => [category.id, category.usable])).toEqual([['1000000638', true], ['1000005946', false]])
     expect(await categoryById(page, '1000000638')).toEqual({ id: '1000000638', path: ['医疗器械及保健用品', '计生用品', '避孕套'], usable: true })
     expect((await stopped(categoryById(page, '1'))).exitCode).toBe(EXIT.usage)
+    expect((await categoryById(page, '5')).usable).toBe(false)
     shop.predictPolls = 2
     const polling = new FakePage([on('publishId', '1949'), ...shop.routes()])
     polling.waitFor = async (condition) => { for (let i = 0; i < 3; i++) if (await condition()) return true; return false }
@@ -265,6 +283,11 @@ describe('Douyin shop categories', () => {
     expect(await readForm(shop.page())).toEqual(FORM)
     shop.hasStore = false
     expect((await stopped(readForm(shop.page()))).message).toContain('没有给出表单')
+    const empty = new FakePage([expression => expression === READ_FORM ? { ...FORM, properties: [] } : undefined])
+    expect((await stopped(readForm(empty))).message).toBe('抖店发品页 30 秒内没有加载出类目属性，请稍后重试。')
+    const unfilled = { ...FORM, qualifications: [{ ...FORM.qualifications[0]!, options: [] }] }
+    const library = new FakePage([expression => expression === READ_FORM ? unfilled : undefined])
+    expect((await readForm(library)).qualifications[0]?.options).toEqual([])
     expect(RULES.fields.map(field => [field.key, field.uiType, field.required])).toEqual([
       ['title', 'input', true], ['mainImagesGroup', 'image', true], ['descRepublicOfSell', 'image', true],
       ['p-1687', 'select', true], ['p-3990', 'input', true], ['p-4613', 'select', true], ['p-4100', 'checkbox', false],
@@ -273,6 +296,13 @@ describe('Douyin shop categories', () => {
     ])
     expect(RULES.fields.find(field => field.key === 'q-699')?.options).toEqual([{ value: '767', text: '医疗器械注册证_20260817_112810' }])
     expect(RULES.fields.find(field => field.key === 'title')?.maxLength).toBe(120)
+  })
+
+  it('tells library entries of the same name apart by their ids', () => {
+    const [item] = FORM.qualifications
+    const twins = { ...item!, options: [{ value: '1', label: '注册证', urls: [] }, { value: '2', label: '注册证', urls: [] }, { value: '3', label: '备案', urls: [] }] }
+    expect(doudianRules('1', ['a'], { ...FORM, qualifications: [twins] }).fields.find(field => field.key === 'q-699')?.options?.map(option => option.text))
+      .toEqual(['注册证（1）', '注册证（2）', '备案'])
   })
 })
 
@@ -388,7 +418,7 @@ describe('doudian-publish script', () => {
     const shop = new Shop()
     const dir = await folder()
     expect((await run(shop, ['resolve', '--account', 'a', '--keyword', '避孕套'])).out).toBe([
-      '1. 医疗器械及保健用品 > 计生用品 > 避孕套（类目 id 1000000638）—— 抖店类目搜索「避孕套」', '这家店没有开通：母婴用品 > 孕产妇用品 > 待产用品', '',
+      '1. 医疗器械及保健用品 > 计生用品 > 避孕套（类目 id 1000000638）—— 抖店类目搜索「避孕套」', '这家店不能用（未开通）：母婴用品 > 孕产妇用品 > 待产用品', '',
     ].join('\n'))
     expect((await run(shop, ['resolve', '--account', 'a', '--cat', '1000000638'])).out).toContain('—— 用户指定的类目')
     const memory = {
@@ -419,7 +449,7 @@ describe('doudian-publish script', () => {
     const many = (n: number) => new FakePage([on('searchCategoryN', ok(Array.from({ length: n }, (_, at) => ({ first_cid: 2, second_cid: at + 10, first_name: '药品', second_name: `药${String(at)}` })))), ...new Shop().routes()])
     const deps = fakeDeps(many(7))
     expect(await main(['resolve', '--account', 'a', '--keyword', 'x'], deps)).toBe(0)
-    expect(deps.out.join('')).toBe('这家店都没有开通这些类目。\n这家店没有开通：药品 > 药0；药品 > 药1；药品 > 药2；药品 > 药3；药品 > 药4 等 7 个\n')
+    expect(deps.out.join('')).toBe('这家店都不能用这些类目。\n这家店不能用（未开通）：药品 > 药0；药品 > 药1；药品 > 药2；药品 > 药3；药品 > 药4 等 7 个\n')
     const none = fakeDeps(many(0))
     expect(await main(['resolve', '--account', 'a', '--keyword', 'x'], none)).toBe(0)
     expect(none.out.join('')).toBe('没有找到类目（抖店类目搜索「x」）。\n')
@@ -479,6 +509,14 @@ describe('doudian-publish script', () => {
     expect((await run(shop, ['check', '--account', 'a', '--draft', setup.path])).out).toContain('商品 ID 5（草稿箱里已有同名草稿）')
     shop.products.at(-1)!.draft_status = 0
     expect((await run(shop, ['check', '--account', 'a', '--draft', setup.path])).out).toContain('商品 ID 5（商品列表里已有同名商品）')
+    shop.products.at(-1)!.draft_status = 1
+    const hidden = shop.page()
+    const search = hidden.evaluate.bind(hidden)
+    // The product search leaves the draft out; the 草稿箱 lists it.
+    hidden.evaluate = <T>(expression: string) => expression.includes('product_id_and_name=') ? Promise.resolve(ok([]) as T) : search<T>(expression)
+    const found = fakeDeps(hidden)
+    expect(await main(['check', '--account', 'a', '--draft', setup.path], found)).toBe(0)
+    expect(found.out.join('')).toContain('商品 ID 5（草稿箱里已有同名草稿）')
     await mkdir(setup.out, { recursive: true })
     const gone: PublishRecord = { store: '名流欣屹专卖店', title: '名流水多多三合一玻尿酸避孕套', catId: 'x', status: 'saved', itemId: '404', at: 't' }
     await writeFile(join(setup.out, '发品记录.json'), JSON.stringify([gone, { ...gone, itemId: undefined }]))
@@ -538,6 +576,11 @@ describe('doudian-publish script', () => {
     const second = await sampleDraft()
     expect((await run(lost, save(second))).err).toContain('但草稿箱里暂时查不到它')
     expect((await records(second.out)).at(-1)).toMatchObject({ status: 'unknown', itemId: '3847100000000000001' })
+    const stored = new Shop()
+    stored.saving = 'not-draft'
+    const listed = await sampleDraft()
+    expect((await run(stored, save(listed))).err).toContain('存成了草稿以外的状态！请用户立即到抖店后台查看它')
+    expect((await records(listed.out)).at(-1)).toMatchObject({ status: 'not-draft' })
     const flaky = new Shop()
     const third = await sampleDraft()
     const page = flaky.page()

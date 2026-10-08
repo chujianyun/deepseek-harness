@@ -81,9 +81,10 @@ export interface PublishRecord {
   readonly codes?: readonly string[]
   /**
    * `submitting` until the answer came; `unknown` when it never did or the store did not show the item;
-   * `on-sale` when Tmall put the item on sale instead of in the warehouse.
+   * `on-sale` when the platform put the item on sale instead of keeping it; `not-draft` when it left the
+   * 草稿箱 another way, such as into review.
    */
-  readonly status: 'submitting' | 'saved' | 'failed' | 'unknown' | 'on-sale'
+  readonly status: 'submitting' | 'saved' | 'failed' | 'unknown' | 'on-sale' | 'not-draft'
   /** The item: Tmall's item id, or Pinduoduo's goods id. */
   readonly itemId?: string
   /** Pinduoduo's draft (goods commit) id. */
@@ -196,4 +197,31 @@ export function commonPrefix(codes: readonly string[]): string {
   let prefix = codes[0] as string
   for (const code of codes) while (!code.startsWith(prefix)) prefix = prefix.slice(0, -1)
   return prefix
+}
+
+/** A category a resolve names, and whether the store may publish in it. */
+export interface CandidateCategory {
+  readonly id: string
+  readonly path: readonly string[]
+  readonly usable: boolean
+}
+
+/**
+ * The categories a resolve found, for the model: the usable ones numbered with the reason, then up to
+ * five the store may not use.
+ * @param categories - the categories, best first.
+ * @param reason - where they came from.
+ * @param why - why the store may not use the others, such as 缺资质.
+ * @returns the text.
+ */
+export function categoriesText(categories: readonly CandidateCategory[], reason: string, why: string): string {
+  if (categories.length === 0) return `没有找到类目（${reason}）。`
+  const usable = categories.filter(category => category.usable)
+  const lines = usable.map((category, at) => `${String(at + 1)}. ${category.path.join(' > ')}（类目 id ${category.id}）—— ${reason}`)
+  const refused = categories.filter(category => !category.usable).map(category => category.path.join(' > '))
+  const more = refused.length > 5 ? ` 等 ${String(refused.length)} 个` : ''
+  return [
+    lines.length === 0 ? '这家店都不能用这些类目。' : lines.join('\n'),
+    ...refused.length === 0 ? [] : [`这家店不能用（${why}）：${refused.slice(0, 5).join('；')}${more}`],
+  ].join('\n')
 }
