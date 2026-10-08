@@ -446,6 +446,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'enabled model-usable Skills other than connector Skills, connectors installed and switched on for the tenant (named by id), and the tenant\'s knowledge bases.',
       },
       {
+        signature: '@Remote async otherTenantAssistants(assistantIds: readonly string[]): Promise<string[]>',
+        description: 'Pick, from assistant ids that sessions are bound to, those another tenant keeps on this machine, so a client can tell a session of another company\'s assistant from one whose assistant was deleted. Only the existence of each `<tenant>/<id>/assistant.json` is checked, nothing in it is read or returned, and a folder that cannot be read counts as not holding the assistant.',
+        parameters: [{ name: 'assistantIds', description: 'the ids to look for; one that is not a single path segment is never found.' }],
+        returns: 'the ids found under a tenant other than the signed-in one; none while signed out.',
+      },
+      {
         signature: '@Remote getAssistant(assistantId: string): Promise<AssistantDetail>',
         description: 'Read one assistant with the text of its core files.',
         parameters: [{ name: 'assistantId', description: 'the assistant to read.' }],
@@ -5400,7 +5406,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AssistantsState',
-    declaration: 'export interface AssistantsState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly defaultId: string | null;\n    readonly assistants: readonly AssistantView[];\n    readonly templates: readonly AssistantTemplateView[];\n    readonly otherTenantAssistantIds: readonly string[];\n}',
+    declaration: 'export interface AssistantsState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly defaultId: string | null;\n    readonly assistants: readonly AssistantView[];\n    readonly templates: readonly AssistantTemplateView[];\n}',
   },
   {
     name: 'AssistantStreamFrame',

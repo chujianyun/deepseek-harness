@@ -6,7 +6,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { assistantOf, assistantSessions, createAssistantsSource, shownAssistant, type BlankSession } from '../src/client/assistants-source.ts'
 
 const state: AssistantsState = {
-  revision: 1, tenantId: 't-a', defaultId: 'a1', otherTenantAssistantIds: [], templates: [],
+  revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [],
   assistants: [
     { id: 'a1', name: '日常助手', description: 'd', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:00Z' },
     { id: 'a2', name: '电商管家', description: '', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:01Z' },
@@ -16,7 +16,7 @@ const sid = (id: string) => id as SessionSummary['id']
 const unused = {
   sessionList: createSnapshotStore({ ids: [], byId: {} }) as never, openSession: vi.fn(),
   loadOptions: vi.fn(), squareAvatar: vi.fn(), read: vi.fn(), update: vi.fn(),
-  setDefault: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), sessionCount: vi.fn(),
+  setDefault: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), sessionCount: vi.fn(), otherTenant: vi.fn(),
 }
 const refused = (message: string) => ({ ok: false, error: new RemoteError('assistants/not-found', message, { assistantId: 'x' }) }) as never
 
@@ -38,6 +38,7 @@ function harness(initial: BlankSession | undefined) {
   const source = createAssistantsSource({
     select, startSession, blankSession: () => blank, create, loadOptions, squareAvatar,
     read, update, setDefault, duplicate, remove, sessionCount, sessionList: unused.sessionList, openSession,
+    otherTenant: vi.fn(async () => ({ ok: true as const, value: [] })),
   })
   source.publish(state)
   return {
@@ -198,5 +199,64 @@ describe('sessions of an assistant', () => {
     const h = harness(undefined)
     h.source.onOpenSession(sid('s9'))
     expect(h.openSession).toHaveBeenCalledWith('s9')
+  })
+})
+
+describe('another company\'s assistants', () => {
+  const listed = (bindings: Record<string, string | null>) => createSnapshotStore({
+    ids: Object.keys(bindings),
+    byId: Object.fromEntries(Object.entries(bindings)
+      .map(([id, bound]) => [id, { id, projectionValues: bound === null ? {} : { assistant: bound } }])),
+  })
+  function lookup(bindings: Record<string, string | null>, answer: (ids: readonly string[]) => Promise<unknown>) {
+    const sessionList = listed(bindings)
+    const otherTenant = vi.fn(answer)
+    const source = createAssistantsSource({
+      ...unused, sessionList: sessionList as never, select: vi.fn(), startSession: vi.fn(), blankSession: () => undefined, create: vi.fn(),
+      otherTenant: otherTenant as never,
+    })
+    return { source, sessionList, otherTenant, elsewhere: () => source.hooks.assistants.getSnapshot().elsewhere }
+  }
+
+  it('asks the Host once about bound ids the tenant lacks, and keeps the answers until the tenant changes', async () => {
+    const l = lookup({ s1: 'a1', s2: 'b1', s3: 'gone', s4: null, s5: 'b1' }, async ids => ({ ok: true, value: ids.filter(id => id === 'b1') }))
+    l.source.publish(state)
+    await vi.waitFor(() => { expect(l.elsewhere()).toEqual({ asked: ['b1', 'gone'], otherTenant: ['b1'] }) })
+    expect(l.otherTenant).toHaveBeenCalledWith(['b1', 'gone'])
+    await l.source.sessionsChanged()
+    l.source.publish({ ...state, revision: 2 })
+    expect(l.otherTenant).toHaveBeenCalledTimes(1)
+    // Another tenant: the answers are dropped and asked again, now with a1 outside it too.
+    l.source.publish({ ...state, revision: 3, tenantId: 't-b', assistants: [] })
+    await vi.waitFor(() => { expect(l.otherTenant).toHaveBeenLastCalledWith(['a1', 'b1', 'gone']) })
+    // Signed out: nothing is kept and nothing is asked.
+    l.source.publish({ ...state, revision: 4, tenantId: null, assistants: [] })
+    expect(l.elsewhere()).toEqual({ asked: [], otherTenant: [] })
+    expect(l.otherTenant).toHaveBeenCalledTimes(2)
+  })
+
+  it('drops an answer for a tenant no longer signed in, and asks again after a failure', async () => {
+    let release: (value: unknown) => void = () => {}
+    const answers: (() => Promise<unknown>)[] = [
+      () => new Promise((resolve) => { release = resolve }),
+      async () => ({ ok: true, value: ['b1'] }),
+      async () => ({ ok: false, error: new Error('refused') }),
+      async () => { throw new Error('disconnected') },
+      async () => ({ ok: true, value: [] }),
+    ]
+    const l = lookup({ s1: 'b1' }, () => answers.shift()!())
+    l.source.publish(state)
+    l.source.publish({ ...state, revision: 2, tenantId: 't-c' })
+    release({ ok: true, value: ['b1'] })
+    await vi.waitFor(() => { expect(l.elsewhere()).toEqual({ asked: ['b1'], otherTenant: ['b1'] }) })
+    expect(l.otherTenant).toHaveBeenCalledTimes(2)
+    l.source.publish({ ...state, revision: 3, tenantId: 't-d' })
+    await vi.waitFor(() => { expect(l.otherTenant).toHaveBeenCalledTimes(3) })
+    expect(l.elsewhere()).toEqual({ asked: [], otherTenant: [] })
+    await l.source.sessionsChanged()
+    await vi.waitFor(() => { expect(l.otherTenant).toHaveBeenCalledTimes(4) })
+    expect(l.elsewhere().asked).toEqual([])
+    await l.source.sessionsChanged()
+    await vi.waitFor(() => { expect(l.elsewhere()).toEqual({ asked: ['b1'], otherTenant: [] }) })
   })
 })

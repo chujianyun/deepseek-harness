@@ -97,20 +97,23 @@ describe('assistants storage', () => {
     expect((await env.settle(s => s.tenantId === 't-a')).assistants.map(x => x.id)).toEqual([a.assistants[0]!.id])
   })
 
-  it('lists only the ids of the assistants other tenants keep on this machine', async () => {
+  it('tells which bound ids another tenant on this machine keeps, and nothing else about them', async () => {
     const env = await setup()
     const a = (await env.settle(s => s.assistants.length === 1)).assistants[0]!
-    expect((await env.service.getState()).otherTenantAssistantIds).toEqual([])
-    await writeFile(join(env.home, 'assistants', 'stray.txt'), '')
+    expect(await env.service.otherTenantAssistants([a.id])).toEqual([])
     env.hub.set('t-b')
-    const b = await env.settle(s => s.tenantId === 't-b' && s.assistants.length === 1)
-    expect(b.otherTenantAssistantIds).toEqual([a.id])
-    // Nothing else in the state refers to the other tenant's assistant.
-    expect(JSON.stringify({ ...b, otherTenantAssistantIds: [] })).not.toContain(a.id)
+    const b = (await env.settle(s => s.tenantId === 't-b' && s.assistants.length === 1)).assistants[0]!
+    const root = join(env.home, 'assistants')
+    // A hidden folder is no tenant, a folder without assistant.json holds no assistant, and an id is one path segment.
+    await mkdir(join(root, '.backup', 'kept'), { recursive: true })
+    await writeFile(join(root, '.backup', 'kept', 'assistant.json'), '{}')
+    await mkdir(join(root, 't-a', 'half'))
+    await writeFile(join(root, 'stray.txt'), '')
+    const asked = [a.id, a.id, b.id, 'kept', 'half', 'gone', '..', '../t-a/' + a.id, `t-a/${a.id}`, '.hidden']
+    expect(await env.service.otherTenantAssistants(asked)).toEqual([a.id])
     env.hub.set(null)
-    expect((await env.settle(s => s.tenantId === null)).otherTenantAssistantIds).toEqual([])
-    env.hub.set('t-a')
-    expect((await env.settle(s => s.tenantId === 't-a')).otherTenantAssistantIds).toEqual([b.assistants[0]!.id])
+    await env.settle(s => s.tenantId === null)
+    expect(await env.service.otherTenantAssistants([a.id, b.id])).toEqual([])
   })
 
   it('skips a malformed assistant.json and a directory without one', async () => {

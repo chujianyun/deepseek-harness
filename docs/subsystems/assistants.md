@@ -71,6 +71,16 @@ Host owner of the assistants and of the `assistants` Remote namespace.
 @Remote async capabilityOptions(): Promise<AssistantCapabilityOptions>
 
 /**
+ * Pick, from assistant ids that sessions are bound to, those another tenant keeps on this machine,
+ * so a client can tell a session of another company's assistant from one whose assistant was
+ * deleted. Only the existence of each `<tenant>/<id>/assistant.json` is checked, nothing in it is
+ * read or returned, and a folder that cannot be read counts as not holding the assistant.
+ * @param assistantIds - the ids to look for; one that is not a single path segment is never found.
+ * @returns the ids found under a tenant other than the signed-in one; none while signed out.
+ */
+@Remote async otherTenantAssistants(assistantIds: readonly string[]): Promise<string[]>
+
+/**
  * Read one assistant with the text of its core files.
  * @param assistantId - the assistant to read.
  * @returns the assistant and its core files.

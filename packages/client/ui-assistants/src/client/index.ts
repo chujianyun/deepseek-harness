@@ -99,6 +99,7 @@ export function apply(ctx: ClientContext): void {
       setDefault: assistantId => remote.setDefault(assistantId),
       duplicate: assistantId => remote.duplicateAssistant(assistantId),
       remove: assistantId => remote.deleteAssistant(assistantId),
+      otherTenant: assistantIds => remote.otherTenantAssistants(assistantIds),
       sessionCount: assistantId => assistantSessions(scope.sessions.list.getSnapshot(), assistantId).length,
       sessionList: scope.sessions.list,
       openSession: (sessionId) => { scope.uiWorkspace.openSession(sessionId) },

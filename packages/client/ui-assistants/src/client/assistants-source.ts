@@ -27,6 +27,11 @@ export interface AssistantsSnapshot {
   readonly busy: boolean
   /** The Host's message for the last refused pick. */
   readonly failure: string | null
+  /**
+   * Bound assistant ids outside the signed-in tenant that the Host was asked about, and those it
+   * found under another tenant; a row whose id was not asked about yet shows no mark.
+   */
+  readonly elsewhere: { readonly asked: readonly string[]; readonly otherTenant: readonly string[] }
 }
 
 /** One model the creation wizard offers. */
@@ -78,6 +83,8 @@ export interface AssistantsDependencies {
   readonly sessionList: HostObservable<SessionListState>
   /** Show a session's conversation. */
   readonly openSession: (sessionId: SessionSummary['id']) => void
+  /** Pick the ids another tenant on this machine keeps. */
+  readonly otherTenant: (assistantIds: readonly string[]) => Promise<RemoteResult<string[]>>
 }
 
 /** Business face injected into the page and the picker. */
@@ -162,7 +169,10 @@ export function shownAssistant(snapshot: AssistantsSnapshot): string | null {
  * @returns the source.
  */
 export function createAssistantsSource(deps: AssistantsDependencies): AssistantsSource {
-  const store = createSnapshotStore<AssistantsSnapshot>({ state: undefined, bound: null, staged: undefined, busy: false, failure: null })
+  const nowhere = { asked: [], otherTenant: [] }
+  const store = createSnapshotStore<AssistantsSnapshot>({
+    state: undefined, bound: null, staged: undefined, busy: false, failure: null, elsewhere: nowhere,
+  })
   const set = (patch: Partial<AssistantsSnapshot>): void => { store.set({ ...store.getSnapshot(), ...patch }) }
   const apply = async (): Promise<void> => {
     const blank = deps.blankSession()
@@ -185,6 +195,36 @@ export function createAssistantsSource(deps: AssistantsDependencies): Assistants
       set({ staged: undefined, busy: false, bound: shown })
     }
   }
+  // Ask the Host about bound ids the signed-in tenant does not have; answers hold until the tenant changes.
+  let askedFor: string | null = null
+  const pending = new Set<string>()
+  const lookUp = async (): Promise<void> => {
+    const { state, elsewhere } = store.getSnapshot()
+    const tenantId = state?.tenantId ?? null
+    if (tenantId !== askedFor) {
+      askedFor = tenantId
+      if (elsewhere !== nowhere) set({ elsewhere: nowhere })
+    }
+    if (state === undefined || tenantId === null) return
+    const known = new Set([...state.assistants.map(item => item.id), ...store.getSnapshot().elsewhere.asked, ...pending])
+    const list = deps.sessionList.getSnapshot()
+    const ids = [...new Set(list.ids.map(id => assistantOf(list.byId[id])))].filter((id): id is string => id !== null && !known.has(id))
+    if (ids.length === 0) return
+    for (const id of ids) pending.add(id)
+    let result: RemoteResult<string[]> | undefined
+    try {
+      result = await deps.otherTenant(ids)
+    } catch {
+      // A dropped connection answers nothing; the rows show no mark until the next change asks again.
+      result = undefined
+    }
+    for (const id of ids) pending.delete(id)
+    // An answer for a tenant no longer signed in is dropped and the new tenant is asked; a failed call asks again on the next change.
+    if (askedFor !== tenantId) { void lookUp(); return }
+    if (result?.ok !== true) return
+    const current = store.getSnapshot().elsewhere
+    set({ elsewhere: { asked: [...current.asked, ...ids], otherTenant: [...current.otherTenant, ...result.value] } })
+  }
   // A call's state and the stream's frames may arrive in either order; keep the newer one.
   const adopt = (state: AssistantsState): void => {
     const current = store.getSnapshot().state
@@ -198,8 +238,8 @@ export function createAssistantsSource(deps: AssistantsDependencies): Assistants
   }
   return {
     hooks: { assistants: store, sessions: deps.sessionList },
-    publish: (state) => { set({ state }) },
-    sessionsChanged: apply,
+    publish: (state) => { set({ state }); void lookUp() },
+    sessionsChanged: async () => { void lookUp(); await apply() },
     onPick: async (assistantId) => {
       set({ staged: assistantId })
       await apply()

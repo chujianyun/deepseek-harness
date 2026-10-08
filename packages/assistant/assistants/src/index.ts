@@ -16,15 +16,14 @@
  * differ from the previous record; the `assistant:core-files` prompt section carries the recorded
  * text, so an edit reaches the model on the next turn and every prompt stays reconstructable from
  * the session log. A session whose assistant was deleted keeps its binding; once it carried core
- * files, the section then says they no longer apply. The state lists the ids of the assistants other
- * tenants keep on this machine, and nothing else about them, so a client can tell a session of
- * another company's assistant from one whose assistant was deleted.
+ * files, the section then says they no longer apply. `otherTenantAssistants()` tells which bound ids
+ * another tenant on this machine keeps, without reading anything about them.
  *
  * @module @deepseek-ai/dsh-assistants
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -227,6 +226,9 @@ export function normalizeSubsets(
   return Object.keys(kept).length === 0 ? undefined : kept
 }
 
+/** An assistant id that names one directory: no separator, and not hidden, `.`, or `..`. */
+const SINGLE_SEGMENT = /^[^./\\][^/\\]*$/u
+
 /** Connector states without an installed CLI. */
 const NOT_INSTALLED: ReadonlySet<string> = new Set(['unsupported', 'not-installed', 'installing'])
 
@@ -254,7 +256,6 @@ export class AssistantsService extends TypertRemoteService {
   private tenantId: string | null = null
   private tenant: TenantFile = { version: 1, defaultId: null, seeded: false }
   private list: AssistantView[] = []
-  private otherTenantAssistantIds: string[] = []
   private writes: Promise<unknown> = Promise.resolve()
   private revision = Date.now()
   private readonly listeners = new Set<() => void>()
@@ -311,7 +312,6 @@ export class AssistantsService extends TypertRemoteService {
   getState(): Promise<AssistantsState> {
     return Promise.resolve({
       revision: this.revision, tenantId: this.tenantId, defaultId: this.tenant.defaultId, assistants: this.list, templates: TEMPLATE_VIEWS,
-      otherTenantAssistantIds: this.otherTenantAssistantIds,
     })
   }
 
@@ -394,6 +394,28 @@ export class AssistantsService extends TypertRemoteService {
     const knowledgeBases = (await this.ctx.get('knowledgeBases')?.getState())?.bases
       .map(base => ({ id: base.id, name: base.name })) ?? []
     return { skills, connectors, knowledgeBases }
+  }
+
+  /**
+   * Pick, from assistant ids that sessions are bound to, those another tenant keeps on this machine,
+   * so a client can tell a session of another company's assistant from one whose assistant was
+   * deleted. Only the existence of each `<tenant>/<id>/assistant.json` is checked, nothing in it is
+   * read or returned, and a folder that cannot be read counts as not holding the assistant.
+   * @param assistantIds - the ids to look for; one that is not a single path segment is never found.
+   * @returns the ids found under a tenant other than the signed-in one; none while signed out.
+   */
+  @Remote
+  async otherTenantAssistants(assistantIds: readonly string[]): Promise<string[]> {
+    if (this.tenantId === null) return []
+    const signedIn = this.tenantId
+    const ids = [...new Set(assistantIds)].filter(id => SINGLE_SEGMENT.test(id))
+    const entries = await readdir(this.root, { withFileTypes: true })
+    const tenants = entries.filter(entry => entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== signedIn)
+    const found = await Promise.all(ids.map(async (id) => {
+      const held = await Promise.all(tenants.map(tenant => stat(join(this.root, tenant.name, id, 'assistant.json')).then(() => true, () => false)))
+      return held.includes(true) ? id : undefined
+    }))
+    return found.filter(id => id !== undefined)
   }
 
   /**
@@ -747,7 +769,6 @@ export class AssistantsService extends TypertRemoteService {
     this.tenantId = tenantId
     this.tenant = { version: 1, defaultId: null, seeded: false }
     this.list = []
-    this.otherTenantAssistantIds = []
     if (tenantId !== null) {
       await mkdir(join(this.root, tenantId), { recursive: true })
       this.tenant = await this.readTenant(tenantId)
@@ -757,11 +778,6 @@ export class AssistantsService extends TypertRemoteService {
         this.list = [...this.list, created]
         this.tenant = { version: 1, defaultId: created.id, seeded: true }
         await this.writeAtomic(join(this.root, tenantId, 'tenant.json'), jsonText(this.tenant))
-      }
-      // Other tenants' assistants change only while their tenant is signed in, so reading them at a switch suffices.
-      for (const entry of await readdir(this.root, { withFileTypes: true })) {
-        if (!entry.isDirectory() || entry.name === tenantId) continue
-        this.otherTenantAssistantIds.push(...(await this.readAssistants(entry.name)).map(item => item.id))
       }
     }
     this.changed()

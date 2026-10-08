@@ -11,17 +11,18 @@ import { SessionAssistantBadge, SessionAssistantHover } from '../src/client/Sess
 afterEach(() => { cleanup() })
 
 const state: AssistantsState = {
-  revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [], otherTenantAssistantIds: ['b1'],
+  revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [],
   assistants: [{ id: 'a1', name: '店铺复盘助手', description: '', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:00Z' }],
 }
 
 function mount(
   Component: typeof SessionAssistantBadge, bound: string | null | undefined,
   value: AssistantsState | null = state, copy: Record<string, string> = zh,
+  elsewhere: AssistantsSnapshot['elsewhere'] = { asked: ['gone', 'b1'], otherTenant: ['b1'] },
 ) {
   // null stands for no state yet.
   const assistants = createSnapshotStore<AssistantsSnapshot>({
-    state: value ?? undefined, bound: null, staged: undefined, busy: false, failure: null,
+    state: value ?? undefined, bound: null, staged: undefined, busy: false, failure: null, elsewhere,
   })
   const byId = bound === undefined ? {} : { s1: { id: 's1', projectionValues: bound === null ? {} : { assistant: bound } } }
   const sessions = createSnapshotStore({ ids: Object.keys(byId), byId })
@@ -51,10 +52,14 @@ describe('session row assistant', () => {
     mount(SessionAssistantBadge, 'b1')
     const badge = screen.getByRole('img', { name: '其他公司的智能体' })
     expect(badge.getAttribute('data-assistant-badge')).toBe('other-tenant')
-    expect(badge.textContent).toBe('其')
+    expect(badge.textContent).toBe('⇄')
     cleanup()
     mount(SessionAssistantBadge, 'b1', state, en)
-    expect(screen.getByRole('img', { name: 'Another company\'s assistant' }).textContent).toBe('A')
+    expect(screen.getByRole('img', { name: 'Another company\'s assistant' }).textContent).toBe('⇄')
+  })
+
+  it('shows no mark for an id outside the tenant until the Host has answered', () => {
+    expect(mount(SessionAssistantBadge, 'gone', state, zh, { asked: [], otherTenant: [] }).container.innerHTML).toBe('')
   })
 
   it('shows nothing for a session without an assistant, an unlisted one, or before the state is known or while signed out', () => {

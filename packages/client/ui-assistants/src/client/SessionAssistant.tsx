@@ -25,12 +25,21 @@ type RowAssistant =
 function useRowAssistant({ sessionId, useAssistants, useSessions }: Pick<SessionAssistantProps, 'sessionId' | 'useAssistants' | 'useSessions'>): RowAssistant | undefined {
   const bound = useSessions(list => assistantOf(list.byId[sessionId]))
   const state = useAssistants(snapshot => snapshot.state)
+  const elsewhere = useAssistants(snapshot => snapshot.elsewhere)
   // Signed out, or before the first state, there is nothing to compare the binding with.
   if (bound === null || state === undefined || state.tenantId === null) return undefined
   const assistant = state.assistants.find(item => item.id === bound)
   if (assistant !== undefined) return { kind: 'assistant', name: assistant.name, avatar: assistant.avatar }
-  return state.otherTenantAssistantIds.includes(bound) ? { kind: 'other-tenant' } : { kind: 'deleted' }
+  // Until the Host answers whether another tenant keeps it, the row shows no mark rather than a wrong one.
+  if (!elsewhere.asked.includes(bound)) return undefined
+  return elsewhere.otherTenant.includes(bound) ? { kind: 'other-tenant' } : { kind: 'deleted' }
 }
+
+/** A preset key outside the palette, which the avatar draws as a neutral disc. */
+const NEUTRAL = { kind: 'preset', key: 'neutral' } as const
+
+/** The glyph of each mark, the same in every locale. */
+const MARK_GLYPH = { 'other-tenant': '⇄', 'deleted': '?' } as const
 
 /** The row's label: the assistant's name, or the text of its mark. */
 function labelOf(shown: RowAssistant, t: SessionAssistantProps['t']): string {
@@ -54,11 +63,11 @@ export function SessionAssistantBadge(props: SessionAssistantProps) {
   const shown = useRowAssistant(props)
   if (shown === undefined) return null
   const label = labelOf(shown, props.t)
-  // The marks draw a neutral disc: "?" for a deleted assistant, the label's first character for another company's.
-  const avatar = shown.kind === 'assistant' ? shown.avatar : { kind: 'preset' as const, key: shown.kind }
+  // The marks draw a neutral disc with a fixed glyph: "?" for a deleted assistant, "⇄" for another company's.
+  const avatar = shown.kind === 'assistant' ? shown.avatar : NEUTRAL
   return (
     <span className={css.badge} title={label} aria-label={label} role="img" data-assistant-badge={shown.kind}>
-      <AssistantAvatar avatar={avatar} name={shown.kind === 'assistant' ? shown.name : shown.kind === 'deleted' ? '?' : label} size={16} />
+      <AssistantAvatar avatar={avatar} name={shown.kind === 'assistant' ? shown.name : MARK_GLYPH[shown.kind]} size={16} />
     </span>
   )
 }

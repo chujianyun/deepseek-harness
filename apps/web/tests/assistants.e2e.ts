@@ -429,8 +429,14 @@ it('tells a session of another company\'s assistant from one whose assistant was
     await expect.poll(() => picker.textContent()).toMatch(name)
     await send(text)
     await expect.poll(() => picker.count(), { timeout: 30_000 }).toBe(0)
-    return (await page.locator('[role="treeitem"][aria-selected="true"]').getAttribute('data-row-key'))!
+    // The sidebar selects the new session's row a moment after the turn starts.
+    const selected = page.locator('[role="treeitem"][aria-selected="true"]')
+    await expect.poll(async () => started.includes((await selected.getAttribute('data-row-key')) ?? '')).toBe(false)
+    const key = (await selected.getAttribute('data-row-key'))!
+    started.push(key)
+    return key
   }
+  const started: string[] = ['']
   try {
     // In 甲公司: one session of 店铺测试助手, and one of a copy that is then deleted.
     await useChatModel()
@@ -449,12 +455,11 @@ it('tells a session of another company\'s assistant from one whose assistant was
     await switchTenant({ tenantId: 't-b', tenantName: '乙公司' })
     await expect.poll(() => badge(shop).getAttribute('data-assistant-badge')).toBe('other-tenant')
     expect(await badge(shop).getAttribute('title')).toBe('其他公司的智能体')
-    expect(await badge(shop).textContent()).toBe('其')
+    expect(await badge(shop).textContent()).toBe('⇄')
     expect(await badge(gone).getAttribute('data-assistant-badge')).toBe('deleted')
     expect(await badge(gone).getAttribute('title')).toBe('已删除的智能体')
     const state = await scaffold.ctx.assistants.getState()
-    expect(state.otherTenantAssistantIds).toContain(SHOP_ID)
-    expect(state.otherTenantAssistantIds).not.toContain(copyId)
+    expect(await scaffold.ctx.assistants.otherTenantAssistants([SHOP_ID, copyId])).toEqual([SHOP_ID])
     expect(await page.locator('[role="tree"]').first().textContent()).not.toContain('店铺测试助手')
     await shot('02-tenant-b-rows')
     await page.locator(`[role="treeitem"][data-row-key="${shop}"]`).hover()

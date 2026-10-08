@@ -175,11 +175,6 @@ export interface AssistantsState {
   readonly assistants: readonly AssistantView[]
   /** Built-in templates the creation wizard offers. */
   readonly templates: readonly AssistantTemplateView[]
-  /**
-   * Ids of the assistants other tenants keep on this machine, so a session bound to one reads as
-   * another company's rather than deleted; nothing else about them is exposed. Empty while signed out.
-   */
-  readonly otherTenantAssistantIds: readonly string[]
 }
 
 /** The `assistant` Session projection state. */
