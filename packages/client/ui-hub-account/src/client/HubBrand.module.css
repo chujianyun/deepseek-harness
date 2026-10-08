@@ -4,6 +4,8 @@
 /* The row is 24px tall; the stack may overflow it into the row's padding. */
 .name { display: inline-flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; min-width: 0; }
 .logo { display: block; max-width: 200px; height: 22px; object-fit: contain; object-position: left center; }
+/* A dark theme inverts the sidebar logo, since a dark logo drawn for a light page vanishes on a dark sidebar. */
+:global(body[data-ds-dark-theme]) .mark, :global(body[data-ds-dark-theme]) .logo { filter: invert(1); }
 .tenant { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 600; line-height: 20px; }
 .version { color: var(--dsw-alias-label-tertiary); font-size: 10px; font-weight: 400; line-height: 12px; white-space: nowrap; }
 /* New-session hero: the logo at the mark's height, as wide as its proportions need up to the
