@@ -129,12 +129,25 @@ function skuTableOf(tables: readonly TableEntry[], columns: Answers['columns']):
 }
 
 /**
+ * The values the model must write for a category's form: the title and those of the selling point and
+ * guide title the form has; all of them without rules.
+ * @param rules - the category's rules, when the draft is checked against them.
+ * @returns the labels.
+ */
+export function generatedLabels(rules?: PublishRules): string[] {
+  if (rules === undefined) return [...GENERATED_LABELS]
+  const keys = new Set(rules.fields.map(field => field.key))
+  return GENERATED_LABELS.filter(label => label === '商品标题' || keys.has(Object.keys(VALUE_FIELDS).find(key => VALUE_FIELDS[key] === label) as string))
+}
+
+/**
  * Build the draft.
  * @param inventory - what the folder holds.
  * @param answers - the model's answers.
+ * @param generated - the values the model must write; missing ones are listed.
  * @returns the draft.
  */
-export function buildDraft(inventory: Inventory, answers: Answers): Draft {
+export function buildDraft(inventory: Inventory, answers: Answers, generated: readonly string[] = GENERATED_LABELS): Draft {
   const missing: string[] = []
   const problems: string[] = []
   const notes: string[] = []
@@ -150,7 +163,7 @@ export function buildDraft(inventory: Inventory, answers: Answers): Draft {
 
   const values: Record<string, SourcedValue> = {}
   for (const [label, entry] of Object.entries(answers.values ?? {})) values[label] = entry
-  for (const label of GENERATED_LABELS) if (values[label] === undefined) missing.push(`${label}（由模型根据素材生成，标「待确认」）`)
+  for (const label of generated) if (values[label] === undefined) missing.push(`${label}（由模型根据素材生成，标「待确认」）`)
   return {
     folder: inventory.folder, images,
     ...found === undefined ? {} : { skuTable: found.table.sheet === '' ? found.table.file : `${found.table.file}#${found.table.sheet}` },

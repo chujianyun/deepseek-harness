@@ -15,7 +15,7 @@ description: 商品素材整理：把用户给的任意结构的新品素材文�
    - 「待判断」的图片：能看图就看图判断，看不了就把文件名列给用户问。
    - 「未识别」或对错的列：按示例值判断它是哪个字段（`index`/`name`/`code`/`count`/`price`/`stock`/`unitPrice`，不用的写 `ignore`）。
    - SKU 图和 SKU 对不上时：看图中文字判断属于哪个 SKU，判断不了就问用户。
-4. 要发到天猫或淘宝时，先用 `tmall-publish-category` 技能定类目并读字段规则，得到 `字段规则_<类目 id>.json` 的路径。
+4. 要发到天猫或淘宝时，先用 `tmall-publish-category` 技能定类目并读字段规则，得到 `字段规则_<类目 id>.json` 的路径；要发到拼多多时，用 `pdd-publish` 技能的 `resolve` 和 `rules`。
    `<店铺名>` 一律用 `dsh-ecommerce accounts` 里该商家账号的 `store`，保证每次一致。运行 `dsh-ecommerce memory` 看公司记住了什么：目标店铺的店铺资料（`stores`）、表格列名对应（`columns`）、这家店这个类目已确认的声明（`declarations`）。
 5. 在工作区写答案文件（如 `发品草稿/答案.json`）：
 

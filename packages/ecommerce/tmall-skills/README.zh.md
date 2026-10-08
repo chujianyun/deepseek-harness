@@ -1,5 +1,5 @@
 ---
-description: "Skill Hub 只下发给需要的租户的天猫技能：用天猫商家账号读取的万相台营销场景报表、生意参谋店铺经营核心日报与发品类目和字段规则、用买家账号读取的单品报告、由素材文件夹整理出的商品草稿、把确认后的草稿存到店铺仓库，以及生成其上传包的打包步骤。"
+description: "Skill Hub 只下发给需要的租户的天猫技能：用天猫商家账号读取的万相台营销场景报表、生意参谋店铺经营核心日报与发品类目和字段规则、用买家账号读取的单品报告、由素材文件夹整理出的商品草稿、把确认后的草稿存到天猫仓库或拼多多草稿箱，以及生成其上传包的打包步骤。"
 kind: "package-reference"
 ---
 # 天猫取数技能
@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-tmall-skills` 存放六个 DSH 不随包发布的 Skill，由租户管理员上传到 [Skill Hub](../../../docs/glossary.zh.md#skill-hub)。用天猫[商家账号](../../../docs/glossary.zh.md#merchant-account)：`tmall-alimama-scene-report` 读取万相台各场景数据，`tmall-sycm-core-daily` 导出生意参谋店铺经营核心日报，`tmall-publish-category` 找出新品的类目及其表单字段。用[买家账号](../../../docs/glossary.zh.md#buyer-account)：`tmall-item-report` 写出单品事实层报告。`ecommerce-product-draft` 由素材文件夹整理出商品草稿，`tmall-publish` 把确认后的草稿存到店铺仓库，绝不上架。每个技能都以单个 ES 模块由 DSH 自带的 Node 运行。技能为何调用页面接口，见[电商账号 Agent Note](../../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.zh.md)。
+`@deepseek-ai/dsh-tmall-skills` 存放七个 DSH 不随包发布的 Skill，由租户管理员上传到 [Skill Hub](../../../docs/glossary.zh.md#skill-hub)。用天猫[商家账号](../../../docs/glossary.zh.md#merchant-account)：`tmall-alimama-scene-report` 读取万相台各场景数据，`tmall-sycm-core-daily` 导出生意参谋店铺经营核心日报，`tmall-publish-category` 找出新品的类目及其表单字段。用[买家账号](../../../docs/glossary.zh.md#buyer-account)：`tmall-item-report` 写出单品事实层报告。`ecommerce-product-draft` 由素材文件夹整理出商品草稿，`tmall-publish` 和 `pdd-publish` 把确认后的草稿存到天猫仓库或拼多多草稿箱，绝不上架。技能为何调用页面接口，见[电商账号 Agent Note](../../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.zh.md)。
 
 ## 目录
 
@@ -39,6 +39,8 @@ node --input-type=module -e "import { packSkills } from './packages/ecommerce/tm
 
 `scripts/publish.mjs`（技能 `tmall-publish`）接受一个子命令、`--account <id>`、`--draft <商品草稿 json>` 和 `--out <目录>`（`天猫发品`），以同样方式接管商家账号。`check` 通过千牛商品管理页的 `all` 标签查店里（出售中和仓库中）：先查记录文件 `发品记录.json` 里同一店铺同一商品（同标题，或同一组 SKU 编码）存过的商品 id，再按草稿标题查，只说明查到了什么、不改动任何东西；草稿没有标题时退出码为 `64`；标题含这些字的商品超过 20 个时退出码为 `1`，因为商品管理页一次只返回 20 行。`save` 另外接受 `--rules <json>`（同一份字段规则文件）、`--confirmed`（只有用户在确认卡片里认可草稿后模型才加）、`--stock <n>`（表格没给库存的 SKU 的库存）和 `--unknown-checked`。以下情况拒绝保存（退出码 `64`，列出全部原因）：草稿没按这份规则检查过、有缺失素材或问题、必填字段缺失（有显示条件的字段除外）、有「不符合」的值、声明未确认、有 SKU 没有库存，或没加 `--confirmed` 时有「待确认」的值；`check` 能查到同款时直接返回该商品，不再保存；这件商品上次的提交以 `unknown` 结束或停在 `submitting` 时也拒绝（退出码 `64`），直到用户在千牛确认没有保存上、并加上 `--unknown-checked`。随后先写一条 `submitting` 记录，把进度逐行打印到 stderr，打开发布页，读取页面自己的值（`window.Json2`：页面预留的商品 id、trace、每个字段的默认值和 SKU 的规格数量列），把图片传到图片空间的「DSH发品」文件夹（没有时新建；`mtop.taobao.picturecenter.console.dir.*`、`stream-upload.taobao.com/api/upload.api`）：文件夹里已有相同 MD5 的图片直接复用，白底图和透明素材图不是 800×800 时裁成 800×800，文件名用图片的真实格式。表单是页面自己的值加上草稿的内容：标题、图片、类目属性、已确认的声明、发货时间、按颜色分类的 SKU（价格、库存、编码、只数、SKU 图）、一口价、商品数量、取各 SKU 编码共同前缀的商家编码、上架时间「放入仓库」，以及每张详情图一个图片模块。由页面自己的请求方法（`GlobalStore.app.request`，会带上天猫网关要求的请求头）提交到 `/tmall/submit.htm`。提交前出错和天猫返回表单错误都记为 `failed` 并打印（退出码 `1`）；提交后一直没有答复时记为 `unknown`，提示先运行 `check`、不要重试。天猫答复已保存的商品再按 id 到仓库核验：查到记为 `saved`，打印商品 ID 以及编辑页和仓库页链接；反而出现在出售中时记为 `on-sale`，提示用户立即下架（退出码 `1`）；哪里都查不到记为 `unknown`（退出码 `1`）。读图片空间每次最多 60 秒，每张图上传最多 120 秒，提交最多 180 秒。任何商品都不会上架。
 
+`scripts/pdd-publish.mjs`（技能 `pdd-publish`）接受一个子命令、`--account <id>`（拼多多商家账号）和 `--out <目录>`（`拼多多发品`）。它在已登录的商家后台商品列表页里工作，这个页面打开时不会新建编辑会话：后台的每个接口都要带页面的风控参数（`anti-content`，不带会被 54001 拒绝），所以每次调用都通过页面的 webpack 运行时取页面自己的 anti-content 模块，带上它生成的参数。`resolve` 只接受一个来源：`--keyword`（类目页的搜索，`search/categories/v2`）、`--line`（公司记住的平台为 `pinduoduo` 的类目）、`--cat <id>`，或 `--image <文件> --title <标题>`（拼多多推荐，`category/predict/list`，需要先上传主图并新建编辑会话）；店铺缺资质的类目单独列出。`children [--parent <id>]` 列出一层类目（`categories?parentId=`）。`rules --cat <id>` 读取属性模板（`draco-ms/mms/template/mall`）和发布规则（`query/rules/limit/new`），按 `ecommerce-product-draft` 检查的字段规则格式保存 `字段规则_<id>.json`（带 `platform: pinduoduo`）：标题（规则给的宽度，60）、轮播图和详情图、每个类目属性（`p-<ref_pid>`，带可选值）、SKU 与库存、发货时间（取规则里的承诺发货时间选项），以及 SKU 价（拼单价）之外拼多多还要的两个价格：单买价比拼单价高（元）和参考价（元）。`check` 和 `save` 的参数、记录文件和拦截条件与 `publish.mjs` 相同：同一商品按记录里仍在草稿箱的草稿 id、同标题的草稿（`query/commit/list`）、同标题或记录里商品 id 的商品（`query/display/mall/goodsList`）认出。`save` 还拒绝其他平台的字段规则和用不了的价格：加价要大于 0，参考价要高于最高的单买价。它新建一个编辑会话（`edit/commit/create_new`）并选类目（`update_goods_commit_info`），上传图片（`galerie/business/get_signature`，再 `file.pinduoduo.com/v3/store_image`），把每个 SKU 名称建成「套餐」规格值（`query/spec/by/name`），再把会话自己的值（保存表单带的那些字段）填上草稿后用 `goodsCommit/action/edit` 保存：`gallery` 里最多 10 张轮播图和详情图，类目属性写成 `goods_properties`（「5年」这样的保质期换算成天数），SKU 带拼单价和单买价（分）、库存、编码和 SKU 图，参考价、发货时间，以及取各 SKU 编码共同前缀的商家编码。拼多多拒绝记为 `failed`，没有答复记为 `unknown`；保存后最多 30 秒在草稿箱里核验。不会提交审核或上架。拼多多会拒绝过于频繁地新建编辑会话（「操作过于频繁」），所以只有 `save` 和按主图的 `resolve` 会新建。
+
 `scripts/item-report.mjs` 接受商品链接或 id，以及 `--questions`（100）、`--reviews`（200）、`--appends`（100）、`--per-tag`（100）和 `--out <目录>`（`天猫报表`）。它运行 `dsh-ecommerce buyer`，由 DSH 挑选可用且当天打开页面最少的买家号；每个商品打开 1 个商品页（`item.taobao.com/item.htm?id=…`，无论跳转几次 DSH 只计 1 次），每个商品开始前若买家号当天剩余页数已用完就停止。在商品页上读取服务端渲染的数据（`__ICE_APP_CONTEXT__`：标题、店铺、价格、主图、视频，以及 SKU 的价格、库存和选项图），从页面自己发出的 `mtop.taobao.detail.getdesc` 响应读取详情图（重放会被拒绝），再通过页面自己的 `lib.mtop.request` 调用接口，每次间隔 4.5~6 秒：问大家（`mtop.taobao.wdj.list.merge.search`，每次 20 条）和评价（`mtop.taobao.rate.detaillist.get`，每次 50 条）——按平台默认排序的主列表、每个负面印象标签（labelId 以 -13 结尾或 gray）以及追评 tab，每条都标明来源。遇到滑块、身份验证、`RGV587`，或接口 20 秒没有应答，整次运行立即停止，不重试、不验证、不换号，并用 `dsh-ecommerce risk <id>` 让 DSH 把这个账号冷却；DSH 拒绝页面（`ERR_BLOCKED_BY_CLIENT`）也同样停止。问大家或评价的其他失败只丢失那一部分，不是标准详情页或没有 SKU 数据的商品会被跳过；两者都会写明，运行继续。已读到的内容写入 `单品_<id>/`（`item.json`、`skus.csv`、`questions.csv`、`reviews.csv`、`reviews_negative.csv`、`facts.json`、`报告.md`，以及带天猫 Referer 下载的 `images/`），并列出没有采集到的商品。`facts.json` 和 `报告.md` 只含带样本口径的统计和逐字引用：按只数折算的 SKU 价格阶梯、主列表里已购 SKU 的占比、按月的好中差分布、按类归纳的负面评价（中差评、负面标签、负面追评）、好评主题和问大家顾虑。全部商品完整读完退出码为 `0`，被风控或页数上限停止为 `4`，买家号已退出登录为 `3`，命令行有误为 `64`，有商品没有完整读完或其他失败为 `1`。
 
 -----
@@ -46,7 +48,7 @@ node --input-type=module -e "import { packSkills } from './packages/ecommerce/tm
 <a id="model-experience"></a>
 ## 模型体验
 
-间接影响，经由 Skill Hub 安装和 bash 工具；DSH 不加载本包。已安装技能在技能目录中的描述就是其 `SKILL.md` 的 `description`，用中文写给租户员工。商家技能的正文告诉模型：按 `ecommerce-accounts` 的规则选账号，从 `load_workspace_dependencies` 取得 Node 路径，在一次 bash 调用中按技能基础目录运行脚本，以及各退出码的含义：转述摘要和文件路径；数据未就绪时如实说明，不拼凑数字；已退出登录时请用户到设置页，不换店；花费不一致时把两边的数字都告诉用户。单品技能的正文告诉模型：bash 超时设为 600000 毫秒（买家号只在这次调用内被占用），只在用户要求时调大数量，结论只基于报告里的统计和逐字引用并注明样本，遇到风控后不重试、不验证、不换号。发品类目技能的正文告诉模型：按顺序尝试各个类目来源，除用户给的类目 id 或本店同款外的候选都要用户确认，声明原文照录、不替用户认定。商品素材整理技能的正文告诉模型：「待判断」的图片看图判断或问用户，标题和卖点由模型自己写并标为模型生成，只写用户或店铺给出的值、不猜注册证号等资质信息，缺素材时请用户补充而不拿别的图顶替。发品存仓库技能的正文告诉模型：先把草稿逐项列给用户，再用提问卡片询问，选项依次为「修改某项」「重新生成标题」「补缺失」「取消」「一键认可，保存到仓库」，不给任何选项标推荐，让默认选中的第一项永远不会保存；只有用户选了「一键认可」后才运行 `save --confirmed`，bash 超时设为 600000 毫秒；店里已有同款就停下；只有用户说千牛里没有这件商品后才加 `--unknown-checked`；声明原文第一次必须由用户确认并记下；只通过 `publish.mjs save` 保存，绝不修改、复制或自写脚本，也不自己调用天猫接口，出错时告诉用户，不自行修复后重试。脚本把摘要（几行的表格，`rules` 约 30 行字段）打印到 stdout，停止时把一行原因打印到 stderr。
+间接影响，经由 Skill Hub 安装和 bash 工具；DSH 不加载本包。已安装技能在技能目录中的描述就是其 `SKILL.md` 的 `description`，用中文写给租户员工。商家技能的正文告诉模型：按 `ecommerce-accounts` 的规则选账号，从 `load_workspace_dependencies` 取得 Node 路径，在一次 bash 调用中按技能基础目录运行脚本，以及各退出码的含义：转述摘要和文件路径；数据未就绪时如实说明，不拼凑数字；已退出登录时请用户到设置页，不换店；花费不一致时把两边的数字都告诉用户。单品技能的正文告诉模型：bash 超时设为 600000 毫秒（买家号只在这次调用内被占用），只在用户要求时调大数量，结论只基于报告里的统计和逐字引用并注明样本，遇到风控后不重试、不验证、不换号。发品类目技能的正文告诉模型：按顺序尝试各个类目来源，除用户给的类目 id 或本店同款外的候选都要用户确认，声明原文照录、不替用户认定。商品素材整理技能的正文告诉模型：「待判断」的图片看图判断或问用户，标题和卖点由模型自己写并标为模型生成，只写用户或店铺给出的值、不猜注册证号等资质信息，缺素材时请用户补充而不拿别的图顶替。发品存仓库技能的正文告诉模型：先把草稿逐项列给用户，再用提问卡片询问，选项依次为「修改某项」「重新生成标题」「补缺失」「取消」「一键认可，保存到仓库」，不给任何选项标推荐，让默认选中的第一项永远不会保存；只有用户选了「一键认可」后才运行 `save --confirmed`，bash 超时设为 600000 毫秒；店里已有同款就停下；只有用户说千牛里没有这件商品后才加 `--unknown-checked`；声明原文第一次必须由用户确认并记下；只通过 `publish.mjs save` 保存，绝不修改、复制或自写脚本，也不自己调用天猫接口，出错时告诉用户，不自行修复后重试。拼多多发品技能的正文对草稿箱沿用同样的卡片和规则，并告诉模型：按记住的产品线、商品名或主图找类目，推测出来的类目要用户确认；类目属性按平台可选值原文写，不编造注册证号；单买价加价和参考价由用户给出或确认。脚本把摘要（几行的表格，`rules` 约 30 行字段）打印到 stdout，停止时把一行原因打印到 stderr。
 
 #### KV Cache 影响
 
@@ -56,7 +58,7 @@ node --input-type=module -e "import { packSkills } from './packages/ecommerce/tm
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **只支持天猫和淘宝** —— 拼多多、抖店的数据不在本包；商家数据只有天猫。
+- **数据来自天猫和淘宝** —— 报表读的是天猫商家数据和淘宝/天猫买家数据；拼多多只有存草稿，抖店在本包里没有。
 - **只计页面加载** —— DSH 计入商品页；问大家和评价的接口调用不计入每日页数。
 - **买家号只被一次 bash 调用占用** —— 超过 bash 超时被转为后台运行时，占用和 DSH 的监视都会结束；默认数量让每个商品约 1~2 分钟跑完。
 - **存仓库只覆盖一种表单** —— `tmall-publish` 填的是避孕套类目表单需要的字段：销售属性只有颜色分类，详情只有图片，没有视频；销售属性或必填字段不同的类目会因天猫的表单错误而停止。
@@ -70,7 +72,9 @@ node --input-type=module -e "import { packSkills } from './packages/ecommerce/tm
 - **只交叉校验花费** —— 访客、支付和买家数在这里没有第二个来源。
 - **按名称和比例归类** —— 没有名称线索的图片按比例和像素归类；没有线索的场景图会被当作 1:1 主图，WebP 等格式的图片标为「待判断」。
 - **记忆由模型写入** —— 技能只读发品记忆、从不写入；模型按技能正文的要求，在用户确认后用 `dsh-ecommerce remember` 保存，用户没确认过的内容不会被记住。旧商品的值仍由用户在对话中提供，草稿只按天猫的字段规则检查。
-- **还不提交** —— 定类目、字段规则和商品草稿是发品的前几步，确认和保存到平台草稿以后再做；条件保留页面自己的表达式写法，只在条件成立时才必填的字段会列为缺失并加说明。
+- **只保存，不提交** —— 技能存到天猫仓库或拼多多草稿箱就停下，上架由用户自己操作。天猫的条件保留页面自己的表达式写法，只在条件成立时才必填的字段会列为缺失并加说明。
+- **草稿箱保存只覆盖一种表单** —— `pdd-publish` 只填「套餐」这一个规格、详情只有图片、只填模板列出的属性；拼多多的其他服务（服务承诺、视频、尺码表）保留会话的默认值。
+- **anti-content 模块在页面里找** —— 脚本取 webpack 模块 `fbeZ`，没有时取实例能生成 `messagePack` 的已加载模块；拼多多重建页面后两者都找不到时，脚本停止，等更新。
 - **导出会留下记录** —— 每次运行生意参谋技能都会在店铺的自助取数下载列表里多一条导出。
 
 <a id="dev-note"></a>

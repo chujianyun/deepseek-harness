@@ -1,5 +1,5 @@
 /**
- * Take over a Tmall merchant account's signed-in Chrome, and read the company's publishing memory,
+ * Take over a merchant account's signed-in Chrome, and read the company's publishing memory,
  * through DSH's `dsh-ecommerce` command.
  */
 
@@ -39,18 +39,26 @@ export function runDshEcommerce(args: readonly string[]): Promise<EcommerceComma
   })
 }
 
+/** The platforms a merchant skill works with, and their names for the user. */
+export const MERCHANT_PLATFORMS = { tmall: '天猫', pinduoduo: '拼多多' } as const
+
+/** A platform a merchant skill works with. */
+export type MerchantPlatform = keyof typeof MERCHANT_PLATFORMS
+
 /**
- * Reserve a Tmall merchant account's browser for this bash call, as DSH checks it is still signed in.
+ * Reserve a merchant account's browser for this bash call, as DSH checks it is still signed in.
  * @param accountId - the account id from `dsh-ecommerce accounts`.
  * @param run - runs `dsh-ecommerce`.
+ * @param platform - the platform the skill works with.
  * @returns the account and its browser address.
  * @throws SkillError with what DSH said when it refuses, signed-out when the account is signed out,
- *   or when the account is not a Tmall merchant account.
+ *   or when the account is not a merchant account of that platform.
  */
-export async function takeOverMerchant(accountId: string, run = runDshEcommerce): Promise<MerchantBrowser> {
+export async function takeOverMerchant(accountId: string, run = runDshEcommerce, platform: MerchantPlatform = 'tmall'): Promise<MerchantBrowser> {
   const taken = await takeOver(['browser', accountId], run)
-  if (taken.platform !== 'tmall' || taken.kind !== 'merchant') {
-    throw new SkillError(`账号 ${accountId} 不是天猫商家账号（平台 ${taken.platform}，类型 ${taken.kind}），这个技能只能用天猫商家账号。`, EXIT.usage)
+  if (taken.platform !== platform || taken.kind !== 'merchant') {
+    const name = MERCHANT_PLATFORMS[platform]
+    throw new SkillError(`账号 ${accountId} 不是${name}商家账号（平台 ${taken.platform}，类型 ${taken.kind}），这个技能只能用${name}商家账号。`, EXIT.usage)
   }
   return { id: taken.id, store: taken.store ?? taken.account, account: taken.account, cdpUrl: taken.cdpUrl }
 }

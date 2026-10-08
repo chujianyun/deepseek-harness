@@ -18,7 +18,9 @@
 // out; on item 600000000004 the APIs answer with risk control. Tmall's publish entry answers its category tree
 // and search with the store's 计生用品 > 避孕套, and that category's publish page carries its form; the publish
 // page also answers its image space folders and uploads and saves what its request helper submits to the
-// warehouse, which the item manager lists under in_stock and all. Its tabs are
+// warehouse, which the item manager lists under in_stock and all. Pinduoduo's seller pages answer the
+// backend calls the pdd-publish skill makes: the 避孕套 category and its template, image uploads, and a
+// 草稿箱 that a save adds to. Its tabs are
 // kept in `<user-data-dir>/fake-tabs.json` and come back with --restore-last-session. As in Chrome, a
 // closed tab is still listed once by Target.getTargets, but has no window any more.
 import { createHash } from 'node:crypto'
@@ -210,6 +212,35 @@ const submitItem = (expression) => {
   shop.warehouse.push({ itemId: query.get('itemId'), title: form.title?.title?.[0] ?? '' })
   return { models: { globalMessage: { successUrl: `https://sell.publish.tmall.com/tmall/success.htm?primaryId=${query.get('itemId')}&auctionStatus=-2` } } }
 }
+/** A Pinduoduo store's 草稿箱 and edit sessions. */
+const mall = { drafts: [], sessions: 0 }
+const PDD_LINE = { cat_id_1: 16237, cat_id_2: 18768, cat_id_3: 18770, cat_id_4: 0, cat_name_1: '成人用品', cat_name_2: '计生用品', cat_name_3: '避孕套', optional: true }
+const pddApi = (expression) => {
+  const [, method, path, body] = /^window\.__dshPdd\("(\w+)", ("(?:[^"\\]|\\.)*"), (.*)\)$/su.exec(expression) ?? []
+  const route = JSON.parse(path ?? '""').split('?')[0]
+  const data = body === undefined || body === 'undefined' ? {} : JSON.parse(body)
+  const ok = result => ({ success: true, error_code: 1000000, result })
+  switch (`${method} ${route}`) {
+    case 'GET /vodka/v2/mms/search/categories/v2': return ok({ cat_info_v2_lists: [PDD_LINE] })
+    case 'GET /vodka/v2/mms/category/detail': return ok({ id: 18770, cat_id_1: 16237, cat_id_2: 18768, cat_id_3: 18770, cat_id_4: 0, cat_id_1_name: '成人用品', cat_id_2_name: '计生用品', cat_id_3_name: '避孕套' })
+    case 'GET /draco-ms/mms/template/mall': return ok({ id: 55906, modules: [{ id: 77408, propertys: [
+      { id: 510122, ref_pid: 310, pid: 5, name_alias: '品牌', required: true, control_type: 1, choose_max_num: 1, values: { content: [{ vid: 3954, value: 'Personage/名流' }] } },
+      { id: 510123, ref_pid: 842, pid: 234, name_alias: '注册证号', required: true, control_type: 0, choose_max_num: 0 },
+    ] }] })
+    case 'POST /glide/v2/mms/query/rules/limit/new': return ok({ shipment_limit_second: [86400, 172800], goods_title_length_limit: 60 })
+    case 'POST /glide/v2/mms/edit/commit/create_new': mall.sessions++; return ok({ goods_commit_id: 203110000 + mall.sessions, goods_id: 1013940000 + mall.sessions })
+    case 'POST /glide/mms/goodsCommit/action/update_goods_commit_info': return ok(true)
+    case 'POST /galerie/business/get_signature': return ok({ signature: 'fake-sign' })
+    case 'POST /glide/v2/mms/query/spec/by/name': return ok(31406958000 + data.name.length)
+    case 'POST /glide/v2/mms/query/commit/detail': return ok({ goods_id: data.goods_commit_id - 203110000 + 1013940000, check_status: 9, cost_template_id: 1, groups: {} })
+    case 'POST /glide/mms/goodsCommit/action/edit':
+      mall.drafts.unshift({ id: Number(data.goods_commit_id), goods_id: data.goods_id, goods_name: data.goods_name, check_status: 0 })
+      return ok(true)
+    case 'POST /glide/v2/mms/query/commit/list': return ok({ total: mall.drafts.length, list: mall.drafts.slice(data.start, data.start + data.length) })
+    case 'POST /vodka/v2/mms/query/display/mall/goodsList': return ok({ goods_list: [] })
+    default: return { success: false, error_code: 50000, error_msg: `fake chrome has no ${route}` }
+  }
+}
 /** An item page's 问大家 and review APIs: two questions, two main reviews, one negative tag, and a follow-up. */
 const itemApi = (target, expression) => {
   const success = data => ({ ret: 'SUCCESS::调用成功', data, punish: false })
@@ -233,6 +264,9 @@ const evaluateIn = (target, expression) => {
   if (expression.includes('#nocaptcha')) return false
   if (expression === "document.readyState === 'complete'") return true
   if (expression.includes('categorySelectChildren') || expression.includes('retrievalDataAsyncOpt')) return categoryApi(expression)
+  if (expression.includes('if (window.__dshPdd) return true')) return true
+  if (expression.startsWith('window.__dshPdd(')) return pddApi(expression)
+  if (expression.includes('file.pinduoduo.com/v3/store_image')) return { url: `https://pfs.pinduoduo.com/fake-${String(Date.now())}.png` }
   if (expression.startsWith('Boolean(window.lib')) return true
   if (expression.includes('j.models.global')) return target.url.includes('catId=50024154') ? publishBase() : null
   if (expression.includes('window.Json2')) return target.url.includes('catId=50024154') ? publishForm() : { error: '类目为空或不存在' }

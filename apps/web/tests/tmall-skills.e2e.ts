@@ -14,7 +14,8 @@
 // With a signed-in buyer account instead, the item skill's script lets DSH pick the buyer account,
 // opens each item page once (counted toward the account's pages today), reads the stand-in's item,
 // 问大家, and reviews, stops at risk control keeping what it read and has DSH rest the account, and is
-// refused while the account rests.
+// refused while the account rests. With a signed-in Pinduoduo merchant account, the pdd-publish skill
+// finds the category, reads its rules, and saves the checked draft to the store's 草稿箱 once.
 import { once } from 'node:events'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
@@ -50,6 +51,12 @@ const REMEMBERED = {
     { key: 'productConfirm', text: '您已确认所发布的产品信息都准确无误。' },
   ] },
 }
+/** What the scripted model answers for a Pinduoduo draft: the title, properties, and the extra prices. */
+const PDD_ANSWERS = { values: {
+  商品标题: { value: '名流水多多三合一玻尿酸避孕套', source: '模型生成' }, 品牌: { value: 'Personage/名流', source: '店铺资料' },
+  注册证号: { value: '皖械注准20182180006', source: '店铺资料' }, 发货时间: { value: '48小时', source: '店铺资料' },
+  '单买价比拼单价高（元）': { value: '5', source: '店铺资料' }, '参考价（元）': { value: '99.9', source: '店铺资料' },
+} }
 /** The skill each request asks for, and its script. */
 const SCRIPTS: Record<string, string> = {
   'tmall-alimama-scene-report': 'alimama-scene-report.mjs',
@@ -76,7 +83,7 @@ function streamChat(res: ServerResponse, request: ChatRequest, skillsDir: string
   })}\n\n`
   // The employee's requests are short; the skill catalog the harness adds as a user message names the same words.
   const asks = (message: ChatRequest['messages'][number]) => message.role === 'user' && JSON.stringify(message.content ?? '').length < 300
-  const lastAsk = request.messages.findLastIndex(message => asks(message) && /2026-10-06 的|采集商品|定天猫类目|整理素材|记住店铺资料|确认卡片里一键认可/u.test(JSON.stringify(message.content ?? '')))
+  const lastAsk = request.messages.findLastIndex(message => asks(message) && /2026-10-06 的|采集商品|定天猫类目|整理素材|记住店铺资料|确认卡片里一键认可|拼多多草稿箱/u.test(JSON.stringify(message.content ?? '')))
   const asked = JSON.stringify(request.messages[lastAsk]?.content ?? '')
   const results = request.messages.slice(lastAsk + 1).filter(message => message.role === 'tool').map(message => JSON.stringify(message.content))
   const catalog = JSON.stringify(request.messages.map(message => message.content ?? ''))
@@ -121,6 +128,18 @@ function streamChat(res: ServerResponse, request: ChatRequest, skillsDir: string
     bash(`${store} save --account ${id as string} --draft 发品草稿/商品草稿.json --rules 天猫发品/字段规则_50024154.json --confirmed --stock 1000`)
     return
   }
+  const pdd = asked.includes('拼多多草稿箱') && catalog.includes('`pdd-publish`')
+  const pddScript = `"${process.execPath}" "${join(skillsDir, 'pdd-publish', 'scripts', 'pdd-publish.mjs')}"`
+  const pddSteps = [
+    () => 'dsh-ecommerce accounts',
+    () => `${pddScript} resolve --account ${id as string} --keyword 避孕套`,
+    () => `${pddScript} rules --account ${id as string} --cat 18770`,
+    () => `printf '%s' '${JSON.stringify(PDD_ANSWERS)}' > 发品草稿/答案.json && ${draft} draft --folder 素材 --answers 发品草稿/答案.json --rules 拼多多发品/字段规则_18770.json`,
+    () => `${pddScript} save --account ${id as string} --draft 发品草稿/商品草稿.json --rules 拼多多发品/字段规则_18770.json --confirmed --stock 1000`,
+    () => `${pddScript} save --account ${id as string} --draft 发品草稿/商品草稿.json --rules 拼多多发品/字段规则_18770.json --confirmed --stock 1000`,
+  ]
+  const pddStep = pddSteps[results.length]
+  if (pdd && pddStep !== undefined) { bash(pddStep()); return }
   if (skill !== undefined && results.length === 1 && id !== undefined) {
     bash(`"${process.execPath}" "${join(skillsDir, skill, 'scripts', SCRIPTS[skill] as string)}" --account ${id} --date 2026-10-06`)
     return
@@ -387,3 +406,85 @@ it.skipIf(process.platform === 'win32')('runs the packed item skill with a buyer
     Reflect.deleteProperty(process.env, 'DSH_E2E_CHAT_API')
   }
 }, 240_000)
+
+it.skipIf(process.platform === 'win32')('saves a checked draft to a Pinduoduo store\'s 草稿箱 once with the packed pdd-publish skill', async () => {
+  const harnessHome = await mkdtemp(join(tmpdir(), 'dsh-pdd-publish-home-'))
+  const skillsDir = join(harnessHome, 'skills')
+  await packSkills(skillsDir)
+  const chat = await startChat(skillsDir)
+  const center = await startMockUserCenter()
+  Object.assign(process.env, { DSH_E2E_HUB_ORIGIN: center.origin, DSH_E2E_CHAT_API: chat.baseURL })
+  await mkdir(join(harnessHome, 'profiles', 'scaffold'), { recursive: true })
+  await writeFile(join(harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), JSON.stringify([{
+    id: 'ecommerce-accounts', config: { dshHome: harnessHome, chromePath: FAKE_CHROME, signInPollMs: 200, chromeTimeoutMs: 5000, checkTimeoutMs: 3000 },
+  }]))
+  const scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAYS, harnessHome })
+  const browser = await chromium.launch()
+  let failurePage: Page | undefined
+  let accountDir: string | undefined
+  try {
+    await scaffold.ctx.hubAccount.signIn()
+    await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).attempt?.authorizeUrl).toBeDefined()
+    await browse((await scaffold.ctx.hubAccount.getState()).attempt!.authorizeUrl!)
+    await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).status).toBe('signed-in')
+    await scaffold.ctx.credentials.set(credentialRef('DSH_E2E_ACME_KEY'), 'sk-acme-e2e')
+
+    // A signed-in Pinduoduo merchant account; the stand-in names the store after the user: 拼多多小 + 店.
+    const accounts = scaffold.ctx.ecommerceAccounts
+    const { accountId } = await accounts.addAccount({ platform: 'pinduoduo', kind: 'merchant', storeName: '拼多多小店', account: 'pdd:运营' })
+    await accounts.startSignIn(accountId)
+    const tenantId = (await scaffold.ctx.hubAccount.getState()).profile!.tenantId!
+    accountDir = join(harnessHome, 'ecommerce', tenantId, 'browsers', accountId)
+    await expect.poll(() => readFile(join(accountDir!, 'chrome.json'), 'utf8').then(() => true, () => false), { timeout: 10_000 }).toBe(true)
+    await writeFile(join(accountDir, 'user-data', 'fake-signed-in'), '拼多多小')
+    await expect.poll(async () => (await accounts.getState()).accounts[0]!.status, { timeout: 15_000 }).toBe('signed-in')
+
+    const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
+    failurePage = page
+    await page.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+    const tripwire = watchConsole(page)
+    await page.goto(scaffold.authenticatedUrl)
+    await connectFreshWorkspaceZh(page, scaffold.workspaceCwd, 'pdd-publish')
+    await page.getByRole('button', { name: /^选择模型/ }).click()
+    await page.getByRole('menuitem', { name: /^模型/ }).click()
+    await page.getByRole('menuitemradio', { name: 'acme-chat' }).click()
+    const input = page.locator('[data-composer-input][contenteditable="true"]').first()
+    const materials = join(scaffold.workspaceCwd, 'pdd-publish', '素材')
+    for (const [file, bytes] of [
+      ['方图/主图-1.png', png(120, 120)], ['详情页/1.png', png(60, 100)], ['sku图/sku1.png', png(100, 100)], ['sku图/sku2.png', png(100, 100)],
+      ['sku.csv', '序号,上架名称,商家编码,到手价\nSKU1,尝鲜装 18只,ml-a,42.9\nSKU2,超值装 40只,ml-b,69.9\n'],
+    ] as const) {
+      await mkdir(join(materials, file, '..'), { recursive: true })
+      await writeFile(join(materials, file), bytes)
+    }
+    await mkdir(join(scaffold.workspaceCwd, 'pdd-publish', '发品草稿'), { recursive: true })
+
+    await writeComposerDraft(page, input, '用户已确认，请把素材存进拼多多草稿箱，每个 SKU 库存 1000')
+    await page.keyboard.press('Enter')
+    await page.getByText(ANSWER).first().waitFor({ timeout: 90_000 })
+    const steps = chat.chats.at(-1)!.messages.filter(message => message.role === 'tool').map(message => JSON.stringify(message.content))
+    expect(steps[1]).toContain('1. 成人用品 > 计生用品 > 避孕套（类目 id 18770）—— 拼多多类目搜索「避孕套」')
+    expect(steps[2]).toContain('- 品牌，可选：Personage/名流')
+    expect(steps[3]).toContain('按类目 成人用品 > 计生用品 > 避孕套（18770）的字段规则检查：缺失 1、不符合 0')
+    expect(steps[4]).toContain('已保存到店铺 拼多多小店 的草稿箱（没有提交上架）：草稿 ID 203110001，商品 ID 1013940001，标题「名流水多多三合一玻尿酸避孕套」。')
+    expect(steps[5]).toContain('没有重复保存：店铺 拼多多小店 里已有「名流水多多三合一玻尿酸避孕套」，ID 203110001（')
+    const tried = JSON.parse(await readFile(join(scaffold.workspaceCwd, 'pdd-publish', '拼多多发品', '发品记录.json'), 'utf8')) as { status: string; draftId?: string }[]
+    expect(tried.map(record => [record.status, record.draftId])).toEqual([['submitting', undefined], ['saved', '203110001']])
+    expect(tripwire.pageErrors).toEqual([])
+  } catch (error) {
+    if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-pdd-publish')
+    throw error
+  } finally {
+    await browser.close()
+    if (accountDir !== undefined) {
+      const record = await readFile(join(accountDir, 'chrome.json'), 'utf8').catch(() => undefined)
+      if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
+    }
+    await scaffold.close()
+    await chat.close()
+    await center.close()
+    await rm(harnessHome, { recursive: true, force: true })
+    Reflect.deleteProperty(process.env, 'DSH_E2E_HUB_ORIGIN')
+    Reflect.deleteProperty(process.env, 'DSH_E2E_CHAT_API')
+  }
+}, 180_000)

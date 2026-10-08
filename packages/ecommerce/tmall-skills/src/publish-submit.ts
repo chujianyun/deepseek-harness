@@ -10,6 +10,7 @@
 
 import type { Draft, FieldCheck } from './draft.ts'
 import { EXIT, SkillError } from './errors.ts'
+import { commonPrefix } from './publish-common.ts'
 import { ownItems, type OwnItem } from './publish-category.ts'
 import type { FieldRule, PublishRules } from './publish-rules.ts'
 import type { Page } from './page.ts'
@@ -262,14 +263,6 @@ export function buildForm(base: PageBase, input: FormInput): Record<string, unkn
   form.shelfTime = { ...base.defaults.shelfTime as object, type: 2 }
   form.descRepublicOfSell = description(base, draft.images.detail.map(uploaded))
   return form
-}
-
-/** The longest start every code shares, such as mldx238 for mldx238a … mldx238f. */
-function commonPrefix(codes: readonly string[]): string {
-  if (codes.length === 0) return ''
-  let prefix = codes[0] as string
-  for (const code of codes) while (!code.startsWith(prefix)) prefix = prefix.slice(0, -1)
-  return prefix
 }
 
 /**

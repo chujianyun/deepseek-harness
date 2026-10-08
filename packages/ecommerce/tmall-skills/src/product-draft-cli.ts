@@ -14,7 +14,7 @@ import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { realDeps, type Deps } from './cli.ts'
 import { beijingTime } from './dates.ts'
-import { buildDraft, checkDraft, parseAnswers, withMemory, type Answers, type Confirmed, type Draft, type FieldCheck, type FieldStatus } from './draft.ts'
+import { buildDraft, checkDraft, generatedLabels, parseAnswers, withMemory, type Answers, type Confirmed, type Draft, type FieldCheck, type FieldStatus } from './draft.ts'
 import { EXIT, SkillError } from './errors.ts'
 import { KIND_LABEL, SKU_FIELD_LABEL, takeInventory, type ImageKind, type Inventory } from './materials.ts'
 import type { PublishRules } from './publish-rules.ts'
@@ -213,7 +213,7 @@ export async function main(argv: readonly string[], deps: Pick<Deps, 'stdout' | 
       answers = merged.answers
       confirmed = merged.confirmed
     }
-    const built = buildDraft(inventory, answers)
+    const built = buildDraft(inventory, answers, generatedLabels(rules))
     const draft = { ...built, notes: [...remembered, ...built.notes] }
     const checks = rules === undefined ? undefined : checkDraft(draft, rules, confirmed)
     const text = draftText(draft, rules, checks)
