@@ -10,7 +10,10 @@
 // and a page whose address has risk=1 also loads a risk-control frame.
 // FAKE_CHROME_VERSION sets the reported version (empty prints none); FAKE_CHROME_SILENT never sends
 // the check response; FAKE_CHROME_BASE64 encodes bodies; FAKE_CHROME_STUBBORN ignores Browser.close;
-// FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs. Its tabs are
+// FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs. For the Tmall
+// data skills, Alimama's report page sends its scene query, and `Runtime.evaluate` answers the page
+// APIs those skills call — Alimama's report query and Business Advisor's self-service export, whose
+// .xlsx this server hands out — with one day's figures for scenes 371 and 436. Its tabs are
 // kept in `<user-data-dir>/fake-tabs.json` and come back with --restore-last-session. As in Chrome, a
 // closed tab is still listed once by Target.getTargets, but has no window any more.
 import { createServer } from 'node:http'
@@ -120,8 +123,38 @@ const pageLoad = (url, nick) => {
   }
 }
 
+/** Alimama's figures for a day, the same whatever day is asked. */
+const SCENES = [
+  { sceneId: 371, scene1Name: '关键词推广', charge: 650, adPv: 3626, click: 198, alipayInshopAmt: 615.87, alipayInshopNum: 23, alipayInshopUv: 22, cartInshopNum: 22, inshopPotentialUvRate: 0.7764, orgNaturalPv: 2931, naturalPayAmt: 40.23 },
+  { sceneId: 436, scene1Name: '货品全站推广', charge: 10151.4, adPv: 93003, click: 6214, alipayInshopAmt: 25904.68, alipayInshopNum: 638, alipayInshopUv: 596, cartInshopNum: 427, inshopPotentialUvRate: 0.82742, orgNaturalPv: 90350, naturalPayAmt: 607.35 },
+]
+/** Business Advisor's 「店铺经营核心日报」 export of two days, with the same spend as Alimama. */
+const exportXlsx = async () => {
+  const { strToU8, zipSync } = await import('fflate')
+  const rows = [
+    ['统计日期', '店铺名称', '访客数', '支付金额', '支付买家数', '支付转化率', '客单价', '关键词推广花费', '精准人群推广花费', '全站推广花费'],
+    ['2026-10-07', '名流旗舰店', '7,872', '45,459.18', '1,015', '12.89%', '44.79', '650.00', '0.00', '10,151.40'],
+    ['2026-10-06', '名流旗舰店', '6,787', '34,000.20', '681', '10.03%', '49.93', '650.00', '0.00', '10,151.40'],
+  ]
+  const xml = rows.map((row, r) => `<row r="${String(r + 1)}">${row.map((cell, c) => `<c r="${String.fromCharCode(65 + c)}${String(r + 1)}" t="inlineStr"><is><t>${cell}</t></is></c>`).join('')}</row>`).join('')
+  return zipSync({ 'xl/worksheets/sheet1.xml': strToU8(`<worksheet><sheetData>${xml}</sheetData></worksheet>`) })
+}
+/** The answer to an expression a data skill evaluates in a tab. */
+const evaluateIn = (target, expression) => {
+  if (expression === 'location.href') return target.url
+  const api = [
+    ['/report/query.json', { data: { list: SCENES }, info: { ok: true } }],
+    ['/fetchData/template/list.json', { success: true, data: [{ id: 210, templateName: '店铺经营核心日报' }] }],
+    ['/fetchData/download.json', { success: true, data: true }],
+    ['/fetchData/queryDownloadUrl.json', { success: true, data: { status: '1', url: `http://127.0.0.1:${String(port)}/fake-export/core.xlsx` } }],
+    ['commDateByLocation.json', { data: {} }],
+  ].find(([path]) => expression.includes(path))
+  return api?.[1]
+}
+
 const server = createServer((req, res) => {
   const url = new URL(req.url, 'http://x')
+  if (url.pathname === '/fake-export/core.xlsx') return void exportXlsx().then((xlsx) => { res.end(Buffer.from(xlsx)) })
   res.setHeader('content-type', 'application/json')
   if (url.pathname === '/json/version') return res.end(JSON.stringify({ webSocketDebuggerUrl: `ws://127.0.0.1:${String(port)}/devtools/browser/fake` }))
   if (url.pathname === '/json' || url.pathname === '/json/list') return res.end(JSON.stringify([...targets.values()].map(t => ({ id: t.id, type: 'page', url: urlOf(t) }))))
@@ -170,7 +203,9 @@ wss.on('connection', (socket) => {
         closing = []
         return reply({ targetInfos: listed.map(t => ({ targetId: t.id, type: 'page', url: urlOf(t) })) })
       }
-      case 'Network.enable': return reply({})
+      case 'Network.enable':
+      case 'Page.enable': return reply({})
+      case 'Runtime.evaluate': return reply({ result: { value: evaluateIn(target, params.expression) } })
       case 'Page.navigate': {
         const networkId = `n${String(++pausedId)}`
         if (!await pause(target, params.url, target.id, networkId)) return reply({ frameId: 'f', errorText: 'net::ERR_BLOCKED_BY_CLIENT' })
@@ -183,6 +218,11 @@ wss.on('connection', (socket) => {
         target.url = params.url
         if (process.env.FAKE_CHROME_OFFLINE !== undefined) return reply({ frameId: 'f', errorText: 'net::ERR_INTERNET_DISCONNECTED' })
         reply({ frameId: 'f' })
+        if (params.url.startsWith('https://one.alimama.com/index.html#!/report/account')) {
+          const scene = { queryDomains: ['scene'], queryFieldIn: ['charge'], csrfId: 'fake-csrf', loginPointId: 'fake-point' }
+          return emit('Network.requestWillBeSent', { requestId: 'q1', request: { url: 'https://one.alimama.com/report/query.json?csrfId=fake-csrf', method: 'POST', postData: JSON.stringify(scene) } }, sessionId)
+        }
+        if (params.url.startsWith('https://sycm.taobao.com/')) return
         if (process.env.FAKE_CHROME_SILENT !== undefined) return
         const load = pageLoad(params.url, signedInAs())
         emit('Network.requestWillBeSent', { requestId: 'r0', type: 'Script', request: { url: 'https://login.taobao.com/x.js' } }, sessionId)

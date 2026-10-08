@@ -28,6 +28,10 @@ While a tenant is signed in, the `ecommerce-accounts` Skill tells the model how 
 
 Buyer accounts on Tmall and Taobao only view public product pages, and DSH, not the model, keeps them safe: while a task uses an account, DSH watches its browser through its own DevTools connection and pauses every page load. A merchant account opens no public product or search page. A buyer account opens at most the tenant's daily page limit (20 by default, set in Settings), counted by calendar day; once the platform's risk control shows, DSH loads nothing more for the task and rests the account for 72 hours. `dsh-ecommerce buyer` picks the usable buyer account that opened the fewest pages today, or says why none can be used. Buyer accounts are not checked in the background, since each check opens a page the platform counts.
 
+## Tmall data skills
+
+The first skills that use the accounts are not shipped with DSH: [`@deepseek-ai/dsh-tmall-skills`](../../packages/ecommerce/tmall-skills/README.md) builds `tmall-alimama-scene-report` (Alimama's figures per marketing scene for one day) and `tmall-sycm-core-daily` (Business Advisor's 「店铺经营核心日报」, with its advertising spend checked against Alimama) into Skill Hub upload packages, which a tenant's admin publishes to that tenant only. Each skill's script takes over a Tmall merchant account with `dsh-ecommerce browser`, calls the API the platform's own page calls, and runs under the Node that `load_workspace_dependencies` returns; it writes nothing when the platform has not finished the day.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>

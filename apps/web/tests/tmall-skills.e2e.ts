@@ -1,0 +1,181 @@
+// The Tmall data skills in a conversation, over the real `ecommerce-accounts`, `hub-account`, `skill`,
+// `shell-env`, bash, and `llm-pi-ai` rows with a stand-in Google Chrome: the two skills are packed as
+// for the Skill Hub and installed as user skills; signed in to a mock user center with a signed-in
+// Tmall merchant account, the employee asks for each report, and a scripted model finds the skill in
+// the catalog, lists the accounts, and runs the skill's script with the account in bash. The script
+// takes over the account's browser through `dsh-ecommerce`, reads the stand-in's Alimama and
+// Business Advisor figures, writes the reports into the workspace, and its summary reaches the chat.
+import { once } from 'node:events'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createServer, type ServerResponse } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { chromium, type Page } from 'playwright'
+import { expect, it } from 'vitest'
+import type {} from '@deepseek-ai/dsh-agent'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import type {} from '@deepseek-ai/dsh-ecommerce-accounts'
+import type {} from '@deepseek-ai/dsh-hub-account'
+import { packSkills } from '@deepseek-ai/dsh-tmall-skills'
+import { browse, startMockUserCenter } from '../../../packages/credentials/hub-account/tests/mock-user-center.ts'
+import { launchWebScaffold, watchConsole } from './scaffold.ts'
+import { connectFreshWorkspaceZh, saveFailureShot, writeComposerDraft, ZH_BROWSER_LOCALE } from './support.ts'
+
+const OVERLAYS = ['./hub-account.overlay.yml', './ecommerce-accounts.overlay.yml', './connectors-chat.overlay.yml']
+  .map(path => fileURLToPath(new URL(path, import.meta.url)))
+const FAKE_CHROME = fileURLToPath(new URL('../../../packages/ecommerce/ecommerce-accounts/tests/fake-chrome.mjs', import.meta.url))
+const ANSWER = 'TMALL_SKILL_ANSWER'
+/** The skill each request asks for, and its script. */
+const SCRIPTS: Record<string, string> = {
+  'tmall-alimama-scene-report': 'alimama-scene-report.mjs',
+  'tmall-sycm-core-daily': 'sycm-core-daily.mjs',
+}
+
+/** One chat completion request the mock received. */
+interface ChatRequest {
+  readonly messages: readonly { readonly role: string; readonly content?: unknown }[]
+}
+
+/**
+ * The model: for a request naming a skill that the catalog lists, it lists the accounts, runs that
+ * skill's script with the first account, then answers with what the script printed.
+ */
+function streamChat(res: ServerResponse, request: ChatRequest, skillsDir: string): void {
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
+  const chunk = (delta: Record<string, unknown>, finish: string | null) => `data: ${JSON.stringify({
+    id: 'chatcmpl-tmall', object: 'chat.completion.chunk', created: 0, model: 'acme-chat', choices: [{ index: 0, delta, finish_reason: finish }],
+  })}\n\n`
+  const usage = `data: ${JSON.stringify({
+    id: 'chatcmpl-tmall', object: 'chat.completion.chunk', created: 0, model: 'acme-chat', choices: [],
+    usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 },
+  })}\n\n`
+  const lastAsk = request.messages.findLastIndex(message => message.role === 'user' && JSON.stringify(message.content ?? '').includes('2026-10-06 的'))
+  const asked = JSON.stringify(request.messages[lastAsk]?.content ?? '')
+  const results = request.messages.slice(lastAsk + 1).filter(message => message.role === 'tool').map(message => JSON.stringify(message.content))
+  const catalog = JSON.stringify(request.messages.map(message => message.content ?? ''))
+  const skill = Object.keys(SCRIPTS).find(name => asked.includes(name.endsWith('core-daily') ? '生意参谋' : '万相台') && catalog.includes(`\`${name}\``))
+  const bash = (command: string) => {
+    res.write(chunk({ role: 'assistant', tool_calls: [{
+      index: 0, id: `call_bash_${String(request.messages.length)}`, type: 'function',
+      function: { name: 'bash', arguments: JSON.stringify({ command, description: '天猫取数' }) },
+    }] }, null))
+    res.end(`${chunk({}, 'tool_calls')}${usage}data: [DONE]\n\n`)
+  }
+  if (skill !== undefined && results.length === 0) { bash('dsh-ecommerce accounts'); return }
+  const id = /\\"id\\": \\"([0-9a-f-]{36})\\"/u.exec(results[0] ?? '')?.[1]
+  if (skill !== undefined && results.length === 1 && id !== undefined) {
+    bash(`"${process.execPath}" "${join(skillsDir, skill, 'scripts', SCRIPTS[skill] as string)}" --account ${id} --date 2026-10-06`)
+    return
+  }
+  res.write(chunk({ role: 'assistant', content: `${ANSWER} ${results.at(-1) ?? 'no skill'}` }, null))
+  res.end(`${chunk({}, 'stop')}${usage}data: [DONE]\n\n`)
+}
+
+async function startChat(skillsDir: string) {
+  const chats: ChatRequest[] = []
+  const server = createServer((req, res) => {
+    let raw = ''
+    req.on('data', (chunk: Buffer) => { raw += chunk.toString() })
+    req.on('end', () => {
+      const request = JSON.parse(raw) as ChatRequest
+      chats.push(request)
+      streamChat(res, request, skillsDir)
+    })
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  return {
+    baseURL: `http://127.0.0.1:${String((server.address() as { port: number }).port)}/v1`,
+    chats,
+    close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => { resolve() }) }),
+  }
+}
+
+it.skipIf(process.platform === 'win32')('runs the packed Tmall data skills with a signed-in merchant account and saves their reports in the workspace', async () => {
+  const harnessHome = await mkdtemp(join(tmpdir(), 'dsh-tmall-skills-home-'))
+  const skillsDir = join(harnessHome, 'skills')
+  await packSkills(skillsDir)
+  const chat = await startChat(skillsDir)
+  const center = await startMockUserCenter()
+  Object.assign(process.env, { DSH_E2E_HUB_ORIGIN: center.origin, DSH_E2E_CHAT_API: chat.baseURL })
+  await mkdir(join(harnessHome, 'profiles', 'scaffold'), { recursive: true })
+  await writeFile(join(harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), JSON.stringify([{
+    id: 'ecommerce-accounts', config: { dshHome: harnessHome, chromePath: FAKE_CHROME, signInPollMs: 200, chromeTimeoutMs: 5000, checkTimeoutMs: 3000 },
+  }]))
+  const scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAYS, harnessHome })
+  const browser = await chromium.launch()
+  let failurePage: Page | undefined
+  let accountDir: string | undefined
+  try {
+    await scaffold.ctx.hubAccount.signIn()
+    await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).attempt?.authorizeUrl).toBeDefined()
+    await browse((await scaffold.ctx.hubAccount.getState()).attempt!.authorizeUrl!)
+    await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).status).toBe('signed-in')
+    await scaffold.ctx.credentials.set(credentialRef('DSH_E2E_ACME_KEY'), 'sk-acme-e2e')
+
+    const accounts = scaffold.ctx.ecommerceAccounts
+    const { accountId } = await accounts.addAccount({ platform: 'tmall', kind: 'merchant', storeName: '名流旗舰店', account: 'mingliu:运营' })
+    await accounts.startSignIn(accountId)
+    const tenantId = (await scaffold.ctx.hubAccount.getState()).profile!.tenantId!
+    accountDir = join(harnessHome, 'ecommerce', tenantId, 'browsers', accountId)
+    await expect.poll(() => readFile(join(accountDir!, 'chrome.json'), 'utf8').then(() => true, () => false), { timeout: 10_000 }).toBe(true)
+    await writeFile(join(accountDir, 'user-data', 'fake-signed-in'), '名流旗舰店:运营')
+    await expect.poll(async () => (await accounts.getState()).accounts[0]!.status, { timeout: 15_000 }).toBe('signed-in')
+
+    const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
+    failurePage = page
+    await page.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+    const tripwire = watchConsole(page)
+    await page.goto(scaffold.authenticatedUrl)
+    await connectFreshWorkspaceZh(page, scaffold.workspaceCwd, 'tmall-skills')
+    await page.getByRole('button', { name: /^选择模型/ }).click()
+    await page.getByRole('menuitem', { name: /^模型/ }).click()
+    await page.getByRole('menuitemradio', { name: 'acme-chat' }).click()
+    const input = page.locator('[data-composer-input][contenteditable="true"]').first()
+    const send = async (text: string) => {
+      await writeComposerDraft(page, input, text)
+      await page.keyboard.press('Enter')
+    }
+    const reports = join(scaffold.workspaceCwd, 'tmall-skills', '天猫报表')
+
+    // Alimama: one row per scene, with rates recomputed from the stand-in's raw figures.
+    await send('请拉一下 2026-10-06 的万相台营销场景报表')
+    await page.getByText(ANSWER).first().waitFor({ timeout: 60_000 })
+    const lastResult = () => JSON.stringify(chat.chats.at(-1)!.messages.findLast(message => message.role === 'tool')!.content)
+    const alimama = lastResult()
+    expect(alimama).toContain('万相台营销场景报表 · 名流旗舰店 · 2026-10-06')
+    expect(alimama).toContain('| 合计 | 10801.40 | | 26520.55 | | 2.46 |')
+    const csv = await readFile(join(reports, '万相台营销场景报表_名流旗舰店_2026-10-06.csv'), 'utf8')
+    expect(csv.split('\r\n')[2]).toBe('2026-10-06,436,货品全站推广,10151.40,93003,6214,6.68%,1.63,25904.68,638,596,2.55,15.91,10.27%,427,6.87%,23.77,82.74%,43.46,90350,607.35')
+    // The reservation ended with the bash call, and the skill's tab is closed.
+    await expect.poll(async () => (await accounts.getState()).accounts[0]!.inUse).toBe(false)
+    expect(JSON.parse(await readFile(join(accountDir, 'user-data', 'fake-tabs.json'), 'utf8'))).not.toContainEqual(expect.stringContaining('alimama'))
+
+    // Business Advisor: the day's row from the export, with its spend checked against Alimama.
+    await send('请拉一下 2026-10-06 的生意参谋店铺经营核心日报')
+    await expect.poll(() => page.getByText(ANSWER).count(), { timeout: 60_000 }).toBe(2)
+    const sycm = lastResult()
+    expect(sycm).toContain('✅ 推广花费与万相台一致（关键词推广 650.00，人群推广 0.00，货品全站推广 10151.40）。')
+    expect(sycm).toContain('| 支付买家数 | 681 |')
+    const day = await readFile(join(reports, '生意参谋店铺经营核心日报_名流旗舰店_2026-10-06.csv'), 'utf8')
+    expect(day).toContain('支付金额,"34,000.20"')
+    expect((await readFile(join(reports, '生意参谋店铺经营核心日报_名流旗舰店_2026-10-06.xlsx')).then(bytes => bytes.subarray(0, 2).toString('latin1')))).toBe('PK')
+    expect(tripwire.pageErrors).toEqual([])
+  } catch (error) {
+    if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-tmall-skills')
+    throw error
+  } finally {
+    await browser.close()
+    if (accountDir !== undefined) {
+      const record = await readFile(join(accountDir, 'chrome.json'), 'utf8').catch(() => undefined)
+      if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
+    }
+    await scaffold.close()
+    await chat.close()
+    await center.close()
+    await rm(harnessHome, { recursive: true, force: true })
+    Reflect.deleteProperty(process.env, 'DSH_E2E_HUB_ORIGIN')
+    Reflect.deleteProperty(process.env, 'DSH_E2E_CHAT_API')
+  }
+}, 180_000)

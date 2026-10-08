@@ -28,6 +28,10 @@ Chrome 的生命周期长于 DSH。之后启动的 DSH 会重新连上记录中�
 
 天猫和淘宝的买家账号只用于查看公开商品页面，由 DSH 而不是模型保证安全：任务使用账号期间，DSH 通过自己的 DevTools 连接监看其浏览器，暂停每一次页面加载。商家账号不能打开公开的商品页或搜索页。买家账号最多打开租户的每日页面上限（默认 20，可在设置中修改），按自然日计数；平台风控一旦出现，DSH 不再为该任务加载任何内容，并让该账号休息 72 小时。`dsh-ecommerce buyer` 挑选可用且当天打开页面最少的买家账号，或说明为何都不可用。买家账号不做后台定时检查，因为每次检查都会打开一个被平台计数的页面。
 
+## 天猫取数技能
+
+最先使用这些账号的技能不随 DSH 发布：[`@deepseek-ai/dsh-tmall-skills`](../../packages/ecommerce/tmall-skills/README.zh.md) 把 `tmall-alimama-scene-report`（万相台某一天各营销场景的数据）和 `tmall-sycm-core-daily`（生意参谋「店铺经营核心日报」，并把其中的推广花费与万相台核对）打成 Skill Hub 上传包，由租户管理员只发布给本租户。每个技能的脚本用 `dsh-ecommerce browser` 接管天猫商家账号，调用平台页面自己调用的接口，并用 `load_workspace_dependencies` 返回的 Node 运行；平台还没算完当天数据时不写任何文件。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>

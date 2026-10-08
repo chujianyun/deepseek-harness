@@ -66,6 +66,7 @@
     "@deepseek-ai/dsh-skill": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
-    "@types/ws": "^8.18.1"
+    "@types/ws": "^8.18.1",
+    "fflate": "^0.8.2"
   }
 }

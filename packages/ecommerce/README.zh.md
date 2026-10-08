@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-ecommerce 家族通过用户在系统 Google Chrome 中登录的账号，把桌面版连到公司经营的电商平台（天猫、淘宝、拼多多和抖店），每个账号一份浏览器数据目录。Desktop 将其呈现为设置中的电商账号分区。
+ecommerce 家族通过用户在系统 Google Chrome 中登录的账号，把桌面版连到公司经营的电商平台（天猫、淘宝、拼多多和抖店），每个账号一份浏览器数据目录。Desktop 将其呈现为设置中的电商账号分区。本家族还包含天猫取数技能：由租户上传到 Skill Hub，用这些账号读取店铺数据。
 
 ## 目录
 
@@ -25,6 +25,7 @@ ecommerce 家族通过用户在系统 Google Chrome 中登录的账号，把桌�
 | 包 | 角色 | ctx 键 |
 |---|---|---|
 | [`ecommerce-accounts/`](ecommerce-accounts/README.zh.md) | 租户的电商账号及其 Chrome 登录，通过 `ecommerceAccounts` Remote 提供 | `ctx.ecommerceAccounts` |
+| [`tmall-skills/`](tmall-skills/README.zh.md) | 上传到 Skill Hub、只下发给需要的租户的天猫取数技能，及其打包 | — |
 
 -----
 

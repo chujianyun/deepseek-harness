@@ -1,0 +1,123 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import { fetchJson, openPage, signedOut } from '../src/page.ts'
+import { EXIT, SkillError } from '../src/errors.ts'
+import { fakeCdp, type Call, type Emit } from './fake-cdp.ts'
+
+const cleanups: (() => Promise<void>)[] = []
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+})
+
+/** A browser with one tab session `S1`; `navigate` and `evaluate` answer per call. */
+/** How the fake browser answers navigation and evaluation. */
+interface Answers {
+  readonly navigate?: (call: Call, emit: Emit) => object
+  readonly evaluate?: (call: Call) => object | Error
+}
+
+async function browser(answers: Answers = {}): Promise<{ url: string; calls: Call[] }> {
+  const fake = await fakeCdp((call, emit) => {
+    switch (call.method) {
+      case 'Target.createTarget': return { targetId: 'T1' }
+      case 'Target.attachToTarget': return { sessionId: 'S1' }
+      case 'Page.navigate': return answers.navigate?.(call, emit) ?? { frameId: 'F1' }
+      case 'Runtime.evaluate': return answers.evaluate?.(call) ?? { result: {} }
+      default: return {}
+    }
+  })
+  cleanups.push(fake.close)
+  return fake
+}
+
+describe('openPage', () => {
+  it('opens a background tab, waits for its load, and closes only the tab', async () => {
+    const fake = await browser({
+      navigate: (_call, emit) => {
+        setTimeout(() => {
+          emit('Page.loadEventFired', {}, 'S2')
+          emit('Page.loadEventFired', {}, 'S1')
+        }, 20)
+        return { frameId: 'F1', loaderId: 'L1' }
+      },
+    })
+    const page = await openPage(fake.url)
+    await page.goto('https://one.alimama.com/index.html')
+    await page.goto('https://one.alimama.com/index.html#!/other')
+    await page.close()
+    expect(fake.calls.map(call => [call.method, call.sessionId])).toEqual([
+      ['Target.createTarget', undefined], ['Target.attachToTarget', undefined], ['Page.enable', 'S1'], ['Network.enable', 'S1'],
+      ['Page.navigate', 'S1'], ['Page.navigate', 'S1'], ['Target.closeTarget', undefined],
+    ])
+    expect(fake.calls[0]?.params).toEqual({ url: 'about:blank', background: true })
+  })
+
+  it('fails a navigation Chrome refuses or that does not load in time', async () => {
+    const refused = await openPage((await browser({ navigate: () => ({ errorText: 'net::ERR_BLOCKED_BY_CLIENT' }) })).url)
+    await expect(refused.goto('https://x.test/')).rejects.toThrow('net::ERR_BLOCKED_BY_CLIENT')
+    const slow = await openPage((await browser({ navigate: () => ({ loaderId: 'L1' }) })).url, 1000, 30)
+    await expect(slow.goto('https://x.test/')).rejects.toThrow('没有加载完')
+  })
+
+  it('evaluates in the page and reports a thrown error', async () => {
+    const fake = await browser({
+      evaluate: ({ params }) => {
+        if (params.expression === 'boom') return { result: {}, exceptionDetails: { text: 'Uncaught', exception: { description: 'Error: boom' } } }
+        if (params.expression === 'bare') return { result: {}, exceptionDetails: { text: 'Uncaught' } }
+        return { result: { value: { ok: true } } }
+      },
+    })
+    const page = await openPage(fake.url)
+    expect(await page.evaluate('1')).toEqual({ ok: true })
+    expect(fake.calls.at(-1)?.params).toEqual({ expression: '1', awaitPromise: true, returnByValue: true })
+    await expect(page.evaluate('boom')).rejects.toThrow('Error: boom')
+    await expect(page.evaluate('bare')).rejects.toThrow('Uncaught')
+  })
+
+  it('reports the tab own requests, with their bodies', async () => {
+    const fake = await browser({
+      navigate: (_call, emit) => {
+        emit('Network.requestWillBeSent', { request: { url: 'https://other.test/', method: 'GET' } }, 'S2')
+        emit('Network.requestWillBeSent', { request: { url: 'https://a.test/q', method: 'POST', postData: '{"a":1}' } }, 'S1')
+        emit('Network.requestWillBeSent', { request: { url: 'https://a.test/g', method: 'GET' } }, 'S1')
+        return {}
+      },
+    })
+    const page = await openPage(fake.url)
+    const seen: unknown[] = []
+    page.onRequest((request) => { seen.push(request) })
+    await page.goto('https://a.test/')
+    expect(await page.waitFor(() => seen.length === 2, 2000)).toBe(true)
+    expect(seen).toEqual([{ url: 'https://a.test/q', method: 'POST', body: '{"a":1}' }, { url: 'https://a.test/g', method: 'GET' }])
+  })
+
+  it('waits for a condition until its time is up', async () => {
+    const page = await openPage((await browser()).url)
+    let checks = 0
+    expect(await page.waitFor(() => ++checks === 2, 2000)).toBe(true)
+    expect(await page.waitFor(() => false, 0)).toBe(false)
+  })
+
+  it('closes the connection even when closing the tab fails', async () => {
+    const fake = await fakeCdp(({ method }) => method === 'Target.closeTarget' ? new Error('No target') : { targetId: 'T1', sessionId: 'S1' })
+    cleanups.push(fake.close)
+    const page = await openPage(fake.url)
+    await expect(page.close()).rejects.toThrow('No target')
+  })
+})
+
+describe('page helpers', () => {
+  it('builds in-page fetches with the page cookies', () => {
+    expect(fetchJson('https://a.test/x')).toBe('(async () => { const r = await fetch("https://a.test/x", { credentials: \'include\' }); return await r.json() })()')
+    expect(fetchJson('https://a.test/x', { a: '"' })).toContain('body: "{\\"a\\":\\"\\\\\\"\\"}"')
+  })
+
+  it('stops as signed out', () => {
+    try {
+      signedOut('万相台')
+    } catch (error) {
+      expect(error).toBeInstanceOf(SkillError)
+      expect((error as SkillError).exitCode).toBe(EXIT.signedOut)
+      expect((error as SkillError).message).toContain('万相台需要重新登录')
+    }
+  })
+})

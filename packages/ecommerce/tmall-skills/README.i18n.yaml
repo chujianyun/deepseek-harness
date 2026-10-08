@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/ecommerce/tmall-skills/README.md
+/:
+  en: 226841aa13a60133
+  zh: d0f89bb68b7a3775
+/tmall-data-skills:
+  en: 90ef060b8f33004e
+  zh: 217d6bdc3252002a
+/tmall-data-skills/summary:
+  en: 4562fcd91a5ea168
+  zh: e83591ced8a35197
+/tmall-data-skills/table-of-contents:
+  en: 4e53164159b5ce41
+  zh: 1e7d2e37b6eba4ea
+/tmall-data-skills/use-this-package:
+  en: 918002ecff87ca4b
+  zh: 1da0dfc4a2d0354d
+/tmall-data-skills/model-experience:
+  en: 16c64a138bd4622e
+  zh: 1f80f582f062d71e
+/tmall-data-skills/model-experience/kv-cache-effect:
+  en: fab5fb362529e603
+  zh: a1d6cc1e2d710f7a
+/tmall-data-skills/known-limitations-and-deferred-work:
+  en: aa5d10118c8a5a2e
+  zh: 4c522f0707440026
+/tmall-data-skills/known-limitations-and-deferred-work/dev-note:
+  en: a21d0a47e19f6b07
+  zh: 3aa26c125ac95099

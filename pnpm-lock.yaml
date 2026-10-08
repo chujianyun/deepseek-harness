@@ -7954,6 +7954,27 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
+
+  packages/ecommerce/tmall-skills:
+    devDependencies:
+      '@deepseek-ai/dsh-ecommerce-accounts':
+        specifier: workspace:*
+        version: link:../ecommerce-accounts
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
+      tsdown:
+        specifier: ^0.22.2
+        version: 0.22.2(oxc-resolver@11.20.0)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
 
   packages/experimental/agent-team:
     dependencies:

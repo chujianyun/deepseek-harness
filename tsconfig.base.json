@@ -394,6 +394,7 @@
       "@deepseek-ai/dsh-deepseek-llm-api-extensions": ["./packages/llm/deepseek-llm-api-extensions/src"],
       "@deepseek-ai/dsh-deque": ["./packages/util/deque/src"],
       "@deepseek-ai/dsh-ecommerce-accounts": ["./packages/ecommerce/ecommerce-accounts/src"],
+      "@deepseek-ai/dsh-tmall-skills": ["./packages/ecommerce/tmall-skills/src"],
       "@deepseek-ai/dsh-file-reference": ["./packages/context/file-reference/src"],
       "@deepseek-ai/dsh-file-reference-local": ["./packages/context/file-reference-local/src"],
       "@deepseek-ai/dsh-fs": ["./packages/fs/fs/src"],
