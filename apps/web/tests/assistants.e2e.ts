@@ -422,13 +422,21 @@ it('tells a session of another company\'s assistant from one whose assistant was
   }
   const picker = page.getByRole('button', { name: '选择这个会话的智能体' })
   const badge = (row: string) => page.locator(`[role="treeitem"][data-row-key="${row}"] [data-assistant-badge]`)
-  const startWith = async (name: RegExp, text: string): Promise<string> => {
+  const startWith = async (name: RegExp, assistantId: string, text: string): Promise<string> => {
     await page.getByRole('button', { name: '新建会话' }).first().click()
     await picker.click()
     await page.getByRole('menuitem', { name }).click()
     await expect.poll(() => picker.textContent()).toMatch(name)
+    // Send only once the Host has bound the blank session, so the turn starts with that assistant.
+    await expect.poll(() => scaffold.ctx.agents.list()
+      .some(agent => scaffold.ctx.sessionProjections.stateOf(agent.session, 'assistant')?.assistantId === assistantId
+        && scaffold.ctx.sessionProjections.stateOf(agent.session, 'turnBoundary')?.lastTurn === 0)).toBe(true)
     await send(text)
     await expect.poll(() => picker.count(), { timeout: 30_000 }).toBe(0)
+    // The Host has started the turn, so the session is no longer blank and keeps its assistant.
+    await expect.poll(() => scaffold.ctx.agents.list()
+      .some(agent => scaffold.ctx.sessionProjections.stateOf(agent.session, 'assistant')?.assistantId === assistantId
+        && (scaffold.ctx.sessionProjections.stateOf(agent.session, 'turnBoundary')?.lastTurn ?? 0) > 0), { timeout: 30_000 }).toBe(true)
     // The sidebar selects the new session's row a moment after the turn starts.
     const selected = page.locator('[role="treeitem"][aria-selected="true"]')
     await expect.poll(async () => started.includes((await selected.getAttribute('data-row-key')) ?? '')).toBe(false)
@@ -440,12 +448,12 @@ it('tells a session of another company\'s assistant from one whose assistant was
   try {
     // In 甲公司: one session of 店铺测试助手, and one of a copy that is then deleted.
     await useChatModel()
-    const shop = await startWith(/店铺测试助手/, '甲公司的会话')
+    const shop = await startWith(/店铺测试助手/, SHOP_ID, '甲公司的会话')
     await openAssistants()
     await page.locator(`li[data-assistant-id="${SHOP_ID}"]`).getByRole('button', { name: '复制' }).click()
     await expect.poll(async () => (await scaffold.ctx.assistants.getState()).assistants.length).toBe(3)
-    const gone = await startWith(/店铺测试助手 副本/, '副本的会话')
     const copyId = (await scaffold.ctx.assistants.getState()).assistants.at(-1)!.id
+    const gone = await startWith(/店铺测试助手 副本/, copyId, '副本的会话')
     await scaffold.ctx.assistants.deleteAssistant(copyId)
     await expect.poll(() => badge(shop).getAttribute('title')).toBe('智能体：店铺测试助手')
     await expect.poll(() => badge(gone).getAttribute('data-assistant-badge')).toBe('deleted')
