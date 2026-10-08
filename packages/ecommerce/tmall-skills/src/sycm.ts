@@ -112,7 +112,8 @@ const DATE_COLUMN = /^(?:统计日期|日期|时间)$/u
  * @param date - the day.
  * @param through - the day Business Advisor says it is updated through, for the message.
  * @returns the row.
- * @throws SkillError not-ready when the file has no row for the day, and failed when it has no date column.
+ * @throws SkillError not-ready when the file has no row for the day or Business Advisor says it is updated
+ *   through an earlier day, usage for a day older than the export, and failed when the file has no date column.
  */
 export function dayRow(rows: readonly (readonly string[])[], date: string, through?: string): Record<string, string> {
   const headerAt = rows.findIndex(row => row.some(cell => DATE_COLUMN.test(cell)))
@@ -122,8 +123,12 @@ export function dayRow(rows: readonly (readonly string[])[], date: string, throu
   const days = rows.slice(headerAt + 1).filter(row => (row[dateAt] ?? '') !== '')
   const wanted = date.replaceAll('-', '')
   const row = days.find(cells => (cells[dateAt] as string).replace(/\D/gu, '') === wanted)
-  if (row === undefined) {
-    const dates = days.map(cells => cells[dateAt] as string)
+  const dates = days.map(cells => cells[dateAt] as string)
+  const oldest = dates[dates.length - 1]?.replace(/\D/gu, '')
+  if (row === undefined && oldest !== undefined && wanted < oldest) {
+    throw new SkillError(`「${TEMPLATE_NAME}」只导出最近 30 天（${dates[dates.length - 1] as string} 起），没有 ${date} 的数据。`, EXIT.usage)
+  }
+  if (row === undefined || (through !== undefined && through < date)) {
     const covered = dates.length === 0 ? '文件里没有任何日期' : `文件覆盖 ${dates[dates.length - 1] as string} ~ ${dates[0] as string}`
     const updated = through === undefined ? '' : `，生意参谋显示数据更新到 ${through}`
     throw new SkillError(`生意参谋「${TEMPLATE_NAME}」还没有 ${date} 的数据（${covered}${updated}），数据未就绪，没有生成报表，请稍后再试。`, EXIT.notReady)
@@ -155,7 +160,8 @@ export interface SpendCheck {
  */
 export function compareSpend(row: Readonly<Record<string, string>>, alimama: ReadonlyMap<number, number>): SpendCheck[] {
   return SPEND_COLUMNS.filter(({ column }) => (row[column] ?? '') !== '').map(({ column, sceneId, scene }) => {
-    const sycm = number(row[column] as string)
+    const value = number(row[column] as string)
+    const sycm = Number.isNaN(value) ? 0 : value
     const other = alimama.get(sceneId) ?? 0
     return { scene, sycm, alimama: other, matches: Math.abs(sycm - other) <= 0.02 }
   })

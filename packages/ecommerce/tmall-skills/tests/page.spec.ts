@@ -97,6 +97,20 @@ describe('openPage', () => {
     expect(await page.waitFor(() => false, 0)).toBe(false)
   })
 
+  it('closes the tab and the connection when setting the tab up fails', async () => {
+    const fake = await fakeCdp(({ method }) => {
+      if (method === 'Network.enable' || method === 'Target.closeTarget') return new Error(`${method} failed`)
+      return { targetId: 'T1', sessionId: 'S1' }
+    })
+    cleanups.push(fake.close)
+    await expect(openPage(fake.url)).rejects.toThrow('Network.enable failed')
+    expect(fake.calls.at(-1)).toEqual({ method: 'Target.closeTarget', params: { targetId: 'T1' } })
+    const early = await fakeCdp(() => new Error('Target.createTarget failed'))
+    cleanups.push(early.close)
+    await expect(openPage(early.url)).rejects.toThrow('Target.createTarget failed')
+    expect(early.calls.map(call => call.method)).toEqual(['Target.createTarget'])
+  })
+
   it('closes the connection even when closing the tab fails', async () => {
     const fake = await fakeCdp(({ method }) => method === 'Target.closeTarget' ? new Error('No target') : { targetId: 'T1', sessionId: 'S1' })
     cleanups.push(fake.close)

@@ -58,11 +58,19 @@ interface EvaluateAnswer<T> {
  */
 export async function openPage(cdpUrl: string, timeoutMs = 20_000, loadTimeoutMs = 60_000): Promise<Page> {
   const cdp = await Cdp.connect(Number(new URL(cdpUrl).port), timeoutMs)
-  const { targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', background: true })
-  const { sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId, flatten: true })
+  let targetId: string | undefined
+  let sessionId: string
+  try {
+    ({ targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', background: true }))
+    ;({ sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId, flatten: true }))
+    await cdp.send('Page.enable', {}, sessionId)
+    await cdp.send('Network.enable', {}, sessionId)
+  } catch (error) {
+    if (targetId !== undefined) await cdp.send('Target.closeTarget', { targetId }).catch(() => undefined)
+    cdp.close()
+    throw error
+  }
   const send = <T>(method: string, params: object = {}): Promise<T> => cdp.send<T>(method, params, sessionId)
-  await send('Page.enable')
-  await send('Network.enable')
   const page: Page = {
     async goto(url) {
       let settle!: (loaded: boolean) => void

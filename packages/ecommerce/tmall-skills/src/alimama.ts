@@ -44,11 +44,17 @@ const TEMPLATE_TIMEOUT_MS = 30_000
 export async function openReport(page: Page, date: string): Promise<QueryTemplate> {
   let template: QueryTemplate | undefined
   page.onRequest(({ url, method, body }) => {
-    if (method !== 'POST' || !url.includes('/report/query.json') || body?.startsWith('{') !== true) return
-    const parsed = JSON.parse(body) as QueryTemplate
+    if (method !== 'POST' || !url.includes('/report/query.json') || body === undefined) return
+    let parsed: QueryTemplate
+    try {
+      parsed = JSON.parse(body) as QueryTemplate
+    } catch {
+      // A body Chrome cut short or that is not JSON is not the scene query.
+      return
+    }
     if (JSON.stringify(parsed.queryDomains) === '["scene"]' && Array.isArray(parsed.queryFieldIn)) template = parsed
   })
-  const onLogin = async (): Promise<boolean> => (await page.evaluate<string>('location.href')).includes('#!/login')
+  const onLogin = async (): Promise<boolean> => isSignIn(await page.evaluate<string>('location.href'))
   for (let attempt = 0; attempt < 2; attempt++) {
     await page.goto(reportUrl(date))
     await page.waitFor(async () => template !== undefined || await onLogin(), TEMPLATE_TIMEOUT_MS)
@@ -58,6 +64,15 @@ export async function openReport(page: Page, date: string): Promise<QueryTemplat
     await page.waitFor(async () => !await onLogin(), TEMPLATE_TIMEOUT_MS)
   }
   throw new SkillError('万相台报表页没有正常加载（没有发出场景报表查询），请稍后再试。')
+}
+
+/**
+ * Whether an address is a sign-in page: Alimama's own `#!/login` screen or a sign-in host such as login.taobao.com.
+ * @param href - the page address.
+ * @returns true on a sign-in page.
+ */
+export function isSignIn(href: string): boolean {
+  return href.includes('#!/login') || /^login\./u.test(new URL(href).hostname)
 }
 
 /** Click 「进入后台」 on the sign-in screen; true when the button was there. */
@@ -88,16 +103,18 @@ export async function queryScenes(page: Page, template: QueryTemplate, date: str
 
 /**
  * Stop unless the day's figures are complete: the de-duplicated buyer counts are computed late
- * (usually after 10:00 the next morning), and until then every scene reads zero buyers.
+ * (usually after 10:00 the next morning), and until then every scene reads zero buyers. Only
+ * yesterday can still be computing; zero buyers on an earlier day are the day's real figures.
  * @param scenes - the day's scenes.
  * @param date - the day.
- * @throws SkillError not-ready when there is no scene or every scene has zero buyers.
+ * @param yesterday - yesterday in Beijing.
+ * @throws SkillError not-ready when there is no scene, or yesterday's scenes all have zero buyers.
  */
-export function ensureReady(scenes: readonly SceneFigures[], date: string): void {
-  if (scenes.length === 0) {
+export function ensureReady(scenes: readonly SceneFigures[], date: string, yesterday: string): void {
+  if (scenes.length === 0 && date === yesterday) {
     throw new SkillError(`万相台 ${date} 还没有任何推广场景数据（数据未就绪或当天没有投放），没有生成报表。`, EXIT.notReady)
   }
-  if (scenes.every(scene => num(scene.alipayInshopUv) === 0)) {
+  if (date === yesterday && scenes.every(scene => num(scene.alipayInshopUv) === 0)) {
     throw new SkillError(`万相台 ${date} 各场景的成交人数都是 0：去重指标还没算完（通常上午 10 点后就绪），为避免输出不完整数据，这次没有生成报表，请稍后再试。`, EXIT.notReady)
   }
 }

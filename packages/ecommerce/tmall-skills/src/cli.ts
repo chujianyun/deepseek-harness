@@ -129,12 +129,3 @@ export async function writeFiles(out: string, base: string, files: readonly (rea
 export function fileSafe(name: string): string {
   return name.replace(/[\\/:*?"<>|\s]+/gu, '_')
 }
-
-/**
- * The time in Beijing, to stamp a report.
- * @param now - the moment.
- * @returns `YYYY-MM-DD HH:mm`.
- */
-export function beijingTime(now: Date): string {
-  return new Date(now.getTime() + 8 * 3_600_000).toISOString().slice(0, 16).replace('T', ' ')
-}

@@ -5,8 +5,8 @@
  */
 
 import { openReport, queryScenes, sceneSpend } from './alimama.ts'
-import { beijingTime, fileSafe, realDeps, runReport, withMerchantPage, writeFiles, type Deps, type Options } from './cli.ts'
-import { SkillError } from './errors.ts'
+import { fileSafe, realDeps, runReport, withMerchantPage, writeFiles, type Deps, type Options } from './cli.ts'
+import { beijingTime } from './dates.ts'
 import type { Page } from './page.ts'
 import { readFirstSheet, toCsv } from './sheet.ts'
 import { compareSpend, dayRow, download, exportUrl, openDatafetch, templateId, updatedThrough, type SpendCheck } from './sycm.ts'
@@ -62,8 +62,8 @@ async function alimamaSpendCheck(page: Page, row: Readonly<Record<string, string
     const template = await openReport(page, date)
     return compareSpend(row, sceneSpend(await queryScenes(page, template, date, ['charge'])))
   } catch (error) {
-    if (error instanceof SkillError) return error.message
-    throw error
+    // Page and connection failures are Errors; the reason is what the summary shows.
+    return (error as Error).message
   }
 }
 

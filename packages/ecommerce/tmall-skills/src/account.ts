@@ -46,7 +46,7 @@ export function runDshEcommerce(args: readonly string[]): Promise<EcommerceComma
 export async function takeOverMerchant(accountId: string, run = runDshEcommerce): Promise<MerchantBrowser> {
   const { code, stdout, stderr } = await run(['browser', accountId])
   if (code === 127) throw new SkillError(`找不到 dsh-ecommerce 命令：这个技能只能在已登录用户中心的 DSH 桌面版里运行。${stderr.trim()}`)
-  if (code !== 0) throw new SkillError(stderr.trim(), /signed out/u.test(stderr) ? EXIT.signedOut : EXIT.failed)
+  if (code !== 0) throw new SkillError(stderr.trim(), /account "[^"]*" is signed out/u.test(stderr) ? EXIT.signedOut : EXIT.failed)
   const taken = JSON.parse(stdout) as { platform: string; kind: string; store?: string; account: string; cdpUrl: string; id: string }
   if (taken.platform !== 'tmall' || taken.kind !== 'merchant') {
     throw new SkillError(`账号 ${accountId} 不是天猫商家账号（平台 ${taken.platform}，类型 ${taken.kind}），这个技能只能用天猫商家账号。`, EXIT.usage)

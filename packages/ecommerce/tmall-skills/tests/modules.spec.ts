@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { strToU8, zipSync } from 'fflate'
-import { ensureReady, num, openReport, queryScenes, REPORT_COLUMNS, reportRows, reportUrl, sceneSpend, type SceneFigures } from '../src/alimama.ts'
+import { ensureReady, isSignIn, num, openReport, queryScenes, REPORT_COLUMNS, reportRows, reportUrl, sceneSpend, type SceneFigures } from '../src/alimama.ts'
 import { beijingDate, pastDate } from '../src/dates.ts'
 import { EXIT, SkillError } from '../src/errors.ts'
 import { readFirstSheet, toCsv } from '../src/sheet.ts'
@@ -30,6 +30,7 @@ describe('dates', () => {
     expect((await stopped(() => pastDate('2026-10-08', NOW))).message).toContain('还没有结束')
     expect((await stopped(() => pastDate('2026-02-30', NOW))).exitCode).toBe(EXIT.usage)
     expect((await stopped(() => pastDate('20261007', NOW))).message).toContain('YYYY-MM-DD')
+    expect((await stopped(() => pastDate('2026-13-01', NOW))).exitCode).toBe(EXIT.usage)
   })
 })
 
@@ -68,6 +69,7 @@ describe('alimama', () => {
       self.send({ url: 'https://one.alimama.com/member/checkAccess.json', method: 'POST', body: '{}' })
       self.send({ url: 'https://one.alimama.com/report/query.json', method: 'POST', body: JSON.stringify({ ...TEMPLATE, queryDomains: ['account'] }) })
       self.send({ url: 'https://one.alimama.com/report/query.json', method: 'POST', body: 'a=b' })
+      self.send({ url: 'https://one.alimama.com/report/query.json', method: 'POST', body: '{"cut' })
       self.send({ url: 'https://one.alimama.com/report/query.json', method: 'GET' })
       sendsTemplate(url, self)
     })
@@ -97,6 +99,13 @@ describe('alimama', () => {
     expect((await stopped(openReport(new FakePage([on('进入后台', true)], toLogin), '2026-10-06'))).exitCode).toBe(EXIT.signedOut)
   })
 
+  it('is signed out when the report page goes to a sign-in host', async () => {
+    expect(isSignIn('https://login.taobao.com/member/login.jhtml')).toBe(true)
+    expect(isSignIn('https://one.alimama.com/index.html#!/report/account')).toBe(false)
+    const toHost = (_url: string, self: FakePage): void => { self.href = 'https://login.taobao.com/member/login.jhtml' }
+    expect((await stopped(openReport(new FakePage([on('进入后台', false)], toHost), '2026-10-06'))).exitCode).toBe(EXIT.signedOut)
+  })
+
   it('fails when the report page sends no scene query', async () => {
     expect((await stopped(openReport(new FakePage([]), '2026-10-06'))).message).toContain('没有正常加载')
   })
@@ -111,11 +120,13 @@ describe('alimama', () => {
     expect(empty.evaluated.at(-1)).toContain('query.json?bizCode=universalBP')
   })
 
-  it('stops before the de-duplicated figures are ready', async () => {
-    expect((await stopped(() => { ensureReady([], '2026-10-07') })).exitCode).toBe(EXIT.notReady)
+  it('stops before yesterday\'s de-duplicated figures are ready, and takes zero buyers on earlier days as final', async () => {
+    expect((await stopped(() => { ensureReady([], '2026-10-07', '2026-10-07') })).exitCode).toBe(EXIT.notReady)
     const zeros = SCENES_1006.map(scene => ({ ...scene, alipayInshopUv: 0 }))
-    expect((await stopped(() => { ensureReady(zeros, '2026-10-07') })).message).toContain('上午 10 点')
-    expect(() => { ensureReady(SCENES_1006, '2026-10-06') }).not.toThrow()
+    expect((await stopped(() => { ensureReady(zeros, '2026-10-07', '2026-10-07') })).message).toContain('上午 10 点')
+    expect(() => { ensureReady(SCENES_1006, '2026-10-07', '2026-10-07') }).not.toThrow()
+    expect(() => { ensureReady(zeros, '2026-10-05', '2026-10-07') }).not.toThrow()
+    expect(() => { ensureReady([], '2026-10-05', '2026-10-07') }).not.toThrow()
   })
 
   it('recomputes rates from the raw figures, by scene id', () => {
@@ -161,6 +172,12 @@ describe('sycm', () => {
     })
   })
 
+  it('refuses a day older than the export window as a usage error', async () => {
+    const old = await stopped(() => dayRow(rows, '2026-08-01'))
+    expect(old.exitCode).toBe(EXIT.usage)
+    expect(old.message).toContain('只导出最近 30 天（2026-10-06 起）')
+  })
+
   it('reads a short row as empty trailing cells', () => {
     expect(dayRow([['日期', 'a', 'b'], ['2026-10-06', '1']], '2026-10-06')).toEqual({ 日期: '2026-10-06', a: '1', b: '' })
   })
@@ -170,6 +187,10 @@ describe('sycm', () => {
     expect(missing.exitCode).toBe(EXIT.notReady)
     expect(missing.message).toContain('文件覆盖 2026-10-06 ~ 2026-10-07，生意参谋显示数据更新到 2026-10-07')
     expect((await stopped(() => dayRow([header], '2026-10-08'))).message).toContain('文件里没有任何日期）')
+    const stale = await stopped(() => dayRow(rows, '2026-10-07', '2026-10-06'))
+    expect(stale.exitCode).toBe(EXIT.notReady)
+    expect(stale.message).toContain('生意参谋显示数据更新到 2026-10-06')
+    expect(dayRow(rows, '2026-10-07', '2026-10-07')['访客数']).toBe('7,001')
     expect((await stopped(() => dayRow([['a']], '2026-10-08'))).message).toContain('找不到日期列')
   })
 
@@ -180,6 +201,7 @@ describe('sycm', () => {
       { scene: '货品全站推广', sycm: 10151.4, alimama: 10151.5, matches: false },
     ])
     expect(compareSpend({ 关键词推广花费: '1.00' }, new Map())).toEqual([{ scene: '关键词推广', sycm: 1, alimama: 0, matches: false }])
+    expect(compareSpend({ 精准人群推广花费: '-' }, new Map())).toEqual([{ scene: '人群推广', sycm: 0, alimama: 0, matches: true }])
     expect(number('12.96%')).toBe(12.96)
   })
 

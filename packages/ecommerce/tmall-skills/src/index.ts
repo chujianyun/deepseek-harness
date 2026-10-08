@@ -47,7 +47,7 @@ export async function packSkills(outDir: string): Promise<string[]> {
       for (const [script, module] of Object.entries(skill.scripts)) {
         const entry = join(entries, script)
         const source = join(PACKAGE, 'src', module)
-        await writeFile(entry, `import { main } from ${JSON.stringify(source)}\nprocess.exitCode = await main(process.argv.slice(2))\n`)
+        await writeFile(entry, `import { main } from ${JSON.stringify(source)}\nprocess.exit(await main(process.argv.slice(2)))\n`)
         await build({
           config: false, entry: [entry], outDir: join(folder, 'scripts'), format: 'esm', platform: 'node', target: 'node22',
           fixedExtension: true, dts: false, clean: false, deps: { alwaysBundle: [/./u] }, logLevel: 'error', treeshake: true, minify: false,

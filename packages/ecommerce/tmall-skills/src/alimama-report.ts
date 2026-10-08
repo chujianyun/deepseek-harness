@@ -3,8 +3,9 @@
  * API with a Tmall merchant account, written as CSV and a short Markdown summary.
  */
 
-import { ensureReady, num, openReport, queryScenes, REPORT_COLUMNS, reportRows, SCENE_FIELDS } from './alimama.ts'
-import { beijingTime, fileSafe, realDeps, runReport, withMerchantPage, writeFiles, type Deps, type Options } from './cli.ts'
+import { ensureReady, num, openReport, queryScenes, REPORT_COLUMNS, reportRows, SCENE_FIELDS, type SceneFigures } from './alimama.ts'
+import { fileSafe, realDeps, runReport, withMerchantPage, writeFiles, type Deps, type Options } from './cli.ts'
+import { beijingDate, beijingTime } from './dates.ts'
 import { toCsv } from './sheet.ts'
 
 /**
@@ -19,7 +20,7 @@ export async function alimamaReport(options: Options, deps: Deps): Promise<strin
     const template = await openReport(page, options.date)
     return queryScenes(page, template, options.date, SCENE_FIELDS)
   })
-  ensureReady(scenes, options.date)
+  ensureReady(scenes, options.date, beijingDate(deps.now(), 1))
   const rows = reportRows(scenes, options.date)
   const charge = scenes.reduce((sum, scene) => sum + num(scene.charge), 0)
   const amount = scenes.reduce((sum, scene) => sum + num(scene.alipayInshopAmt), 0)
@@ -34,10 +35,20 @@ export async function alimamaReport(options: Options, deps: Deps): Promise<strin
     `| 合计 | ${charge.toFixed(2)} | | ${amount.toFixed(2)} | | ${charge === 0 ? '' : (amount / charge).toFixed(2)} |`,
     '',
     '成交数据按万相台的归因口径统计，之后几天可能还会小幅增加。',
+    ...naturalPending(scenes) ? ['', '⚠️ 各场景的自然流量曝光量都是 0：万相台通常比其他指标更晚算完自然流量，「自然流量曝光量」「自然流量转化金额」两列暂不可信，稍后重新运行即可补齐。'] : [],
   ].join('\n')
   const base = `万相台营销场景报表_${fileSafe(account.store)}_${options.date}`
   const [csv, md] = await writeFiles(options.out, base, [['csv', toCsv([[...REPORT_COLUMNS], ...rows])], ['md', `${summary}\n`]]) as [string, string]
   return `${summary}\n\n已保存：\n- ${csv}\n- ${md}`
+}
+
+/**
+ * Whether Alimama has not computed natural traffic yet: every scene that ran reads zero natural impressions.
+ * @param scenes - the day's scenes.
+ * @returns true when the natural-traffic columns cannot be trusted yet.
+ */
+export function naturalPending(scenes: readonly SceneFigures[]): boolean {
+  return scenes.length > 0 && scenes.every(scene => num(scene.orgNaturalPv) === 0)
 }
 
 /**

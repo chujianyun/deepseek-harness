@@ -43,6 +43,8 @@ describe('takeOverMerchant', () => {
     const out = 'DSH: the tmall account "名流旗舰店" is signed out. Stop, and ask the user to sign in again.'
     await expect(takeOverMerchant('a1', ran({ code: 1, stderr: `${out}\n` }))).rejects.toMatchObject({ message: out, exitCode: EXIT.signedOut })
     await expect(takeOverMerchant('a1', ran({ code: 1, stderr: 'DSH: in use' }))).rejects.toMatchObject({ exitCode: EXIT.failed })
+    const hub = 'DSH: DSH is signed out of the user center, so there are no e-commerce accounts.'
+    await expect(takeOverMerchant('a1', ran({ code: 1, stderr: hub }))).rejects.toMatchObject({ exitCode: EXIT.failed })
     await expect(takeOverMerchant('a1', ran({ code: 127, stderr: 'spawn dsh-ecommerce ENOENT' }))).rejects.toThrow('只能在已登录用户中心的 DSH 桌面版里运行')
   })
 
@@ -134,6 +136,7 @@ describe('the Alimama scene report', () => {
     expect(summary).toContain('| 合计 | 10801.40 | | 26520.55 | | 2.46 |')
     expect(summary).toContain(`- ${base}.csv\n- ${base}.md`)
     expect(await readFile(`${base}.md`, 'utf8')).toContain('| 货品全站推广 | 10151.40 |')
+    expect(summary).not.toContain('自然流量曝光量都是 0')
   })
 
   it('writes nothing when the figures are not ready, and closes the tab', async () => {
@@ -145,6 +148,14 @@ describe('the Alimama scene report', () => {
     expect(deps.err.join('')).toContain('2026-10-07 各场景的成交人数都是 0')
     expect(page.closed).toBe(true)
     await expect(readFile(join(out, 'r'))).rejects.toThrow()
+  })
+
+  it('warns while Alimama has not computed natural traffic', async () => {
+    const out = await outDir()
+    const pending = SCENES_1006.map(scene => ({ ...scene, orgNaturalPv: 0, naturalPayAmt: 0 }))
+    const deps = fakeDeps(new FakePage([on('query.json', { data: { list: pending }, info: { ok: true } })], sendsTemplate))
+    expect(await alimamaMain(['--account', 'a1', '--date', '2026-10-06', '--out', out], deps)).toBe(0)
+    expect(deps.out.join('')).toContain('⚠️ 各场景的自然流量曝光量都是 0')
   })
 
   it('writes an empty total ROI when nothing was spent', async () => {
@@ -195,12 +206,14 @@ describe('the Business Advisor core daily report', () => {
     expect(out).toContain('❌ 推广花费与万相台不一致，请人工核对：货品全站推广 生意参谋 10151.40，万相台 10000.00。')
   })
 
-  it('says when Alimama could not be asked, and fails on anything unexpected', async () => {
+  it('says when Alimama could not be asked, and still saves the unverified report', async () => {
     const refused = await run(sycmPage(on('query.json', { info: { ok: false, message: '系统繁忙' } })))
     expect(refused.out).toContain('⚠️ 未能与万相台交叉校验推广花费：万相台报表接口拒绝了查询：系统繁忙')
-    const broken = await run(sycmPage(on('query.json', new Error('socket hang up'))))
-    expect(broken.code).toBe(EXIT.failed)
-    expect(broken.err).toBe('失败：socket hang up\n')
+    const broken = await run(sycmPage(on('query.json', new Error('Unexpected token <'))))
+    expect(broken.code).toBe(0)
+    expect(broken.out).toContain('⚠️ 未能与万相台交叉校验推广花费：Unexpected token <')
+    const odd = await run(sycmPage(() => undefined))
+    expect(odd.out).toContain('⚠️ 未能与万相台交叉校验推广花费：no route for')
   })
 
   it('says when the export has no spend columns', async () => {
