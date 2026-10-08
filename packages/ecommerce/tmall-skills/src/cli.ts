@@ -87,16 +87,16 @@ export async function runReport(
  * Take over the account's browser, open a tab, and close the tab afterwards.
  * @param options - the run's options.
  * @param deps - the outside world.
- * @param use - reads data in the tab.
+ * @param use - reads data in the tab, knowing the account.
  * @returns what `use` returns, and the account.
  */
 export async function withMerchantPage<T>(
-  options: Options, deps: Deps, use: (page: Page) => Promise<T>,
+  options: Pick<Options, 'account'>, deps: Deps, use: (page: Page, account: MerchantBrowser) => Promise<T>,
 ): Promise<{ readonly account: MerchantBrowser; readonly result: T }> {
   const account = await deps.takeOver(options.account)
   const page = await deps.openPage(account.cdpUrl)
   try {
-    return { account, result: await use(page) }
+    return { account, result: await use(page, account) }
   } finally {
     await page.close()
   }

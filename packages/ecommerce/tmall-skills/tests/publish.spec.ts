@@ -21,6 +21,14 @@ async function outDir(): Promise<string> {
   return dir
 }
 
+/** A tab whose waits poll a few times, as a real page's do. */
+class PollingPage extends FakePage {
+  override async waitFor(condition: () => boolean | Promise<boolean>): Promise<boolean> {
+    for (let i = 0; i < 3; i++) if (await condition()) return true
+    return false
+  }
+}
+
 async function stopped(work: Promise<unknown>): Promise<SkillError> {
   try {
     await work
@@ -165,6 +173,11 @@ describe('categories', () => {
 describe('resolveCategory', () => {
   const context = { categories: () => Promise.resolve([CONDOMS, LUBE]) }
 
+  it('takes only the requested item from the manager answer', async () => {
+    const loose = new FakePage([ready, on('mtop.tmall.sell.pc.manage.async', { rows: ROWS.slice(0, 1) })])
+    expect((await resolveCategory(loose, { kind: 'item', input: '823072723003' }, context)).note).toContain('不是这家店的商品')
+  })
+
   it('checks a given id against the store categories', async () => {
     expect((await resolveCategory(new FakePage([]), { kind: 'id', id: '50024154' }, context)).candidates).toEqual([{ category: CONDOMS, reason: '用户指定的类目' }])
     expect((await stopped(resolveCategory(new FakePage([]), { kind: 'id', id: '126198864' }, context))).exitCode).toBe(EXIT.usage)
@@ -186,7 +199,9 @@ describe('resolveCategory', () => {
       ['50024154', '本店标题含「水多多」的 2 个商品在此类目，如「名流 水多多 避孕套 10只」'],
       ['50019642', '本店标题含「水多多」的 1 个商品在此类目，如「名流 水多多 润滑剂」'],
     ])
-    expect(found.note).toBeUndefined()
+    expect(found.note).toBe('本店标题含「水多多」的商品还有 1 个类目现在不能发布（可能授权已变化）：777')
+    const usable = await resolveCategory(new FakePage([ready, manager(ROWS.slice(0, 3))]), { kind: 'own', keyword: '水多多' }, context)
+    expect(usable.note).toBeUndefined()
     expect((await resolveCategory(new FakePage([ready, manager([])]), { kind: 'own', keyword: '无' }, context)).note).toBe('本店没有标题含「无」的商品。')
   })
 
@@ -237,6 +252,10 @@ describe('field rules', () => {
       { key: 'p-2', label: 'p-2', uiType: 'input', required: false, propGroup: 'keyProp', visible: true },
       { key: 'color', label: '颜色', uiType: 'newColorSelect', required: false, allowsCustom: true, visible: true },
     ])
+    const promises = parseRules({ components: { promise: { type: 'checkbox', props: { name: 'promise', label: '服务承诺', required: true, dataSource: [
+      { value: 1, text: '七天退货' }, { value: 2, text: '运费险' },
+    ] } } } }, '1')
+    expect(promises.fields[0]?.declaration).toBeUndefined()
     expect(parseRules({ components: {} }, '1')).toEqual({ catId: '1', categoryPath: '', fields: [] })
   })
 
@@ -251,8 +270,14 @@ describe('field rules', () => {
     const refused = new FakePage([on('window.Json2', { error: '错误：类目为空或不存在' })])
     expect(await stopped(readRules(refused, '1'))).toMatchObject({ exitCode: EXIT.usage, message: '天猫不让这家店在类目 1 发布：错误：类目为空或不存在' })
     const changed = await stopped(readRules(new FakePage([on('window.Json2', { error: '  页面\n升级中 ' })]), '1'))
-    expect(changed).toMatchObject({ exitCode: EXIT.failed, message: '天猫发布页没有给出表单结构（类目 1），页面可能已改版。页面显示：页面 升级中' })
-    expect((await stopped(readRules(new FakePage([on('window.Json2', {})]), '1'))).message).toBe('天猫发布页没有给出表单结构（类目 1），页面可能已改版。')
+    expect(changed).toMatchObject({ exitCode: EXIT.failed, message: '天猫发布页没有给出表单字段（类目 1），页面可能已改版。页面显示：页面 升级中' })
+    expect((await stopped(readRules(new FakePage([on('window.Json2', {})]), '1'))).message).toBe('天猫发布页没有给出表单字段（类目 1），页面可能已改版。')
+    const empty = new FakePage([on('window.Json2', { form: { components: { root: { type: 'struct', props: { name: 'root' } } } } })])
+    expect((await stopped(readRules(empty, '1'))).message).toBe('天猫发布页没有给出表单字段（类目 1），页面可能已改版。')
+    let loads = 0
+    const later = new PollingPage([on('window.Json2', () => { later.href = 'https://login.taobao.com/'; loads++; return {} })])
+    expect((await stopped(readRules(later, '1'))).exitCode).toBe(EXIT.signedOut)
+    expect(loads).toBe(1)
     const signIn = new FakePage([], (_url, page) => { page.href = 'https://login.tmall.com/' })
     expect((await stopped(readRules(signIn, '1'))).exitCode).toBe(EXIT.signedOut)
   })
@@ -301,12 +326,14 @@ describe('publish-category script', () => {
       '- 电脑端描述（tmDescription，tmDesc，条件显示）',
     ].join('\n'))
     const conditional = rulesText({ catId: '1', categoryPath: 'x', fields: [
+      { key: 'h', label: 'H', uiType: 'checkbox', required: true, visible: false, declaration: true, options: [{ value: '1', text: '隐藏声明' }] },
       { key: 'a', label: 'A', uiType: 'combobox', required: true, visible: true, conditions: ['$.b'], options: [{ value: 1, text: '甲' }], allowsCustom: true },
       { key: 'd', label: 'd', uiType: 'checkbox', required: true, visible: true, declaration: true },
     ] })
     expect(conditional).toContain('- A（a，combobox，受条件影响），可选 1 项（可自定义）：甲')
     expect(conditional).toContain('- d（d）')
     expect(conditional).not.toContain('满足条件才出现')
+    expect(conditional.match(/隐藏声明/gu)).toHaveLength(1)
   })
 
   const routes = (): Route[] => [ready, tree, search, manager(ROWS), on('window.Json2', { form: { ...FORM, models: {} } })]
@@ -338,6 +365,25 @@ describe('publish-category script', () => {
     const refreshed = fakeDeps(new FakePage(routes()))
     expect(await main(['categories', '--account', 'a1', '--out', out, '--refresh'], refreshed)).toBe(0)
     expect(refreshed.out.join('')).toContain('刚从天猫读取')
+  })
+
+  it('reads the categories again when the cache lacks the one asked for, and never caches an empty list', async () => {
+    const out = await outDir()
+    const path = join(out, '类目缓存_名流旗舰店（主账号）.json')
+    await writeFile(path, JSON.stringify({ store: 's', fetchedAt: '2026-10-08T02:00:00Z', categories: [LUBE] }))
+    const deps = fakeDeps(new FakePage(routes()))
+    expect(await main(['resolve', '--account', 'a1', '--cat', '50024154', '--out', out], deps)).toBe(0)
+    expect(deps.out.join('')).toContain('1. 计生用品 > 避孕套（类目 id 50024154）—— 用户指定的类目')
+    expect((JSON.parse(await readFile(path, 'utf8')) as { categories: unknown[] }).categories).toHaveLength(2)
+
+    const missing = fakeDeps(new FakePage(routes()))
+    expect(await main(['resolve', '--account', 'a1', '--cat', '126198864', '--out', out], missing)).toBe(EXIT.usage)
+
+    const empty = await outDir()
+    const none = fakeDeps(new FakePage([ready, on('categorySelectChildren', { success: true, data: { dataSource: [] } })]))
+    expect(await main(['categories', '--account', 'a1', '--out', empty], none)).toBe(EXIT.failed)
+    expect(none.err.join('')).toContain('天猫没有列出这家店可以发布的任何类目')
+    await expect(readFile(join(empty, '类目缓存_名流旗舰店（主账号）.json'))).rejects.toThrow()
   })
 
   it('reads a damaged cache again from Tmall', async () => {

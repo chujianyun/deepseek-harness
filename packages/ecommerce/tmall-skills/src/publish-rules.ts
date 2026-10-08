@@ -7,8 +7,8 @@
  */
 
 import { EXIT, SkillError } from './errors.ts'
-import { isSignIn } from './publish-category.ts'
-import { signedOut, type Page } from './page.ts'
+import { waitSignedIn } from './publish-category.ts'
+import type { Page } from './page.ts'
 
 /**
  * The publish page of a category, as Tmall's AI publishing opens it.
@@ -45,7 +45,7 @@ export interface FieldRule {
   readonly visible: boolean
   /** The page's conditions that show, hide, or require the field, in the page's own expression syntax. */
   readonly conditions?: readonly string[]
-  /** A required confirmation the store declares by ticking it, such as the medical-device personal-use confirmation. */
+  /** A required single-option checkbox the store ticks to declare something, such as the medical-device personal-use confirmation. */
   readonly declaration?: boolean
 }
 
@@ -177,11 +177,14 @@ export function parseRules(form: PageForm, catId: string): PublishRules {
       ...props.readonly === true ? { readonly: true } : {},
       ...OPEN_CHOICE.has(uiType) ? { allowsCustom: true } : {},
       visible: props.visible !== false, ...withConditions(props.name),
-      ...uiType === 'checkbox' && required ? { declaration: true } : {},
+      ...uiType === 'checkbox' && required && options?.length === 1 ? { declaration: true } : {},
     })
   }
   return { catId, categoryPath: (form.models?.catpath?.value ?? '').replace(/^当前类目：/u, ''), fields }
 }
+
+/** What the publish page says when Tmall refuses the category to the store. */
+const REFUSED = /类目为空或不存在|没有权限|未授权/u
 
 /** Reads the page's form, or says why it cannot. */
 const READ_FORM = `(() => {
@@ -197,20 +200,20 @@ const READ_FORM = `(() => {
  * @param catId - the category.
  * @returns the rules.
  * @throws SkillError signed-out on a sign-in page; usage when Tmall refuses the category; failed when the
- *   page carries no form, such as after Tmall changes the page.
+ *   page carries no form or a form without fields, such as after Tmall changes the page.
  */
 export async function readRules(page: Page, catId: string): Promise<PublishRules> {
   await page.goto(publishUrl(catId))
-  if (isSignIn(await page.evaluate<string>('location.href'))) signedOut('天猫商家后台')
   let answer: { form?: PageForm; error?: string } = {}
-  await page.waitFor(async () => {
+  await waitSignedIn(page, async () => {
     answer = await page.evaluate<{ form?: PageForm; error?: string }>(READ_FORM)
-    return answer.form !== undefined || /错误|不存在|没有权限/u.test(answer.error ?? '')
+    return answer.form !== undefined || REFUSED.test(answer.error ?? '')
   }, 20_000)
-  if (answer.form === undefined) {
-    const said = (answer.error ?? '').replace(/\s+/gu, ' ').trim()
-    if (/类目为空或不存在|没有权限|未授权/u.test(said)) throw new SkillError(`天猫不让这家店在类目 ${catId} 发布：${said.slice(0, 120)}`, EXIT.usage)
-    throw new SkillError(`天猫发布页没有给出表单结构（类目 ${catId}），页面可能已改版。${said === '' ? '' : `页面显示：${said.slice(0, 120)}`}`, EXIT.failed)
+  const said = (answer.error ?? '').replace(/\s+/gu, ' ').trim()
+  if (REFUSED.test(said)) throw new SkillError(`天猫不让这家店在类目 ${catId} 发布：${said.slice(0, 120)}`, EXIT.usage)
+  const rules = answer.form === undefined ? undefined : parseRules(answer.form, catId)
+  if (rules === undefined || rules.fields.length === 0) {
+    throw new SkillError(`天猫发布页没有给出表单字段（类目 ${catId}），页面可能已改版。${said === '' ? '' : `页面显示：${said.slice(0, 120)}`}`, EXIT.failed)
   }
-  return parseRules(answer.form, catId)
+  return rules
 }

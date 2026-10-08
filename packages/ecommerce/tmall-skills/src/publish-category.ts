@@ -73,6 +73,24 @@ export function isSignIn(href: string): boolean {
 }
 
 /**
+ * Wait until the tab is ready or has been sent to sign in, which a page may do some time after loading.
+ * @param page - the tab.
+ * @param ready - reads the page; true once it is ready.
+ * @param waitMs - how long to wait.
+ * @returns whether the page became ready.
+ * @throws SkillError signed-out once the tab is on a sign-in page.
+ */
+export async function waitSignedIn(page: Page, ready: () => Promise<boolean>, waitMs: number): Promise<boolean> {
+  const seen = { signIn: false }
+  const done = await page.waitFor(async () => {
+    seen.signIn = isSignIn(await page.evaluate<string>('location.href'))
+    return seen.signIn || await ready()
+  }, waitMs)
+  if (seen.signIn) signedOut('天猫商家后台')
+  return done
+}
+
+/**
  * Open a seller page and make sure the account is still signed in.
  * @param page - the tab.
  * @param url - the page.
@@ -81,8 +99,7 @@ export function isSignIn(href: string): boolean {
  */
 async function openSellerPage(page: Page, url: string, ready: string): Promise<void> {
   await page.goto(url)
-  if (isSignIn(await page.evaluate<string>('location.href'))) signedOut('天猫商家后台')
-  if (!await page.waitFor(() => page.evaluate<boolean>(ready), 20_000)) {
+  if (!await waitSignedIn(page, () => page.evaluate<boolean>(ready), 20_000)) {
     throw new SkillError(`天猫商家后台页面打不开或已改版（${url}）。`, EXIT.failed)
   }
 }
@@ -182,7 +199,7 @@ interface ManagerRow {
  * The expression that lists the store's items through the manager page's signed mtop call.
  * @param filter - the manager's filter fields, such as `queryTitle` or `queryItemId`.
  * @param pageSize - how many rows.
- * @returns the expression; it answers the table's rows, or the mtop return code on failure.
+ * @returns the expression; it answers the table's rows, or the mtop return code or the manager's message on failure.
  */
 export function ownItemsExpression(filter: Readonly<Record<string, string>>, pageSize: number): string {
   const jsonBody = JSON.stringify({ tab: 'all', pagination: { current: 1, pageSize }, filtertab: '', filter, table: {} })
@@ -190,7 +207,9 @@ export function ownItemsExpression(filter: Readonly<Record<string, string>>, pag
   const r = await window.lib.mtop.request({ api: 'mtop.tmall.sell.pc.manage.async', v: '1.0', type: 'POST', data: { url: '/tmall/manager/table.htm', jsonBody: ${JSON.stringify(jsonBody)} } }).catch(e => e)
   if (!r || !r.data || !r.data.result) return { ret: String((r && r.ret) || r) }
   const result = typeof r.data.result === 'string' ? JSON.parse(r.data.result) : r.data.result
-  return { rows: (result.data && result.data.table && result.data.table.dataSource) || [] }
+  const table = result.data && result.data.table
+  if (!table) return { ret: String(result.message || result.msg || '商品列表没有返回表格') }
+  return { rows: table.dataSource || [] }
 })()`
 }
 
@@ -231,8 +250,8 @@ export interface Resolution {
 
 /** What resolving needs besides the tab. */
 export interface ResolveContext {
-  /** The store's publishable categories, read or cached. */
-  readonly categories: () => Promise<readonly TmallCategory[]>
+  /** The store's publishable categories, read or cached; read again when a cached list lacks one of `wanted`. */
+  readonly categories: (wanted: readonly string[]) => Promise<readonly TmallCategory[]>
 }
 
 /**
@@ -246,7 +265,7 @@ export interface ResolveContext {
 export async function resolveCategory(page: Page, source: CategorySource, context: ResolveContext): Promise<Resolution> {
   switch (source.kind) {
     case 'id': {
-      const category = (await context.categories()).find(c => c.id === source.id)
+      const category = (await context.categories([source.id])).find(c => c.id === source.id)
       if (category === undefined) {
         throw new SkillError(`类目 ${source.id} 不在这家店可以发布的类目里（可能未授权、不是可发布的末级类目或类目 id 有误）。`, EXIT.usage)
       }
@@ -255,11 +274,11 @@ export async function resolveCategory(page: Page, source: CategorySource, contex
     case 'item': {
       const itemId = itemIdOf(source.input)
       await openManager(page)
-      const [item] = await ownItems(page, { queryItemId: itemId }, 1)
+      const item = (await ownItems(page, { queryItemId: itemId }, 1)).find(row => row.itemId === itemId)
       if (item === undefined) {
         return { source, candidates: [], note: `商品 ${itemId} 不是这家店的商品。外店商品页只给出一级类目，请改用商品名检索类目。` }
       }
-      const category = (await context.categories()).find(c => c.id === item.catId)
+      const category = (await context.categories([item.catId])).find(c => c.id === item.catId)
       return category === undefined
         ? { source, candidates: [], note: `本店商品 ${itemId} 所在类目 ${item.catId} 现在不能发布（可能授权已变化）。` }
         : { source, candidates: [{ category, reason: `本店商品 ${itemId}「${item.title}」所在类目` }] }
@@ -269,14 +288,16 @@ export async function resolveCategory(page: Page, source: CategorySource, contex
       const items = await ownItems(page, { queryTitle: source.keyword })
       const byCategory = new Map<string, OwnItem[]>()
       for (const item of items) byCategory.set(item.catId, [...byCategory.get(item.catId) ?? [], item])
-      const categories = await context.categories()
+      const categories = await context.categories([...byCategory.keys()])
       const candidates = [...byCategory.entries()].sort((a, b) => b[1].length - a[1].length).flatMap(([catId, group]) => {
         const category = categories.find(c => c.id === catId)
         return category === undefined ? [] : [{ category, reason: `本店标题含「${source.keyword}」的 ${String(group.length)} 个商品在此类目，如「${(group[0] as OwnItem).title}」` }]
       })
-      return items.length === 0
-        ? { source, candidates, note: `本店没有标题含「${source.keyword}」的商品。` }
-        : { source, candidates }
+      if (items.length === 0) return { source, candidates, note: `本店没有标题含「${source.keyword}」的商品。` }
+      const lost = [...byCategory.keys()].filter(catId => !categories.some(c => c.id === catId))
+      return lost.length === 0
+        ? { source, candidates }
+        : { source, candidates, note: `本店标题含「${source.keyword}」的商品还有 ${String(lost.length)} 个类目现在不能发布（可能授权已变化）：${lost.join('、')}` }
     }
     case 'keyword': {
       await openEntry(page)

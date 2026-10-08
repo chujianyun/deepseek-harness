@@ -13,11 +13,14 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import type { MerchantBrowser } from './account.ts'
-import { fileSafe, realDeps, type Deps } from './cli.ts'
+import { fileSafe, realDeps, withMerchantPage, type Deps } from './cli.ts'
 import { beijingTime } from './dates.ts'
 import { EXIT, SkillError } from './errors.ts'
 import type { Page } from './page.ts'
-import { openEntry, resolveCategory, storeCategories, type CategorySource, type Resolution, type TmallCategory } from './publish-category.ts'
+import {
+  openEntry, resolveCategory, storeCategories,
+  type Candidate, type CategorySource, type Resolution, type ResolveContext, type TmallCategory,
+} from './publish-category.ts'
 import { readRules, type FieldRule, type PublishRules } from './publish-rules.ts'
 
 /** How long a store's category list is reused before it is read again. */
@@ -86,25 +89,30 @@ interface CategoryCache {
 }
 
 /**
- * The store's publishable categories: the cache while it is fresh, read from Tmall otherwise.
+ * The store's publishable categories: the cache while it is fresh and holds every wanted category, read
+ * from Tmall otherwise, so a category authorized since the cache was written is found.
  * @param page - a tab of the account.
  * @param account - the account, whose store names the cache.
  * @param options - output directory and whether to refresh.
  * @param now - the moment.
+ * @param wanted - category ids the caller looks for.
  * @returns the categories and whether they came from the cache.
+ * @throws SkillError failed when Tmall lists no category the store may publish in; nothing is cached then.
  */
 async function categoriesOf(
-  page: Page, account: MerchantBrowser, options: PublishCategoryOptions, now: Date,
+  page: Page, account: MerchantBrowser, options: PublishCategoryOptions, now: Date, wanted: readonly string[] = [],
 ): Promise<{ readonly categories: readonly TmallCategory[]; readonly fetchedAt: string; readonly cached: boolean }> {
   const path = resolve(options.out, `类目缓存_${fileSafe(account.store)}.json`)
   if (!options.refresh) {
     const cache = await readCache(path)
-    if (cache !== undefined && now.getTime() - Date.parse(cache.fetchedAt) < CACHE_DAYS * 86_400_000) {
+    if (cache !== undefined && now.getTime() - Date.parse(cache.fetchedAt) < CACHE_DAYS * 86_400_000
+      && wanted.every(id => cache.categories.some(c => c.id === id))) {
       return { categories: cache.categories, fetchedAt: cache.fetchedAt, cached: true }
     }
   }
   await openEntry(page)
   const categories = await storeCategories(page)
+  if (categories.length === 0) throw new SkillError('天猫没有列出这家店可以发布的任何类目，请确认店铺的类目授权。', EXIT.failed)
   const fetchedAt = now.toISOString()
   await mkdir(resolve(options.out), { recursive: true })
   await writeFile(path, `${JSON.stringify({ store: account.store, fetchedAt, categories } satisfies CategoryCache, null, 2)}\n`)
@@ -151,7 +159,7 @@ export function rulesText(rules: PublishRules): string {
   }
   const visible = rules.fields.filter(f => f.required && f.visible && f.declaration !== true)
   const declarations = rules.fields.filter(f => f.declaration === true)
-  const conditional = rules.fields.filter(f => f.required && !f.visible)
+  const conditional = rules.fields.filter(f => f.required && !f.visible && f.declaration !== true)
   return [
     `类目：${rules.categoryPath}（${rules.catId}），共 ${String(rules.fields.length)} 个字段。`,
     '',
@@ -173,13 +181,8 @@ export function rulesText(rules: PublishRules): string {
 export async function main(argv: readonly string[], deps: Deps = realDeps): Promise<number> {
   try {
     const options = parsePublishCategoryOptions(argv)
-    const account = await deps.takeOver(options.account)
-    const page = await deps.openPage(account.cdpUrl)
-    try {
-      deps.stdout(`${await run(page, account, options, deps)}\n`)
-    } finally {
-      await page.close()
-    }
+    const { result } = await withMerchantPage(options, deps, (page, account) => run(page, account, options, deps))
+    deps.stdout(`${result}\n`)
     return 0
   } catch (error) {
     if (error instanceof SkillError) {
@@ -189,6 +192,14 @@ export async function main(argv: readonly string[], deps: Deps = realDeps): Prom
     deps.stderr(`失败：${error instanceof Error ? error.message : String(error)}\n`)
     return EXIT.failed
   }
+}
+
+/**
+ * The store's categories for resolving.
+ * @returns the context.
+ */
+function context(page: Page, account: MerchantBrowser, options: PublishCategoryOptions, deps: Deps): ResolveContext {
+  return { categories: async wanted => (await categoriesOf(page, account, options, deps.now(), wanted)).categories }
 }
 
 /**
@@ -204,18 +215,13 @@ async function run(page: Page, account: MerchantBrowser, options: PublishCategor
       return [header, `这家店可以发布的类目共 ${String(categories.length)} 个（${cached ? `用 ${beijingTime(new Date(fetchedAt))} 的缓存` : '刚从天猫读取'}）：`, ...list].join('\n')
     }
     case 'resolve': {
-      let cache: readonly TmallCategory[] | undefined
-      const resolution = await resolveCategory(page, options.source as CategorySource, {
-        categories: async () => cache ??= (await categoriesOf(page, account, options, deps.now())).categories,
-      })
+      const resolution = await resolveCategory(page, options.source as CategorySource, context(page, account, options, deps))
       return `${header}\n${resolutionText(resolution)}`
     }
     case 'rules': {
       const catId = options.catId as string
-      const category = (await categoriesOf(page, account, options, deps.now())).categories.find(c => c.id === catId)
-      if (category === undefined) {
-        throw new SkillError(`类目 ${catId} 不在这家店可以发布的类目里（可能未授权、不是可发布的末级类目或类目 id 有误）。`, EXIT.usage)
-      }
+      const resolution = await resolveCategory(page, { kind: 'id', id: catId }, context(page, account, options, deps))
+      const { category } = resolution.candidates[0] as Candidate
       const read = await readRules(page, catId)
       const rules = { ...read, categoryPath: read.categoryPath === '' ? category.path.join(' > ') : read.categoryPath }
       const base = `字段规则_${catId}`
