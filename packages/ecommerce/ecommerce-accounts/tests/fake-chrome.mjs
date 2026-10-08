@@ -18,7 +18,7 @@
 // out; on item 600000000004 the APIs answer with risk control. Tmall's publish entry answers its category tree
 // and search with the store's 计生用品 > 避孕套, and that category's publish page carries its form; the publish
 // page also answers its image space folders and uploads and saves what its request helper submits to the
-// warehouse, which the item manager lists under in_stock. Its tabs are
+// warehouse, which the item manager lists under in_stock and all. Its tabs are
 // kept in `<user-data-dir>/fake-tabs.json` and come back with --restore-last-session. As in Chrome, a
 // closed tab is still listed once by Target.getTargets, but has no window any more.
 import { createHash } from 'node:crypto'
@@ -192,7 +192,8 @@ const sellerApi = (expression) => {
   if (expression.includes('picturecenter.console.file.query')) return { data: { fileModule: /"page":1,/u.test(expression) ? shop.files : [] } }
   const id = /\\"queryItemId\\":\\"(\d+)\\"/u.exec(expression)?.[1]
   const title = /\\"queryTitle\\":\\"([^\\]+)\\"/u.exec(expression)?.[1]
-  const rows = expression.includes('\\"tab\\":\\"in_stock\\"') ? shop.warehouse.filter(item => (id === undefined || item.itemId === id) && (title === undefined || item.title.includes(title))) : []
+  // Every saved item is in the warehouse, which the all tab lists too; nothing is on sale.
+  const rows = !expression.includes('\\"tab\\":\\"on_sale\\"') ? shop.warehouse.filter(item => (id === undefined || item.itemId === id) && (title === undefined || item.title.includes(title))) : []
   return { rows: rows.map(item => ({ itemId: Number(item.itemId), catId: 50024154, itemDesc: { desc: [{ text: item.title }] } })) }
 }
 const upload = (expression) => {

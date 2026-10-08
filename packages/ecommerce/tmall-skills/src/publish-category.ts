@@ -201,7 +201,7 @@ interface ManagerRow {
  * The expression that lists the store's items through the manager page's signed mtop call.
  * @param filter - the manager's filter fields, such as `queryTitle` or `queryItemId`.
  * @param pageSize - how many rows; the manager answers at most 20.
- * @param tab - the manager's tab: `all` for items on sale, `in_stock` for the warehouse.
+ * @param tab - the manager's tab: `all` for every item on sale or in the warehouse, `on_sale`, or `in_stock` for the warehouse.
  * @returns the expression; it answers the table's rows, or the mtop return code or the manager's message on failure.
  */
 export function ownItemsExpression(filter: Readonly<Record<string, string>>, pageSize: number, tab = 'all'): string {
@@ -217,11 +217,11 @@ export function ownItemsExpression(filter: Readonly<Record<string, string>>, pag
 }
 
 /**
- * List the store's items on sale, or in the warehouse, matching a filter.
+ * List the store's items in one tab of the item manager matching a filter.
  * @param page - the item manager tab.
  * @param filter - `queryTitle` for words in the title, or `queryItemId` for ids.
  * @param pageSize - the most rows to read.
- * @param tab - `all` for items on sale, `in_stock` for the warehouse.
+ * @param tab - `all` (on sale and in the warehouse), `on_sale`, or `in_stock`.
  * @returns the items with their categories.
  * @throws SkillError when the list cannot be read.
  */

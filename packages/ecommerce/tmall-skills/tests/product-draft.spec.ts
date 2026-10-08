@@ -359,6 +359,9 @@ describe('checkDraft', () => {
     expect(byKey(draftOf({ values: { 一口价: { value: '42.9', source: '模型生成' } } })).price).toMatchObject({ status: '待确认' })
     const punctuated = byKey(draftOf({ values: { 商品标题: { value: `名流（三合一），${'名'.repeat(25)}`, source: '模型生成' } } })).title
     expect(punctuated).toMatchObject({ status: '不符合', value: `名流（三合一），${'名'.repeat(25)}` })
+    const unlimited = { ...RULES, fields: RULES.fields.map(({ maxLength: _limit, ...field }) => field) }
+    expect(byKey(draftOf({ values }), unlimited).title).toMatchObject({ status: '不符合', note: '宽度 62，天猫最多 60（汉字算 2）' })
+    expect(byKey(draftOf({ values: { 商品卖点: { value: '玻'.repeat(21), source: '模型生成' } } }), unlimited).tmSubTitle).toMatchObject({ status: '待确认' })
     expect(byKey(draftOf({ values: { 商品卖点: { value: '玻'.repeat(21), source: '模型生成' } } })).tmSubTitle).toMatchObject({
       status: '不符合', note: '宽度 42，天猫最多 40（汉字算 2）',
     })

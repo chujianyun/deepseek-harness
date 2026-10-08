@@ -9,7 +9,8 @@ import { blockers, main, parsePublishOptions, type DraftFile, type PublishRecord
 import { MANAGER_URL } from '../src/publish-category.ts'
 import { publishUrl, type FieldRule, type PublishRules } from '../src/publish-rules.ts'
 import {
-  buildForm, ensureFolder, FOLDER_NAME, folderImages, inWarehouse, optionValue, readBase, readSubmitAnswer, submit, uploadImage, within,
+  buildForm, ensureFolder, FOLDER_NAME, folderImages, listed, MANAGER_ROWS, optionValue, readBase, readSubmitAnswer, submit, uploadImage,
+  within,
   type PageBase, type Uploaded,
 } from '../src/publish-submit.ts'
 import { jpeg, png } from './images.ts'
@@ -129,11 +130,14 @@ class Store {
   files: { md5: string; pictureId: string; fullUrl: string; pixel: string; sizes: string }[] = []
   readonly uploads: string[] = []
   readonly submits: { query: URLSearchParams; form: Record<string, unknown> }[] = []
-  warehouse: { itemId: string; title: string }[] = []
+  /** The store's items, each in the item manager tab it shows in. */
+  items: { itemId: string; title: string; tab?: 'on_sale' }[] = []
   /** What submit.htm answers; an Error rejects the evaluation. */
   answer: unknown = { models: { globalMessage: { successUrl: 'https://x/success.htm?primaryId=1088292691011&auctionStatus=-2' } } }
-  /** Whether a saved item shows up in the warehouse. */
-  shows = true
+  /** Where a saved item lands. */
+  lands: 'in_stock' | 'on_sale' | 'nowhere' = 'in_stock'
+  /** What an upload answers instead of the file, when set. */
+  refusesUploads?: object
 
   routes(): Route[] {
     return [
@@ -146,6 +150,7 @@ class Store {
       }),
       on('picturecenter.console.file.query', (expression: string) => ({ data: { fileModule: /"page":1,/u.test(expression) ? this.files : [] } })),
       on('upload.api', (expression: string) => {
+        if (this.refusesUploads !== undefined) return this.refusesUploads
         const name = JSON.parse(/form\.append\('name', ("[^"]*")\)/u.exec(expression)?.[1] as string) as string
         this.uploads.push(name)
         return { object: { fileId: String(this.uploads.length), url: `https://img.alicdn.com/${name}`, pix: '800x800', size: '2048' } }
@@ -155,15 +160,17 @@ class Store {
         const query = new URLSearchParams(JSON.parse(literal) as string)
         this.submits.push({ query, form: JSON.parse(query.get('jsonBody') as string) as Record<string, unknown> })
         const title = ((this.submits.at(-1)?.form.title as { title: string[] } | undefined)?.title[0]) ?? ''
-        if (this.shows && !(this.answer instanceof Error) && JSON.stringify(this.answer).includes('primaryId')) this.warehouse.push({ itemId: '1088292691011', title })
+        if (this.lands !== 'nowhere' && !(this.answer instanceof Error) && JSON.stringify(this.answer).includes('primaryId')) {
+          this.items.push({ itemId: '1088292691011', title, ...this.lands === 'on_sale' ? { tab: 'on_sale' as const } : {} })
+        }
         return this.answer
       }),
       on('mtop.tmall.sell.pc.manage.async', (expression: string) => {
-        if (!expression.includes('\\"tab\\":\\"in_stock\\"')) return { rows: [] }
+        const tab = /\\"tab\\":\\"(\w+)\\"/u.exec(expression)?.[1]
         const id = /\\"queryItemId\\":\\"(\d+)\\"/u.exec(expression)?.[1]
         const title = /\\"queryTitle\\":\\"([^\\]+)\\"/u.exec(expression)?.[1]
-        const rows = this.warehouse.filter(item => (id === undefined || item.itemId === id)
-          && (title === undefined || item.title.includes(title)))
+        const rows = this.items.filter(item => (tab === 'all' || (item.tab ?? 'in_stock') === tab) && (id === undefined || item.itemId === id)
+          && (title === undefined || item.title.includes(title))).slice(0, MANAGER_ROWS)
         return { rows: rows.map(item => ({ itemId: Number(item.itemId), catId: 50024154, itemDesc: { desc: [{ text: item.title }] } })) }
       }),
     ]
@@ -237,12 +244,13 @@ describe('publish page', () => {
     expect(form).toEqual({ title: { title: ['名流'] } })
   })
 
-  it('looks in the warehouse tab only', async () => {
+  it('looks in one tab of the item manager', async () => {
     const store = new Store()
-    store.warehouse = [{ itemId: '5', title: '名流 水多多' }]
+    store.items = [{ itemId: '5', title: '名流 水多多' }]
     const page = new FakePage(store.routes())
-    expect(await inWarehouse(page, { queryItemId: '5' })).toEqual([{ itemId: '5', catId: '50024154', title: '名流 水多多' }])
+    expect(await listed(page, { queryItemId: '5' }, 'in_stock')).toEqual([{ itemId: '5', catId: '50024154', title: '名流 水多多' }])
     expect(page.evaluated.at(-1)).toContain('\\"tab\\":\\"in_stock\\"')
+    expect(await listed(page, { queryItemId: '5' }, 'on_sale')).toEqual([])
   })
 })
 
@@ -322,10 +330,11 @@ describe('buildForm', () => {
 
 describe('tmall-publish script', () => {
   it('reads the command line', () => {
-    expect(parsePublishOptions(['check', '--account', 'a1', '--draft', 'd.json'])).toEqual({ command: 'check', account: 'a1', draft: 'd.json', confirmed: false, out: '天猫发品' })
+    expect(parsePublishOptions(['check', '--account', 'a1', '--draft', 'd.json'])).toEqual({ command: 'check', account: 'a1', draft: 'd.json', confirmed: false, unknownChecked: false, out: '天猫发品' })
     expect(parsePublishOptions(['save', '--account', 'a1', '--draft', 'd', '--rules', 'r', '--confirmed', '--stock', '1000', '--out', 'o'])).toEqual({
-      command: 'save', account: 'a1', draft: 'd', rules: 'r', confirmed: true, stock: 1000, out: 'o',
+      command: 'save', account: 'a1', draft: 'd', rules: 'r', confirmed: true, stock: 1000, unknownChecked: false, out: 'o',
     })
+    expect(parsePublishOptions(['save', '--account', 'a1', '--draft', 'd', '--rules', 'r', '--unknown-checked']).unknownChecked).toBe(true)
     for (const argv of [
       ['save', '--bogus'], [], ['publish', '--account', 'a1', '--draft', 'd'], ['check', '--draft', 'd'], ['check', '--account', '', '--draft', 'd'],
       ['check', '--account', 'a1'], ['check', '--account', 'a1', '--draft', ''], ['save', '--account', 'a1', '--draft', 'd'], ['save', '--account', 'a1', '--draft', 'd', '--rules', ''],
@@ -396,17 +405,29 @@ describe('tmall-publish script', () => {
     expect(page.visited).toEqual([MANAGER_URL, publishUrl('50024154'), MANAGER_URL])
     expect(store.submits[0]?.form).toMatchObject({ shelfTime: { type: 2 }, mainImagesGroup: { images: [{ url: 'https://img/old.png' }, { url: 'https://img.alicdn.com/2.jpg' }] } })
     expect(await records(out)).toEqual([
-      { store: '名流旗舰店（主账号）', title: '名流水多多玻尿酸3合1避孕套', catId: '50024154', status: 'submitting', at: '2026-10-08T03:00:00.000Z' },
-      { store: '名流旗舰店（主账号）', title: '名流水多多玻尿酸3合1避孕套', catId: '50024154', status: 'saved', itemId: '1088292691011', at: '2026-10-08T03:00:00.000Z' },
+      { store: '名流旗舰店（主账号）', title: '名流水多多玻尿酸3合1避孕套', catId: '50024154', codes: ['mldx238a', 'mldx238b'], status: 'submitting', at: '2026-10-08T03:00:00.000Z' },
+      {
+        store: '名流旗舰店（主账号）', title: '名流水多多玻尿酸3合1避孕套', catId: '50024154', codes: ['mldx238a', 'mldx238b'], status: 'saved', itemId: '1088292691011',
+        at: '2026-10-08T03:00:00.000Z',
+      },
     ])
 
     const again = fakeDeps(new FakePage(store.routes()))
     expect(await main(argv, again)).toBe(0)
-    expect(again.out.join('')).toContain('没有重复保存：店铺 名流旗舰店（主账号） 的仓库里已有「名流水多多玻尿酸3合1避孕套」，商品 ID 1088292691011（2026-10-08 11:00（北京时间）DSH 已存过，仍在仓库）。')
+    expect(again.out.join('')).toContain('没有重复保存：店铺 名流旗舰店（主账号） 里已有「名流水多多玻尿酸3合1避孕套」，商品 ID 1088292691011（2026-10-08 11:00（北京时间）DSH 已存过，仍在店里）。')
     expect(store.submits).toHaveLength(1)
     const checked = fakeDeps(new FakePage(store.routes()))
     expect(await main(['check', '--account', 'a1', '--draft', draft, '--out', out], checked)).toBe(0)
-    expect(checked.out.join('')).toContain('仓库里已有「名流水多多玻尿酸3合1避孕套」：商品 ID 1088292691011（2026-10-08 11:00（北京时间）DSH 已存过，仍在仓库）')
+    expect(checked.out.join('')).toContain('里已有「名流水多多玻尿酸3合1避孕套」：商品 ID 1088292691011（2026-10-08 11:00（北京时间）DSH 已存过，仍在店里）')
+
+    // Put on sale with a new title, the same SKU codes still name it.
+    store.items = [{ itemId: '1088292691011', title: '新标题', tab: 'on_sale' }]
+    const renamed = JSON.parse(await readFile(draft, 'utf8')) as DraftFile
+    await writeFile(draft, JSON.stringify({ ...renamed, values: { 商品标题: { value: '新标题二', source: '模型生成' } } }))
+    const moved = fakeDeps(new FakePage(store.routes()))
+    expect(await main(argv, moved)).toBe(0)
+    expect(moved.out.join('')).toContain('没有重复保存：店铺 名流旗舰店（主账号） 里已有「新标题二」，商品 ID 1088292691011')
+    expect(store.submits).toHaveLength(1)
   })
 
   it('cuts the white image to 800×800 and reuses the cut image by its MD5', async () => {
@@ -435,30 +456,34 @@ describe('tmall-publish script', () => {
     const { store, out, draft } = await setUp()
     const none = fakeDeps(new FakePage(store.routes()))
     expect(await main(['check', '--account', 'a1', '--draft', draft, '--out', out], none)).toBe(0)
-    expect(none.out.join('')).toBe('店铺 名流旗舰店（主账号） 的仓库里没有「名流水多多玻尿酸3合1避孕套」，DSH 也没有存过它。\n')
-    store.warehouse = [{ itemId: '961117235837', title: '名流水多多玻尿酸3合1避孕套' }]
+    expect(none.out.join('')).toBe('店铺 名流旗舰店（主账号） 的仓库和出售中都没有「名流水多多玻尿酸3合1避孕套」，DSH 也没有存过它。\n')
+    store.items = [{ itemId: '961117235837', title: '名流水多多玻尿酸3合1避孕套', tab: 'on_sale' }]
     await mkdir(out, { recursive: true })
     const gone: PublishRecord = { store: '名流旗舰店（主账号）', title: '名流水多多玻尿酸3合1避孕套', catId: '50024154', status: 'saved', itemId: '1', at: '2026-10-01T00:00:00Z' }
     await writeFile(join(out, '发品记录.json'), JSON.stringify([gone, { ...gone, store: '别家', itemId: '961117235837' }]))
     const found = fakeDeps(new FakePage(store.routes()))
     expect(await main(['check', '--account', 'a1', '--draft', draft, '--out', out], found)).toBe(0)
-    expect(found.out.join('')).toContain('商品 ID 961117235837（仓库里已有同名商品）')
+    expect(found.out.join('')).toContain('商品 ID 961117235837（店里已有同名商品）')
+    store.items = Array.from({ length: MANAGER_ROWS }, (_, at) => ({ itemId: String(500 + at), title: `名流水多多玻尿酸3合1避孕套 ${String(at)}` }))
+    const crowded = fakeDeps(new FakePage(store.routes()))
+    expect(await main(['check', '--account', 'a1', '--draft', draft, '--out', out], crowded)).toBe(EXIT.failed)
+    expect(crowded.err.join('')).toBe('店里标题含「名流水多多玻尿酸3合1避孕套」的商品超过 20 个，没法确认有没有同一商品；请用户到千牛按标题确认。\n')
   })
 
   it('reads a draft title written as parts, and a record file that is not a list or not JSON', async () => {
     const { store, out, draft } = await setUp(new Store(), { values: { 商品标题: { value: ['名流', '水多多'], source: '模型生成' } } })
-    store.warehouse = [{ itemId: '3', title: '名流水多多' }]
+    store.items = [{ itemId: '3', title: '名流水多多' }]
     await mkdir(out, { recursive: true })
     for (const text of ['{}', 'not json']) {
       await writeFile(join(out, '发品记录.json'), text)
       const deps = fakeDeps(new FakePage(store.routes()))
       expect(await main(['check', '--account', 'a1', '--draft', draft, '--out', out], deps)).toBe(0)
-      expect(deps.out.join('')).toContain('商品 ID 3（仓库里已有同名商品）')
+      expect(deps.out.join('')).toContain('商品 ID 3（店里已有同名商品）')
     }
-    const untitled = await setUp(new Store(), { values: {} })
+    const untitled = await setUp(new Store(), { values: {}, skus: [{ index: '1', name: 'a', price: 1 }] })
     const deps = fakeDeps(new FakePage(untitled.store.routes()))
     expect(await main(['check', '--account', 'a1', '--draft', untitled.draft, '--out', untitled.out], deps)).toBe(EXIT.usage)
-    expect(deps.err.join('')).toBe('商品草稿还没有商品标题，没法到仓库查重；请先补上标题重新生成草稿。\n')
+    expect(deps.err.join('')).toBe('商品草稿还没有商品标题，没法到店里查重；请先补上标题重新生成草稿。\n')
   })
 
   it('refuses a draft that is not ready, and an unreadable draft', async () => {
@@ -483,22 +508,58 @@ describe('tmall-publish script', () => {
     expect((await records(setup.out)).at(-1)).toMatchObject({ status: 'failed', message: '标题不能为空' })
   })
 
-  it('records a submit without an answer as unknown and says not to retry', async () => {
+  it('records a submit without an answer as unknown, and saves again only after the user checked', async () => {
     const setup = await setUp()
     setup.store.answer = new Error('Network Error')
     const deps = fakeDeps(new FakePage(setup.store.routes()))
     expect(await main(save(setup), deps)).toBe(EXIT.failed)
-    expect(deps.err.join('')).toContain('提交后没有拿到天猫的答复（Network Error），结果不明。不要重试，先运行 check 查仓库。')
+    expect(deps.err.join('')).toContain('提交后没有拿到天猫的答复（Network Error），结果不明。不要重试，先运行 check 查店里。')
     expect((await records(setup.out)).at(-1)).toMatchObject({ status: 'unknown', message: 'Network Error' })
+
+    setup.store.answer = new Store().answer
+    const retried = fakeDeps(new FakePage(setup.store.routes()))
+    expect(await main(save(setup), retried)).toBe(EXIT.usage)
+    expect(retried.err.join('')).toContain('没有保存：2026-10-08 11:00（北京时间）那次提交结果不明，店里暂时查不到它，可能还在处理。')
+    expect(setup.store.submits).toHaveLength(1)
+    const checked = fakeDeps(new FakePage(setup.store.routes()))
+    expect(await main(['check', '--account', 'a1', '--draft', setup.draft, '--out', setup.out], checked)).toBe(0)
+    expect(checked.out.join('')).toContain('注意：2026-10-08 11:00（北京时间）那次提交结果不明')
+    expect(await main([...save(setup), '--unknown-checked'], fakeDeps(new FakePage(setup.store.routes())))).toBe(0)
+    expect(setup.store.submits).toHaveLength(2)
+
+    // A run stopped while submitting left no answer either.
+    const cut = await setUp()
+    await mkdir(cut.out, { recursive: true })
+    const started: PublishRecord = { store: '名流旗舰店（主账号）', title: 'x', catId: '50024154', codes: ['mldx238a', 'mldx238b'], status: 'submitting', at: '2026-10-08T02:00:00Z' }
+    await writeFile(join(cut.out, '发品记录.json'), JSON.stringify([started]))
+    expect(await main(save(cut), fakeDeps(new FakePage(cut.store.routes())))).toBe(EXIT.usage)
+    expect(cut.store.submits).toHaveLength(0)
   })
 
-  it('records an item the warehouse does not show as unknown', async () => {
+  it('records an item the store does not show as unknown, and one put on sale loudly', async () => {
     const setup = await setUp()
-    setup.store.shows = false
+    setup.store.lands = 'nowhere'
     const deps = fakeDeps(new FakePage(setup.store.routes()))
     expect(await main(save(setup), deps)).toBe(EXIT.failed)
-    expect(deps.err.join('')).toContain('天猫答复已保存（商品 ID 1088292691011），但仓库里暂时查不到它。不要重试，稍后运行 check 查仓库。')
+    expect(deps.err.join('')).toContain('天猫答复已保存（商品 ID 1088292691011），但仓库里暂时查不到它。不要重试，稍后运行 check 查店里。')
     expect((await records(setup.out)).at(-1)).toMatchObject({ status: 'unknown', itemId: '1088292691011' })
+
+    const live = await setUp()
+    live.store.lands = 'on_sale'
+    const loud = fakeDeps(new FakePage(live.store.routes()))
+    expect(await main(save(live), loud)).toBe(EXIT.failed)
+    expect(loud.err.join('')).toContain('天猫把商品 ID 1088292691011 放到了「出售中」，没有放进仓库！请用户立即到千牛下架它。')
+    expect((await records(live.out)).at(-1)).toMatchObject({ status: 'on-sale', itemId: '1088292691011' })
+  })
+
+  it('records a failure before submitting as failed', async () => {
+    const setup = await setUp()
+    setup.store.refusesUploads = { message: '图片存在安全问题' }
+    const deps = fakeDeps(new FakePage(setup.store.routes()))
+    expect(await main(save(setup), deps)).toBe(EXIT.failed)
+    expect(deps.err.join('')).toContain('上传图片 1.png 失败（图片存在安全问题）。')
+    expect((await records(setup.out)).map(record => record.status)).toEqual(['submitting', 'failed'])
+    expect(setup.store.submits).toHaveLength(0)
   })
 
   it('stops when the publish page asks to sign in, and reports other failures', async () => {
@@ -507,6 +568,7 @@ describe('tmall-publish script', () => {
     const deps = fakeDeps(page)
     expect(await main(save(setup), deps)).toBe(EXIT.signedOut)
     expect(page.closed).toBe(true)
+    expect((await records(setup.out)).at(-1)).toMatchObject({ status: 'failed' })
     const broken = fakeDeps(new FakePage([]), { openPage: () => Promise.reject(new Error('CDP 断开')) })
     expect(await main(['check', '--account', 'a1', '--draft', setup.draft], broken)).toBe(EXIT.failed)
     expect(broken.err.join('')).toBe('失败：CDP 断开\n')

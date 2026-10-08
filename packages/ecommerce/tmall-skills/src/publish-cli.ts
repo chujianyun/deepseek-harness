@@ -4,7 +4,7 @@
  *
  * Commands:
  * - `check --account <id> --draft <商品草稿 json>` looks for the item in the warehouse and in the record, changing nothing.
- * - `save --account <id> --draft <商品草稿 json> --rules <字段规则 json> [--confirmed] [--stock <n>]` saves it.
+ * - `save --account <id> --draft <商品草稿 json> --rules <字段规则 json> [--confirmed] [--stock <n>] [--unknown-checked]` saves it.
  */
 
 import { createHash } from 'node:crypto'
@@ -21,13 +21,15 @@ import type { Page } from './page.ts'
 import { isSignIn, openManager } from './publish-category.ts'
 import { parseRulesFile } from './product-draft-cli.ts'
 import { publishUrl, type PublishRules } from './publish-rules.ts'
-import { buildForm, ensureFolder, folderImages, inWarehouse, readBase, submit, uploadImage, type Uploaded } from './publish-submit.ts'
+import {
+  buildForm, ensureFolder, folderImages, listed, MANAGER_ROWS, readBase, submit, uploadImage, type PageBase, type Uploaded,
+} from './publish-submit.ts'
 import { signedOut } from './page.ts'
 
 const USAGE = [
   '用法：',
   '  check --account <电商账号 id> --draft <商品草稿 json> [--out 目录]',
-  '  save --account <电商账号 id> --draft <商品草稿 json> --rules <字段规则 json> [--confirmed] [--stock <每个 SKU 的库存>] [--out 目录]',
+  '  save --account <电商账号 id> --draft <商品草稿 json> --rules <字段规则 json> [--confirmed] [--stock <每个 SKU 的库存>] [--unknown-checked] [--out 目录]',
 ].join('\n')
 
 /** A command line, read. */
@@ -38,6 +40,8 @@ export interface PublishOptions {
   readonly rules?: string
   readonly confirmed: boolean
   readonly stock?: number
+  /** The user found in Qianniu that an attempt whose result was unknown saved nothing. */
+  readonly unknownChecked: boolean
   readonly out: string
 }
 
@@ -53,7 +57,7 @@ export function parsePublishOptions(argv: readonly string[]): PublishOptions {
     args, allowPositionals: true,
     options: {
       account: { type: 'string' }, draft: { type: 'string' }, rules: { type: 'string' }, confirmed: { type: 'boolean' },
-      stock: { type: 'string' }, out: { type: 'string' },
+      stock: { type: 'string' }, 'unknown-checked': { type: 'boolean' }, out: { type: 'string' },
     },
   })
   try {
@@ -69,7 +73,8 @@ export function parsePublishOptions(argv: readonly string[]): PublishOptions {
   if (command === 'save' && (values.rules === undefined || values.rules === '')) throw new SkillError(`save 需要 --rules。\n${USAGE}`, EXIT.usage)
   if (values.stock !== undefined && !/^[1-9]\d{0,8}$/u.test(values.stock)) throw new SkillError(`--stock 应是正整数。\n${USAGE}`, EXIT.usage)
   return {
-    command, account: values.account, draft: values.draft, confirmed: values.confirmed === true, out: values.out ?? '天猫发品',
+    command, account: values.account, draft: values.draft, confirmed: values.confirmed === true,
+    unknownChecked: values['unknown-checked'] === true, out: values.out ?? '天猫发品',
     ...values.rules === undefined ? {} : { rules: values.rules }, ...values.stock === undefined ? {} : { stock: Number(values.stock) },
   }
 }
@@ -85,8 +90,13 @@ export interface PublishRecord {
   readonly store: string
   readonly title: string
   readonly catId: string
-  /** `submitting` until the answer came; `unknown` when it never did or the warehouse did not show the item. */
-  readonly status: 'submitting' | 'saved' | 'failed' | 'unknown'
+  /** The draft's SKU codes, sorted, which name the product when its title changed. */
+  readonly codes?: readonly string[]
+  /**
+   * `submitting` until the answer came; `unknown` when it never did or the store did not show the item;
+   * `on-sale` when Tmall put the item on sale instead of in the warehouse.
+   */
+  readonly status: 'submitting' | 'saved' | 'failed' | 'unknown' | 'on-sale'
   readonly itemId?: string
   readonly at: string
   readonly message?: string
@@ -106,7 +116,6 @@ export function blockers(draft: DraftFile, rules: PublishRules, options: Pick<Pu
   }
   for (const item of draft.missing) reasons.push(`缺失：${item}`)
   for (const item of draft.problems) reasons.push(`问题：${item}`)
-  const stocked = draft.skus.every(sku => sku.stock !== undefined) || options.stock !== undefined
   for (const check of draft.checks) {
     const conditional = check.note?.includes('页面有显示/必填条件') === true
     // The quantity is the SKU stocks' sum; a missing stock gets its own line below.
@@ -114,7 +123,7 @@ export function blockers(draft: DraftFile, rules: PublishRules, options: Pick<Pu
     if (check.status === '不符合') reasons.push(`不符合：${check.label}${check.note === undefined ? '' : `（${check.note}）`}`)
     if (check.status === '待店铺确认') reasons.push(`声明还没有确认：${check.value ?? check.label}`)
   }
-  if (draft.checks.some(check => check.status === '缺失' && check.key === 'quantity') && !stocked) reasons.push('缺失：每个 SKU 的库存（用 --stock 给出）')
+  if (options.stock === undefined && draft.skus.some(sku => sku.stock === undefined)) reasons.push('缺失：每个 SKU 的库存（用 --stock 给出）')
   if (!options.confirmed && draft.checks.some(check => check.status === '待确认')) reasons.push('还有模型生成的值待用户确认：用户在确认卡片里认可后才能加 --confirmed')
   return reasons
 }
@@ -149,25 +158,47 @@ const links = (itemId: string) => [
   '- 仓库：https://qn.taobao.com/home.htm/sell-manage-tm/in_stock',
 ].join('\n')
 
+/** The draft's SKU codes, sorted. */
+const codesOf = (draft: DraftFile): string[] => draft.skus.flatMap(sku => sku.code === undefined ? [] : [sku.code]).sort()
+
+/** The records of the same product in the same store: the same title, or the same SKU codes. */
+function sameProduct(records: readonly PublishRecord[], store: string, draft: DraftFile): PublishRecord[] {
+  const title = titleOf(draft)
+  const codes = codesOf(draft).join('\n')
+  return records.filter(record => record.store === store && (record.title === title || (codes !== '' && record.codes?.join('\n') === codes)))
+}
+
 /**
- * The same item already saved: by the record of an earlier save still in the warehouse, or by its title in the warehouse.
+ * The same product already in the store, on sale or in the warehouse: by the item an earlier attempt
+ * saved, or by its title.
  * @param page - a tab of the account.
- * @param records - the store's records.
- * @param store - the store.
+ * @param records - the earlier attempts for the same product.
  * @param title - the draft's title.
  * @returns the item id and how it was found, or undefined.
+ * @throws SkillError failed when more items carry the title's words than the item manager answers.
  */
 async function alreadySaved(
-  page: Page, records: readonly PublishRecord[], store: string, title: string,
+  page: Page, records: readonly PublishRecord[], title: string,
 ): Promise<{ itemId: string; how: string } | undefined> {
   await openManager(page)
-  for (const record of records.filter(item => item.store === store && item.title === title && item.itemId !== undefined).reverse()) {
-    if ((await inWarehouse(page, { queryItemId: record.itemId as string })).length > 0) {
-      return { itemId: record.itemId as string, how: `${beijingTime(new Date(record.at))}（北京时间）DSH 已存过，仍在仓库` }
+  for (const record of records.filter(item => item.itemId !== undefined).reverse()) {
+    if ((await listed(page, { queryItemId: record.itemId as string }, 'all')).length > 0) {
+      return { itemId: record.itemId as string, how: `${beijingTime(new Date(record.at))}（北京时间）DSH 已存过，仍在店里` }
     }
   }
-  const same = (await inWarehouse(page, { queryTitle: title })).find(item => item.title === title)
-  return same === undefined ? undefined : { itemId: same.itemId, how: '仓库里已有同名商品' }
+  const items = await listed(page, { queryTitle: title }, 'all')
+  const same = items.find(item => item.title === title)
+  if (same !== undefined) return { itemId: same.itemId, how: '店里已有同名商品' }
+  if (items.length >= MANAGER_ROWS) {
+    throw new SkillError(`店里标题含「${title}」的商品超过 ${String(MANAGER_ROWS)} 个，没法确认有没有同一商品；请用户到千牛按标题确认。`, EXIT.failed)
+  }
+  return undefined
+}
+
+/** An earlier attempt for the same product whose result nobody knows, which a save must not repeat unchecked. */
+function unsettled(records: readonly PublishRecord[]): PublishRecord | undefined {
+  const last = records.at(-1)
+  return last !== undefined && (last.status === 'unknown' || last.status === 'submitting') ? last : undefined
 }
 
 /**
@@ -197,11 +228,15 @@ export async function main(argv: readonly string[], deps: Deps = realDeps): Prom
 
 async function check(page: Page, account: MerchantBrowser, draft: DraftFile, options: PublishOptions): Promise<string> {
   const title = titleOf(draft)
-  if (title === '') throw new SkillError('商品草稿还没有商品标题，没法到仓库查重；请先补上标题重新生成草稿。', EXIT.usage)
-  const found = await alreadySaved(page, await readRecords(join(resolve(options.out), '发品记录.json')), account.store, title)
-  return found === undefined
-    ? `店铺 ${account.store} 的仓库里没有「${title}」，DSH 也没有存过它。`
-    : `店铺 ${account.store} 的仓库里已有「${title}」：商品 ID ${found.itemId}（${found.how}）。\n${links(found.itemId)}`
+  if (title === '') throw new SkillError('商品草稿还没有商品标题，没法到店里查重；请先补上标题重新生成草稿。', EXIT.usage)
+  const records = sameProduct(await readRecords(join(resolve(options.out), '发品记录.json')), account.store, draft)
+  const found = await alreadySaved(page, records, title)
+  if (found !== undefined) return `店铺 ${account.store} 里已有「${title}」：商品 ID ${found.itemId}（${found.how}）。\n${links(found.itemId)}`
+  const open = unsettled(records)
+  return [
+    `店铺 ${account.store} 的仓库和出售中都没有「${title}」，DSH 也没有存过它。`,
+    ...open === undefined ? [] : [`注意：${beijingTime(new Date(open.at))}（北京时间）那次提交结果不明，店里暂时查不到；保存前要请用户到千牛确认没有这件商品。`],
+  ].join('\n')
 }
 
 async function save(page: Page, account: MerchantBrowser, draft: DraftFile, options: PublishOptions, deps: Pick<Deps, 'now' | 'stderr'>): Promise<string> {
@@ -210,17 +245,32 @@ async function save(page: Page, account: MerchantBrowser, draft: DraftFile, opti
   if (reasons.length > 0) throw new SkillError(`还不能保存到仓库：\n${reasons.map(reason => `- ${reason}`).join('\n')}`, EXIT.usage)
   const title = titleOf(draft)
   const recordPath = join(resolve(options.out), '发品记录.json')
-  const found = await alreadySaved(page, await readRecords(recordPath), account.store, title)
-  if (found !== undefined) return `没有重复保存：店铺 ${account.store} 的仓库里已有「${title}」，商品 ID ${found.itemId}（${found.how}）。\n${links(found.itemId)}`
-  const record = { store: account.store, title, catId: rules.catId }
+  const records = sameProduct(await readRecords(recordPath), account.store, draft)
+  const found = await alreadySaved(page, records, title)
+  if (found !== undefined) return `没有重复保存：店铺 ${account.store} 里已有「${title}」，商品 ID ${found.itemId}（${found.how}）。\n${links(found.itemId)}`
+  const open = unsettled(records)
+  if (open !== undefined && !options.unknownChecked) {
+    throw new SkillError([
+      `没有保存：${beijingTime(new Date(open.at))}（北京时间）那次提交结果不明，店里暂时查不到它，可能还在处理。`,
+      '请用户到千牛「仓库中」和「出售中」确认没有这件商品；用户确认没有后，才能加 --unknown-checked 再保存。',
+    ].join('\n'), EXIT.usage)
+  }
+  const record = { store: account.store, title, catId: rules.catId, codes: codesOf(draft) }
   const progress = (step: string) => { deps.stderr(`[${beijingTime(deps.now())}] ${step}\n`) }
   await writeRecord(recordPath, { ...record, status: 'submitting', at: deps.now().toISOString() })
-  progress('打开天猫发布页')
-  await page.goto(publishUrl(rules.catId))
-  if (isSignIn(await page.evaluate<string>('location.href'))) signedOut('天猫商家后台')
-  const base = await readBase(page)
-  const folderId = await ensureFolder(page)
-  const images = await uploadAll(page, draft, folderId, progress)
+  let base: PageBase
+  let images: Record<string, Uploaded>
+  try {
+    progress('打开天猫发布页')
+    await page.goto(publishUrl(rules.catId))
+    if (isSignIn(await page.evaluate<string>('location.href'))) signedOut('天猫商家后台')
+    base = await readBase(page)
+    images = await uploadAll(page, draft, await ensureFolder(page), progress)
+  } catch (error) {
+    // Nothing was submitted yet.
+    await writeRecord(recordPath, { ...record, status: 'failed', at: deps.now().toISOString(), message: (error as Error).message })
+    throw error
+  }
   progress('提交到天猫（放入仓库）')
   let answer
   try {
@@ -228,17 +278,21 @@ async function save(page: Page, account: MerchantBrowser, draft: DraftFile, opti
     answer = await submit(page, base, form)
   } catch (error) {
     await writeRecord(recordPath, { ...record, status: 'unknown', at: deps.now().toISOString(), message: (error as Error).message })
-    throw new SkillError(`提交后没有拿到天猫的答复（${(error as Error).message}），结果不明。不要重试，先运行 check 查仓库。`, EXIT.failed)
+    throw new SkillError(`提交后没有拿到天猫的答复（${(error as Error).message}），结果不明。不要重试，先运行 check 查店里。`, EXIT.failed)
   }
   if ('errors' in answer) {
     await writeRecord(recordPath, { ...record, status: 'failed', at: deps.now().toISOString(), message: answer.errors.join('；') })
     throw new SkillError(`天猫没有保存，原因：\n${answer.errors.map(error => `- ${error}`).join('\n')}`, EXIT.failed)
   }
   await openManager(page)
-  const saved = (await inWarehouse(page, { queryItemId: answer.itemId })).length > 0
-  await writeRecord(recordPath, { ...record, status: saved ? 'saved' : 'unknown', itemId: answer.itemId, at: deps.now().toISOString() })
+  const saved = (await listed(page, { queryItemId: answer.itemId }, 'in_stock')).length > 0
+  const onSale = !saved && (await listed(page, { queryItemId: answer.itemId }, 'on_sale')).length > 0
+  await writeRecord(recordPath, { ...record, status: saved ? 'saved' : onSale ? 'on-sale' : 'unknown', itemId: answer.itemId, at: deps.now().toISOString() })
+  if (onSale) {
+    throw new SkillError(`天猫把商品 ID ${answer.itemId} 放到了「出售中」，没有放进仓库！请用户立即到千牛下架它。\n${links(answer.itemId)}`, EXIT.failed)
+  }
   if (!saved) {
-    throw new SkillError(`天猫答复已保存（商品 ID ${answer.itemId}），但仓库里暂时查不到它。不要重试，稍后运行 check 查仓库。`, EXIT.failed)
+    throw new SkillError(`天猫答复已保存（商品 ID ${answer.itemId}），但仓库里暂时查不到它。不要重试，稍后运行 check 查店里。`, EXIT.failed)
   }
   return [
     `已保存到店铺 ${account.store} 的仓库（未上架）：商品 ID ${answer.itemId}，标题「${title}」。`,

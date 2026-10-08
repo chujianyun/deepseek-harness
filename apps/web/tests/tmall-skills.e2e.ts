@@ -269,10 +269,10 @@ it.skipIf(process.platform === 'win32')('runs the packed Tmall data skills with 
     await send('用户已在确认卡片里一键认可，请保存到仓库，每个 SKU 库存 1000')
     await expect.poll(() => page.getByText(ANSWER).count(), { timeout: 90_000 }).toBe(6)
     const steps = chat.chats.at(-1)!.messages.filter(message => message.role === 'tool').slice(-3).map(message => JSON.stringify(message.content))
-    expect(steps[0]).toContain('店铺 名流旗舰店 的仓库里没有「名流水多多三合一玻尿酸避孕套」，DSH 也没有存过它。')
+    expect(steps[0]).toContain('店铺 名流旗舰店 的仓库和出售中都没有「名流水多多三合一玻尿酸避孕套」，DSH 也没有存过它。')
     expect(steps[1]).toContain('已保存到店铺 名流旗舰店 的仓库（未上架）：商品 ID 1088292691011，标题「名流水多多三合一玻尿酸避孕套」。')
     expect(steps[1]).toContain('图片 6 张已传到图片空间的「DSH发品」文件夹。')
-    expect(steps[2]).toContain('没有重复保存：店铺 名流旗舰店 的仓库里已有「名流水多多三合一玻尿酸避孕套」，商品 ID 1088292691011（')
+    expect(steps[2]).toContain('没有重复保存：店铺 名流旗舰店 里已有「名流水多多三合一玻尿酸避孕套」，商品 ID 1088292691011（')
     const tried = JSON.parse(await readFile(join(publishing, '发品记录.json'), 'utf8')) as { status: string; itemId?: string }[]
     expect(tried.map(record => [record.status, record.itemId])).toEqual([['submitting', undefined], ['saved', '1088292691011']])
     expect(tripwire.pageErrors).toEqual([])

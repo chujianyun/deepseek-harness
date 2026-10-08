@@ -354,12 +354,19 @@ export async function submit(page: Page, base: PageBase, form: Readonly<Record<s
   return readSubmitAnswer(answer)
 }
 
+/** The item manager's tabs: every item, items on sale, and the warehouse. */
+export type ManagerTab = 'all' | 'on_sale' | 'in_stock'
+
+/** The most rows the item manager answers for one query. */
+export const MANAGER_ROWS = 20
+
 /**
- * Look for items in the store's warehouse.
+ * Look for the store's items in one tab of the item manager.
  * @param page - the item manager tab.
  * @param filter - `queryItemId` or `queryTitle`.
- * @returns the matching warehouse items.
+ * @param tab - where to look.
+ * @returns the matching items, at most {@link MANAGER_ROWS}.
  */
-export function inWarehouse(page: Page, filter: Readonly<Record<string, string>>): Promise<OwnItem[]> {
-  return ownItems(page, filter, 20, 'in_stock')
+export function listed(page: Page, filter: Readonly<Record<string, string>>, tab: ManagerTab): Promise<OwnItem[]> {
+  return ownItems(page, filter, MANAGER_ROWS, tab)
 }

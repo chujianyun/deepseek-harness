@@ -382,8 +382,10 @@ function fromValue(base: Pick<FieldCheck, 'key' | 'label' | 'required'>, field: 
   const refused = field.options !== undefined && field.allowsCustom !== true
     && normalized.some(value => !options.some(o => o.text === value))
   const width = titleWidth(normalized.join(''))
-  const tooWide = field.maxLength !== undefined && width > field.maxLength
-  if (tooWide) notes.push(`宽度 ${String(width)}，天猫最多 ${String(field.maxLength)}（汉字算 2）`)
+  // Rules read before the page's limits were kept still hold Tmall's title limit.
+  const limit = field.maxLength ?? (field.key === 'title' ? 60 : undefined)
+  const tooWide = limit !== undefined && width > limit
+  if (tooWide) notes.push(`宽度 ${String(width)}，天猫最多 ${String(limit)}（汉字算 2）`)
   return {
     ...base, status: refused || tooWide ? '不符合' : status, source: entry.source, value: normalized.join('、'), filled: normalized,
     ...notes.length === 0 ? {} : { note: notes.join('；') },
