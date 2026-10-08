@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { execFile } from 'node:child_process'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -10,10 +10,12 @@ import type { ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { Bridge } from '../src/bridge.ts'
 import { SKILL_CONTENT } from '../src/skill.ts'
-import EcommerceAccountsService, { DOUDIAN, matchesCheckApi, mtopUserNick, parseJsonOrJsonp, PINDUODUO, TAOBAO, TMALL } from '../src/index.ts'
+import EcommerceAccountsService, {
+  DOUDIAN, matchesCheckApi, mtopUserNick, parseJsonOrJsonp, PINDUODUO, PUBLIC_PAGE, RISK_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL,
+} from '../src/index.ts'
 import { alive, closeChrome, ensureTab, findChrome, launchChrome, readRecord } from '../src/chrome.ts'
 import { Cdp, pageTabs } from '../src/cdp.ts'
-import type { EcommerceAccountsState } from '../src/types.ts'
+import type { AddEcommerceAccountInput, EcommerceAccountsState } from '../src/types.ts'
 import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import { hubStub } from '../../../connector/connectors/tests/support.ts'
@@ -188,7 +190,7 @@ describe('e-commerce accounts', () => {
     expect(state.accounts).toEqual([expect.objectContaining({ id: accountId, platform: 'tmall', kind: 'merchant', storeName: '名流旗舰店', account: 'mingliu:运营', status: 'signed-out' })])
     expect(state.chrome).toMatchObject({ status: 'ready', version: '141.0.7390.65', minVersion: 120, downloadUrl: 'https://www.google.com/chrome/' })
     expect(await code(env.service.addAccount({ ...merchant, account: 'mingliu:运营' }))).toBe('ecommerce-accounts/duplicate')
-    expect(await code(env.service.addAccount({ ...merchant, kind: 'buyer' }))).toBe('ecommerce-accounts/unsupported')
+    expect(await code(env.service.addAccount({ ...merchant, platform: 'pinduoduo', kind: 'buyer' }))).toBe('ecommerce-accounts/unsupported')
     expect(await code(env.service.addAccount({ ...merchant, account: '  ' }))).toBe('ecommerce-accounts/invalid-field')
     expect(await code(env.service.addAccount({ ...merchant, account: '一二三四五六七八九十一二三' }))).toBe('ecommerce-accounts/invalid-field')
     const { storeName: _storeName, ...withoutStore } = merchant
@@ -613,7 +615,7 @@ describe('e-commerce accounts for the model', () => {
       { id: expect.any(String) as string, platform: 'pinduoduo', store: '名流旗舰店', account: 'pdd', kind: 'merchant', status: 'signed-out' },
     ])
     expect(listed.stdout).not.toMatch(/cookie|user-data|ecommerce\//iu)
-    const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id>\n'
+    const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao]\n'
     expect(await runCommand(env, varsOf(env, exec))).toMatchObject({ code: 2, stderr: usage })
     expect(await runCommand(env, varsOf(env, exec), 'browser')).toMatchObject({ code: 2, stderr: usage })
     expect((await runCommand(env, {}, 'accounts')).code).toBe(2)
@@ -637,7 +639,7 @@ describe('e-commerce accounts for the model', () => {
     const taken = await runCommand(env, varsOf(env, first), 'browser', accountId)
     expect(taken.code).toBe(0)
     const { cdpUrl, ...rest } = JSON.parse(taken.stdout) as { cdpUrl: string }
-    expect(rest).toEqual({ id: accountId, platform: 'tmall', store: '名流旗舰店', account: 'mingliu:运营' })
+    expect(rest).toEqual({ id: accountId, platform: 'tmall', kind: 'merchant', store: '名流旗舰店', account: 'mingliu:运营' })
     // The address is the account's own signed-in Chrome.
     expect((await readRecord(env.browserDir(accountId)))!.port).toBe(Number(new URL(cdpUrl).port))
     expect((await (await fetch(`${cdpUrl}/json/version`)).json() as { webSocketDebuggerUrl: string }).webSocketDebuggerUrl).toMatch(/^ws:/u)
@@ -704,7 +706,8 @@ describe('e-commerce accounts for the model', () => {
   }, 15_000)
 
   it('answers a command that fails instead of leaving the script waiting', async () => {
-    const bridge = new Bridge({ accounts: () => Promise.reject(new Error('broken')), browser: () => Promise.reject(new Error('broken')) })
+    const broken = () => Promise.reject(new Error('broken'))
+    const bridge = new Bridge({ accounts: broken, browser: broken, buyer: broken })
     const stop = await bridge.start()
     try {
       const url = bridge.urlFor({ callId: 'c-1', tenantId: 't-a' })
@@ -715,5 +718,167 @@ describe('e-commerce accounts for the model', () => {
     } finally {
       await stop()
     }
+  })
+})
+
+/**
+ * Open pages through a taken-over browser, as a Skill script would.
+ * @param cdpUrl - the address `dsh-ecommerce browser` or `buyer` printed.
+ * @param urls - the pages, each in a tab of its own.
+ * @returns each page's navigation error, or `ok`.
+ */
+async function openPages(cdpUrl: string, ...urls: string[]): Promise<string[]> {
+  const cdp = await Cdp.connect(Number(new URL(cdpUrl).port), 2000)
+  try {
+    const results: string[] = []
+    for (const url of urls) {
+      const { targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank' })
+      const { sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId, flatten: true })
+      results.push((await cdp.send<{ errorText?: string }>('Page.navigate', { url }, sessionId)).errorText ?? 'ok')
+    }
+    return results
+  } finally {
+    cdp.close()
+  }
+}
+
+const buyer = { platform: 'tmall', kind: 'buyer', account: '买家号一' } as const
+
+/** Add a buyer account and sign it in. */
+async function signedInBuyer(env: Awaited<ReturnType<typeof setup>>, input: AddEcommerceAccountInput) {
+  const { accountId } = await env.service.addAccount(input)
+  await env.service.startSignIn(accountId)
+  await env.signIn(accountId, input.account)
+  await env.settle(s => s.accounts.find(account => account.id === accountId)!.status === 'signed-in')
+  return accountId
+}
+
+describe('buyer accounts and risk protection', () => {
+  it('adds Taobao and Tmall buyer accounts with only an account name, and signs a Taobao buyer in through the Taobao home page', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount({ ...buyer, storeName: 'ignored' })
+    expect((await env.service.getState()).accounts[0]).toMatchObject({ kind: 'buyer', account: '买家号一', pagesToday: 0 })
+    expect((await env.service.getState()).accounts[0]!.storeName).toBeUndefined()
+    expect((await env.service.renameAccount(accountId, { storeName: 'still none' })).accounts[0]!.storeName).toBeUndefined()
+    const taobao = await signedInBuyer(env, { platform: 'taobao', kind: 'buyer', account: '淘宝买家' })
+    expect((await env.service.getState()).accounts.find(account => account.id === taobao)).toMatchObject({ status: 'signed-in', signedInAs: '淘宝买家' })
+    expect(specOf('taobao', 'buyer')).toBe(TAOBAO_BUYER)
+    expect(specOf('taobao', 'merchant')).toBe(TAOBAO)
+    expect(TAOBAO_BUYER.read('mtopjsonp3({"ret":["SUCCESS::ok"],"data":{"nick":"淘宝买家"}})')).toEqual({ signedIn: true, name: '淘宝买家' })
+    expect(PUBLIC_PAGE.test('https://item.taobao.com/item.htm?id=1')).toBe(true)
+    expect(PUBLIC_PAGE.test('https://s.taobao.com/search?q=x')).toBe(true)
+    expect(PUBLIC_PAGE.test('https://myseller.taobao.com/home.htm')).toBe(false)
+    expect(RISK_PAGE.test('https://h5api.m.taobao.com/_____tmd_____/punish?x5secdata=1')).toBe(true)
+  })
+
+  it('keeps a merchant account off public product and search pages', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    await env.settle(s => s.accounts[0]!.status === 'signed-in')
+    const taken = await runCommand(env, varsOf(env, bashCall('c-1')), 'browser', accountId)
+    const { cdpUrl } = JSON.parse(taken.stdout) as { cdpUrl: string }
+    expect(await openPages(cdpUrl, 'https://myseller.taobao.com/home.htm', 'https://detail.tmall.com/item.htm?id=1', 'https://s.taobao.com/search?q=x'))
+      .toEqual(['ok', 'net::ERR_BLOCKED_BY_CLIENT', 'net::ERR_BLOCKED_BY_CLIENT'])
+    // Risk control stops the task's pages; a merchant account does not rest.
+    expect(await openPages(cdpUrl, 'https://myseller.taobao.com/home.htm?risk=1', 'https://myseller.taobao.com/home.htm'))
+      .toEqual(['ok', 'net::ERR_BLOCKED_BY_CLIENT'])
+    expect((await env.service.getState()).accounts[0]!.cooldownUntil).toBeUndefined()
+  })
+
+  it('counts a buyer account\'s pages, stops at the daily limit, refuses it for the rest of the day, and lets it again the next day', async () => {
+    const env = await setup()
+    const accountId = await signedInBuyer(env, buyer)
+    expect(await code(env.service.setBuyerDailyPages(0))).toBe('ecommerce-accounts/invalid-field')
+    expect(await code(env.service.setBuyerDailyPages(2.5))).toBe('ecommerce-accounts/invalid-field')
+    expect((await env.service.setBuyerDailyPages(2)).buyerDailyPages).toBe(2)
+    const exec = bashCall('c-1')
+    const taken = await runCommand(env, varsOf(env, exec), 'buyer', 'tmall')
+    const picked = JSON.parse(taken.stdout) as { id: string; cdpUrl: string; pagesLeft: number }
+    expect(picked).toMatchObject({ id: accountId, kind: 'buyer', pagesLeft: 2 })
+    // A Taobao item page that redirects to Tmall is one page; the third page is over the limit.
+    expect(await openPages(picked.cdpUrl, 'https://item.taobao.com/item.htm?id=1', 'https://www.tmall.com/', 'https://detail.tmall.com/item.htm?id=2'))
+      .toEqual(['ok', 'ok', 'net::ERR_BLOCKED_BY_CLIENT'])
+    expect((await env.service.getState()).accounts[0]!.pagesToday).toBe(2)
+    endCall(env, exec)
+    expect(await runCommand(env, varsOf(env, bashCall('c-2')), 'browser', accountId)).toMatchObject({
+      code: 1, stderr: 'DSH: the Tmall buyer account "买家号一" has opened its 2 pages for today. It can be used again tomorrow.\n',
+    })
+    const accounts = JSON.parse((await runCommand(env, varsOf(env, bashCall('c-3')), 'accounts')).stdout) as object[]
+    expect(accounts[0]).toMatchObject({ kind: 'buyer', pagesToday: 2, pageLimit: 2 })
+    expect(accounts[0]).not.toHaveProperty('store')
+    // The limit and the count are kept for the tenant.
+    const ledger = JSON.parse(await readFile(join(env.home, 'ecommerce', 't-a', 'accounts.json'), 'utf8')) as { buyerDailyPages: number; accounts: { usage: object }[] }
+    expect(ledger.buyerDailyPages).toBe(2)
+    expect(ledger.accounts[0]!.usage).toMatchObject({ pages: 2 })
+    const reloaded = await setup({ home: env.home })
+    expect((await reloaded.settle(s => s.accounts.length === 1)).buyerDailyPages).toBe(2)
+    // The next calendar day starts from none.
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 86_400_000 })
+    try {
+      expect((await env.service.getState()).accounts[0]!.pagesToday).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rests a buyer account for 72 hours once the risk control shows, stops its task at once, and picks another buyer account meanwhile', async () => {
+    const env = await setup()
+    const first = await signedInBuyer(env, buyer)
+    const second = await signedInBuyer(env, { ...buyer, account: '买家号二' })
+    const exec = bashCall('c-1')
+    const taken = JSON.parse((await runCommand(env, varsOf(env, exec), 'buyer')).stdout) as { id: string; cdpUrl: string }
+    expect(taken.id).toBe(first)
+    const before = Date.now()
+    expect(await openPages(taken.cdpUrl, 'https://detail.tmall.com/item.htm?id=1&risk=1', 'https://www.tmall.com/'))
+      .toEqual(['ok', 'net::ERR_BLOCKED_BY_CLIENT'])
+    const resting = (await env.service.getState()).accounts[0]!.cooldownUntil!
+    expect(Date.parse(resting) - before).toBeGreaterThanOrEqual(72 * 3_600_000 - 1000)
+    expect((JSON.parse((await runCommand(env, varsOf(env, bashCall('c-9')), 'accounts')).stdout) as object[])[0]).toMatchObject({ cooldownUntil: resting })
+    endCall(env, exec)
+    // The resting account is refused, and picking chooses the other one.
+    expect((await runCommand(env, varsOf(env, bashCall('c-2')), 'browser', first)).stderr)
+      .toBe(`DSH: the Tmall buyer account "买家号一" is resting after the platform's risk control until ${resting}. Do not use it before then.\n`)
+    const next = JSON.parse((await runCommand(env, varsOf(env, bashCall('c-3')), 'buyer', 'tmall')).stdout) as { id: string }
+    expect(next.id).toBe(second)
+    // With every buyer account unusable, nothing is picked and each reason is given.
+    const busy = await runCommand(env, varsOf(env, bashCall('c-4')), 'buyer', 'tmall')
+    expect(busy.code).toBe(1)
+    expect(busy.stderr).toContain('DSH: no buyer account can be used now. Stop, and tell the user why:\n- the Tmall buyer account "买家号二" is in use by another task.')
+    expect(busy.stderr).toContain('- the Tmall buyer account "买家号一" is resting after the platform\'s risk control')
+  })
+
+  it('picks the buyer account that opened the fewest pages, and says when there is none or the platform has none', async () => {
+    const env = await setup()
+    const first = await signedInBuyer(env, buyer)
+    const second = await signedInBuyer(env, { ...buyer, account: '买家号二' })
+    const exec = bashCall('c-1')
+    const { cdpUrl } = JSON.parse((await runCommand(env, varsOf(env, exec), 'browser', first)).stdout) as { cdpUrl: string }
+    await openPages(cdpUrl, 'https://www.tmall.com/')
+    endCall(env, exec)
+    expect((JSON.parse((await runCommand(env, varsOf(env, bashCall('c-2')), 'buyer', 'tmall')).stdout) as { id: string }).id).toBe(second)
+    expect(await runCommand(env, varsOf(env, bashCall('c-3')), 'buyer', 'taobao')).toMatchObject({
+      code: 1, stderr: 'DSH: there is no buyer account for this. Stop, and ask the user to add one in DSH Settings → E-commerce accounts (设置 → 电商账号).\n',
+    })
+    expect(await runCommand(env, varsOf(env, bashCall('c-4')), 'buyer', 'pinduoduo')).toMatchObject({
+      code: 1, stderr: 'DSH: buyer accounts are on tmall and taobao, not "pinduoduo".\n',
+    })
+    const started = varsOf(env, bashCall('c-5'))
+    expect(await (await fetch(`${started.DSH_ECOMMERCE_URL!}/buyer`)).text()).toContain('"kind": "buyer"')
+    env.hub.set(null)
+    await env.settle(s => s.tenantId === null)
+    expect((await runCommand(env, started, 'buyer')).stderr).toBe('DSH: DSH is signed out of the user center, so there are no e-commerce accounts.\n')
+  })
+
+  it('checks only merchant accounts in the background, since each check of a buyer account opens a page', async () => {
+    const env = await setup({ config: { checkIntervalMs: 300 } })
+    await signedInBuyer(env, buyer)
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    const before = (await env.settle(s => s.accounts.every(account => account.status === 'signed-in'))).accounts
+    const after = (await env.settle(s => s.accounts[1]!.checkedAt !== before[1]!.checkedAt && s.accounts[1]!.status === 'signed-in')).accounts
+    expect(after[0]!.checkedAt).toBe(before[0]!.checkedAt)
   })
 })

@@ -17,7 +17,7 @@ const buyer = (over: Partial<EcommerceAccountView>): EcommerceAccountView => {
   return rest
 }
 const state = (accounts: EcommerceAccountView[]): EcommerceAccountsState => ({
-  revision: 1, tenantId: 't-a', chrome: { status: 'ready', minVersion: 120, downloadUrl: 'u' }, accounts,
+  revision: 1, tenantId: 't-a', chrome: { status: 'ready', minVersion: 120, downloadUrl: 'u' }, buyerDailyPages: 20, accounts,
 })
 
 describe('expired sign-in notice', () => {

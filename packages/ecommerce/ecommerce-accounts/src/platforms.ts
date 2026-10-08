@@ -4,7 +4,7 @@
  * platform's response; it never reads or keeps a cookie.
  */
 
-import type { EcommercePlatform } from './types.ts'
+import type { EcommerceAccountKind, EcommercePlatform } from './types.ts'
 
 /** What the platform's check response says. */
 export type CheckAnswer =
@@ -157,6 +157,35 @@ export const DOUDIAN: PlatformSpec = {
     api: 'https://fxg.jinritemai.com/center/qualification/shop/info',
     read: body => text((objectOf(body)?.data as { shop_name?: unknown } | null | undefined)?.shop_name),
   },
+}
+
+/** Taobao buyers: the Taobao home page asks `mtop.user.getusersimple`, which names the signed-in user. */
+export const TAOBAO_BUYER: PlatformSpec = {
+  id: 'taobao',
+  loginUrl: 'https://login.taobao.com/havanaone/login/login.htm?bizName=taobao&redirectURL=https%3A%2F%2Fwww.taobao.com%2F',
+  isLoginPage: url => TAOBAO_LOGIN.test(url),
+  pageUrl: 'https://www.taobao.com/',
+  checkApi: 'https://h5api.m.taobao.com/h5/mtop.user.getusersimple/1.0/',
+  read: TMALL.read,
+}
+
+/**
+ * Public pages anyone may browse: Taobao and Tmall product pages and search results. Buyer accounts
+ * open them; merchant accounts never do, so a store's back-office account is not exposed to the
+ * platforms' risk control.
+ */
+export const PUBLIC_PAGE = new RegExp(String.raw`^https?://(?:item\.taobao\.com/item\.htm|detail\.tmall\.(?:com|hk)/item\.htm`
+  + String.raw`|s\.taobao\.com/search|list\.tmall\.com/search_product\.htm)`, 'u')
+
+/**
+ * How DSH signs in to and checks an account: Taobao buyers through the Taobao home page, everyone
+ * else through their platform's page.
+ * @param platform - the account's platform.
+ * @param kind - the account's kind.
+ * @returns the platform spec to use.
+ */
+export function specOf(platform: EcommercePlatform, kind: EcommerceAccountKind): PlatformSpec {
+  return platform === 'taobao' && kind === 'buyer' ? TAOBAO_BUYER : PLATFORMS[platform]
 }
 
 /** Every platform by id. */

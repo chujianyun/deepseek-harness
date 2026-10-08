@@ -5,7 +5,9 @@
 // Taobao, Pinduoduo, and Douyin shop pages answer their own checks, and the Taobao and Douyin shop
 // pages go to sign in while signed out; the Pinduoduo and Douyin shop pages also name the store, which
 // FAKE_CHROME_NO_STORE leaves out and FAKE_CHROME_NO_STORE_BODY loses. FAKE_CHROME_OFFLINE fails every
-// navigation.
+// navigation. A connection that sets auto-attach watches every tab, as DSH's guard does: each tab's
+// page loads pause until it continues or fails them; an item.taobao.com page redirects to Tmall,
+// and a page whose address has risk=1 also loads a risk-control frame.
 // FAKE_CHROME_VERSION sets the reported version (empty prints none); FAKE_CHROME_SILENT never sends
 // the check response; FAKE_CHROME_BASE64 encodes bodies; FAKE_CHROME_STUBBORN ignores Browser.close;
 // FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs. Its tabs are
@@ -36,11 +38,29 @@ let closing = []
 const tabsFile = join(dataDir, 'fake-tabs.json')
 const saveTabs = () => { writeFileSync(tabsFile, JSON.stringify([...targets.values()].map(target => target.url))) }
 let next = 1
+/** Connections watching every tab, and the paused loads waiting for them. */
+const watchers = new Set()
+const paused = new Map()
+let pausedId = 0
+const attachWatcher = (socket, target, waiting) => {
+  socket.send(JSON.stringify({ method: 'Target.attachedToTarget', params: { sessionId: `g-${target.id}`, targetInfo: { targetId: target.id, type: 'page', url: target.url }, waitingForDebugger: waiting } }))
+}
 const addTarget = (url) => {
   const id = `t${String(next++)}`
   targets.set(id, { id, url })
   saveTabs()
+  for (const socket of watchers) attachWatcher(socket, targets.get(id), true)
   return id
+}
+/** Pause one load for the tab's watcher; resolves to whether it may go on. */
+const pause = (target, url, frameId, networkId) => {
+  const socket = target.watcher
+  if (socket === undefined || !watchers.has(socket)) return Promise.resolve(true)
+  const requestId = `p${String(++pausedId)}`
+  return new Promise((resolve) => {
+    paused.set(requestId, resolve)
+    socket.send(JSON.stringify({ method: 'Fetch.requestPaused', params: { requestId, request: { url }, frameId, networkId, resourceType: 'Document' }, sessionId: `g-${target.id}` }))
+  })
 }
 if (args.includes('--restore-last-session') && existsSync(tabsFile)) for (const url of JSON.parse(readFileSync(tabsFile, 'utf8'))) addTarget(url)
 addTarget(args.at(-1)?.startsWith('-') ? 'about:blank' : args.at(-1))
@@ -65,6 +85,14 @@ const pageLoad = (url, nick) => {
     return nick === undefined
       ? { redirect: 'https://loginmyseller.taobao.com/?from=taobaoindex&sub=true' }
       : { responses: [{ url: 'https://h5api.m.taobao.com/h5/mtop.taobao.jdy.resource.shop.info.get/1.0/', body: `mtopjsonp2(${JSON.stringify({ ret: ['SUCCESS::调用成功'], data: { shopName: nick } })})` }] }
+  }
+  if (url.startsWith('https://www.taobao.com/')) {
+    return {
+      responses: [{
+        url: 'https://h5api.m.taobao.com/h5/mtop.user.getusersimple/1.0/',
+        body: nick === undefined ? 'mtopjsonp3({"ret":["FAIL_SYS_SESSION_EXPIRED::Session过期"]})' : `mtopjsonp3(${JSON.stringify({ ret: ['SUCCESS::调用成功'], data: { nick } })})`,
+      }],
+    }
   }
   if (url.startsWith('https://mms.pinduoduo.com/')) {
     return nick === undefined
@@ -105,7 +133,8 @@ const wss = new WebSocketServer({ server })
 const bodies = new Map()
 wss.on('connection', (socket) => {
   const emit = (method, params, sessionId) => { socket.send(JSON.stringify({ method, params, sessionId })) }
-  socket.on('message', (data) => {
+  socket.on('close', () => { watchers.delete(socket) })
+  socket.on('message', async (data) => {
     const { id, method, params = {}, sessionId } = JSON.parse(String(data))
     const reply = result => { socket.send(JSON.stringify({ id, result })) }
     const target = sessionId === undefined ? undefined : targets.get(sessionId.slice(2))
@@ -119,6 +148,23 @@ wss.on('connection', (socket) => {
         saveTabs()
         return reply({ success: true })
       case 'Target.activateTarget': return reply({})
+      case 'Target.setAutoAttach':
+        watchers.add(socket)
+        for (const existing of targets.values()) attachWatcher(socket, existing, false)
+        // An extension's worker is attached too, though the watch leaves it alone.
+        emit('Target.attachedToTarget', { sessionId: 'w-worker', targetInfo: { targetId: 'worker', type: 'service_worker', url: 'chrome-extension://x/sw.js' }, waitingForDebugger: false })
+        return reply({})
+      case 'Runtime.runIfWaitingForDebugger':
+        if (sessionId === 'w-worker') return socket.send(JSON.stringify({ id, error: { message: 'Not waiting for the debugger' } }))
+        return reply({})
+      case 'Fetch.enable':
+        target.watcher = socket
+        return reply({})
+      case 'Fetch.continueRequest':
+      case 'Fetch.failRequest':
+        paused.get(params.requestId)?.(method === 'Fetch.continueRequest')
+        paused.delete(params.requestId)
+        return reply({})
       case 'Target.getTargets': {
         const listed = [...targets.values(), ...closing]
         closing = []
@@ -126,6 +172,14 @@ wss.on('connection', (socket) => {
       }
       case 'Network.enable': return reply({})
       case 'Page.navigate': {
+        const networkId = `n${String(++pausedId)}`
+        if (!await pause(target, params.url, target.id, networkId)) return reply({ frameId: 'f', errorText: 'net::ERR_BLOCKED_BY_CLIENT' })
+        if (params.url.startsWith('https://item.taobao.com/') && !await pause(target, params.url.replace('https://item.taobao.com/', 'https://detail.tmall.com/'), target.id, networkId)) {
+          return reply({ frameId: 'f', errorText: 'net::ERR_BLOCKED_BY_CLIENT' })
+        }
+        // Every page embeds a frame of its own, which is not a page.
+        await pause(target, 'https://g.alicdn.com/frame.html', 'child', 'n-frame')
+        if (params.url.includes('risk=1')) await pause(target, 'https://h5api.m.taobao.com/_____tmd_____/punish?x5secdata=1', 'child', 'n-risk')
         target.url = params.url
         if (process.env.FAKE_CHROME_OFFLINE !== undefined) return reply({ frameId: 'f', errorText: 'net::ERR_INTERNET_DISCONNECTED' })
         reply({ frameId: 'f' })

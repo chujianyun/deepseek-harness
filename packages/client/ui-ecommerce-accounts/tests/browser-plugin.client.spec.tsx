@@ -18,7 +18,7 @@ beforeAll(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { pro
 afterAll(() => { Reflect.deleteProperty(globalThis, 'dshDesktop') })
 
 const CHROME = { status: 'ready', minVersion: 120, downloadUrl: 'https://www.google.com/chrome/' } as const
-const signedIn: EcommerceAccountsState = { revision: 1, tenantId: 't-a', chrome: CHROME, accounts: [] }
+const signedIn: EcommerceAccountsState = { revision: 1, tenantId: 't-a', chrome: CHROME, buyerDailyPages: 20, accounts: [] }
 const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value })
 
 async function bench() {
@@ -36,6 +36,7 @@ async function bench() {
     confirmSignIn: vi.fn(() => ok(signedIn)),
     renameAccount: vi.fn(() => ok(signedIn)),
     refresh: vi.fn(() => ok(signedIn)),
+    setBuyerDailyPages: vi.fn(() => ok(signedIn)),
     deleteAccount: vi.fn(() => ok(signedIn)),
     watch: vi.fn(),
   }
@@ -107,6 +108,8 @@ describe('ui-ecommerce-accounts browser plugin', () => {
     expect(b.ecommerceAccounts.confirmSignIn).toHaveBeenCalledWith('e1')
     await injected.onRename('e1', { account: 'nick' })
     expect(b.ecommerceAccounts.renameAccount).toHaveBeenCalledWith('e1', { account: 'nick' })
+    await injected.onSetDailyPages(30)
+    expect(b.ecommerceAccounts.setBuyerDailyPages).toHaveBeenCalledWith(30)
     await injected.onRefresh()
     expect(b.ecommerceAccounts.refresh).toHaveBeenCalledOnce()
     await injected.onDelete('e1')

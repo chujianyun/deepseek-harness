@@ -16,12 +16,21 @@ The user signs e-commerce accounts in to their platforms in DSH Settings → E-c
 
 Run them in bash:
 
-- \`dsh-ecommerce accounts\` prints the accounts as JSON: \`id\`, \`platform\` (\`tmall\`, \`taobao\`, \`pinduoduo\`, \`doudian\`), \`store\`, \`account\`, \`kind\` (\`merchant\` or \`buyer\`), and \`status\` (\`signed-in\`, \`signed-out\`, \`signing-in\`, \`checking\`, or \`check-failed\`).
+- \`dsh-ecommerce accounts\` prints the accounts as JSON: \`id\`, \`platform\` (\`tmall\`, \`taobao\`, \`pinduoduo\`, \`doudian\`), \`store\` (merchant accounts), \`account\`, \`kind\` (\`merchant\` or \`buyer\`), and \`status\` (\`signed-in\`, \`signed-out\`, \`signing-in\`, \`checking\`, or \`check-failed\`); a buyer account also has \`pagesToday\` and \`pageLimit\`, and \`cooldownUntil\` while it rests.
 - \`dsh-ecommerce browser <id>\` checks with the platform that the account is still signed in, reserves its browser for this bash call, and prints JSON with \`cdpUrl\`, the Chrome DevTools address of its signed-in Chrome. Connect to it in the same bash call, for example with Playwright's \`chromium.connectOverCDP(cdpUrl)\`; the reservation ends when the call ends. Open a tab of your own, close it when you are done, and never close the browser.
+- \`dsh-ecommerce buyer [tmall|taobao]\` picks a buyer account for you — signed in, not resting, with the fewest pages opened today — and takes over its browser the same way; its JSON also has \`pagesLeft\`. If none can be used, it says why for each.
+
+## What DSH enforces
+
+DSH watches the browser while your bash call uses it; a page it refuses fails to load with \`net::ERR_BLOCKED_BY_CLIENT\`.
+
+- A merchant account never opens public product or search pages (item.taobao.com, detail.tmall.com, s.taobao.com, list.tmall.com).
+- A buyer account opens at most \`pageLimit\` pages a day; every page you open counts, so open only the pages you need.
+- When the platform's risk control shows (a slider or verification page), DSH stops the task's pages at once and rests the buyer account (72 hours by default). Stop: do not retry, do not solve the verification, and do not switch to another account. Tell the user.
 
 ## Choosing a merchant account
 
-- A merchant account reads its own store's back-office data. Never use one to browse public product pages.
+- A merchant account reads its own store's back-office data. Never use one to browse public product pages; use \`dsh-ecommerce buyer\` for those.
 - If exactly one merchant account of the platform is signed in, use it, and say in your reply which store you used.
 - If several are signed in, ask the user which store to use before running anything.
 - Use one account per task. If it fails, do not switch to another store.

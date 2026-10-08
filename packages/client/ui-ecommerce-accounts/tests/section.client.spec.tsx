@@ -19,7 +19,7 @@ const buyer = (over: Partial<EcommerceAccountView>): EcommerceAccountView => {
   const { storeName: _storeName, ...rest } = account({ kind: 'buyer', ...over })
   return rest
 }
-const base: EcommerceAccountsState = { revision: 1, tenantId: 't-a', chrome: CHROME, accounts: [] }
+const base: EcommerceAccountsState = { revision: 1, tenantId: 't-a', chrome: CHROME, buyerDailyPages: 20, accounts: [] }
 
 function mount(state: EcommerceAccountsState | undefined, copy: Record<string, string> = zh) {
   const store = createSnapshotStore<AccountsSnapshot>({ state })
@@ -29,6 +29,7 @@ function mount(state: EcommerceAccountsState | undefined, copy: Record<string, s
     onStartSignIn: vi.fn(async (_id: string): Promise<Refusal | undefined> => undefined),
     onConfirmSignIn: vi.fn(async (_id: string): Promise<Refusal | undefined> => undefined),
     onRename: vi.fn(async (_id: string, _changes: { account?: string; storeName?: string }): Promise<Refusal | undefined> => undefined),
+    onSetDailyPages: vi.fn(async (_pages: number): Promise<Refusal | undefined> => undefined),
     onRefresh: vi.fn(async () => {}),
     onDelete: vi.fn(async (_id: string): Promise<Refusal | undefined> => undefined),
     onOpenUrl: vi.fn(),
@@ -90,7 +91,7 @@ describe('e-commerce accounts section', () => {
     const group = screen.getByText('天猫').closest('details')!
     expect(group.textContent).toContain('3 个')
     expect(within(group).getByRole('button', { name: '查看 名流旗舰店 的详情' }).textContent).toContain('mingliu:运营 · 商家账号未登录或登录过期')
-    expect(within(group).getByRole('button', { name: '查看 buyer 的详情' }).textContent).toContain('buyer · 买家账号检查失败')
+    expect(within(group).getByRole('button', { name: '查看 buyer 的详情' }).textContent).toContain('buyer · 买家账号 · 今日 0/20 页检查失败')
     expect(group.querySelector('[data-status="signed-in"]')).toBeTruthy()
     const search = screen.getByRole('textbox', { name: '搜索店铺名或账号' })
     fireEvent.change(search, { target: { value: 'SECOND' } })
@@ -243,6 +244,64 @@ describe('e-commerce accounts section', () => {
     // A matching store, or a store reported for an account without one, says nothing.
     props.set({ ...base, accounts: [account({ platform: 'pinduoduo', storeName: 'x', status: 'signed-in', signedInStore: 'x' })] })
     expect(screen.queryByRole('note')).toBeNull()
+  })
+
+  it('adds a buyer account with only its account, on Taobao or Tmall only', async () => {
+    const props = mount({ ...base, accounts: [account()] })
+    fireEvent.click(screen.getByRole('button', { name: '新增账号' }))
+    const dialog = screen.getByRole('dialog', { name: '新增账号' })
+    const kind = within(dialog).getByRole<HTMLSelectElement>('combobox', { name: '账号类型' })
+    expect([...kind.options].map(option => option.text)).toEqual(['商家账号', '买家账号'])
+    fireEvent.change(kind, { target: { value: 'buyer' } })
+    expect(within(dialog).queryByPlaceholderText('例如：名流旗舰店')).toBeNull()
+    expect(dialog.textContent).toContain('买家账号只用于查看公开商品页面')
+    expect(dialog.textContent).toContain('请填写账号')
+    // Pinduoduo has no buyer accounts: the kind goes back to merchant.
+    fireEvent.change(within(dialog).getByRole('combobox', { name: '平台' }), { target: { value: 'pinduoduo' } })
+    expect(kind.value).toBe('merchant')
+    expect([...kind.options].map(option => option.text)).toEqual(['商家账号'])
+    fireEvent.change(within(dialog).getByRole('combobox', { name: '平台' }), { target: { value: 'taobao' } })
+    fireEvent.change(kind, { target: { value: 'buyer' } })
+    fireEvent.change(within(dialog).getByPlaceholderText('例如：名流旗舰店:运营'), { target: { value: '买家号' } })
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '去登录' })) })
+    expect(props.onAdd).toHaveBeenCalledWith({ platform: 'taobao', kind: 'buyer', account: '买家号' })
+  })
+
+  it('shows a buyer account\'s pages today and its rest after risk control, and sets the daily page limit', async () => {
+    const until = new Date(Date.now() + 71.5 * 3_600_000).toISOString()
+    const props = mount({ ...base, buyerDailyPages: 20, accounts: [
+      buyer({ id: 'b1', account: '买家号一', status: 'signed-in', pagesToday: 3 }),
+      buyer({ id: 'b2', account: '买家号二', status: 'signed-in', cooldownUntil: until }),
+      account({ status: 'signed-in' }),
+    ] })
+    const group = screen.getByText('天猫').closest('details')!
+    expect(group.textContent).toContain('买家号一 · 买家账号 · 今日 3/20 页')
+    expect(group.textContent).toContain('买家号二 · 买家账号 · 风控冷却中，剩 72 小时')
+    expect(group.textContent).toContain('mingliu:运营 · 商家账号已登录')
+    // The daily limit.
+    const limit = screen.getByRole<HTMLInputElement>('textbox', { name: '买家账号每天最多打开' })
+    expect(limit.value).toBe('20')
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: '保存' })
+    expect(save.disabled).toBe(true)
+    fireEvent.change(limit, { target: { value: '0' } })
+    expect(screen.getByText('请填写 1 到 1000 之间的整数')).toBeTruthy()
+    expect(save.disabled).toBe(true)
+    fireEvent.change(limit, { target: { value: '30' } })
+    await act(async () => { fireEvent.click(save) })
+    expect(props.onSetDailyPages).toHaveBeenCalledWith(30)
+    expect(screen.getByRole('status').textContent).toBe('已保存')
+    props.onSetDailyPages.mockResolvedValueOnce({ kind: 'other', message: 'no' })
+    fireEvent.change(limit, { target: { value: '40' } })
+    await act(async () => { fireEvent.click(save) })
+    expect(screen.getByRole('status').textContent).toBe('操作失败：no')
+    props.set({ ...base, buyerDailyPages: 40, accounts: [buyer({ id: 'b1', account: '买家号一', status: 'signed-in', pagesToday: 3 })] })
+    expect(limit.value).toBe('40')
+    // The details give the same.
+    fireEvent.click(screen.getByRole('button', { name: '查看 买家号一 的详情' }))
+    expect(screen.getByText('今日已用页数').nextSibling?.textContent).toBe('3 / 40 页')
+    props.set({ ...base, buyerDailyPages: 40, accounts: [buyer({ id: 'b1', account: '买家号一', status: 'signed-in', cooldownUntil: '2099-01-02T03:04:00Z' })] })
+    expect(screen.getByText('今日已用页数').nextSibling?.textContent).toBe('0 / 40 页')
+    expect(screen.getByText('风控冷却').nextSibling?.textContent).toMatch(/^剩 \d+ 小时（01-02 \d\d:04 结束）$/u)
   })
 
   it('renders nothing but the intro before the first state, and follows an account that disappears', () => {

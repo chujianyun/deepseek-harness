@@ -920,7 +920,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-ecommerce-accounts`
 
 - `inject`: `hubAccount` · `skills` · `shellEnv`
-- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:59`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
+- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:65`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -941,8 +941,12 @@ export interface Config {
   signInPollMs?: number
   /** Time after which a sign-in is checked even before its tab leaves the sign-in page, in milliseconds. */
   signInCheckEveryMs?: number
-  /** Time between background checks of every account, in milliseconds. */
+  /** Time between background checks of every merchant account, in milliseconds. */
   checkIntervalMs?: number
+  /** Most pages a task may open with one buyer account in a calendar day, until a tenant sets its own. */
+  buyerDailyPages?: number
+  /** How long a buyer account rests after the platform's risk control showed, in hours. */
+  cooldownHours?: number
   /** Longest store or account name, in characters. */
   maxNameLength?: number
 }

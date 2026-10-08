@@ -1215,6 +1215,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the state after the checks.',
       },
       {
+        signature: '@Remote setBuyerDailyPages(pages: number): Promise<EcommerceAccountsState>',
+        description: 'Set the tenant\'s daily page limit for buyer accounts.',
+        parameters: [{ name: 'pages', description: 'the most pages a task may open with one buyer account in a calendar day.' }],
+        returns: 'the state with the new limit.',
+        throws: ['RemoteError `hub-account/signed-out`, or `ecommerce-accounts/invalid-field` for a limit that is not a whole number from 1 to 1000.'],
+      },
+      {
         signature: '@Remote renameAccount(accountId: string, changes: RenameEcommerceAccountInput): Promise<EcommerceAccountsState>',
         description: 'Change the account or store name the user entered, such as to the name the platform reports.',
         parameters: [{ name: 'accountId', description: 'the account.' }, { name: 'changes', description: 'the new account name, store name, or both; a field left out stays.' }],
@@ -6037,7 +6044,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EcommerceAccountsState',
-    declaration: 'export interface EcommerceAccountsState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly chrome: ChromeView;\n    readonly accounts: readonly EcommerceAccountView[];\n}',
+    declaration: 'export interface EcommerceAccountsState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly chrome: ChromeView;\n    readonly buyerDailyPages: number;\n    readonly accounts: readonly EcommerceAccountView[];\n}',
   },
   {
     name: 'EcommerceAccountStatus',
@@ -6045,7 +6052,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EcommerceAccountView',
-    declaration: 'export interface EcommerceAccountView {\n    readonly id: string;\n    readonly platform: EcommercePlatform;\n    readonly kind: EcommerceAccountKind;\n    readonly storeName?: string;\n    readonly account: string;\n    readonly status: EcommerceAccountStatus;\n    readonly problem?: EcommerceCheckProblem;\n    readonly signedInAs?: string;\n    readonly signedInStore?: string;\n    readonly expired: boolean;\n    readonly inUse: boolean;\n    readonly checkedAt?: string;\n    readonly createdAt: string;\n}',
+    declaration: 'export interface EcommerceAccountView {\n    readonly id: string;\n    readonly platform: EcommercePlatform;\n    readonly kind: EcommerceAccountKind;\n    readonly storeName?: string;\n    readonly account: string;\n    readonly status: EcommerceAccountStatus;\n    readonly problem?: EcommerceCheckProblem;\n    readonly signedInAs?: string;\n    readonly signedInStore?: string;\n    readonly expired: boolean;\n    readonly inUse: boolean;\n    readonly pagesToday?: number;\n    readonly cooldownUntil?: string;\n    readonly checkedAt?: string;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'EcommerceCheckProblem',

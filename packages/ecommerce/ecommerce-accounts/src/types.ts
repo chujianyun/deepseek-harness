@@ -5,7 +5,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     /** This platform or account kind cannot be added yet. */
     'ecommerce-accounts/unsupported': { readonly platform: string; readonly kind: string }
     /** A required field is empty or too long. */
-    'ecommerce-accounts/invalid-field': { readonly field: 'storeName' | 'account' }
+    'ecommerce-accounts/invalid-field': { readonly field: 'storeName' | 'account' | 'buyerDailyPages' }
     /** The tenant already has this account on this platform as this kind. */
     'ecommerce-accounts/duplicate': { readonly accountId: string }
     /** The signed-in tenant has no account with this id. */
@@ -62,6 +62,10 @@ export interface EcommerceAccountView {
   readonly expired: boolean
   /** A task of the model is using the account's browser now. */
   readonly inUse: boolean
+  /** Pages a task opened with a buyer account today, by the computer's calendar day. */
+  readonly pagesToday?: number
+  /** ISO time a buyer account's cooling down after the platform's risk control ends, while it lasts. */
+  readonly cooldownUntil?: string
   /** ISO time of the last check that reached the platform. */
   readonly checkedAt?: string
   /** ISO time the account was added. */
@@ -86,6 +90,8 @@ export interface EcommerceAccountsState {
   /** Tenant of the current Hub sign-in; null while signed out. */
   readonly tenantId: string | null
   readonly chrome: ChromeView
+  /** Most pages a task may open with one buyer account in a calendar day, for this tenant. */
+  readonly buyerDailyPages: number
   /** Accounts in the order they were added. */
   readonly accounts: readonly EcommerceAccountView[]
 }
@@ -94,7 +100,7 @@ export interface EcommerceAccountsState {
 export interface AddEcommerceAccountInput {
   readonly platform: EcommercePlatform
   readonly kind: EcommerceAccountKind
-  /** Store name; required for a merchant account. */
+  /** Store name; required for a merchant account, ignored for a buyer account. */
   readonly storeName?: string
   readonly account: string
 }

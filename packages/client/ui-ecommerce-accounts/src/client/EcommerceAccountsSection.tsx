@@ -5,7 +5,9 @@
  */
 
 import { useEffect, useState, type ReactNode } from 'react'
-import type { EcommerceAccountView, EcommerceCheckProblem, EcommercePlatform } from '@deepseek-ai/dsh-ecommerce-accounts/types'
+import type {
+  EcommerceAccountKind, EcommerceAccountsState, EcommerceAccountView, EcommerceCheckProblem, EcommercePlatform,
+} from '@deepseek-ai/dsh-ecommerce-accounts/types'
 import { Button, IconSearchOutlineRegular, Input, Modal, relativeTime } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountsInjected, Refusal } from './accounts-source.ts'
@@ -20,6 +22,8 @@ type T = TranslateNS<'ecommerce-accounts'>
 const PLATFORM_KEYS = {
   tmall: 'platformTmall', taobao: 'platformTaobao', pinduoduo: 'platformPinduoduo', doudian: 'platformDoudian',
 } as const satisfies Record<EcommercePlatform, EcommerceLocaleKey>
+/** Platforms a buyer account can be on. */
+const BUYER_PLATFORMS: ReadonlySet<EcommercePlatform> = new Set(['tmall', 'taobao'])
 /** Platforms in the order the add form offers them. */
 const PLATFORM_ORDER = Object.keys(PLATFORM_KEYS) as EcommercePlatform[]
 const PROBLEM_KEYS = {
@@ -99,12 +103,20 @@ export function EcommerceAccountsSection(props: EcommerceAccountsSectionProps) {
                 <Button variant="primary" onClick={() => { setAdding(true) }}>{t('addFirst')}</Button>
               </div>
             )}
-            {accounts.length > 0 && <AccountList {...props} accounts={accounts} query={query} setQuery={setQuery} onOpen={setOpenId} />}
+            {state !== undefined && accounts.some(item => item.kind === 'buyer') && (
+              <DailyPagesField {...props} limit={state.buyerDailyPages} />
+            )}
+            {state !== undefined && accounts.length > 0 && (
+              <AccountList
+                {...props} accounts={accounts} limit={state.buyerDailyPages} query={query} setQuery={setQuery} onOpen={setOpenId}
+              />
+            )}
           </>
         )
         : (
           <AccountDetail
-            {...props} account={opened} banner={banner} onBack={() => { setOpenId(null) }}
+            {...props} account={opened} limit={(state as EcommerceAccountsState).buyerDailyPages} banner={banner}
+            onBack={() => { setOpenId(null) }}
             onSignIn={() => { void signIn(opened.id) }}
           />
         )}
@@ -125,8 +137,9 @@ export function EcommerceAccountsSection(props: EcommerceAccountsSectionProps) {
 }
 
 /** The accounts grouped by platform, filtered by the search. */
-function AccountList({ t, accounts, query, setQuery, onOpen }: EcommerceAccountsSectionProps & {
+function AccountList({ t, accounts, limit, query, setQuery, onOpen }: EcommerceAccountsSectionProps & {
   readonly accounts: readonly EcommerceAccountView[]
+  readonly limit: number
   readonly query: string
   readonly setQuery: (query: string) => void
   readonly onOpen: (id: string) => void
@@ -157,7 +170,9 @@ function AccountList({ t, accounts, query, setQuery, onOpen }: EcommerceAccounts
                     <StatusDot status={item.status} />
                     <span className={css.rowText}>
                       <span className={css.rowTitle}>{titleOf(item)}</span>
-                      <span className={css.muted}>{`${item.account} · ${t(item.kind === 'merchant' ? 'kindMerchant' : 'kindBuyer')}`}</span>
+                      <span className={css.muted}>
+                        {[item.account, t(item.kind === 'merchant' ? 'kindMerchant' : 'kindBuyer'), usageText(t, item, limit)].filter(Boolean).join(' · ')}
+                      </span>
                     </span>
                     <span className={css.muted}>{statusText(t, item)}</span>
                   </button>
@@ -179,6 +194,7 @@ function StatusDot({ status }: { readonly status: EcommerceAccountView['status']
 /** One account's details, with sign-in again and delete. */
 function AccountDetail(props: EcommerceAccountsSectionProps & {
   readonly account: EcommerceAccountView
+  readonly limit: number
   readonly banner: ReactNode
   readonly onBack: () => void
   readonly onSignIn: () => void
@@ -192,6 +208,10 @@ function AccountDetail(props: EcommerceAccountsSectionProps & {
     ['account', account.account],
     ['kind', t(account.kind === 'merchant' ? 'kindMerchant' : 'kindBuyer')],
     ['status', statusText(t, account)],
+    ...account.kind === 'buyer' ? [['pagesToday', t('pagesValue', { used: account.pagesToday ?? 0, limit: props.limit })] as const] : [],
+    ...account.cooldownUntil === undefined
+      ? []
+      : [['cooldown', t('cooldownValue', { hours: hoursLeft(account.cooldownUntil), until: clock(account.cooldownUntil) })] as const],
     ...account.signedInAs === undefined ? [] : [['signedInAs', account.signedInAs] as const],
     ...account.signedInStore === undefined ? [] : [['signedInStore', account.signedInStore] as const],
     ...account.checkedAt === undefined ? [] : [['checkedAt', ago(t, account.checkedAt)] as const],
@@ -247,15 +267,22 @@ function AddDialog(
   { t, onAdd, onClose, onAdded }: EcommerceAccountsSectionProps & { readonly onClose: () => void; readonly onAdded: (id: string) => void },
 ) {
   const [platform, setPlatform] = useState<EcommercePlatform>('tmall')
+  const [kind, setKind] = useState<EcommerceAccountKind>('merchant')
   const [storeName, setStoreName] = useState('')
   const [account, setAccount] = useState('')
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
-  const ready = storeName.trim() !== '' && account.trim() !== ''
+  const buyer = kind === 'buyer'
+  const ready = (buyer || storeName.trim() !== '') && account.trim() !== ''
+  const choosePlatform = (next: EcommercePlatform): void => {
+    setPlatform(next)
+    // Buyer accounts are on Taobao and Tmall only.
+    if (!BUYER_PLATFORMS.has(next)) setKind('merchant')
+  }
   const submit = async (): Promise<void> => {
     setBusy(true)
     setFailure(null)
-    const result = await onAdd({ platform, kind: 'merchant', storeName, account })
+    const result = await onAdd(buyer ? { platform, kind, account } : { platform, kind, storeName, account })
     setBusy(false)
     if ('accountId' in result) onAdded(result.accountId)
     else setFailure(refusalText(t, result))
@@ -275,26 +302,34 @@ function AddDialog(
           <span>{t('platform')}</span>
           <select
             className={css.select} value={platform} aria-label={t('platform')}
-            onChange={(event) => { setPlatform(event.target.value as EcommercePlatform) }}
+            onChange={(event) => { choosePlatform(event.target.value as EcommercePlatform) }}
           >
             {PLATFORM_ORDER.map(id => <option key={id} value={id}>{t(PLATFORM_KEYS[id])}</option>)}
           </select>
         </label>
         <label className={css.formField}>
           <span>{t('kind')}</span>
-          <select className={css.select} value="merchant" aria-label={t('kind')} disabled>
+          <select
+            className={css.select} value={kind} aria-label={t('kind')}
+            onChange={(event) => { setKind(event.target.value as EcommerceAccountKind) }}
+          >
             <option value="merchant">{t('kindMerchant')}</option>
+            {BUYER_PLATFORMS.has(platform) && <option value="buyer">{t('kindBuyer')}</option>}
           </select>
         </label>
-        <label className={css.formField}>
-          <span>{t('storeName')}</span>
-          <Input value={storeName} placeholder={t('storeNamePlaceholder')} onChange={(event) => { setStoreName(event.target.value) }} />
-        </label>
+        {buyer
+          ? <p className={css.muted}>{t('buyerOnly')}</p>
+          : (
+            <label className={css.formField}>
+              <span>{t('storeName')}</span>
+              <Input value={storeName} placeholder={t('storeNamePlaceholder')} onChange={(event) => { setStoreName(event.target.value) }} />
+            </label>
+          )}
         <label className={css.formField}>
           <span>{t('account')}</span>
           <Input value={account} placeholder={t('accountPlaceholder')} onChange={(event) => { setAccount(event.target.value) }} />
         </label>
-        {!ready && <p className={css.muted}>{t('required')}</p>}
+        {!ready && <p className={css.muted}>{t(buyer ? 'requiredAccount' : 'required')}</p>}
         {failure !== null && <p className={css.error} role="alert">{failure}</p>}
       </div>
     </Modal>
@@ -402,6 +437,49 @@ function ActualAccount(props: EcommerceAccountsSectionProps & { readonly account
         <Button variant="ghost" size="sm" onClick={onSignIn}>{t('relogin')}</Button>
       </div>
       {failure !== null && <p className={css.error} role="alert">{failure}</p>}
+    </div>
+  )
+}
+
+/** Whole hours left until a time, at least one. */
+const hoursLeft = (until: string): number => Math.max(1, Math.ceil((Date.parse(until) - Date.now()) / 3_600_000))
+
+/** A time as month, day, hours, and minutes, such as `10-11 08:05`. */
+function clock(at: string): string {
+  const time = new Date(at)
+  const two = (value: number): string => String(value).padStart(2, '0')
+  return `${two(time.getMonth() + 1)}-${two(time.getDate())} ${two(time.getHours())}:${two(time.getMinutes())}`
+}
+
+/** A row's note on a buyer account: its rest after risk control, or its pages today. */
+function usageText(t: T, account: EcommerceAccountView, limit: number): string | undefined {
+  if (account.cooldownUntil !== undefined) return t('rowCooldown', { hours: hoursLeft(account.cooldownUntil) })
+  return account.kind === 'buyer' ? t('rowPages', { used: account.pagesToday ?? 0, limit }) : undefined
+}
+
+/** The tenant's daily page limit for buyer accounts, with a way to change it. */
+function DailyPagesField({ t, limit, onSetDailyPages }: EcommerceAccountsSectionProps & { readonly limit: number }) {
+  const [value, setValue] = useState(String(limit))
+  const [note, setNote] = useState<string | null>(null)
+  useEffect(() => { setValue(String(limit)) }, [limit])
+  const pages = Number(value)
+  const valid = /^\d+$/u.test(value) && pages >= 1 && pages <= 1000
+  return (
+    <div className={css.dailyPages}>
+      <span>{t('dailyPages')}</span>
+      <Input
+        className={`${css.dailyPagesInput}`} value={value} inputMode="numeric" aria-label={t('dailyPages')}
+        onChange={(event) => { setValue(event.target.value); setNote(null) }}
+      />
+      <span>{t('dailyPagesUnit')}</span>
+      <Button
+        variant="outline" size="sm" disabled={!valid || pages === limit}
+        onClick={() => { void onSetDailyPages(pages).then((refusal) => { setNote(refusal === undefined ? t('dailyPagesSaved') : refusalText(t, refusal)) }) }}
+      >
+        {t('saveDailyPages')}
+      </Button>
+      {!valid && <span className={css.error}>{t('dailyPagesInvalid')}</span>}
+      {note !== null && <span className={css.muted} role="status">{note}</span>}
     </div>
   )
 }

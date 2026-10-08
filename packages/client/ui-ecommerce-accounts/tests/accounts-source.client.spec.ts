@@ -4,7 +4,7 @@ import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { createAccountsSource } from '../src/client/accounts-source.ts'
 
 const state = (revision: number): EcommerceAccountsState => ({
-  revision, tenantId: 't-a', chrome: { status: 'ready', minVersion: 120, downloadUrl: 'u' }, accounts: [],
+  revision, tenantId: 't-a', chrome: { status: 'ready', minVersion: 120, downloadUrl: 'u' }, buyerDailyPages: 20, accounts: [],
 })
 const ok = <T>(value: T) => Promise.resolve({ ok: true as const, value })
 const refused = (error: RemoteError) => Promise.resolve({ ok: false, error } as never)
@@ -16,6 +16,7 @@ function harness() {
     confirmSignIn: vi.fn(() => ok(state(7))),
     rename: vi.fn(() => ok(state(7))),
     refresh: vi.fn(() => ok(state(8))),
+    setDailyPages: vi.fn(() => ok(state(8))),
     remove: vi.fn(() => ok(state(9))),
     openUrl: vi.fn(),
   }
@@ -38,6 +39,8 @@ describe('accounts source', () => {
     expect(await h.source.onRename('e1', { account: 'nick' })).toBeUndefined()
     expect(h.deps.rename).toHaveBeenCalledWith('e1', { account: 'nick' })
     await h.source.onRefresh()
+    expect(await h.source.onSetDailyPages(30)).toBeUndefined()
+    expect(h.deps.setDailyPages).toHaveBeenCalledWith(30)
     expect(await h.source.onDelete('e1')).toBeUndefined()
     expect(h.revision()).toBe(11)
     h.source.onOpenUrl('u')

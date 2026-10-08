@@ -48,6 +48,7 @@ export function apply(ctx: ClientContext): void {
     confirmSignIn: accountId => remote.confirmSignIn(accountId),
     rename: (accountId, changes) => remote.renameAccount(accountId, changes),
     refresh: () => remote.refresh(),
+    setDailyPages: pages => remote.setBuyerDailyPages(pages),
     remove: accountId => remote.deleteAccount(accountId),
     // The Desktop shell sends a new window's http(s) address to the default browser.
     openUrl: (url) => { globalThis.open(url, '_blank', 'noopener') },

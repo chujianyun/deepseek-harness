@@ -24,6 +24,10 @@ Chrome outlives DSH. A later DSH reattaches to the recorded Chrome; when it is g
 
 While a tenant is signed in, the `ecommerce-accounts` Skill tells the model how to use the accounts and pick a merchant account, and the `dsh-ecommerce` command on the model shell's `PATH` reaches them through a loopback endpoint with a token valid for one bash call. `dsh-ecommerce accounts` lists the accounts without paths or cookies; `dsh-ecommerce browser <id>` checks the account, reserves its browser for the call, and hands over its remote-debugging address, which Skill scripts connect to. A signed-out account stops the task with the way to Settings; an account another task uses is refused until that call ends.
 
+## Buyer accounts and risk protection
+
+Buyer accounts on Tmall and Taobao only view public product pages, and DSH, not the model, keeps them safe: while a task uses an account, DSH watches its browser through its own DevTools connection and pauses every page load. A merchant account opens no public product or search page. A buyer account opens at most the tenant's daily page limit (20 by default, set in Settings), counted by calendar day; once the platform's risk control shows, DSH loads nothing more for the task and rests the account for 72 hours. `dsh-ecommerce buyer` picks the usable buyer account that opened the fewest pages today, or says why none can be used. Buyer accounts are not checked in the background, since each check opens a page the platform counts.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -85,6 +89,15 @@ Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote name
  * @returns the state after the checks.
  */
 @Remote async refresh(): Promise<EcommerceAccountsState>
+
+/**
+ * Set the tenant's daily page limit for buyer accounts.
+ * @param pages - the most pages a task may open with one buyer account in a calendar day.
+ * @returns the state with the new limit.
+ * @throws RemoteError `hub-account/signed-out`, or `ecommerce-accounts/invalid-field` for a
+ *   limit that is not a whole number from 1 to 1000.
+ */
+@Remote setBuyerDailyPages(pages: number): Promise<EcommerceAccountsState>
 
 /**
  * Change the account or store name the user entered, such as to the name the platform reports.

@@ -11,8 +11,11 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Page } from 'playwright'
 import { expect, it } from 'vitest'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-ecommerce-accounts'
 import type {} from '@deepseek-ai/dsh-hub-account'
+import { Cdp } from '../../../packages/ecommerce/ecommerce-accounts/src/cdp.ts'
 import { browse, startMockUserCenter } from '../../../packages/credentials/hub-account/tests/mock-user-center.ts'
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
 import { openSettings, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
@@ -144,6 +147,128 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     for (const dir of [accountDir, pddDir]) {
       if (dir === undefined) continue
       const record = await readFile(join(dir, 'chrome.json'), 'utf8').catch(() => undefined)
+      if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
+    }
+    await scaffold.close()
+    await center.close()
+    await rm(harnessHome, { recursive: true, force: true })
+    Reflect.deleteProperty(process.env, 'DSH_E2E_HUB_ORIGIN')
+  }
+}, 120_000)
+
+/** A bash call of the model, as the shell hands it to DSH's tools. */
+const bashCall = (id: string): ToolExecution => ({
+  signal: new AbortController().signal, token: Symbol('ecommerce-e2e') as ToolExecution['token'],
+  callId: ToolCallId(id), rootCallId: ToolCallId(id), name: 'bash', arguments: { command: 'dsh-ecommerce buyer tmall' },
+})
+
+/**
+ * Open pages through a taken-over browser, as a Skill script would.
+ * @returns each page's navigation error, or `ok`.
+ */
+async function openPages(cdpUrl: string, ...urls: string[]): Promise<string[]> {
+  const cdp = await Cdp.connect(Number(new URL(cdpUrl).port), 5000)
+  try {
+    const results: string[] = []
+    for (const url of urls) {
+      const { targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank' })
+      const { sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId, flatten: true })
+      results.push((await cdp.send<{ errorText?: string }>('Page.navigate', { url }, sessionId)).errorText ?? 'ok')
+    }
+    return results
+  } finally {
+    cdp.close()
+  }
+}
+
+it.skipIf(process.platform === 'win32')('adds a Tmall buyer account, shows its pages today against the limit set in Settings, and its rest after risk control', async () => {
+  const center = await startMockUserCenter()
+  Object.assign(process.env, { DSH_E2E_HUB_ORIGIN: center.origin })
+  const harnessHome = await mkdtemp(join(tmpdir(), 'dsh-ecommerce-buyer-home-'))
+  await mkdir(join(harnessHome, 'profiles', 'scaffold'), { recursive: true })
+  await writeFile(join(harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), JSON.stringify([{
+    id: 'ecommerce-accounts', config: { dshHome: harnessHome, chromePath: FAKE_CHROME, signInPollMs: 200, chromeTimeoutMs: 5000, checkTimeoutMs: 3000 },
+  }]))
+  const scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAYS, harnessHome })
+  const browser = await chromium.launch()
+  let failurePage: Page | undefined
+  let accountDir: string | undefined
+  try {
+    await scaffold.ctx.hubAccount.signIn()
+    await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).attempt?.authorizeUrl).toBeDefined()
+    await browse((await scaffold.ctx.hubAccount.getState()).attempt!.authorizeUrl!)
+    await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).status).toBe('signed-in')
+    const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
+    failurePage = page
+    await page.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+    const tripwire = watchConsole(page)
+    await page.goto(scaffold.authenticatedUrl)
+    await openSettings(page, 'zh')
+    const settings = page.getByRole('dialog', { name: '设置' })
+    await settings.getByRole('button', { name: '电商账号', exact: true }).click()
+    const section = settings.getByRole('region', { name: '电商账号' })
+    await section.getByRole('button', { name: '添加第一个账号' }).click()
+
+    // A buyer account needs only its account.
+    const add = page.getByRole('dialog', { name: '新增账号' })
+    await add.getByRole('combobox', { name: '账号类型' }).selectOption('buyer')
+    await add.getByText('买家账号只用于查看公开商品页面', { exact: false }).waitFor()
+    expect(await add.getByPlaceholder('例如：名流旗舰店', { exact: true }).count()).toBe(0)
+    await add.getByPlaceholder('例如：名流旗舰店:运营').fill('买家号一')
+    await add.getByRole('button', { name: '去登录' }).click()
+    const signIn = page.getByRole('dialog', { name: '登录天猫' })
+    await signIn.waitFor()
+    const tenantId = (await scaffold.ctx.hubAccount.getState()).profile!.tenantId!
+    accountDir = join(harnessHome, 'ecommerce', tenantId, 'browsers', (await scaffold.ctx.ecommerceAccounts.getState()).accounts[0]!.id)
+    await expect.poll(() => access(join(accountDir!, 'user-data', 'fake-args.json')).then(() => true, () => false), { timeout: 10_000 }).toBe(true)
+    await writeFile(join(accountDir, 'user-data', 'fake-signed-in'), '买家号一')
+    await signIn.getByText('登录成功', { exact: false }).waitFor({ timeout: 15_000 })
+    // The add dialog may still be closing over it, so click until the dialog goes.
+    await expect.poll(async () => {
+      await signIn.getByRole('button', { name: '完成' }).click({ timeout: 2000 }).catch(() => undefined)
+      return signIn.count()
+    }, { timeout: 15_000 }).toBe(0)
+    const row = section.getByRole('button', { name: '查看 买家号一 的详情' })
+    await expect.poll(() => row.textContent()).toContain('今日 0/20 页')
+    await expect.poll(() => row.textContent(), { timeout: 15_000 }).toContain('已登录')
+
+    // A task picks the buyer account and opens two pages; the row counts them.
+    const first = bashCall('buyer-1')
+    const url = scaffold.ctx.shellEnv.collect(first).DSH_ECOMMERCE_URL!
+    const taken = JSON.parse(await (await fetch(`${url}/buyer?platform=tmall`)).text()) as { cdpUrl: string; pagesLeft: number }
+    expect(taken.pagesLeft).toBe(20)
+    expect(await openPages(taken.cdpUrl, 'https://detail.tmall.com/item.htm?id=1', 'https://item.taobao.com/item.htm?id=2')).toEqual(['ok', 'ok'])
+    scaffold.ctx.emit('tools/result', first, { isError: false, value: { exitCode: 0 } } as object as ToolExecutionResult)
+    await expect.poll(() => row.textContent()).toContain('今日 2/20 页')
+
+    // Settings lowers the daily limit: the next page of the day is refused.
+    const limit = section.getByRole('textbox', { name: '买家账号每天最多打开' })
+    await limit.fill('2')
+    await section.getByRole('button', { name: '保存', exact: true }).click()
+    await expect.poll(() => row.textContent()).toContain('今日 2/2 页')
+    const second = bashCall('buyer-2')
+    const refused = await fetch(`${scaffold.ctx.shellEnv.collect(second).DSH_ECOMMERCE_URL!}/buyer?platform=tmall`)
+    expect(await refused.text()).toContain('has opened its 2 pages for today. It can be used again tomorrow.')
+    scaffold.ctx.emit('tools/result', second, { isError: false, value: { exitCode: 0 } } as object as ToolExecutionResult)
+
+    // Raised again, a page that shows the risk control rests the account; the row and details say for how long.
+    await limit.fill('20')
+    await section.getByRole('button', { name: '保存', exact: true }).click()
+    const third = bashCall('buyer-3')
+    const again = JSON.parse(await (await fetch(`${scaffold.ctx.shellEnv.collect(third).DSH_ECOMMERCE_URL!}/buyer?platform=tmall`)).text()) as { cdpUrl: string }
+    expect(await openPages(again.cdpUrl, 'https://detail.tmall.com/item.htm?id=3&risk=1', 'https://www.tmall.com/')).toEqual(['ok', 'net::ERR_BLOCKED_BY_CLIENT'])
+    scaffold.ctx.emit('tools/result', third, { isError: false, value: { exitCode: 0 } } as object as ToolExecutionResult)
+    await expect.poll(() => row.textContent()).toContain('风控冷却中，剩 72 小时')
+    await row.click()
+    await section.getByText('风控冷却', { exact: true }).waitFor()
+    expect(tripwire.pageErrors).toEqual([])
+  } catch (error) {
+    if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-ecommerce-buyer')
+    throw error
+  } finally {
+    await browser.close()
+    if (accountDir !== undefined) {
+      const record = await readFile(join(accountDir, 'chrome.json'), 'utf8').catch(() => undefined)
       if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
     }
     await scaffold.close()

@@ -232,3 +232,15 @@
 .mismatch p {
   margin: 0;
 }
+
+.dailyPages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.dailyPagesInput {
+  width: 72px;
+}

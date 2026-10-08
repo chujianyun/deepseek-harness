@@ -24,6 +24,10 @@ Chrome 的生命周期长于 DSH。之后启动的 DSH 会重新连上记录中�
 
 租户登录期间，`ecommerce-accounts` Skill 告诉模型如何使用这些账号以及如何挑选商家账号；模型 shell 的 `PATH` 上的 `dsh-ecommerce` 命令通过一个本地回环端点访问它们，令牌只在一次 bash 调用内有效。`dsh-ecommerce accounts` 列出账号，不含路径和 cookie；`dsh-ecommerce browser <id>` 检查账号、为该调用占用其浏览器，并交出远程调试地址，供 Skill 脚本连接。账号未登录时任务停止并给出去设置页的指引；别的任务正在使用的账号会被拒绝，直到那次调用结束。
 
+## 买家账号与风控保护
+
+天猫和淘宝的买家账号只用于查看公开商品页面，由 DSH 而不是模型保证安全：任务使用账号期间，DSH 通过自己的 DevTools 连接监看其浏览器，暂停每一次页面加载。商家账号不能打开公开的商品页或搜索页。买家账号最多打开租户的每日页面上限（默认 20，可在设置中修改），按自然日计数；平台风控一旦出现，DSH 不再为该任务加载任何内容，并让该账号休息 72 小时。`dsh-ecommerce buyer` 挑选可用且当天打开页面最少的买家账号，或说明为何都不可用。买家账号不做后台定时检查，因为每次检查都会打开一个被平台计数的页面。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -85,6 +89,15 @@ Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote name
  * @returns the state after the checks.
  */
 @Remote async refresh(): Promise<EcommerceAccountsState>
+
+/**
+ * Set the tenant's daily page limit for buyer accounts.
+ * @param pages - the most pages a task may open with one buyer account in a calendar day.
+ * @returns the state with the new limit.
+ * @throws RemoteError `hub-account/signed-out`, or `ecommerce-accounts/invalid-field` for a
+ *   limit that is not a whole number from 1 to 1000.
+ */
+@Remote setBuyerDailyPages(pages: number): Promise<EcommerceAccountsState>
 
 /**
  * Change the account or store name the user entered, such as to the name the platform reports.

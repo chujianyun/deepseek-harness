@@ -28,6 +28,7 @@ export interface AccountsDependencies {
   readonly confirmSignIn: (accountId: string) => Promise<RemoteResult<EcommerceAccountsState>>
   readonly rename: (accountId: string, changes: RenameEcommerceAccountInput) => Promise<RemoteResult<EcommerceAccountsState>>
   readonly refresh: () => Promise<RemoteResult<EcommerceAccountsState>>
+  readonly setDailyPages: (pages: number) => Promise<RemoteResult<EcommerceAccountsState>>
   readonly remove: (accountId: string) => Promise<RemoteResult<EcommerceAccountsState>>
   /** Open an address in the default browser. */
   readonly openUrl: (url: string) => void
@@ -45,6 +46,8 @@ export interface AccountsInjected {
   readonly onRename: (accountId: string, changes: RenameEcommerceAccountInput) => Promise<Refusal | undefined>
   /** Check every account again, as the section does when it opens. */
   readonly onRefresh: () => Promise<void>
+  /** Set the tenant's daily page limit for buyer accounts; resolves to the refusal, or undefined. */
+  readonly onSetDailyPages: (pages: number) => Promise<Refusal | undefined>
   readonly onDelete: (accountId: string) => Promise<Refusal | undefined>
   readonly onOpenUrl: (url: string) => void
 }
@@ -101,6 +104,7 @@ export function createAccountsSource(deps: AccountsDependencies): AccountsSource
     onConfirmSignIn: accountId => settle(deps.confirmSignIn(accountId)),
     onRename: (accountId, changes) => settle(deps.rename(accountId, changes)),
     onRefresh: async () => { await settle(deps.refresh()) },
+    onSetDailyPages: pages => settle(deps.setDailyPages(pages)),
     onDelete: accountId => settle(deps.remove(accountId)),
     onOpenUrl: (url) => { deps.openUrl(url) },
   }

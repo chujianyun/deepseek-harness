@@ -36,7 +36,8 @@ import { z } from 'zod'
 import { Bridge, SCRIPT, type BridgeReply, type Grant } from './bridge.ts'
 import { Cdp, closeBlankTabs, hideWindows, pageTabs, probe, showSignIn, type ProbeResult } from './cdp.ts'
 import { alive, closeChrome, ensureTab, findChrome, launchChrome, profileHolder, readRecord, type ChromeInfo } from './chrome.ts'
-import { PLATFORMS, type PlatformSpec } from './platforms.ts'
+import { guardBrowser, type GuardRules } from './guard.ts'
+import { PUBLIC_PAGE, specOf, type PlatformSpec } from './platforms.ts'
 import { SKILL_CONTENT, SKILL_DESCRIPTION, SKILL_NAME } from './skill.ts'
 import type {
   AddEcommerceAccountInput, AddEcommerceAccountResult, ChromeView, EcommerceAccountsState, EcommerceAccountStatus, EcommerceAccountView,
@@ -45,8 +46,10 @@ import type {
 
 export type * from './types.ts'
 export {
-  DOUDIAN, mtopUserNick, matchesCheckApi, parseJsonOrJsonp, PINDUODUO, PLATFORMS, TAOBAO, TMALL, type CheckAnswer, type PlatformSpec,
+  DOUDIAN, mtopUserNick, matchesCheckApi, parseJsonOrJsonp, PINDUODUO, PLATFORMS, PUBLIC_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL,
+  type CheckAnswer, type PlatformSpec,
 } from './platforms.ts'
+export { RISK_PAGE } from './guard.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -54,6 +57,9 @@ declare module '@deepseek-ai/cordis' {
     ecommerceAccounts: EcommerceAccountsService
   }
 }
+
+/** Largest daily page limit a tenant may set for buyer accounts. */
+const MAX_DAILY_PAGES = 1000
 
 /** Plugin configuration. */
 export interface Config {
@@ -73,8 +79,12 @@ export interface Config {
   signInPollMs?: number
   /** Time after which a sign-in is checked even before its tab leaves the sign-in page, in milliseconds. */
   signInCheckEveryMs?: number
-  /** Time between background checks of every account, in milliseconds. */
+  /** Time between background checks of every merchant account, in milliseconds. */
   checkIntervalMs?: number
+  /** Most pages a task may open with one buyer account in a calendar day, until a tenant sets its own. */
+  buyerDailyPages?: number
+  /** How long a buyer account rests after the platform's risk control showed, in hours. */
+  cooldownHours?: number
   /** Longest store or account name, in characters. */
   maxNameLength?: number
 }
@@ -89,7 +99,10 @@ export const Config: Schema<Config> = Schema.object({
   chromeTimeoutMs: Schema.natural().min(1).default(20_000).description('How long DSH waits for Chrome to start or close, in milliseconds.'),
   signInPollMs: Schema.natural().min(1).default(3000).description('Time between looks at the sign-in tab, in milliseconds.'),
   signInCheckEveryMs: Schema.natural().min(1).default(30_000).description('Time after which a sign-in is checked even before its tab leaves the sign-in page, in milliseconds.'),
-  checkIntervalMs: Schema.natural().min(1).default(30 * 60_000).description('Time between background checks of every account, in milliseconds.'),
+  checkIntervalMs: Schema.natural().min(1).default(30 * 60_000).description('Time between background checks of every merchant account, in milliseconds.'),
+  buyerDailyPages: Schema.natural().min(1).max(MAX_DAILY_PAGES).default(20)
+    .description('Most pages a task may open with one buyer account in a calendar day, until a tenant sets its own.'),
+  cooldownHours: Schema.natural().min(1).default(72).description('How long a buyer account rests after the platform\'s risk control showed, in hours.'),
   maxNameLength: Schema.natural().min(1).default(64).description('Longest store or account name, in characters.'),
 })
 
@@ -97,7 +110,7 @@ export const Config: Schema<Config> = Schema.object({
 export const CHROME_DOWNLOAD_URL = 'https://www.google.com/chrome/'
 
 /** Which platforms and kinds can be added now, as `<platform>/<kind>`. */
-const ADDABLE: ReadonlySet<string> = new Set(['tmall/merchant', 'taobao/merchant', 'pinduoduo/merchant', 'doudian/merchant'])
+const ADDABLE: ReadonlySet<string> = new Set(['tmall/merchant', 'taobao/merchant', 'pinduoduo/merchant', 'doudian/merchant', 'tmall/buyer', 'taobao/buyer'])
 
 /** The outcome of one check: the platform's answer, or the account's browser data held by another Chrome. */
 type CheckResult = ProbeResult | { readonly kind: 'busy' }
@@ -117,6 +130,9 @@ const PROBLEM_TEXT = {
 } as const satisfies Record<EcommerceCheckProblem, string>
 
 const SIGNED_OUT_OF_HUB = 'DSH: DSH is signed out of the user center, so there are no e-commerce accounts.'
+
+/** The computer's calendar day, such as `2026-10-08`. */
+const today = (): string => new Date().toLocaleDateString('sv')
 
 /** A refusal the command prints to stderr. */
 const refused = (message: string): BridgeReply => ({ status: 409, body: message })
@@ -138,7 +154,13 @@ const ledgerSchema = z.object({
     checkedAt: z.string().optional(),
     /** Whether a sign-in ever succeeded; a Chrome gone since then is started again to restore it. */
     everSignedIn: z.boolean().optional(),
+    /** Pages tasks opened with a buyer account on one calendar day. */
+    usage: z.object({ date: z.string(), pages: z.number().int().min(0) }).optional(),
+    /** ISO time a buyer account rests until, after the platform's risk control showed. */
+    cooldownUntil: z.string().optional(),
   })),
+  /** The tenant's daily page limit for buyer accounts, once set. */
+  buyerDailyPages: z.number().int().min(1).optional(),
 })
 
 type Entry = z.infer<typeof ledgerSchema>['accounts'][number]
@@ -164,10 +186,14 @@ export class EcommerceAccountsService extends TypertRemoteService {
   private revision = Date.now()
   private readonly listeners = new Set<() => void>()
   private readonly lifetime = new AbortController()
-  /** Accounts whose browser a bash call of the model is using, by account, to that call. */
-  private readonly leases = new Map<string, string>()
+  /** Accounts whose browser a bash call of the model is using, by account: the call, and the end of DSH's watch on the browser. */
+  private readonly leases = new Map<string, { readonly callId: string; stop?: () => void }>()
+  /** The tenant's own daily page limit for buyer accounts, once set. */
+  private dailyPages: number | undefined
   private readonly bridge = new Bridge({
-    accounts: grant => this.modelAccounts(grant), browser: (grant, id) => this.modelBrowser(grant, id),
+    accounts: grant => this.modelAccounts(grant),
+    browser: (grant, id) => this.modelBrowser(grant, id),
+    buyer: (grant, platform) => this.modelBuyer(grant, platform),
   })
   /** Unregisters the Skill while a tenant is signed in. */
   private skill: (() => void) | undefined
@@ -182,6 +208,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     ctx.effect(() => () => {
       this.lifetime.abort()
       for (const controller of this.signIns.values()) controller.abort()
+      this.endLeases(() => true)
       this.skill?.()
       this.changed()
     }, 'ecommerce-accounts: lifetime')
@@ -194,7 +221,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     // The call's token and its browser reservations end with the call.
     ctx.on('tools/result', (exec) => {
       this.bridge.revoke(exec.callId)
-      for (const [accountId, callId] of this.leases) if (callId === exec.callId) this.leases.delete(accountId)
+      this.endLeases(lease => lease.callId === exec.callId)
       this.changed()
     })
   }
@@ -213,7 +240,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
         if (tenantId !== this.tenantId) await this.serialized(() => this.switchTenant(tenantId))
       }
     })()
-    const timer = setInterval(() => { void this.refresh() }, this.options.checkIntervalMs)
+    // Buyer accounts are checked only when used or when Settings opens: each check opens a page the platform counts.
+    const timer = setInterval(() => { void this.checkIdle(entry => entry.kind === 'merchant') }, this.options.checkIntervalMs)
     timer.unref()
     this.ctx.effect(() => () => { clearInterval(timer) }, 'ecommerce-accounts: periodic check')
   }
@@ -225,7 +253,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
   @Remote
   getState(): Promise<EcommerceAccountsState> {
     return Promise.resolve({
-      revision: this.revision, tenantId: this.tenantId, chrome: this.chromeView(),
+      revision: this.revision, tenantId: this.tenantId, chrome: this.chromeView(), buyerDailyPages: this.pageLimit(),
       accounts: this.entries.map(entry => this.view(entry)),
     })
   }
@@ -270,7 +298,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
       }
       const max = this.options.maxNameLength
       const account = checkName('account', input.account, max)
-      const storeName = checkName('storeName', input.storeName ?? '', max)
+      // A buyer account belongs to no store.
+      const storeName = input.kind === 'buyer' ? '' : checkName('storeName', input.storeName ?? '', max)
       const existing = this.entries.find(entry => identity(entry) === identity({ ...input, account }))
       if (existing !== undefined) throw new RemoteError('ecommerce-accounts/duplicate', 'This account is already added', { accountId: existing.id })
       const entry: Entry = {
@@ -305,7 +334,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const controller = new AbortController()
     this.signIns.set(entry.id, controller)
     this.setStatus(entry.id, 'signing-in')
-    const spec = PLATFORMS[entry.platform]
+    const spec = specOf(entry.platform, entry.kind)
     let tab: string
     try {
       tab = await this.queued(entry.id, async () => {
@@ -354,10 +383,35 @@ export class EcommerceAccountsService extends TypertRemoteService {
   async refresh(): Promise<EcommerceAccountsState> {
     this.chrome = await findChrome(this.options.chromePath)
     this.changed()
-    // An account a task is using is checked by that task.
-    const idle = this.entries.filter(entry => !this.signIns.has(entry.id) && !this.leases.has(entry.id))
-    await Promise.all(idle.map(entry => this.check(entry)))
+    await this.checkIdle(() => true)
     return this.getState()
+  }
+
+  /**
+   * Set the tenant's daily page limit for buyer accounts.
+   * @param pages - the most pages a task may open with one buyer account in a calendar day.
+   * @returns the state with the new limit.
+   * @throws RemoteError `hub-account/signed-out`, or `ecommerce-accounts/invalid-field` for a
+   *   limit that is not a whole number from 1 to 1000.
+   */
+  @Remote
+  setBuyerDailyPages(pages: number): Promise<EcommerceAccountsState> {
+    return this.serialized(async () => {
+      const tenantId = this.requireTenant()
+      if (!Number.isInteger(pages) || pages < 1 || pages > MAX_DAILY_PAGES) {
+        throw new RemoteError('ecommerce-accounts/invalid-field', `The daily page limit must be a whole number from 1 to ${String(MAX_DAILY_PAGES)}`, { field: 'buyerDailyPages' })
+      }
+      this.dailyPages = pages
+      await this.saveLedger(tenantId)
+      this.changed()
+      return this.getState()
+    })
+  }
+
+  /** Check the accounts that match, leaving those signing in or in a task's use to their owners. */
+  private async checkIdle(matches: (entry: Entry) => boolean): Promise<void> {
+    const idle = this.entries.filter(entry => matches(entry) && !this.signIns.has(entry.id) && !this.leases.has(entry.id))
+    await Promise.all(idle.map(entry => this.check(entry)))
   }
 
   /**
@@ -375,7 +429,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
       const entry = this.find(accountId)
       const max = this.options.maxNameLength
       const account = changes.account === undefined ? entry.account : checkName('account', changes.account, max)
-      const storeName = changes.storeName === undefined ? entry.storeName : checkName('storeName', changes.storeName, max)
+      // A buyer account keeps belonging to no store.
+      const storeName = changes.storeName === undefined || entry.kind === 'buyer' ? entry.storeName : checkName('storeName', changes.storeName, max)
       const existing = this.entries.find(item => item.id !== entry.id && identity(item) === identity({ ...entry, account }))
       if (existing !== undefined) throw new RemoteError('ecommerce-accounts/duplicate', 'This account is already added', { accountId: existing.id })
       this.entries = this.entries.map(item => item.id === entry.id ? { ...item, account, storeName } : item)
@@ -510,7 +565,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     await ensureTab(port)
     const cdp = await Cdp.connect(port, this.options.chromeTimeoutMs)
     try {
-      const spec = PLATFORMS[entry.platform]
+      const spec = specOf(entry.platform, entry.kind)
       let result = await probe(cdp, spec, this.options.checkTimeoutMs)
       if (result.kind !== 'signed-in') result = await probe(cdp, spec, this.options.checkTimeoutMs)
       if (started || result.kind === 'signed-in') await hideWindows(cdp)
@@ -526,42 +581,155 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const accounts = this.entries.map((entry) => {
       const view = this.view(entry)
       return {
-        id: view.id, platform: view.platform, store: view.storeName, account: view.account, kind: view.kind, status: view.status,
+        id: view.id, platform: view.platform, ...view.storeName === undefined ? {} : { store: view.storeName }, account: view.account,
+        kind: view.kind, status: view.status,
         ...view.problem === undefined ? {} : { problem: view.problem },
+        ...view.kind === 'buyer' ? { pagesToday: view.pagesToday, pageLimit: this.pageLimit() } : {},
+        ...view.cooldownUntil === undefined ? {} : { cooldownUntil: view.cooldownUntil },
       }
     })
     return Promise.resolve({ status: 200, body: JSON.stringify(accounts, null, 2) })
   }
 
-  /**
-   * Answer `dsh-ecommerce browser <id>`: reserve the account's browser for the call, check that it
-   * is still signed in, and hand over its DevTools address; a failed check ends the reservation.
-   */
+  /** Answer `dsh-ecommerce browser <id>`: take over that account's browser for the call. */
   private async modelBrowser(grant: Grant, accountId: string): Promise<BridgeReply> {
     if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
     const entry = this.entries.find(item => item.id === accountId)
     if (entry === undefined) return refused(`DSH: there is no e-commerce account "${accountId}". Run dsh-ecommerce accounts to list them.`)
-    const name = `${PLATFORM_NAMES[entry.platform]} account "${entry.storeName}"`
-    if (this.signIns.has(entry.id)) return refused(`DSH: the ${name} is being signed in in DSH Settings. Tell the user and stop.`)
-    const holder = this.leases.get(entry.id)
-    if (holder !== undefined && holder !== grant.callId) {
-      return refused(`DSH: the ${name} is in use by another task. Tell the user and stop; do not switch to another account.`)
+    const result = await this.takeOver(grant, entry)
+    return 'reply' in result ? result.reply : refused(`DSH: ${result.refusal}`)
+  }
+
+  /**
+   * Answer `dsh-ecommerce buyer [platform]`: take over the buyer account that can be used and has
+   * opened the fewest pages today, or say why none can.
+   */
+  private async modelBuyer(grant: Grant, platform: string): Promise<BridgeReply> {
+    if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
+    if (platform !== '' && platform !== 'tmall' && platform !== 'taobao') {
+      return refused(`DSH: buyer accounts are on tmall and taobao, not "${platform}".`)
     }
-    this.leases.set(entry.id, grant.callId)
+    const buyers = this.entries
+      .filter(entry => entry.kind === 'buyer' && (platform === '' || entry.platform === platform))
+      .sort((a, b) => this.pagesToday(a) - this.pagesToday(b))
+    if (buyers.length === 0) {
+      return refused('DSH: there is no buyer account for this. Stop, and ask the user to add one in DSH Settings → E-commerce accounts (设置 → 电商账号).')
+    }
+    const refusals: string[] = []
+    for (const entry of buyers) {
+      const result = await this.takeOver(grant, entry)
+      if ('reply' in result) return result.reply
+      refusals.push(`- ${result.refusal}`)
+    }
+    return refused(['DSH: no buyer account can be used now. Stop, and tell the user why:', ...refusals].join('\n'))
+  }
+
+  /**
+   * Reserve an account's browser for a bash call, check that the account is still signed in, put
+   * DSH's watch on the browser, and hand over its DevTools address. A buyer account resting after
+   * the platform's risk control, or out of pages for today, is refused first; a failed check ends
+   * the reservation.
+   */
+  private async takeOver(grant: Grant, entry: Entry): Promise<{ readonly reply: BridgeReply } | { readonly refusal: string }> {
+    const name = this.nameOf(entry)
+    if (this.signIns.has(entry.id)) return { refusal: `the ${name} is being signed in in DSH Settings. Tell the user and stop.` }
+    const lease = this.leases.get(entry.id)
+    if (lease !== undefined && lease.callId !== grant.callId) {
+      return { refusal: `the ${name} is in use by another task. Tell the user and stop; do not switch to another account.` }
+    }
+    const resting = this.cooldownOf(entry)
+    if (resting !== undefined) {
+      return { refusal: `the ${name} is resting after the platform's risk control until ${resting}. Do not use it before then.` }
+    }
+    if (entry.kind === 'buyer' && this.pagesToday(entry) >= this.pageLimit()) {
+      return { refusal: `the ${name} has opened its ${String(this.pageLimit())} pages for today. It can be used again tomorrow.` }
+    }
+    const held = lease ?? { callId: grant.callId }
+    this.leases.set(entry.id, held)
     this.changed()
     const result = await this.check(entry)
     // The tenant switched while the platform was asked: the account is not this tenant's any more.
-    if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
-    if (result.kind === 'signed-in') {
-      // A signed-in check leaves the account's Chrome running and recorded.
-      const { port } = await readRecord(this.dirOf(entry.id)) as { port: number }
-      return { status: 200, body: JSON.stringify({ id: entry.id, platform: entry.platform, store: entry.storeName, account: entry.account, cdpUrl: `http://127.0.0.1:${String(port)}` }, null, 2) }
+    if (grant.tenantId !== this.tenantId) return { refusal: SIGNED_OUT_OF_HUB.slice('DSH: '.length) }
+    if (result.kind !== 'signed-in') {
+      if (lease === undefined) this.leases.delete(entry.id)
+      this.changed()
+      return {
+        refusal: result.kind === 'signed-out'
+          ? `the ${name} is signed out. Stop, and ask the user to sign in again in DSH Settings → E-commerce accounts (设置 → 电商账号).`
+          : `the ${name} could not be checked: ${PROBLEM_TEXT[PROBLEMS[result.kind]]}. Stop, and tell the user; they can check it in DSH Settings → E-commerce accounts (设置 → 电商账号).`,
+      }
     }
-    if (holder === undefined) this.leases.delete(entry.id)
+    // A signed-in check leaves the account's Chrome running and recorded.
+    const { port } = await readRecord(this.dirOf(entry.id)) as { port: number }
+    held.stop ??= await guardBrowser(port, this.options.chromeTimeoutMs, this.rulesFor(entry))
+    const reply = {
+      id: entry.id, platform: entry.platform, kind: entry.kind, ...entry.storeName === '' ? {} : { store: entry.storeName }, account: entry.account,
+      cdpUrl: `http://127.0.0.1:${String(port)}`,
+      ...entry.kind === 'buyer' ? { pagesLeft: this.pageLimit() - this.pagesToday(entry) } : {},
+    }
+    return { reply: { status: 200, body: JSON.stringify(reply, null, 2) } }
+  }
+
+  /**
+   * What DSH's watch allows a task with an account: a merchant account opens no public product or
+   * search page; a buyer account opens at most the day's pages left, each counted, and rests after
+   * the platform's risk control shows.
+   */
+  private rulesFor(entry: Entry): GuardRules {
+    if (entry.kind === 'merchant') return { page: url => !PUBLIC_PAGE.test(url), risk: () => {} }
+    // The watch ends before its account can be deleted or its tenant switched, so the account is always listed.
+    const current = (): Entry => this.entries.find(item => item.id === entry.id) as Entry
+    return {
+      page: () => {
+        const account = current()
+        if (this.pagesToday(account) >= this.pageLimit()) return false
+        this.updateEntry({ ...account, usage: { date: today(), pages: this.pagesToday(account) + 1 } })
+        return true
+      },
+      risk: (url) => {
+        this.ctx.logger.warn(`ecommerce-accounts: risk control on ${entry.id} at ${url}`)
+        this.updateEntry({ ...current(), cooldownUntil: new Date(Date.now() + this.options.cooldownHours * 3_600_000).toISOString() })
+      },
+    }
+  }
+
+  /** Replace an account's ledger row now, and save it. */
+  private updateEntry(next: Entry): void {
+    this.entries = this.entries.map(item => item.id === next.id ? next : item)
     this.changed()
-    return refused(result.kind === 'signed-out'
-      ? `DSH: the ${name} is signed out. Stop, and ask the user to sign in again in DSH Settings → E-commerce accounts (设置 → 电商账号).`
-      : `DSH: the ${name} could not be checked: ${PROBLEM_TEXT[PROBLEMS[result.kind]]}. Stop, and tell the user; they can check it in DSH Settings → E-commerce accounts (设置 → 电商账号).`)
+    const tenantId = this.tenantId as string
+    void this.serialized(() => this.saveLedger(tenantId))
+  }
+
+  /** End the reservations that match, and DSH's watch on their browsers. */
+  private endLeases(matches: (lease: { readonly callId: string }) => boolean): void {
+    for (const [accountId, lease] of this.leases) {
+      if (!matches(lease)) continue
+      lease.stop?.()
+      this.leases.delete(accountId)
+    }
+  }
+
+  /** How an account is named in what the model reads. */
+  private nameOf(entry: Entry): string {
+    return entry.kind === 'buyer'
+      ? `${PLATFORM_NAMES[entry.platform]} buyer account "${entry.account}"`
+      : `${PLATFORM_NAMES[entry.platform]} account "${entry.storeName}"`
+  }
+
+  /** The tenant's daily page limit for buyer accounts. */
+  private pageLimit(): number {
+    return this.dailyPages ?? this.options.buyerDailyPages
+  }
+
+  /** Pages tasks opened with an account today. */
+  private pagesToday(entry: Entry): number {
+    return entry.usage?.date === today() ? entry.usage.pages : 0
+  }
+
+  /** When an account's rest after the platform's risk control ends, while it lasts. */
+  private cooldownOf(entry: Entry): string | undefined {
+    return entry.cooldownUntil !== undefined && Date.parse(entry.cooldownUntil) > Date.now() ? entry.cooldownUntil : undefined
   }
 
   /** Refuse to sign in to or delete an account a task is using. */
@@ -615,9 +783,12 @@ export class EcommerceAccountsService extends TypertRemoteService {
   private view(entry: Entry): EcommerceAccountView {
     // Every listed account gets a status when it is added or loaded, and a problem whenever a check fails.
     const status = this.statuses.get(entry.id) as EcommerceAccountStatus
+    const cooldownUntil = this.cooldownOf(entry)
     return {
-      id: entry.id, platform: entry.platform, kind: entry.kind, storeName: entry.storeName, account: entry.account,
+      id: entry.id, platform: entry.platform, kind: entry.kind, ...entry.storeName === '' ? {} : { storeName: entry.storeName }, account: entry.account,
       createdAt: entry.createdAt, status, expired: status === 'signed-out' && entry.everSignedIn === true, inUse: this.leases.has(entry.id),
+      ...entry.kind === 'buyer' ? { pagesToday: this.pagesToday(entry) } : {},
+      ...cooldownUntil === undefined ? {} : { cooldownUntil },
       ...status === 'check-failed' ? { problem: this.problems.get(entry.id) as EcommerceCheckProblem } : {},
       ...(entry.signedInAs === undefined ? {} : { signedInAs: entry.signedInAs }),
       ...(entry.signedInStore === undefined ? {} : { signedInStore: entry.signedInStore }),
@@ -635,7 +806,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
   private async switchTenant(tenantId: string | null): Promise<void> {
     for (const controller of this.signIns.values()) controller.abort()
     this.signIns.clear()
-    this.leases.clear()
+    this.endLeases(() => true)
     if (tenantId === null) {
       this.skill?.()
       this.skill = undefined
@@ -646,6 +817,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     }
     this.tenantId = tenantId
     this.entries = []
+    this.dailyPages = undefined
     this.statuses.clear()
     this.problems.clear()
     if (tenantId !== null) {
@@ -654,6 +826,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
       const parsed = raw === undefined ? undefined : ledgerSchema.safeParse(JSON.parse(raw))
       if (parsed?.success === false) this.ctx.logger.warn(`ecommerce-accounts: ignored malformed ${join(this.root, tenantId, 'accounts.json')}`)
       this.entries = parsed?.success === true ? parsed.data.accounts : []
+      this.dailyPages = parsed?.success === true ? parsed.data.buyerDailyPages : undefined
     }
     this.changed()
     // Each account is checked in the background: a Chrome still running from an earlier DSH is reattached.
@@ -667,7 +840,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
   private async saveLedger(tenantId: string): Promise<void> {
     const path = join(this.root, tenantId, 'accounts.json')
     await mkdir(join(this.root, tenantId), { recursive: true })
-    await writeFile(`${path}.tmp`, `${JSON.stringify({ version: 1, accounts: this.entries }, null, 2)}\n`)
+    const ledger = { version: 1, accounts: this.entries, ...this.dailyPages === undefined ? {} : { buyerDailyPages: this.dailyPages } }
+    await writeFile(`${path}.tmp`, `${JSON.stringify(ledger, null, 2)}\n`)
     await rename(`${path}.tmp`, path)
   }
 
