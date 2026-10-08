@@ -25,7 +25,7 @@ ecommerce 家族通过用户在系统 Google Chrome 中登录的账号，把桌�
 | 包 | 角色 | ctx 键 |
 |---|---|---|
 | [`ecommerce-accounts/`](ecommerce-accounts/README.zh.md) | 租户的电商账号及其 Chrome 登录，通过 `ecommerceAccounts` Remote 提供 | `ctx.ecommerceAccounts` |
-| [`tmall-skills/`](tmall-skills/README.zh.md) | 上传到 Skill Hub、只下发给需要的租户的天猫取数技能，及其打包 | — |
+| [`tmall-skills/`](tmall-skills/README.zh.md) | 上传到 Skill Hub、只下发给需要的租户的天猫取数技能（商家报表与买家单品报告），及其打包 | — |
 
 -----
 

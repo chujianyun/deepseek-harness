@@ -1,7 +1,7 @@
 import { chmod, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { runDshEcommerce, takeOverMerchant, type EcommerceCommandResult } from '../src/account.ts'
+import { runDshEcommerce, takeOverBuyer, takeOverMerchant, type EcommerceCommandResult } from '../src/account.ts'
 import { main as alimamaMain } from '../src/alimama-report.ts'
 import { fileSafe, parseOptions, realDeps, runReport, writeFiles } from '../src/cli.ts'
 import { EXIT, SkillError } from '../src/errors.ts'
@@ -51,6 +51,27 @@ describe('takeOverMerchant', () => {
   it('refuses an account that is not a Tmall merchant account', async () => {
     await expect(takeOverMerchant('b1', ran({ stdout: JSON.stringify({ ...MERCHANT, platform: 'taobao', kind: 'buyer' }) })))
       .rejects.toMatchObject({ exitCode: EXIT.usage, message: expect.stringContaining('平台 taobao，类型 buyer') as unknown as string })
+  })
+
+  it('lets DSH pick a buyer account and reads its pages left', async () => {
+    const args: unknown[] = []
+    const buyer = { id: 'b1', platform: 'taobao', kind: 'buyer', account: 'tb797483650', cdpUrl: 'http://127.0.0.1:7', pagesLeft: 18 }
+    const run = (given: readonly string[]): Promise<EcommerceCommandResult> => {
+      args.push(given)
+      return ran({ stdout: JSON.stringify(buyer) })()
+    }
+    expect(await takeOverBuyer(run)).toEqual({ id: 'b1', platform: 'taobao', account: 'tb797483650', cdpUrl: 'http://127.0.0.1:7', pagesLeft: 18 })
+    expect(args).toEqual([['buyer']])
+    const { pagesLeft: _left, ...withoutPages } = buyer
+    expect((await takeOverBuyer(ran({ stdout: JSON.stringify(withoutPages) }))).pagesLeft).toBe(0)
+  })
+
+  it('stops when no buyer account can be used, and passes on other refusals', async () => {
+    for (const refusal of ['DSH: no buyer account can be used now. Stop, and tell the user why:', 'DSH: the taobao buyer account "tb1" has opened its 20 pages for today.',
+      'DSH: the taobao buyer account "tb1" is resting after the platform\'s risk control until 2026-10-11.']) {
+      await expect(takeOverBuyer(ran({ code: 1, stderr: refusal }))).rejects.toMatchObject({ exitCode: EXIT.stopped })
+    }
+    await expect(takeOverBuyer(ran({ code: 1, stderr: 'DSH: there is no buyer account for this.' }))).rejects.toMatchObject({ exitCode: EXIT.failed })
   })
 
   it('runs the dsh-ecommerce on PATH and reports how it ended', async () => {

@@ -30,7 +30,7 @@ Chrome 的生命周期长于 DSH。之后启动的 DSH 会重新连上记录中�
 
 ## 天猫取数技能
 
-最先使用这些账号的技能不随 DSH 发布：[`@deepseek-ai/dsh-tmall-skills`](../../packages/ecommerce/tmall-skills/README.zh.md) 把 `tmall-alimama-scene-report`（万相台某一天各营销场景的数据）和 `tmall-sycm-core-daily`（生意参谋「店铺经营核心日报」，并把其中的推广花费与万相台核对）打成 Skill Hub 上传包，由租户管理员只发布给本租户。每个技能的脚本用 `dsh-ecommerce browser` 接管天猫商家账号，调用平台页面自己调用的接口，并用 `load_workspace_dependencies` 返回的 Node 运行；平台还没算完当天数据时不写任何文件。
+使用这些账号的技能不随 DSH 发布：[`@deepseek-ai/dsh-tmall-skills`](../../packages/ecommerce/tmall-skills/README.zh.md) 把 `tmall-alimama-scene-report`（万相台某一天各营销场景的数据）和 `tmall-sycm-core-daily`（生意参谋「店铺经营核心日报」，并把其中的推广花费与万相台核对）打成 Skill Hub 上传包，由租户管理员只发布给本租户。每个技能的脚本用 `dsh-ecommerce browser` 接管天猫商家账号，调用平台页面自己调用的接口，并用 `load_workspace_dependencies` 返回的 Node 运行；平台还没算完当天数据时不写任何文件。第三个技能 `tmall-item-report` 改用 `dsh-ecommerce buyer`：用 DSH 挑选的买家号为每个商品打开 1 个公开商品页，通过页面自己的接口读取商品、问大家和评价，遇到第一次风控或买家号当天页数用完就停止，并保留此前读到的全部内容。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

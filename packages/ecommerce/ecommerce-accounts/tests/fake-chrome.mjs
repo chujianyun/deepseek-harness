@@ -13,7 +13,9 @@
 // FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs. For the Tmall
 // data skills, Alimama's report page sends its scene query, and `Runtime.evaluate` answers the page
 // APIs those skills call — Alimama's report query and Business Advisor's self-service export, whose
-// .xlsx this server hands out — with one day's figures for scenes 371 and 436. Its tabs are
+// .xlsx this server hands out — with one day's figures for scenes 371 and 436. An item page renders its
+// item, fetches its description, and answers its 问大家 and review APIs, with images this server hands
+// out; on item 600000000004 the APIs answer with risk control. Its tabs are
 // kept in `<user-data-dir>/fake-tabs.json` and come back with --restore-last-session. As in Chrome, a
 // closed tab is still listed once by Target.getTargets, but has no window any more.
 import { createServer } from 'node:http'
@@ -140,8 +142,40 @@ const exportXlsx = async () => {
   return zipSync({ 'xl/worksheets/sheet1.xml': strToU8(`<worksheet><sheetData>${xml}</sheetData></worksheet>`) })
 }
 /** The answer to an expression a data skill evaluates in a tab. */
+/** An item page's server-rendered data, with images this server hands out. */
+const renderedItem = () => {
+  const image = name => `http://127.0.0.1:${String(port)}/fake-img/${name}.jpg`
+  return {
+    item: { title: '名流 超薄避孕套 【10只】', vagueSellCount: '1万+', images: [image('main1'), image('main2')] },
+    seller: { shopName: '名流旗舰店', shopId: 1 },
+    componentsVO: { priceVO: { price: { priceTitle: '价格', priceText: '29.9' } } },
+    skuBase: { props: [{ pid: 1, name: '规格', values: [{ vid: 1, name: '【10只】超薄', image: image('sku1') }, { vid: 2, name: '共20只' }] }],
+      skus: [{ skuId: 's1', propPath: '1:1' }, { skuId: 's2', propPath: '1:2' }] },
+    skuCore: { sku2info: { s1: { price: { priceText: '29.9' }, subPrice: { priceTitle: '券后', priceText: '19.9' }, quantityText: '有货' }, s2: { price: { priceText: '49.9' }, quantityText: '有货' } } },
+  }
+}
+/** An item page's 问大家 and review APIs: two questions, two main reviews, one negative tag, and a follow-up. */
+const itemApi = (target, expression) => {
+  const success = data => ({ ret: 'SUCCESS::调用成功', data, punish: false })
+  if (target.url.includes('id=600000000004')) return { ret: 'RGV587_ERROR::SM::哎哟喂,被挤爆啦', data: null, punish: false }
+  if (expression.includes('mtop.taobao.wdj.list.merge.search')) {
+    return success({ hasNext: 'false', questionList: [
+      { questionId: 1, questionTitle: '会不会破？', gmtCreate: '2026-09-01', answerCount: 12, topAnswerList: [{ answerTitle: '用了很多次没破过', answerUserInfo: { userNick: 'a**1' } }] },
+      { questionId: 2, questionTitle: '尺寸大小合适吗', gmtCreate: '2026-08-01', answerCount: 3, topAnswerList: [] },
+    ] })
+  }
+  const review = (id, fields) => ({ id, rateType: 1, feedbackDate: '2026年9月3日', userNick: 'u**1', skuValueStr: '规格:【10只】超薄', feedback: '很薄很润滑，回购了', ...fields })
+  if (expression.includes('2-13')) return success({ hasNext: 'false', rateList: [review(9, { rateType: -1, feedback: '用了一次就破了，质量太差' })] })
+  if (expression.includes('\\"rateType\\":\\"2\\"')) return success({ hasNext: 'false', rateList: [review(8, { appendedFeed: { appendedFeedback: '后来用的时候有异味，不推荐', intervalDay: 20 } })] })
+  return success({ hasNext: 'false', rateList: [review(1), review(2, { skuValueStr: '规格:共20只', feedback: '物流很快，包装隐私' })], imprNewItemVOS: [
+    { title: '很薄', count: 30, labelId: '1-11', extraInfo: { labelType: 'impr' } }, { title: '容易破', labelId: '2-13', extraInfo: { labelType: 'impr', gray: 'true' } },
+  ] })
+}
 const evaluateIn = (target, expression) => {
   if (expression === 'location.href') return target.url
+  if (expression.includes('__ICE_APP_CONTEXT__')) return renderedItem()
+  if (expression.includes('#nocaptcha')) return false
+  if (expression.includes('window.lib.mtop.request')) return itemApi(target, expression)
   const api = [
     ['/report/query.json', { data: { list: SCENES }, info: { ok: true } }],
     ['/fetchData/template/list.json', { success: true, data: [{ id: 210, templateName: '店铺经营核心日报' }] }],
@@ -155,6 +189,7 @@ const evaluateIn = (target, expression) => {
 const server = createServer((req, res) => {
   const url = new URL(req.url, 'http://x')
   if (url.pathname === '/fake-export/core.xlsx') return void exportXlsx().then((xlsx) => { res.end(Buffer.from(xlsx)) })
+  if (url.pathname.startsWith('/fake-img/')) return res.end(Buffer.from([0xFF, 0xD8, 0xFF, 0xD9]))
   res.setHeader('content-type', 'application/json')
   if (url.pathname === '/json/version') return res.end(JSON.stringify({ webSocketDebuggerUrl: `ws://127.0.0.1:${String(port)}/devtools/browser/fake` }))
   if (url.pathname === '/json' || url.pathname === '/json/list') return res.end(JSON.stringify([...targets.values()].map(t => ({ id: t.id, type: 'page', url: urlOf(t) }))))
@@ -223,6 +258,12 @@ wss.on('connection', (socket) => {
           return emit('Network.requestWillBeSent', { requestId: 'q1', request: { url: 'https://one.alimama.com/report/query.json?csrfId=fake-csrf', method: 'POST', postData: JSON.stringify(scene) } }, sessionId)
         }
         if (params.url.startsWith('https://sycm.taobao.com/')) return
+        if (params.url.includes('/item.htm?id=')) {
+          const desc = { data: { components: { layout: [{ ID: 'd1' }], componentData: { d1: { model: { picUrl: `http://127.0.0.1:${String(port)}/fake-img/desc1.jpg` } } } } } }
+          bodies.set('desc', `mtopjsonp3(${JSON.stringify(desc)})`)
+          emit('Network.responseReceived', { requestId: 'desc', response: { url: 'https://h5api.m.tmall.com/h5/mtop.taobao.detail.getdesc/7.0/?data=1' } }, sessionId)
+          return emit('Network.loadingFinished', { requestId: 'desc' }, sessionId)
+        }
         if (process.env.FAKE_CHROME_SILENT !== undefined) return
         const load = pageLoad(params.url, signedInAs())
         emit('Network.requestWillBeSent', { requestId: 'r0', type: 'Script', request: { url: 'https://login.taobao.com/x.js' } }, sessionId)

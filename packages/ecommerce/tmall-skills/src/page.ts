@@ -33,6 +33,12 @@ export interface Page {
    */
   onRequest(listener: (request: SentRequest) => void): void
   /**
+   * Read the body of each response the page receives from a matching address, from now on.
+   * @param match - true for the addresses to read.
+   * @param listener - called with each body once it has arrived; a body Chrome no longer holds is skipped.
+   */
+  onResponse(match: (url: string) => boolean, listener: (body: string) => void): void
+  /**
    * Wait for a condition, checking it every half second.
    * @param condition - true when the wait is over.
    * @param timeoutMs - the longest wait.
@@ -96,6 +102,20 @@ export async function openPage(cdpUrl: string, timeoutMs = 20_000, loadTimeoutMs
         if (from !== sessionId) return
         const { url, method, postData } = params.request as { url: string; method: string; postData?: string }
         listener({ url, method, ...postData === undefined ? {} : { body: postData } })
+      })
+    },
+    onResponse(match, listener) {
+      const wanted = new Set<string>()
+      cdp.on('Network.responseReceived', (params, from) => {
+        if (from === sessionId && match((params.response as { url: string }).url)) wanted.add(params.requestId as string)
+      })
+      cdp.on('Network.loadingFinished', (params, from) => {
+        const requestId = params.requestId as string
+        if (from !== sessionId || !wanted.delete(requestId)) return
+        send<{ body: string; base64Encoded: boolean }>('Network.getResponseBody', { requestId }).then(
+          ({ body, base64Encoded }) => { listener(base64Encoded ? Buffer.from(body, 'base64').toString('utf8') : body) },
+          () => { /* Chrome dropped the body, as it does for a page that navigated away; nothing to read. */ },
+        )
       })
     },
     async waitFor(condition, waitMs) {

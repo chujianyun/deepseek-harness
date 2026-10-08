@@ -48,7 +48,7 @@ describe('packSkills', () => {
       for (const script of Object.keys(skill.scripts)) {
         const { code, stderr } = await runScript(join(out, skill.name, 'scripts', script), [])
         expect(code).toBe(64)
-        expect(stderr).toContain('缺少 --account')
+        expect(stderr).toMatch(/缺少 --account|缺少商品链接或 id/u)
       }
     }
   })

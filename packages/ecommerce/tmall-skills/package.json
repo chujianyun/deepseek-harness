@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-tmall-skills",
-  "description": "Tmall data skills that Skill Hub hands to the tenants that need them: Alimama marketing-scene reports and the Business Advisor core daily report, read with a Tmall merchant account",
+  "description": "Tmall data skills that Skill Hub hands to the tenants that need them: Alimama marketing-scene reports and the Business Advisor core daily report, read with a Tmall merchant account, and the item report, read with a buyer account",
   "version": "0.2.1-alpha.1",
   "private": true,
   "repository": {

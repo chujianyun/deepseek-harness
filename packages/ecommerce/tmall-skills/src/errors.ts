@@ -8,6 +8,8 @@ export const EXIT = {
   notReady: 2,
   /** The account is signed out of the platform; a person has to sign in again. */
   signedOut: 3,
+  /** Platform risk control or the buyer account's page limit stopped the run; what was read so far is saved. */
+  stopped: 4,
   /** The command line was wrong. */
   usage: 64,
 } as const

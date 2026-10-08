@@ -34,6 +34,7 @@ export class FakePage implements Page {
   href = 'about:blank'
   closed = false
   private readonly listeners: ((request: SentRequest) => void)[] = []
+  private readonly responses: { match: (url: string) => boolean; listener: (body: string) => void }[] = []
 
   /**
    * @param routes - answer expressions, first match wins.
@@ -61,6 +62,15 @@ export class FakePage implements Page {
 
   onRequest(listener: (request: SentRequest) => void): void {
     this.listeners.push(listener)
+  }
+
+  onResponse(match: (url: string) => boolean, listener: (body: string) => void): void {
+    this.responses.push({ match, listener })
+  }
+
+  /** Receive a response as the page. */
+  respond(url: string, body: string): void {
+    for (const { match, listener } of this.responses) if (match(url)) listener(body)
   }
 
   /** Send a request as the page. */

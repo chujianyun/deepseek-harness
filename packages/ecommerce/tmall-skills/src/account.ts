@@ -44,12 +44,56 @@ export function runDshEcommerce(args: readonly string[]): Promise<EcommerceComma
  *   or when the account is not a Tmall merchant account.
  */
 export async function takeOverMerchant(accountId: string, run = runDshEcommerce): Promise<MerchantBrowser> {
-  const { code, stdout, stderr } = await run(['browser', accountId])
-  if (code === 127) throw new SkillError(`找不到 dsh-ecommerce 命令：这个技能只能在已登录用户中心的 DSH 桌面版里运行。${stderr.trim()}`)
-  if (code !== 0) throw new SkillError(stderr.trim(), /account "[^"]*" is signed out/u.test(stderr) ? EXIT.signedOut : EXIT.failed)
-  const taken = JSON.parse(stdout) as { platform: string; kind: string; store?: string; account: string; cdpUrl: string; id: string }
+  const taken = await takeOver(['browser', accountId], run)
   if (taken.platform !== 'tmall' || taken.kind !== 'merchant') {
     throw new SkillError(`账号 ${accountId} 不是天猫商家账号（平台 ${taken.platform}，类型 ${taken.kind}），这个技能只能用天猫商家账号。`, EXIT.usage)
   }
   return { id: taken.id, store: taken.store ?? taken.account, account: taken.account, cdpUrl: taken.cdpUrl }
+}
+
+/** The buyer account `dsh-ecommerce buyer` picked. */
+export interface BuyerBrowser {
+  readonly id: string
+  readonly platform: string
+  readonly account: string
+  /** The DevTools address of its signed-in Chrome. */
+  readonly cdpUrl: string
+  /** Pages it may still open today. */
+  readonly pagesLeft: number
+}
+
+/**
+ * Let DSH pick a buyer account — signed in, not resting after risk control, fewest pages today — and
+ * reserve its browser for this bash call. Merchant accounts are never used.
+ * @param run - runs `dsh-ecommerce`.
+ * @returns the account, its browser address, and the pages it has left today.
+ * @throws SkillError with what DSH said: stopped when no buyer account can be used now (out of pages or
+ *   resting), signed-out when the account is signed out, failed otherwise.
+ */
+export async function takeOverBuyer(run = runDshEcommerce): Promise<BuyerBrowser> {
+  const taken = await takeOver(['buyer'], run)
+  return { id: taken.id, platform: taken.platform, account: taken.account, cdpUrl: taken.cdpUrl, pagesLeft: taken.pagesLeft ?? 0 }
+}
+
+/** What `dsh-ecommerce browser` and `dsh-ecommerce buyer` print. */
+interface TakenAccount {
+  readonly id: string
+  readonly platform: string
+  readonly kind: string
+  readonly store?: string
+  readonly account: string
+  readonly cdpUrl: string
+  readonly pagesLeft?: number
+}
+
+/** Run a `dsh-ecommerce` take-over command and read its answer, or stop with what DSH said. */
+async function takeOver(args: readonly string[], run: typeof runDshEcommerce): Promise<TakenAccount> {
+  const { code, stdout, stderr } = await run(args)
+  if (code === 127) throw new SkillError(`找不到 dsh-ecommerce 命令：这个技能只能在已登录用户中心的 DSH 桌面版里运行。${stderr.trim()}`)
+  if (code !== 0) {
+    const exit = /account "[^"]*" is signed out/u.test(stderr) ? EXIT.signedOut
+      : /no buyer account can be used now|has opened its \d+ pages|is resting after/u.test(stderr) ? EXIT.stopped : EXIT.failed
+    throw new SkillError(stderr.trim(), exit)
+  }
+  return JSON.parse(stdout) as TakenAccount
 }

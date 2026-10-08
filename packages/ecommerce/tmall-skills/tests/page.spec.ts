@@ -13,6 +13,7 @@ afterEach(async () => {
 interface Answers {
   readonly navigate?: (call: Call, emit: Emit) => object
   readonly evaluate?: (call: Call) => object | Error
+  readonly body?: (call: Call) => object | Error
 }
 
 async function browser(answers: Answers = {}): Promise<{ url: string; calls: Call[] }> {
@@ -22,6 +23,7 @@ async function browser(answers: Answers = {}): Promise<{ url: string; calls: Cal
       case 'Target.attachToTarget': return { sessionId: 'S1' }
       case 'Page.navigate': return answers.navigate?.(call, emit) ?? { frameId: 'F1' }
       case 'Runtime.evaluate': return answers.evaluate?.(call) ?? { result: {} }
+      case 'Network.getResponseBody': return answers.body?.(call) ?? new Error('no body')
       default: return {}
     }
   })
@@ -88,6 +90,31 @@ describe('openPage', () => {
     await page.goto('https://a.test/')
     expect(await page.waitFor(() => seen.length === 2, 2000)).toBe(true)
     expect(seen).toEqual([{ url: 'https://a.test/q', method: 'POST', body: '{"a":1}' }, { url: 'https://a.test/g', method: 'GET' }])
+  })
+
+  it('reads the bodies of matching responses of its own tab', async () => {
+    const fake = await browser({
+      navigate: (_call, emit) => {
+        emit('Network.responseReceived', { requestId: 'r1', response: { url: 'https://h5api/mtop.taobao.detail.getdesc/?a' } }, 'S1')
+        emit('Network.responseReceived', { requestId: 'r2', response: { url: 'https://h5api/mtop.taobao.detail.getdesc/?b' } }, 'S1')
+        emit('Network.responseReceived', { requestId: 'r3', response: { url: 'https://h5api/mtop.taobao.detail.getdesc/?c' } }, 'S2')
+        emit('Network.responseReceived', { requestId: 'r4', response: { url: 'https://other/x.js' } }, 'S1')
+        emit('Network.responseReceived', { requestId: 'r6', response: { url: 'https://h5api/mtop.taobao.detail.getdesc/?d' } }, 'S1')
+        for (const requestId of ['r1', 'r2', 'r3', 'r4', 'r5', 'r6']) emit('Network.loadingFinished', { requestId }, 'S1')
+        emit('Network.loadingFinished', { requestId: 'r3' }, 'S2')
+        return {}
+      },
+      body: ({ params }) => params.requestId === 'r1' ? { body: Buffer.from('{"a":1}').toString('base64'), base64Encoded: true }
+        : params.requestId === 'r2' ? new Error('No resource with given identifier found') : { body: 'plain', base64Encoded: false },
+    })
+    const page = await openPage(fake.url)
+    const bodies: string[] = []
+    page.onResponse(url => url.includes('getdesc'), (body) => { bodies.push(body) })
+    await page.goto('https://item.taobao.com/item.htm?id=1')
+    expect(await page.waitFor(() => fake.calls.filter(call => call.method === 'Network.getResponseBody').length === 3, 2000)).toBe(true)
+    await page.waitFor(() => bodies.length === 2, 2000)
+    expect(bodies).toEqual(['{"a":1}', 'plain'])
+    expect(fake.calls.filter(call => call.method === 'Network.getResponseBody').map(call => call.params.requestId)).toEqual(['r1', 'r2', 'r6'])
   })
 
   it('waits for a condition until its time is up', async () => {
