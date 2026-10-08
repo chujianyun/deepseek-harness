@@ -33,7 +33,7 @@ kind: "package-reference"
 
 每个智能体可以通过 `subsets` 限制其会话能用的内容：`skills`（Skill 名称）、`connectors`（连接器 id，例如 `feishu`）和 `knowledgeBases`（知识库 id）。某一类没有列表时允许全部，包括之后新增的；有列表时只允许其中的 id，对应项目被卸载、关闭或删除的 id 只是不再允许任何东西，不会报错。保存时列表会去掉空 id 和重复 id，三类都没有列表时不保存 `subsets`。`createAssistant` 使用输入的 `subsets`，未提供时使用模板的——电商管家的连接器默认只有飞书；`updateAssistant` 整体替换，`duplicateAssistant` 一并复制。服务在每类能力做决定的地方执行限制：skill 视图过滤器让会话的 Skill 目录、`skill` 工具和 `/name` 调用只包含允许的 Skill，连接器的 Skill 交给连接器子集决定，DSH 插件在运行时注册的 Skill（provider 为 `runtime`，例如 `ecommerce-accounts`）则一律放行，像 Accio Work 的账号级 Skill 一样每个会话都有；`connectors.restrict()` 让其他连接器的 Skill 和 CLI 不进入会话；`knowledgeSelection.restrict()` 让会话的知识库选择和检索只包含允许的知识库。子智能体跟随它所服务的会话；未绑定智能体、或绑定的智能体已删除或不属于已登录租户的会话不受限制。修改从会话的下一次读取、下一步或下一次 shell 调用起生效。`capabilityOptions()` 列出子集当前可以选择的内容：新会话的默认 Agent preset 在项目之外发现的 Skill（不含连接器 Skill、运行时 Skill、模型不可见或已停用的 Skill）、当前租户已安装且开启的连接器，以及租户的知识库；部署没有组合的服务不提供任何选项。
 
-主会话在空白时绑定一个智能体，记录为 `assistant/selected`（`assistantId`）。服务看到一个尚未绑定智能体的空白主会话时，会绑定租户的默认智能体。`select(sessionId, assistantId)` 在第一轮之前改绑另一个：带 `preset` 的智能体会先通过 `agentPresets.select()` 把会话切换到那个 Agent preset，带 `model` 的智能体会通过 `sessionController.useModel()` 为会话安装该模型，且从不改变全局默认。新会话绑定默认智能体时也是如此。部署已不再组合的 preset，或已从设置中删除的模型会被跳过，会话保留部署的默认 preset 或全局模型。在同一个空白会话里，先选了设置过 preset 或模型的智能体、再改选没有设置的智能体时，会话回到部署的默认 preset 或全局模型；其他情况下绑定不改动会话自己的选择。未登录时以 `hub-account/signed-out` 拒绝，租户没有该 id 时以 `assistants/not-found` 拒绝，会话已经开始过一轮时以 `assistants/locked` 拒绝。子智能体会话不绑定智能体。`assistant` 会话投影把绑定的 id 带到客户端的会话摘要中。
+主会话在空白时绑定一个智能体，记录为 `assistant/selected`（`assistantId`）。服务看到一个尚未绑定智能体的空白主会话时，会绑定租户的默认智能体。`select(sessionId, assistantId)` 在第一轮之前改绑另一个：带 `preset` 的智能体会先通过 `agentPresets.select()` 把会话切换到那个 Agent preset，带 `model` 的智能体会通过 `sessionController.useModel()` 为会话安装该模型，且从不改变全局默认。新会话绑定默认智能体时也是如此。部署已不再组合的 preset，或已从设置中删除的模型会被跳过，会话保留部署的默认 preset 或全局模型。在同一个空白会话里，先选了设置过 preset 或模型的智能体、再改选没有设置的智能体时，会话回到部署的默认 preset 或全局模型；其他情况下绑定不改动会话自己的选择。绑定 `knowledgeBases` 子集为列表的智能体时，还会通过 `knowledgeSelection.select()` 为会话选中列表里仍然存在的知识库，记录为 `knowledge/selection`，这样模型从第一轮起就能检索，用户仍可在输入框里取消或改选；已删除的知识库的 id 会被跳过。绑定没有知识库子集的智能体时，如果会话的选择仍等于这份预选，就清空它；用户改过的选择保持不变。开始过一轮的会话不会再改绑，所以它的选择不受影响；预选失败时绑定照常生效，并记录一条警告。未登录时以 `hub-account/signed-out` 拒绝，租户没有该 id 时以 `assistants/not-found` 拒绝，会话已经开始过一轮时以 `assistants/locked` 拒绝。子智能体会话不绑定智能体。`assistant` 会话投影把绑定的 id 带到客户端的会话摘要中。
 
 每个主会话都有 `assistant:core-files` 提示词段落，顺序为 `ASSISTANT_CORE_FILES`，位于部署人设之后。每个轮次步骤开始前，会话作用域里的组装监听器读取所绑定智能体的核心文件并渲染；文本与上一次记录不同时追加 `assistant/instructions`（`text`）。段落携带记录下来的文本，所以在磁盘上修改的内容会在下一步到达模型，每个提示词都能从会话日志还原。在磁盘上删除的核心文件不贡献内容；无法读取的核心文件会让这一步失败。已删除的智能体、不属于已登录租户的智能体，以及核心文件全为空的智能体，都渲染为空文本。由于每一轮的系统提示词都会留在对话中，已经带过核心文件的会话此时改为得到 `CORE_FILES_WITHDRAWN` 文本，告诉模型之前的核心文件不再适用；从未带过核心文件的会话没有这个段落。轮次之外的组装（例如查看提示词）不做记录，使用上一次记录的文本。
 
@@ -85,11 +85,11 @@ The core files given earlier in this conversation no longer apply: the assistant
 
 #### 模型看到的内容
 
-智能体设置了子集的会话，其 skill 目录只包含允许的 Skill，只有允许的连接器的 Skill 和 CLI，`knowledge_search` 工具也只检索允许的知识库。调用被排除的连接器的 CLI 时，命令按 `dsh-connectors` 记载的原因被拒绝；目录和工具的文本属于 `dsh-tool-skill` 和 `dsh-knowledge-selection`。
+智能体设置了子集的会话，其 skill 目录只包含允许的 Skill，只有允许的连接器的 Skill 和 CLI，`knowledge_search` 工具也只检索允许的知识库。会话绑定的智能体的知识库子集列出了现存的知识库时，这些知识库会被选中，所以会话从第一轮起就有 `knowledge_search` 工具。调用被排除的连接器的 CLI 时，命令按 `dsh-connectors` 记载的原因被拒绝；目录和工具的文本属于 `dsh-tool-skill` 和 `dsh-knowledge-selection`。
 
 #### Token 影响
 
-列表越短，skill 目录越短；知识库子集让选择一个都不剩时会去掉检索工具的 schema；不会增加内容。
+列表越短，skill 目录越短；知识库子集让选择一个都不剩时会去掉检索工具的 schema。知识库子集列出了现存的知识库时，绑定该智能体的会话的第一次请求会加上检索工具的 schema。
 
 #### KV Cache 影响
 

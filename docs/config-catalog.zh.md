@@ -353,7 +353,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-assistants`
 
 - `inject`: `hubAccount` · `sessionProjections` · `agents`
-- `source`: [`packages/assistant/assistants/src/index.ts:57`](../packages/assistant/assistants/src/index.ts)
+- `source`: [`packages/assistant/assistants/src/index.ts:60`](../packages/assistant/assistants/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */

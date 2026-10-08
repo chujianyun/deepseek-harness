@@ -16,7 +16,7 @@
 
 ## 在对话中使用
 
-[知识库选择](../glossary.zh.md#knowledge-selection)按会话记录为完整值的 `knowledge/selection` 事件，由 `knowledgeSelection` 投影折叠；新会话不选择任何知识库。会话的选择不为空时，其智能体会获得 `knowledge_search` 工具：它对每个选中的知识库按该知识库保存的返回数量与阈值执行同样的检索，把片段按得分从高到低合并，并对已删除、重建中、不可用或检索失败的知识库给出说明，而不是让调用失败。每次检索记录为 `tool/call` 和 `tool/result`；结果的展示元数据带有片段来源，客户端据此在重新加载或回放后显示该 Turn 的来源。一轮进行中修改的选择从该轮下一次请求开始生效，并在该请求发出前写入日志。
+[知识库选择](../glossary.zh.md#knowledge-selection)按会话记录为完整值的 `knowledge/selection` 事件，由 `knowledgeSelection` 投影折叠；新会话不选择任何知识库，除非它的智能体只允许部分知识库，此时由 `dsh-assistants` 为它选中这些知识库。会话的选择不为空时，其智能体会获得 `knowledge_search` 工具：它对每个选中的知识库按该知识库保存的返回数量与阈值执行同样的检索，把片段按得分从高到低合并，并对已删除、重建中、不可用或检索失败的知识库给出说明，而不是让调用失败。每次检索记录为 `tool/call` 和 `tool/result`；结果的展示元数据带有片段来源，客户端据此在重新加载或回放后显示该 Turn 的来源。一轮进行中修改的选择从该轮下一次请求开始生效，并在该请求发出前写入日志。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

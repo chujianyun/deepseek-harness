@@ -15,8 +15,8 @@
   en: 3a654e12f423946b
   zh: 4e3a19aaee58f8a7
 /assistants/use-this-package:
-  en: 8e028810cd4cfda9
-  zh: 1432a19af270d68f
+  en: dea6229501749944
+  zh: 02175dd413ac1b64
 /assistants/configuration:
   en: 58649fec4f623df7
   zh: acc5c12e206123c8
@@ -45,11 +45,11 @@
   en: 01c1906297bc98d7
   zh: e569029433476f34
 /assistants/model-experience/capability-subsets/what-the-model-sees:
-  en: 8320b9e8fdec8133
-  zh: 0ce89dae1225739e
+  en: 1f6785cc8dd80c1a
+  zh: a5a9e1d227b515cd
 /assistants/model-experience/capability-subsets/token-effect:
-  en: c56ace3a60a16820
-  zh: 203ebcbdc011847e
+  en: af6d5c7a9b353f3a
+  zh: 389509e628fac032
 /assistants/model-experience/capability-subsets/kv-cache-effect:
   en: cf5548382367ab88
   zh: 50281e81a13a372b

@@ -99,7 +99,7 @@ it('searches only the knowledge bases ticked in the composer, shows and opens th
     // Tick one knowledge base: the button counts it, and the model searches it.
     await button.click()
     const panel = page.getByRole('group', { name: '本次会话可检索的知识库' })
-    await panel.getByText('勾选后，模型可以检索这些知识库来回答；新会话默认不勾选。').waitFor()
+    await panel.getByText('勾选后，模型可以检索这些知识库来回答；新会话默认不勾选，智能体限定了知识库时默认勾选这些。').waitFor()
     await panel.getByRole('checkbox', { name: '甲公司制度' }).click()
     const counted = page.getByRole('button', { name: '知识库 1', exact: true })
     await counted.waitFor()

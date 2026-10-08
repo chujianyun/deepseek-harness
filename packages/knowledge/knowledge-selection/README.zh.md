@@ -24,7 +24,7 @@ kind: "package-reference"
 
 在 `knowledge-base` 旁把本包作为 Loader 条目挂载；它注入 `agents`、`tools`、`sessionProjections` 和 `knowledgeBases`，profile 中有 `sessionController` 时，通过它恢复尚未接入的会话。web-app bundle 只在 `knowledge-base` 运行的地方启用它，即配置了用户中心的 `desktop` profile；`ui-knowledge` 渲染输入框的「知识库」按钮以及每条回答下方的来源。本包没有配置项。
 
-`select(sessionId, baseIds)` 把会话的选择设为当前登录租户的这些知识库，保持给出的顺序并去除重复；空列表表示不选择，每个新会话也都从不选择开始。租户没有对应知识库的 id 会以 `knowledge-selection/unknown-base` 拒绝。两轮之间，选择会立即写入日志，结果为 `applies: 'now'`。一轮进行中，结果为 `applies: 'next-step'`：本轮下一次请求会立即按新选择带上或去掉工具，选择则在下一个被接受的步骤、该请求发出之前写入日志。与已记录选择相同的选择不写入任何内容。
+`select(sessionId, baseIds)` 把会话的选择设为当前登录租户的这些知识库，保持给出的顺序并去除重复；空列表表示不选择，每个新会话也都从不选择开始，直到 `dsh-assistants` 为它选中其智能体限定的知识库。租户没有对应知识库的 id 会以 `knowledge-selection/unknown-base` 拒绝。两轮之间，选择会立即写入日志，结果为 `applies: 'now'`。一轮进行中，结果为 `applies: 'next-step'`：本轮下一次请求会立即按新选择带上或去掉工具，选择则在下一个被接受的步骤、该请求发出之前写入日志。与已记录选择相同的选择不写入任何内容。
 
 `allowedBases(sessionId)` 列出会话可以选择的租户知识库 id。`restrict(filter)` 收窄这一范围，例如只允许会话的智能体允许的知识库：`select()` 以 `knowledge-selection/not-allowed` 拒绝过滤器不允许的知识库，检索会跳过已选中但不再允许的知识库，过滤后选择为空的会话会失去该工具。添加或移除过滤器时会重新检查每个存活的 agent，每一步之前也会检查。返回的 disposer 移除该过滤器。
 
