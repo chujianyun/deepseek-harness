@@ -3,29 +3,29 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/ecommerce/tmall-skills/README.md
 /:
-  en: df53dc453be0a1ed
-  zh: 176b81e120837fee
+  en: fc3a76c6da64b294
+  zh: 2757e5240737989b
 /tmall-data-skills:
   en: 90ef060b8f33004e
   zh: 217d6bdc3252002a
 /tmall-data-skills/summary:
-  en: 396e044e70bb07f6
-  zh: 84a954b7ce44ea93
+  en: 943433810cceadea
+  zh: 80874994a4edc14d
 /tmall-data-skills/table-of-contents:
   en: 4e53164159b5ce41
   zh: 1e7d2e37b6eba4ea
 /tmall-data-skills/use-this-package:
-  en: ee21b6131a5249ee
-  zh: 385fce99a54c3850
+  en: 93cee1a424cc8096
+  zh: a59b98f6a9fb0c8b
 /tmall-data-skills/model-experience:
-  en: 61fe552e1e2b337b
-  zh: 9c2f12a0745390ee
+  en: df5ad33e1576d2fc
+  zh: a83e4f53e0e33029
 /tmall-data-skills/model-experience/kv-cache-effect:
   en: fab5fb362529e603
   zh: a1d6cc1e2d710f7a
 /tmall-data-skills/known-limitations-and-deferred-work:
-  en: 16afc7c137794e5c
-  zh: e1caaeee381b80db
+  en: b2bfab4f0bccc448
+  zh: d82591a310d1f52d
 /tmall-data-skills/known-limitations-and-deferred-work/dev-note:
   en: a21d0a47e19f6b07
   zh: 3aa26c125ac95099

@@ -1,22 +1,50 @@
-/** Read the first worksheet of an .xlsx file as text, and write rows as CSV. */
+/** Read the worksheets of an .xlsx file as text, and write rows as CSV. */
 
 import { strFromU8, unzipSync } from 'fflate'
 
+/** One worksheet's name and cell texts. */
+export interface Sheet {
+  readonly name: string
+  readonly rows: string[][]
+}
+
 /**
- * The cell texts of the workbook's first worksheet, row by row; a missing cell is an empty string.
+ * The cell texts of every worksheet, in workbook order, row by row; a missing cell is an empty string.
  * Shared strings, inline strings, and plain values are read; styles and formulas are not.
+ * @param xlsx - the file's bytes.
+ * @returns the worksheets.
+ * @throws Error when the file is not an .xlsx workbook.
+ */
+export function readSheets(xlsx: Uint8Array): Sheet[] {
+  const files = unzipSync(xlsx)
+  const text = (path: string): string | undefined => files[path] === undefined ? undefined : strFromU8(files[path])
+  const targets = new Map([...(text('xl/_rels/workbook.xml.rels') ?? '').matchAll(/<Relationship\b[^>]*>/gu)].map(([tag]) => [
+    /\bId="([^"]+)"/u.exec(tag)?.[1], `xl/${(/\bTarget="(?:\/?xl\/)?([^"]+)"/u.exec(tag)?.[1] ?? '')}`,
+  ]))
+  const named = [...(text('xl/workbook.xml') ?? '').matchAll(/<sheet\b[^>]*>/gu)].flatMap(([tag]) => {
+    const path = targets.get(/\br:id="([^"]+)"/u.exec(tag)?.[1])
+    return path === undefined || files[path] === undefined ? [] : [{ name: unescapeXml(/\bname="([^"]*)"/u.exec(tag)?.[1] ?? ''), path }]
+  })
+  const sheets = named.length > 0 ? named : Object.keys(files).filter(path => /^xl\/worksheets\/sheet\d+\.xml$/u.test(path))
+    .sort((a, b) => sheetNumber(a) - sheetNumber(b)).map(path => ({ name: `Sheet${String(sheetNumber(path))}`, path }))
+  if (sheets.length === 0) throw new Error('文件里没有工作表，不是有效的 xlsx。')
+  const shared = [...(text('xl/sharedStrings.xml') ?? '').matchAll(/<si>([\s\S]*?)<\/si>/gu)].map(([, item]) => runs(item as string))
+  return sheets.map(({ name, path }) => ({ name, rows: sheetRows(text(path) as string, shared) }))
+}
+
+/**
+ * The cell texts of the workbook's first worksheet.
  * @param xlsx - the file's bytes.
  * @returns the rows.
  * @throws Error when the file is not an .xlsx workbook.
  */
 export function readFirstSheet(xlsx: Uint8Array): string[][] {
-  const files = unzipSync(xlsx)
-  const text = (path: string): string | undefined => files[path] === undefined ? undefined : strFromU8(files[path])
-  const sheetPath = Object.keys(files).filter(path => /^xl\/worksheets\/sheet\d+\.xml$/u.test(path))
-    .sort((a, b) => sheetNumber(a) - sheetNumber(b))[0]
-  if (sheetPath === undefined) throw new Error('文件里没有工作表，不是有效的 xlsx。')
-  const shared = [...(text('xl/sharedStrings.xml') ?? '').matchAll(/<si>([\s\S]*?)<\/si>/gu)].map(([, item]) => runs(item as string))
-  return [...(text(sheetPath) as string).matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/gu)].map(([, row]) => {
+  return (readSheets(xlsx)[0] as Sheet).rows
+}
+
+/** The rows of one worksheet's XML. */
+function sheetRows(xml: string, shared: readonly string[]): string[][] {
+  return [...xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/gu)].map(([, row]) => {
     const cells: string[] = []
     for (const [, attributes, inner = ''] of (row as string).matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/gu)) {
       const column = columnIndex(/\br="([A-Z]+)\d+"/u.exec(attributes as string)?.[1] ?? '') ?? cells.length

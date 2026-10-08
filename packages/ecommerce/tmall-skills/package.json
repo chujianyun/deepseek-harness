@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-tmall-skills",
-  "description": "Tmall skills that Skill Hub hands to the tenants that need them: Alimama marketing-scene reports, the Business Advisor core daily report, and publish categories and field rules, read with a Tmall merchant account, and the item report, read with a buyer account",
+  "description": "Tmall skills that Skill Hub hands to the tenants that need them: Alimama marketing-scene reports, the Business Advisor core daily report, and publish categories and field rules, read with a Tmall merchant account, the item report, read with a buyer account, and the product draft built from a material folder",
   "version": "0.2.1-alpha.1",
   "private": true,
   "repository": {
@@ -26,8 +26,11 @@
   "license": "MIT",
   "devDependencies": {
     "@deepseek-ai/dsh-ecommerce-accounts": "workspace:*",
+    "@types/pngjs": "^6.0.5",
     "@types/ws": "^8.18.1",
     "fflate": "^0.8.2",
+    "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0",
     "tsdown": "^0.22.2",
     "ws": "^8.21.0"
   }
