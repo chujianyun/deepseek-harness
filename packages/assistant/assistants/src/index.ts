@@ -10,8 +10,8 @@
  * A main session binds one assistant while it is blank: a new session takes the tenant's default,
  * and the user may pick another before the first turn. Binding an assistant whose knowledge subset
  * names knowledge bases selects those that still exist for the session, logged as
- * `knowledge/selection`; binding one without a knowledge subset clears that preselection unless the
- * user changed it. Before each turn step the service reads the
+ * `knowledge/selection`; binding one without a knowledge subset, or none, clears that preselection.
+ * A selection the user changed is kept. Before each turn step the service reads the
  * bound assistant's core files and records them with `assistant/instructions` whenever they
  * differ from the previous record; the `assistant:core-files` prompt section carries the recorded
  * text, so an edit reaches the model on the next turn and every prompt stays reconstructable from
@@ -256,6 +256,8 @@ export class AssistantsService extends TypertRemoteService {
   private revision = Date.now()
   private readonly listeners = new Set<() => void>()
   private readonly lifetime = new AbortController()
+  /** The knowledge bases last preselected for each blank session; a selection that differs was changed by the user. */
+  private readonly preselected = new WeakMap<Agent['session'], readonly string[]>()
 
   /** @param ctx - Host with the Hub sign-in, session projections, and agents. @param config - storage options. */
   constructor(ctx: Context, config: Config = {}) {
@@ -449,6 +451,9 @@ export class AssistantsService extends TypertRemoteService {
       this.list = this.list.map(item => item.id === assistantId ? next : item)
       const rebind = preset !== previous.preset || JSON.stringify(model) !== JSON.stringify(previous.model)
       if (rebind) await this.rebindBlank(assistantId, next, previous)
+      if (JSON.stringify(next.subsets?.knowledgeBases) !== JSON.stringify(previous.subsets?.knowledgeBases)) {
+        for (const agent of this.blankBoundTo(assistantId)) await this.preselectKnowledge(agent, next)
+      }
       this.changed()
       return this.getState()
     })
@@ -542,7 +547,8 @@ export class AssistantsService extends TypertRemoteService {
    * Bind the assistant, applying its preset and model. Picking, in the same blank session, an
    * assistant without either after one that set it returns the session to the deployment's default
    * preset or the global model, so a choice the user made in the composer is left alone otherwise.
-   * Without an assistant, only that return happens and the binding stays.
+   * Without an assistant, only that return happens and the binding stays. Either way the session's
+   * knowledge selection follows the assistant's knowledge subset unless the user changed it.
    */
   private async bind(agent: Agent, assistant: AssistantView | undefined, previous?: AssistantView): Promise<void> {
     const presets = this.ctx.get('agentPresets')
@@ -558,45 +564,48 @@ export class AssistantsService extends TypertRemoteService {
     const model = assistant?.model ?? (previous?.model === undefined ? undefined : this.ctx.get('agentDefaultModel')?.currentSelection())
     // An unavailable model, such as one removed from Settings, leaves the session on the global default.
     if (model !== undefined) await this.ctx.get('sessionController')?.useModel(agent, model)
-    if (assistant === undefined || assistant.id === this.boundId(agent)) return
-    agent.session.append('assistant/selected', { assistantId: assistant.id })
-    await this.preselectKnowledge(agent, assistant, previous)
+    if (assistant !== undefined) {
+      if (assistant.id === this.boundId(agent)) return
+      agent.session.append('assistant/selected', { assistantId: assistant.id })
+    }
+    await this.preselectKnowledge(agent, assistant)
   }
 
   /**
-   * Select, for a newly bound blank session, the knowledge bases its assistant's subset names that
-   * still exist. An assistant without a knowledge subset clears only the knowledge bases the
-   * previous assistant selected, so a selection the user changed is kept.
+   * Select for a blank session the knowledge bases its assistant's subset names that still exist, or
+   * none for an assistant without a knowledge subset or for no assistant. Only a selection that still
+   * equals the last preselection, or a session that never selected any, is replaced, so a selection the
+   * user changed is kept. A failure leaves the binding in place and is logged as a warning.
    */
-  private async preselectKnowledge(agent: Agent, assistant: AssistantView, previous: AssistantView | undefined): Promise<void> {
+  private async preselectKnowledge(agent: Agent, assistant: AssistantView | undefined): Promise<void> {
     const selection = this.ctx.get('knowledgeSelection')
     const knowledgeBases = this.ctx.get('knowledgeBases')
     if (selection === undefined || knowledgeBases === undefined) return
-    const existing = (await knowledgeBases.getState()).bases.map(base => base.id)
-    const subsetOf = (view: AssistantView | undefined): string[] | undefined => {
-      const ids = view?.subsets?.knowledgeBases
-      return ids === undefined ? undefined : existing.filter(id => ids.includes(id))
-    }
-    const wanted = subsetOf(assistant)
-    if (wanted === undefined) {
-      const preselected = subsetOf(previous)
-      const current = this.ctx.sessionProjections.stateOf(agent.session, 'knowledgeSelection')?.bases.map(base => base.id) ?? []
-      if (preselected === undefined || preselected.length !== current.length || !current.every(id => preselected.includes(id))) return
-    }
+    const current = this.ctx.sessionProjections.stateOf(agent.session, 'knowledgeSelection')?.bases.map(base => base.id) ?? []
+    const last = this.preselected.get(agent.session) ?? []
+    if (current.length !== last.length || !current.every(id => last.includes(id))) return
+    const ids = assistant?.subsets?.knowledgeBases
+    if (ids === undefined && current.length === 0) return
     try {
-      await selection.select(agent.id, wanted ?? [])
+      const existing = ids === undefined ? [] : (await knowledgeBases.getState()).bases
+      const wanted = existing.filter(base => ids?.includes(base.id) === true).map(base => base.id)
+      await selection.select(agent.id, wanted)
+      this.preselected.set(agent.session, wanted)
     } catch (error) {
       // The binding stands without the preselection; the user can still pick knowledge bases in the composer.
       this.ctx.logger.warn(`assistants: knowledge bases for ${agent.id} not preselected: ${String(error)}`)
     }
   }
 
+  /** The blank main sessions bound to an assistant. */
+  private blankBoundTo(assistantId: string): Agent[] {
+    return this.ctx.agents.list()
+      .filter(agent => agent.session.header.parentSession === undefined && this.isBlank(agent) && this.boundId(agent) === assistantId)
+  }
+
   /** Bind every blank main session bound to `fromId` to `next`, or to none, replacing `previous`'s preset and model. */
   private async rebindBlank(fromId: string, next: AssistantView | undefined, previous: AssistantView): Promise<void> {
-    for (const agent of this.ctx.agents.list()) {
-      if (agent.session.header.parentSession !== undefined || !this.isBlank(agent) || this.boundId(agent) !== fromId) continue
-      await this.bind(agent, next, previous)
-    }
+    for (const agent of this.blankBoundTo(fromId)) await this.bind(agent, next, previous)
   }
 
   private find(assistantId: string): AssistantView {

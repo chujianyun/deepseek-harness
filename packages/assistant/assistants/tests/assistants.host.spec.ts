@@ -785,11 +785,16 @@ describe('knowledge preselection', () => {
     expect(await env.ctx.knowledgeSelection.allowedBases(fresh.id)).toEqual(['kb1', 'kb3'])
   })
 
-  it('clears the preselection on switching to an assistant that follows global, but keeps a selection the user changed', async () => {
-    const env = await setup({ before: withKnowledge(['kb1', 'kb2']) })
+  it('replaces only its own preselection on switching assistants, and keeps a selection the user changed', async () => {
+    const ids = ['kb1', 'kb2']
+    const env = await setup({ before: async (ctx) => {
+      ctx.provide('knowledgeBases', { getState: async () => ({ tenantId: 't-a', bases: ids.map(base) }) } as never)
+      await ctx.plugin(KnowledgeSelectionService)
+    } })
     const global = (await env.settle(s => s.assistants.length === 1)).defaultId!
     const { assistantId: only } = await env.service.createAssistant(input({ subsets: { knowledgeBases: ['kb1', 'kb2'] } }))
     const { assistantId: other } = await env.service.createAssistant(input({ name: '另一个', subsets: { knowledgeBases: ['kb2'] } }))
+    const { assistantId: plain } = await env.service.createAssistant(input({ name: '第三个' }))
     const untouched = await env.agent('untouched')
     expect(selected(env, untouched)).toEqual([])
     await env.service.select(untouched, only)
@@ -798,47 +803,82 @@ describe('knowledge preselection', () => {
     expect(selected(env, untouched)).toEqual(['kb2'])
     await env.service.select(untouched, global)
     expect(selected(env, untouched)).toEqual([])
+    // A knowledge base deleted after the preselection does not make it look changed.
+    await env.service.select(untouched, only)
+    ids.pop()
+    await env.service.select(untouched, plain)
+    expect(selected(env, untouched)).toEqual([])
+    ids.push('kb2')
     const changed = await env.agent('changed')
     await env.service.select(changed, only)
     await env.ctx.knowledgeSelection.select(changed.id, ['kb2'])
     await env.service.select(changed, global)
     expect(selected(env, changed)).toEqual(['kb2'])
-    // Between two assistants that follow global, the user's choice stays.
-    const { assistantId: plain } = await env.service.createAssistant(input({ name: '第三个' }))
+    await env.service.select(changed, other)
+    expect(selected(env, changed)).toEqual(['kb2'])
+    // A selection made before any preselection is the user's too.
     const manual = await env.agent('manual')
     await env.ctx.knowledgeSelection.select(manual.id, ['kb1'])
     await env.service.select(manual, plain)
+    await env.service.select(manual, only)
     expect(selected(env, manual)).toEqual(['kb1'])
   })
 
-  it('leaves a started session\'s selection alone when the default changes', async () => {
-    const env = await setup({ before: withKnowledge(['kb1']) })
-    await env.settle(s => s.assistants.length === 1)
+  it('follows an edited subset in blank sessions, and clears the preselection once no assistant is left', async () => {
+    const env = await setup({ before: withKnowledge(['kb1', 'kb2', 'kb3']) })
+    const daily = (await env.settle(s => s.assistants.length === 1)).defaultId!
+    const { assistantId } = await env.service.createAssistant(input({ subsets: { knowledgeBases: ['kb1', 'kb2'] } }))
+    const agent = await env.agent('s1')
+    await env.service.select(agent, assistantId)
+    await env.service.updateAssistant(assistantId, { subsets: { knowledgeBases: ['kb3'] } })
+    expect(selected(env, agent)).toEqual(['kb3'])
+    await env.service.updateAssistant(assistantId, { description: '只改描述' })
+    expect(selected(env, agent)).toEqual(['kb3'])
+    await env.service.updateAssistant(assistantId, { subsets: {} })
+    expect(selected(env, agent)).toEqual([])
+    await env.service.updateAssistant(assistantId, { subsets: { knowledgeBases: ['kb1'] } })
+    await env.service.deleteAssistant(daily)
+    await env.service.deleteAssistant(assistantId)
+    expect(selected(env, agent)).toEqual([])
+  })
+
+  it('leaves a started session\'s selection alone', async () => {
+    const env = await setup({ before: withKnowledge(['kb1', 'kb2']) })
+    const daily = (await env.settle(s => s.assistants.length === 1)).defaultId!
     const { assistantId } = await env.service.createAssistant(input({ subsets: { knowledgeBases: ['kb1'] } }))
+    const agent = await env.agent('started')
+    await env.service.select(agent, assistantId)
     const original = env.ctx.sessionProjections.stateOf.bind(env.ctx.sessionProjections) as (session: Agent['session'], key: string) => object | undefined
     vi.spyOn(env.ctx.sessionProjections, 'stateOf').mockImplementation((session: Agent['session'], key: string) => key === 'turnBoundary'
       ? { openTurnStartSeq: null, lastTurn: 1 }
       : original(session, key))
-    const agent = await env.agent('started')
+    await env.service.updateAssistant(assistantId, { subsets: { knowledgeBases: ['kb2'] } })
     await env.service.setDefault(assistantId)
-    expect(env.events(agent, 'knowledge/selection')).toEqual([])
+    await env.service.deleteAssistant(daily)
+    await env.service.deleteAssistant(assistantId)
+    expect(env.events(agent, 'knowledge/selection')).toEqual([{ bases: [{ id: 'kb1', name: '知识库 kb1' }] }])
   })
 
   it('keeps the binding when the preselection fails', async () => {
     const warn = vi.fn()
+    let reads = 0
     const env = await setup({ before: async (ctx) => {
-      ctx.provide('knowledgeBases', { getState: async () => ({ tenantId: 't-a', bases: [base('kb1')] }) } as never)
+      ctx.provide('knowledgeBases', { getState: async () => {
+        reads += 1
+        if (reads === 1) throw new Error('storage gone')
+        return { tenantId: 't-a', bases: [base('kb1')] }
+      } } as never)
       ctx.provide('knowledgeSelection', { restrict: () => () => {}, select: async () => { throw new Error('disk full') } } as never)
     } })
-    const global = (await env.settle(s => s.assistants.length === 1)).defaultId!
+    await env.settle(s => s.assistants.length === 1)
     vi.spyOn(env.ctx.logger, 'warn').mockImplementation(warn)
     const { assistantId } = await env.service.createAssistant(input({ subsets: { knowledgeBases: ['kb1'] } }))
     const agent = await env.agent('s1')
     expect(await env.service.select(agent, assistantId)).toBe(assistantId)
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('not preselected: Error: disk full'))
-    expect(env.events(agent, 'assistant/selected').at(-1)).toEqual({ assistantId })
-    warn.mockClear()
-    await env.service.select(agent, global)
-    expect(warn).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenLastCalledWith(expect.stringContaining('not preselected: Error: storage gone'))
+    const next = await env.agent('s2')
+    expect(await env.service.select(next, assistantId)).toBe(assistantId)
+    expect(warn).toHaveBeenLastCalledWith(expect.stringContaining('not preselected: Error: disk full'))
+    expect(env.events(next, 'assistant/selected').at(-1)).toEqual({ assistantId })
   })
 })
