@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
 import { afterEach, describe, expect, it } from 'vitest'
-import { buildDraft, checkDraft, numberIn, optionKey, parseAnswers, titleWidth, type Answers, type Draft } from '../src/draft.ts'
+import { buildDraft, checkDraft, numberIn, optionKey, parseAnswers, titleWidth, withMemory, type Answers, type Draft } from '../src/draft.ts'
 import { EXIT } from '../src/errors.ts'
 import { imageFormat, measure, readImage } from '../src/images.ts'
 import { classifyImage, headerKey, readCsv, suggestField, tableOf, takeInventory, type Inventory } from '../src/materials.ts'
@@ -377,6 +377,13 @@ describe('checkDraft', () => {
     expect(hidden.qualification).toMatchObject({ status: '已填', value: '有' })
   })
 
+  it('takes a declaration the store confirmed for the category, and asks again when its text changed', () => {
+    const confirmed = { personalUseConfirm: { text: '确认个人可自行使用。', confirmedAt: '2026-10-08T11:00:00.000Z' }, productConfirm: { text: '旧的产品确认', confirmedAt: 't' } }
+    const checks = Object.fromEntries(checkDraft(draftOf(), RULES, confirmed).map(check => [check.key, check]))
+    expect(checks.personalUseConfirm).toMatchObject({ status: '已确认', source: '店铺确认', value: '确认个人可自行使用。', note: '店铺已于 2026-10-08T11:00:00.000Z 确认' })
+    expect(checks.productConfirm).toMatchObject({ status: '待店铺确认', note: '声明文字已变，需要重新确认' })
+  })
+
   it('compares texts the way the platform\'s options are, and counts a title the way Tmall does', () => {
     expect(optionKey(' 其它　款 ')).toBe('其他款')
     expect(titleWidth('名流ab')).toBe(6)
@@ -386,8 +393,9 @@ describe('checkDraft', () => {
 describe('product-draft script', () => {
   it('reads the command line', () => {
     expect(parseProductDraftOptions(['inventory', '--folder', 'f'])).toEqual({ command: 'inventory', folder: 'f', out: '发品草稿' })
-    expect(parseProductDraftOptions(['draft', '--folder', 'f', '--answers', 'a.json', '--rules', 'r.json', '--out', 'o']))
-      .toEqual({ command: 'draft', folder: 'f', out: 'o', answers: 'a.json', rules: 'r.json' })
+    expect(parseProductDraftOptions(['draft', '--folder', 'f', '--answers', 'a.json', '--rules', 'r.json', '--out', 'o', '--store', '名流']))
+      .toEqual({ command: 'draft', folder: 'f', out: 'o', answers: 'a.json', rules: 'r.json', store: '名流' })
+    expect(parseProductDraftOptions(['draft', '--folder', 'f', '--store', ''])).not.toHaveProperty('store')
     for (const argv of [['inventory', '--bogus'], [], ['publish', '--folder', 'f'], ['inventory'], ['draft', '--folder', '']]) {
       expect(() => parseProductDraftOptions(argv), argv.join(' ')).toThrow(expect.objectContaining({ exitCode: EXIT.usage }) as Error)
     }
@@ -422,7 +430,7 @@ describe('product-draft script', () => {
     expect(text).toContain('图片：1:1 主图 2、3:4 主图 2、白底图 1、透明素材图 1、详情图 3、SKU 图 3（其他素材 1 张不使用：素材图/场景图.jpeg）')
     expect(text).toContain('| SKU1 | 1盒【18只】 | m-a | 18 | 42.9 |  | sku图/sku1.png |')
     expect(text).toContain('待确认（模型生成）：\n- 商品标题：名流水多多三合一玻尿酸避孕套')
-    expect(text).toContain('按类目 计生用品 > 避孕套（50024154）的字段规则检查：缺失 4、不符合 0、待店铺确认 2、待确认 3、已填 12')
+    expect(text).toContain('按类目 计生用品 > 避孕套（50024154）的字段规则检查：缺失 4、不符合 0、待店铺确认 2、待确认 3、已确认 0、已填 12')
     expect(text).toContain('- personalUseConfirm：确认个人可自行使用。')
     expect(text).toContain('- 安全套 外观形状（p-8484762）：其他〔沿用旧商品〕 —— 「其它」已按平台可选值写成「其他」')
     const draft = JSON.parse(await readFile(join(out, '商品草稿.json'), 'utf8')) as { catId: string; checks: unknown[]; createdAt: string }
@@ -483,5 +491,47 @@ describe('product-draft script', () => {
     })
     expect(await main(['inventory', '--folder', root, '--out', out], odd)).toBe(EXIT.failed)
     expect(odd.err.join('')).toBe('失败：clock\n')
+  })
+})
+
+describe('publishing memory', () => {
+  const MEMORY = {
+    stores: { 名流旗舰店: { values: { 品牌: '名流', 产地: '大陆', 产品标准: 'GB/T7544-2019' }, updatedAt: '2026-10-08T11:00:00.000Z' } },
+    categories: {}, columns: { 到手价: { field: 'price', updatedAt: 't' }, 规格名: { field: 'name', updatedAt: 't' } },
+    declarations: { 名流旗舰店: { 50024154: { personalUseConfirm: { text: '确认个人可自行使用。', confirmedAt: '2026-10-08T11:00:00.000Z' } } } },
+  }
+
+  it('fills what the answers leave out from the store\'s memory, the answers winning', () => {
+    const merged = withMemory({ values: { 产地: { value: '香港进口', source: '店铺资料' } }, columns: { 到手价: 'ignore' } }, MEMORY, '名流旗舰店', '50024154')
+    expect(merged.answers.values).toEqual({
+      品牌: { value: '名流', source: '店铺资料' }, 产地: { value: '香港进口', source: '店铺资料' }, 产品标准: { value: 'GB/T7544-2019', source: '店铺资料' },
+    })
+    expect(merged.answers.columns).toEqual({ 到手价: 'ignore', 规格名: 'name' })
+    expect(merged.confirmed).toEqual(MEMORY.declarations['名流旗舰店'][50024154])
+    expect(merged.notes).toEqual(['店铺资料取自 DSH 记忆（2026-10-08T11:00:00.000Z 保存）：品牌、产品标准'])
+    expect(withMemory({}, MEMORY, '名流旗舰店').confirmed).toEqual({})
+    expect(withMemory({}, MEMORY, '名流旗舰店', '1').confirmed).toEqual({})
+    expect(withMemory({ values: { 品牌: { value: 'x', source: '店铺资料' }, 产地: { value: 'x', source: '店铺资料' }, 产品标准: { value: 'x', source: '店铺资料' } } }, MEMORY, '名流旗舰店').notes).toEqual([])
+    expect(withMemory({}, MEMORY, '别家店').notes).toEqual(['DSH 里还没有「别家店」的店铺资料'])
+  })
+
+  it('applies the store\'s memory to a draft with --store', async () => {
+    const root = await sampleFolder()
+    const out = await folder()
+    await writeFile(join(out, 'answers.json'), JSON.stringify({ values: { 商品标题: { value: '名流水多多', source: '模型生成' } }, columns: { 只数: 'count' } }))
+    await writeFile(join(out, 'rules.json'), JSON.stringify(RULES))
+    const deps = fakeDeps(new FakePage([]), { memory: () => Promise.resolve({ ...MEMORY, columns: { ...MEMORY.columns, 只数: { field: 'ignore', updatedAt: 't' }, 上架名称: { field: 'name', updatedAt: 't' } } }) })
+    const argv = ['draft', '--folder', root, '--answers', join(out, 'answers.json'), '--rules', join(out, 'rules.json'), '--out', out, '--store', '名流旗舰店']
+    expect(await main(argv, deps)).toBe(0)
+    const text = deps.out.join('')
+    expect(text).toContain('- 列名对应取自 DSH 记忆：到手价→price、上架名称→name')
+    expect(text).toContain('- 店铺资料取自 DSH 记忆（2026-10-08T11:00:00.000Z 保存）：品牌、产地、产品标准')
+    expect(text).toContain('- 品牌（p-20000）：名流〔店铺资料〕')
+    expect(text).toContain('已确认（1）：\n- personalUseConfirm：确认个人可自行使用。〔店铺确认〕 —— 店铺已于 2026-10-08T11:00:00.000Z 确认')
+    expect(text).toContain('| SKU1 | 1盒【18只】 | m-a | 18 |')
+    const empty = { stores: {}, categories: {}, columns: {}, declarations: {} }
+    const plain = fakeDeps(new FakePage([]), { memory: () => Promise.resolve(empty) })
+    expect(await main(['draft', '--folder', root, '--out', out, '--store', '名流旗舰店'], plain)).toBe(0)
+    expect(plain.out.join('')).toContain('- DSH 里还没有「名流旗舰店」的店铺资料')
   })
 })

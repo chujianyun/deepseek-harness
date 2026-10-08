@@ -28,7 +28,14 @@ export interface BridgeHandlers {
   readonly buyer: (grant: Grant, platform: string) => Promise<BridgeReply>
   /** Rest a buyer account the call took over, after risk control a script met through the platform's APIs. */
   readonly risk: (grant: Grant, accountId: string) => Promise<BridgeReply>
+  /** The tenant's publishing memory. */
+  readonly memory: (grant: Grant) => Promise<BridgeReply>
+  /** Remember or forget entries of the tenant's publishing memory, from the request's JSON body. */
+  readonly remember: (grant: Grant, body: string) => Promise<BridgeReply>
 }
+
+/** The most a `remember` request body may hold. */
+const MAX_BODY = 256 * 1024
 
 /** The loopback endpoint and the tokens of the live calls. */
 export class Bridge {
@@ -46,7 +53,8 @@ export class Bridge {
   async start(): Promise<() => Promise<void>> {
     const server = createServer((request, response) => {
       // A request the server parsed always has a path; a failed command still answers, so the script never waits forever.
-      void this.handle(request.url as string)
+      void readBody(request)
+        .then(body => body === undefined ? { status: 413, body: 'DSH: what to remember is too large.' } : this.handle(request.url as string, body))
         .catch((error: unknown) => ({ status: 500, body: `DSH: the e-commerce accounts could not answer: ${String(error)}` }))
         .then(({ status, body }) => {
           response.writeHead(status, { 'content-type': 'text/plain; charset=utf-8' }).end(body)
@@ -86,7 +94,7 @@ export class Bridge {
     this.grants.delete(token)
   }
 
-  private async handle(path: string): Promise<BridgeReply> {
+  private async handle(path: string, body: string): Promise<BridgeReply> {
     const url = new URL(path, 'http://127.0.0.1')
     const [, token = '', command = ''] = url.pathname.split('/')
     const grant = this.grants.get(token)
@@ -95,14 +103,32 @@ export class Bridge {
     if (command === 'browser') return this.handlers.browser(grant, url.searchParams.get('id') ?? '')
     if (command === 'buyer') return this.handlers.buyer(grant, url.searchParams.get('platform') ?? '')
     if (command === 'risk') return this.handlers.risk(grant, url.searchParams.get('id') ?? '')
+    if (command === 'memory') return this.handlers.memory(grant)
+    if (command === 'remember') return this.handlers.remember(grant, body)
     return { status: 404, body: `DSH: unknown command "${command}".` }
   }
+}
+
+/**
+ * A request's body as text.
+ * @param request - the request.
+ * @returns the body, or undefined when it is larger than {@link MAX_BODY}.
+ */
+async function readBody(request: AsyncIterable<Buffer>): Promise<string | undefined> {
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of request) {
+    size += chunk.length
+    if (size > MAX_BODY) return undefined
+    chunks.push(chunk)
+  }
+  return Buffer.concat(chunks).toString('utf8')
 }
 
 /** The `dsh-ecommerce` command: POSIX shell and curl, so it needs nothing DSH ships. */
 export const SCRIPT = `#!/bin/sh
 # dsh-ecommerce: the e-commerce accounts DSH keeps signed in, for this DSH shell call.
-usage='usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id>'
+usage='usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id> | dsh-ecommerce memory | dsh-ecommerce remember <json-file>'
 if [ -z "$DSH_ECOMMERCE_URL" ]; then
   echo "dsh-ecommerce: e-commerce accounts are only available in a DSH shell call while DSH is signed in to the user center." >&2
   exit 2
@@ -116,6 +142,10 @@ case "$1" in
   risk)
     if [ -z "$2" ]; then echo "$usage" >&2; exit 2; fi
     set -- --get --data-urlencode "id=$2" "$DSH_ECOMMERCE_URL/risk" ;;
+  memory) set -- "$DSH_ECOMMERCE_URL/memory" ;;
+  remember)
+    if [ -z "$2" ] || [ ! -f "$2" ]; then echo "$usage" >&2; exit 2; fi
+    set -- -H 'content-type: application/json' --data-binary "@$2" "$DSH_ECOMMERCE_URL/remember" ;;
   *) echo "$usage" >&2; exit 2 ;;
 esac
 out=$(curl -sS -w '\\n%{http_code}' "$@") || exit 1

@@ -1,7 +1,7 @@
 import { chmod, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { reportRisk, runDshEcommerce, takeOverBuyer, takeOverMerchant, type EcommerceCommandResult } from '../src/account.ts'
+import { readPublishMemory, reportRisk, runDshEcommerce, takeOverBuyer, takeOverMerchant, type EcommerceCommandResult } from '../src/account.ts'
 import { main as alimamaMain } from '../src/alimama-report.ts'
 import { fileSafe, parseOptions, realDeps, runReport, writeFiles } from '../src/cli.ts'
 import { EXIT, SkillError } from '../src/errors.ts'
@@ -86,6 +86,15 @@ describe('takeOverMerchant', () => {
       .toBe('未能通知 DSH 让这个买家号冷却（DSH: risk control can only be reported for a buyer account this shell call took over, not "b1".），请今天不要再用它。')
   })
 
+  it('reads the company\'s publishing memory, and says why when it cannot', async () => {
+    const args: unknown[] = []
+    const memory = { stores: {}, categories: {}, columns: {}, declarations: {} }
+    expect(await readPublishMemory((given) => { args.push(given); return ran({ stdout: JSON.stringify(memory) })() })).toEqual(memory)
+    expect(args).toEqual([['memory']])
+    await expect(readPublishMemory(ran({ code: 1, stderr: 'DSH: signed out\n' }))).rejects.toThrow('读不到发品记忆：DSH: signed out')
+    await expect(readPublishMemory(ran({ code: 127, stderr: 'ENOENT' }))).rejects.toThrow('找不到 dsh-ecommerce 命令')
+  })
+
   it('runs the dsh-ecommerce on PATH and reports how it ended', async () => {
     const dir = await outDir()
     await writeFile(join(dir, 'dsh-ecommerce'), '#!/bin/sh\nif [ "$1" = ok ]; then echo "{}"; exit 0; fi\necho "no: $1" >&2\nexit 3\n')
@@ -145,6 +154,7 @@ describe('the command line', () => {
     process.env.PATH = '/nowhere'
     try {
       await expect(realDeps.takeOver('a1')).rejects.toThrow('找不到 dsh-ecommerce 命令')
+      await expect(realDeps.memory()).rejects.toThrow('找不到 dsh-ecommerce 命令')
     } finally {
       process.env.PATH = path
     }

@@ -4,8 +4,9 @@
  *
  * Commands:
  * - `inventory --folder <dir>` lists and sorts the folder's images, tables, documents, and videos.
- * - `draft --folder <dir> [--answers <json>] [--rules <字段规则 json>]` builds the draft with the model's
- *   answers and, given rules, checks it field by field.
+ * - `draft --folder <dir> [--answers <json>] [--rules <字段规则 json>] [--store <店铺>]` builds the draft with the
+ *   model's answers and, given rules, checks it field by field; with a store, the company's publishing
+ *   memory for it (store information, table headers, confirmed declarations) fills what the answers leave out.
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -13,7 +14,7 @@ import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { realDeps, type Deps } from './cli.ts'
 import { beijingTime } from './dates.ts'
-import { buildDraft, checkDraft, parseAnswers, type Answers, type Draft, type FieldCheck, type FieldStatus } from './draft.ts'
+import { buildDraft, checkDraft, parseAnswers, withMemory, type Answers, type Confirmed, type Draft, type FieldCheck, type FieldStatus } from './draft.ts'
 import { EXIT, SkillError } from './errors.ts'
 import { KIND_LABEL, SKU_FIELD_LABEL, takeInventory, type ImageKind, type Inventory } from './materials.ts'
 import type { PublishRules } from './publish-rules.ts'
@@ -21,7 +22,7 @@ import type { PublishRules } from './publish-rules.ts'
 const USAGE = [
   '用法：',
   '  inventory --folder <素材文件夹> [--out 目录]',
-  '  draft --folder <素材文件夹> [--answers <答案 json>] [--rules <字段规则 json>] [--out 目录]',
+  '  draft --folder <素材文件夹> [--answers <答案 json>] [--rules <字段规则 json>] [--store <店铺名>] [--out 目录]',
 ].join('\n')
 
 /** A command line, read. */
@@ -31,6 +32,8 @@ export interface ProductDraftOptions {
   readonly out: string
   readonly answers?: string
   readonly rules?: string
+  /** The store whose remembered information applies. */
+  readonly store?: string
 }
 
 /**
@@ -43,7 +46,7 @@ export function parseProductDraftOptions(argv: readonly string[]): ProductDraftO
   let parsed: ReturnType<typeof parse>
   const parse = (args: string[]) => parseArgs({
     args, allowPositionals: true,
-    options: { folder: { type: 'string' }, out: { type: 'string' }, answers: { type: 'string' }, rules: { type: 'string' } },
+    options: { folder: { type: 'string' }, out: { type: 'string' }, answers: { type: 'string' }, rules: { type: 'string' }, store: { type: 'string' } },
   })
   try {
     parsed = parse([...argv])
@@ -57,6 +60,7 @@ export function parseProductDraftOptions(argv: readonly string[]): ProductDraftO
   return {
     command, folder: values.folder, out: values.out ?? '发品草稿',
     ...values.answers === undefined ? {} : { answers: values.answers }, ...values.rules === undefined ? {} : { rules: values.rules },
+    ...values.store === undefined || values.store === '' ? {} : { store: values.store },
   }
 }
 
@@ -93,7 +97,7 @@ export function inventoryText(inventory: Inventory): string {
   return lines.join('\n')
 }
 
-const STATUS_ORDER: readonly FieldStatus[] = ['缺失', '不符合', '待店铺确认', '待确认', '已填']
+const STATUS_ORDER: readonly FieldStatus[] = ['缺失', '不符合', '待店铺确认', '待确认', '已确认', '已填']
 
 /**
  * Describe a draft and its field check for the model.
@@ -165,7 +169,7 @@ export function parseRulesFile(text: string): PublishRules {
  * @param deps - the outside world; only output and the clock are used.
  * @returns the exit status.
  */
-export async function main(argv: readonly string[], deps: Pick<Deps, 'stdout' | 'stderr' | 'now'> = realDeps): Promise<number> {
+export async function main(argv: readonly string[], deps: Pick<Deps, 'stdout' | 'stderr' | 'now' | 'memory'> = realDeps): Promise<number> {
   try {
     const options = parseProductDraftOptions(argv)
     const folder = resolve(options.folder)
@@ -197,8 +201,21 @@ export async function main(argv: readonly string[], deps: Pick<Deps, 'stdout' | 
         throw error instanceof SkillError ? error : new SkillError(`字段规则文件 ${options.rules} 有误：${(error as Error).message}`, EXIT.usage)
       }
     }
-    const draft = buildDraft(inventory, answers)
-    const checks = rules === undefined ? undefined : checkDraft(draft, rules)
+    let confirmed: Confirmed = {}
+    const remembered: string[] = []
+    if (options.store !== undefined) {
+      const merged = withMemory(answers, await deps.memory(), options.store, rules?.catId)
+      const headers = inventory.tables.flatMap(table => table.columns.map(column => column.header))
+      const columns = merged.answers.columns as Readonly<Record<string, string>>
+      const fromMemory = Object.keys(columns).filter(header => answers.columns?.[header] === undefined && headers.includes(header))
+      if (fromMemory.length > 0) remembered.push(`列名对应取自 DSH 记忆：${fromMemory.map(header => `${header}→${columns[header] as string}`).join('、')}`)
+      remembered.push(...merged.notes)
+      answers = merged.answers
+      confirmed = merged.confirmed
+    }
+    const built = buildDraft(inventory, answers)
+    const draft = { ...built, notes: [...remembered, ...built.notes] }
+    const checks = rules === undefined ? undefined : checkDraft(draft, rules, confirmed)
     const text = draftText(draft, rules, checks)
     const json = resolve(out, '商品草稿.json')
     const list = resolve(out, '待确认清单.md')

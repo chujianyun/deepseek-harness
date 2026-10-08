@@ -6,11 +6,12 @@
  * elsewhere to fill a missing material.
  */
 
+import type { PublishMemory } from './account.ts'
 import type { FieldRule, PublishRules } from './publish-rules.ts'
 import { KIND_LABEL, SKU_FIELD_LABEL, type ImageEntry, type ImageKind, type Inventory, type SkuField, type TableEntry } from './materials.ts'
 
 /** Where a value came from. */
-export type Source = '素材原值' | '店铺资料' | '沿用旧商品' | '模型生成' | '发品规则'
+export type Source = '素材原值' | '店铺资料' | '沿用旧商品' | '模型生成' | '发品规则' | '店铺确认'
 
 /** The sources the model may give for a value. */
 export const ANSWER_SOURCES: readonly Source[] = ['素材原值', '店铺资料', '沿用旧商品', '模型生成']
@@ -238,7 +239,7 @@ function matchSkuImages(
 }
 
 /** The status of one form field in a check. */
-export type FieldStatus = '已填' | '待确认' | '待店铺确认' | '缺失' | '不符合'
+export type FieldStatus = '已填' | '已确认' | '待确认' | '待店铺确认' | '缺失' | '不符合'
 
 /** One form field as the draft fills it. */
 export interface FieldCheck {
@@ -289,13 +290,14 @@ export function titleWidth(title: string): number {
  * Check a draft against a category's field rules.
  * @param draft - the draft.
  * @param rules - the category's rules.
+ * @param confirmed - declarations the store already confirmed for this category; one whose text changed since is asked again.
  * @returns every required field and every field the draft fills, in the form's order.
  */
-export function checkDraft(draft: Draft, rules: PublishRules): FieldCheck[] {
+export function checkDraft(draft: Draft, rules: PublishRules, confirmed: Confirmed = {}): FieldCheck[] {
   const checks: FieldCheck[] = []
   for (const field of rules.fields) {
     if (SKIPPED.has(field.key) || (!field.visible && draft.values[field.label] === undefined)) continue
-    const check = checkField(field, draft)
+    const check = checkField(field, draft, confirmed)
     if (!field.required && check.status === '缺失') continue
     checks.push(check.status === '缺失' && field.conditions !== undefined
       ? { ...check, note: [check.note, '页面有显示/必填条件，条件不成立时不需要'].filter(Boolean).join('；') }
@@ -304,7 +306,7 @@ export function checkDraft(draft: Draft, rules: PublishRules): FieldCheck[] {
   return checks
 }
 
-function checkField(field: FieldRule, draft: Draft): FieldCheck {
+function checkField(field: FieldRule, draft: Draft, confirmed: Confirmed): FieldCheck {
   const base = { key: field.key, label: field.label, required: field.required }
   const image = IMAGE_FIELDS[field.key]
   if (image !== undefined) {
@@ -316,7 +318,12 @@ function checkField(field: FieldRule, draft: Draft): FieldCheck {
       ...files.length > most ? { note: `有 ${String(files.length)} 张，平台最多 ${String(most)} 张，只用前 ${String(most)} 张` } : {},
     }
   }
-  if (field.declaration === true) return { ...base, status: '待店铺确认', value: field.options?.[0]?.text ?? field.label }
+  if (field.declaration === true) {
+    const text = field.options?.[0]?.text ?? field.label
+    const remembered = confirmed[field.key]
+    if (remembered?.text === text) return { ...base, status: '已确认', source: '店铺确认', value: text, note: `店铺已于 ${remembered.confirmedAt} 确认` }
+    return { ...base, status: '待店铺确认', value: text, ...remembered === undefined ? {} : { note: '声明文字已变，需要重新确认' } }
+  }
   switch (field.key) {
     case 'shelfTime': return { ...base, status: '已填', source: '发品规则', value: '放入仓库' }
     case 'sku':
@@ -376,5 +383,43 @@ function fromValue(base: Pick<FieldCheck, 'key' | 'label' | 'required'>, field: 
   return {
     ...base, status: refused || tooWide ? '不符合' : status, source: entry.source, value: normalized.join('、'), filled: normalized,
     ...notes.length === 0 ? {} : { note: notes.join('；') },
+  }
+}
+
+/** Declarations the store confirmed for one category: declaration key → the text it confirmed and when. */
+export type Confirmed = Readonly<Record<string, { readonly text: string; readonly confirmedAt: string }>>
+
+/** The answers with the company's memory for one store applied, and what came from the memory. */
+export interface Remembered {
+  readonly answers: Answers
+  /** Declarations the store confirmed for the category, empty without one. */
+  readonly confirmed: Confirmed
+  readonly notes: readonly string[]
+}
+
+/**
+ * Apply what the company remembered for a store under the model's answers: the store's values and the
+ * remembered table headers fill what the answers leave out, and the store's confirmed declarations for
+ * the category are passed on. The answers win where both have an entry.
+ * @param answers - the model's answers.
+ * @param memory - the company's publishing memory.
+ * @param store - the store the item is for.
+ * @param catId - the category, when rules are checked.
+ * @returns the merged answers, the confirmed declarations, and what was taken from the memory.
+ */
+export function withMemory(answers: Answers, memory: PublishMemory, store: string, catId?: string): Remembered {
+  const notes: string[] = []
+  const saved = memory.stores[store]
+  const values: Record<string, SourcedValue> = {}
+  for (const [label, value] of Object.entries(saved?.values ?? {})) values[label] = { value, source: '店铺资料' }
+  const fromStore = Object.keys(values).filter(label => answers.values?.[label] === undefined)
+  if (saved === undefined) notes.push(`DSH 里还没有「${store}」的店铺资料`)
+  else if (fromStore.length > 0) notes.push(`店铺资料取自 DSH 记忆（${saved.updatedAt} 保存）：${fromStore.join('、')}`)
+  const columns: Record<string, SkuField | 'ignore'> = {}
+  for (const [header, { field }] of Object.entries(memory.columns)) columns[header] = field as SkuField | 'ignore'
+  const confirmed = catId === undefined ? {} : memory.declarations[store]?.[catId] ?? {}
+  return {
+    answers: { ...answers, columns: { ...columns, ...answers.columns }, values: { ...values, ...answers.values } },
+    confirmed, notes,
   }
 }

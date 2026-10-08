@@ -3,8 +3,11 @@
  * namespace. An account is one platform account the user signs in to in the system Google Chrome,
  * on that account's own browser data; Chrome keeps the sign-in and DSH stores no password or
  * cookie. Accounts belong to the tenant of the current Hub sign-in and live under
- * `<dshHome>/ecommerce/<tenantId>/`: `accounts.json` lists them, and `browsers/<accountId>/` holds
- * each one's browser data and the record of its running Chrome.
+ * `<dshHome>/ecommerce/<tenantId>/`: `accounts.json` lists them, `browsers/<accountId>/` holds
+ * each one's browser data and the record of its running Chrome, and `publish-memory.json` holds what
+ * the company confirmed while publishing (store information, categories of product lines, table
+ * headers, and declarations), which the model reads and extends with `dsh-ecommerce memory` and
+ * `dsh-ecommerce remember`.
  *
  * Signing in opens the platform's sign-in page in the account's Chrome. DSH watches that tab and,
  * once it leaves the sign-in page or every half minute, opens the platform's business page in a
@@ -34,6 +37,7 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Bridge, SCRIPT, type BridgeReply, type Grant } from './bridge.ts'
+import { applyUpdate, MemoryUpdate, readMemory, writeMemory } from './memory.ts'
 import { Cdp, closeBlankTabs, hideWindows, pageTabs, probe, showSignIn, type ProbeResult } from './cdp.ts'
 import { alive, closeChrome, ensureTab, findChrome, launchChrome, profileHolder, readRecord, type ChromeInfo } from './chrome.ts'
 import { guardBrowser, type GuardRules } from './guard.ts'
@@ -195,6 +199,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
     browser: (grant, id) => this.modelBrowser(grant, id),
     buyer: (grant, platform) => this.modelBuyer(grant, platform),
     risk: (grant, id) => this.modelRisk(grant, id),
+    memory: grant => this.modelMemory(grant),
+    remember: (grant, body) => this.modelRemember(grant, body),
   })
   /** Unregisters the Skill while a tenant is signed in. */
   private skill: (() => void) | undefined
@@ -590,6 +596,41 @@ export class EcommerceAccountsService extends TypertRemoteService {
       }
     })
     return Promise.resolve({ status: 200, body: JSON.stringify(accounts, null, 2) })
+  }
+
+  /** Answer `dsh-ecommerce memory`: the tenant's publishing memory. */
+  private async modelMemory(grant: Grant): Promise<BridgeReply> {
+    if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
+    return { status: 200, body: JSON.stringify(await readMemory(this.memoryPath(grant.tenantId)), null, 2) }
+  }
+
+  /**
+   * Answer `dsh-ecommerce remember <file>`: merge the file's entries into the tenant's publishing memory.
+   * @returns the memory after the change, or why the file was refused.
+   */
+  private modelRemember(grant: Grant, body: string): Promise<BridgeReply> {
+    if (grant.tenantId !== this.tenantId) return Promise.resolve(refused(SIGNED_OUT_OF_HUB))
+    let json: unknown
+    try {
+      json = JSON.parse(body)
+    } catch (error) {
+      return Promise.resolve(refused(`DSH: what to remember is not JSON: ${(error as Error).message}`))
+    }
+    const update = MemoryUpdate.safeParse(json)
+    if (!update.success) {
+      const problems = update.error.issues.map(issue => `${issue.path.join('.') || '(top level)'}: ${issue.message}`)
+      return Promise.resolve(refused(`DSH: nothing was remembered, the file is not as described: ${problems.join('; ')}`))
+    }
+    const path = this.memoryPath(grant.tenantId)
+    return this.serialized(async () => {
+      const memory = applyUpdate(await readMemory(path), update.data, new Date().toISOString())
+      await writeMemory(path, memory)
+      return { status: 200, body: JSON.stringify(memory, null, 2) }
+    })
+  }
+
+  private memoryPath(tenantId: string): string {
+    return join(this.root, tenantId, 'publish-memory.json')
   }
 
   /** Answer `dsh-ecommerce browser <id>`: take over that account's browser for the call. */

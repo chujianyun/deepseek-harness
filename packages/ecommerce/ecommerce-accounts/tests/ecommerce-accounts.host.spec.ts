@@ -9,6 +9,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { Bridge } from '../src/bridge.ts'
+import { applyUpdate, EMPTY_MEMORY, readMemory, writeMemory } from '../src/memory.ts'
 import { SKILL_CONTENT } from '../src/skill.ts'
 import EcommerceAccountsService, {
   DOUDIAN, matchesCheckApi, mtopUserNick, parseJsonOrJsonp, PINDUODUO, PUBLIC_PAGE, RISK_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL,
@@ -615,7 +616,8 @@ describe('e-commerce accounts for the model', () => {
       { id: expect.any(String) as string, platform: 'pinduoduo', store: '名流旗舰店', account: 'pdd', kind: 'merchant', status: 'signed-out' },
     ])
     expect(listed.stdout).not.toMatch(/cookie|user-data|ecommerce\//iu)
-    const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id>\n'
+    const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id>'
+      + ' | dsh-ecommerce memory | dsh-ecommerce remember <json-file>\n'
     expect(await runCommand(env, varsOf(env, exec))).toMatchObject({ code: 2, stderr: usage })
     expect(await runCommand(env, varsOf(env, exec), 'browser')).toMatchObject({ code: 2, stderr: usage })
     expect(await runCommand(env, varsOf(env, exec), 'risk')).toMatchObject({ code: 2, stderr: usage })
@@ -709,7 +711,7 @@ describe('e-commerce accounts for the model', () => {
 
   it('answers a command that fails instead of leaving the script waiting', async () => {
     const broken = () => Promise.reject(new Error('broken'))
-    const bridge = new Bridge({ accounts: broken, browser: broken, buyer: broken, risk: broken })
+    const bridge = new Bridge({ accounts: broken, browser: broken, buyer: broken, risk: broken, memory: broken, remember: broken })
     const stop = await bridge.start()
     try {
       const url = bridge.urlFor({ callId: 'c-1', tenantId: 't-a' })
@@ -914,5 +916,95 @@ describe('buyer accounts and risk protection', () => {
     const before = (await env.settle(s => s.accounts.every(account => account.status === 'signed-in'))).accounts
     const after = (await env.settle(s => s.accounts[1]!.checkedAt !== before[1]!.checkedAt && s.accounts[1]!.status === 'signed-in')).accounts
     expect(after[0]!.checkedAt).toBe(before[0]!.checkedAt)
+  })
+})
+
+describe('publishing memory', () => {
+  const write = async (dir: string, name: string, json: unknown): Promise<string> => {
+    const path = join(dir, name)
+    await writeFile(path, typeof json === 'string' ? json : JSON.stringify(json))
+    return path
+  }
+
+  it('remembers store information, categories, headers, and declarations for the company, and forgets on null', async () => {
+    const env = await setup()
+    const dir = await tempDir()
+    const run = (...args: string[]) => runCommand(env, varsOf(env, bashCall(`c-${String(Math.random())}`)), ...args)
+    expect(JSON.parse((await run('memory')).stdout)).toEqual({ stores: {}, categories: {}, columns: {}, declarations: {} })
+    const first = await run('remember', await write(dir, 'a.json', {
+      store: { name: '名流旗舰店', values: { 品牌: '名流', 产地: '大陆', 颜色: ['透明'] } },
+      category: { line: '水多多', platform: 'tmall', catId: '50024154', categoryPath: '计生用品 > 避孕套' },
+      columns: { 到手价: 'price', 上架名称: 'name' },
+      declarations: { store: '名流旗舰店', catId: '50024154', confirmed: [{ key: 'personalUseConfirm', text: '确认个人可自行使用。' }] },
+    }))
+    expect(first.code).toBe(0)
+    const memory = JSON.parse((await run('memory')).stdout) as {
+      stores: Record<string, { values: unknown; updatedAt: string }>
+      categories: Record<string, unknown>
+      columns: Record<string, unknown>
+      declarations: Record<string, Record<string, Record<string, { text: string; confirmedAt: string }>>>
+    }
+    expect(JSON.parse(first.stdout)).toEqual(memory)
+    expect(memory.stores['名流旗舰店']).toEqual({ values: { 品牌: '名流', 产地: '大陆', 颜色: ['透明'] }, updatedAt: expect.any(String) as string })
+    expect(memory.categories['水多多']).toEqual({ platform: 'tmall', catId: '50024154', categoryPath: '计生用品 > 避孕套', updatedAt: expect.any(String) as string })
+    expect(memory.columns['到手价']).toEqual({ field: 'price', updatedAt: expect.any(String) as string })
+    expect(memory.declarations['名流旗舰店']!['50024154']!.personalUseConfirm!.text).toBe('确认个人可自行使用。')
+    // A change keeps the rest; null forgets one value, a whole store, or a header.
+    await run('remember', await write(dir, 'b.json', { store: { name: '名流旗舰店', values: { 产地: '香港进口', 颜色: null } }, columns: { 上架名称: null } }))
+    const changed = JSON.parse((await run('memory')).stdout) as typeof memory
+    expect(changed.stores['名流旗舰店']!.values).toEqual({ 品牌: '名流', 产地: '香港进口' })
+    expect(Object.keys(changed.columns)).toEqual(['到手价'])
+    await run('remember', await write(dir, 'c.json', { store: { name: '名流旗舰店', values: { 品牌: null, 产地: null } } }))
+    expect((JSON.parse((await run('memory')).stdout) as typeof memory).stores).toEqual({})
+    const saved = JSON.parse(await readFile(join(env.home, 'ecommerce', 't-a', 'publish-memory.json'), 'utf8')) as typeof memory
+    expect(saved.categories['水多多']).toBeDefined()
+  })
+
+  it('keeps each company\'s memory to itself', async () => {
+    const env = await setup()
+    const dir = await tempDir()
+    const remember = await write(dir, 'a.json', { store: { name: '名流旗舰店', values: { 品牌: '名流' } } })
+    expect((await runCommand(env, varsOf(env, bashCall('c-1')), 'remember', remember)).code).toBe(0)
+    const started = varsOf(env, bashCall('c-2'))
+    env.hub.set('t-b')
+    await env.settle(s => s.tenantId === 't-b')
+    expect(await runCommand(env, started, 'memory')).toMatchObject({ code: 1, stderr: 'DSH: DSH is signed out of the user center, so there are no e-commerce accounts.\n' })
+    expect(await runCommand(env, started, 'remember', remember)).toMatchObject({ code: 1 })
+    expect(JSON.parse((await runCommand(env, varsOf(env, bashCall('c-3')), 'memory')).stdout)).toMatchObject({ stores: {} })
+    env.hub.set('t-a')
+    await env.settle(s => s.tenantId === 't-a')
+    expect(JSON.parse((await runCommand(env, varsOf(env, bashCall('c-4')), 'memory')).stdout)).toMatchObject({ stores: { 名流旗舰店: { values: { 品牌: '名流' } } } })
+  })
+
+  it('refuses a file that is not as described, and remembers nothing from it', async () => {
+    const env = await setup()
+    const dir = await tempDir()
+    const run = async (json: unknown) => runCommand(env, varsOf(env, bashCall(`c-${String(Math.random())}`)), 'remember', await write(dir, 'x.json', json))
+    expect((await run('not json')).stderr).toMatch(/^DSH: what to remember is not JSON: /u)
+    expect((await run({})).stderr).toBe('DSH: nothing was remembered, the file is not as described: (top level): nothing to remember\n')
+    expect((await run({ columns: { 价: 'money' } })).stderr).toContain('columns.价')
+    expect((await run({ category: { line: '水多多', platform: 'tmall', catId: 'abc' } })).stderr).toContain('category.catId')
+    expect((await run({ store: { name: '名流', values: { 品牌: '' } } })).stderr).toContain('store.values.品牌')
+    expect((await run({ declarations: { store: '名流', catId: '1', confirmed: [] } })).stderr).toContain('declarations.confirmed')
+    expect((await run({ shops: {} })).code).toBe(1)
+    expect(await runCommand(env, varsOf(env, bashCall('c-1')), 'remember')).toMatchObject({ code: 2 })
+    expect(await runCommand(env, varsOf(env, bashCall('c-1')), 'remember', join(dir, 'none.json'))).toMatchObject({ code: 2 })
+    const big = await write(dir, 'big.json', JSON.stringify({ store: { name: 'x', values: { a: 'y'.repeat(300 * 1024) } } }))
+    expect(await runCommand(env, varsOf(env, bashCall('c-2')), 'remember', big)).toMatchObject({ code: 1, stderr: 'DSH: what to remember is too large.\n' })
+    expect(JSON.parse((await runCommand(env, varsOf(env, bashCall('c-3')), 'memory')).stdout)).toEqual({ stores: {}, categories: {}, columns: {}, declarations: {} })
+  })
+
+  it('reads a damaged memory file as empty, and fills in parts an older file lacks', async () => {
+    const dir = await tempDir()
+    expect(await readMemory(join(dir, 'none.json'))).toEqual(EMPTY_MEMORY)
+    await writeFile(join(dir, 'bad.json'), '{')
+    expect(await readMemory(join(dir, 'bad.json'))).toEqual(EMPTY_MEMORY)
+    await writeFile(join(dir, 'old.json'), '{"stores":{"a":{"values":{"b":"c"},"updatedAt":"t"}}}')
+    expect(await readMemory(join(dir, 'old.json'))).toEqual({ ...EMPTY_MEMORY, stores: { a: { values: { b: 'c' }, updatedAt: 't' } } })
+    const memory = applyUpdate(EMPTY_MEMORY, { declarations: { store: 's', catId: '1', confirmed: [{ key: 'k', text: 't' }] } }, 'now')
+    expect(applyUpdate(memory, { declarations: { store: 's', catId: '1', confirmed: [{ key: 'j', text: 'u' }] } }, 'later').declarations)
+      .toEqual({ s: { 1: { k: { text: 't', confirmedAt: 'now' }, j: { text: 'u', confirmedAt: 'later' } } } })
+    await writeMemory(join(dir, 'deep', 'm.json'), memory)
+    expect(await readMemory(join(dir, 'deep', 'm.json'))).toEqual(memory)
   })
 })

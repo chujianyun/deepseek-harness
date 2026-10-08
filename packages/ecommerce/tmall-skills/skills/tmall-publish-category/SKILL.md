@@ -11,16 +11,18 @@ description: 天猫发品的类目与字段规则：用 DSH 里已登录的天�
 
 1. 选账号：按 `ecommerce-accounts` 技能的规则运行 `dsh-ecommerce accounts`，从 `platform` 为 `tmall`、`kind` 为 `merchant` 的账号中选目标店铺的账号。只有一个已登录时直接用，并在回复里写明用的是哪家店；有多个时先问用户；没有可用账号时停下，请用户到 DSH 设置 → 电商账号登录。
 2. 取 Node：调用 `load_workspace_dependencies`，用它返回的 `node` 路径运行脚本。
-3. 定类目：按下面顺序用第一个能用的来源，每次一条命令（`scripts/` 相对本技能目录）：
+3. 定类目：先运行 `dsh-ecommerce memory`，看 `categories` 里有没有这个产品线（如「水多多」）记住的类目；有就先用 `--line`。否则按下面顺序用第一个能用的来源，每次一条命令（`scripts/` 相对本技能目录）：
 
    ```sh
+   "<node>" "<本技能目录>/scripts/publish-category.mjs" resolve --account <账号 id> --line <产品线>        # 公司记住过这个产品线的类目
    "<node>" "<本技能目录>/scripts/publish-category.mjs" resolve --account <账号 id> --cat <类目 id>        # 用户给了类目 id
    "<node>" "<本技能目录>/scripts/publish-category.mjs" resolve --account <账号 id> --item <本店商品链接或 id>  # 用户给了本店同款
    "<node>" "<本技能目录>/scripts/publish-category.mjs" resolve --account <账号 id> --own <标题关键词>       # 本店同产品线已有商品
    "<node>" "<本技能目录>/scripts/publish-category.mjs" resolve --account <账号 id> --keyword <商品名>      # 按商品名检索
    ```
 
-   - 只给出一个候选且来自用户指定的类目 id 或本店同款时，可以直接用；其他情况把候选（路径和类目 id）列给用户，**由用户确认**后再用。
+   - 只给出一个候选且来自记住的产品线、用户指定的类目 id 或本店同款时，可以直接用，并在回复里说明来源；其他情况把候选（路径和类目 id）列给用户，**由用户确认**后再用。
+   - 用户确认类目后，把「产品线 → 类目」记下来：写一个 JSON 文件 `{"category": {"line": "<产品线>", "platform": "tmall", "catId": "<类目 id>", "categoryPath": "<路径>"}}`，运行 `dsh-ecommerce remember <文件>`。
    - 外店商品链接只能拿到一级类目，脚本会说明；这时改用 `--keyword`。
    - 需要看这家店全部可发类目时运行 `categories --account <账号 id>`（结果按店铺缓存 7 天，`--refresh` 重新读取；要找的类目不在缓存里时脚本会自动重新读取）。
 4. 读字段规则：`"<node>" "<本技能目录>/scripts/publish-category.mjs" rules --account <账号 id> --cat <类目 id>`。脚本打印必填字段、需要店铺确认的声明、满足条件才出现的必填字段，并把完整规则保存为 `天猫发品/字段规则_<类目 id>.json`。

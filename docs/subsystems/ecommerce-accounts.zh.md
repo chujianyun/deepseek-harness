@@ -22,7 +22,7 @@ Chrome 的生命周期长于 DSH。之后启动的 DSH 会重新连上记录中�
 
 ## 模型使用
 
-租户登录期间，`ecommerce-accounts` Skill 告诉模型如何使用这些账号以及如何挑选商家账号；模型 shell 的 `PATH` 上的 `dsh-ecommerce` 命令通过一个本地回环端点访问它们，令牌只在一次 bash 调用内有效。`dsh-ecommerce accounts` 列出账号，不含路径和 cookie；`dsh-ecommerce browser <id>` 检查账号、为该调用占用其浏览器，并交出远程调试地址，供 Skill 脚本连接。账号未登录时任务停止并给出去设置页的指引；别的任务正在使用的账号会被拒绝，直到那次调用结束。
+租户登录期间，`ecommerce-accounts` Skill 告诉模型如何使用这些账号以及如何挑选商家账号；模型 shell 的 `PATH` 上的 `dsh-ecommerce` 命令通过一个本地回环端点访问它们，令牌只在一次 bash 调用内有效。`dsh-ecommerce accounts` 列出账号，不含路径和 cookie；`dsh-ecommerce browser <id>` 检查账号、为该调用占用其浏览器，并交出远程调试地址，供 Skill 脚本连接。账号未登录时任务停止并给出去设置页的指引；别的任务正在使用的账号会被拒绝，直到那次调用结束。`dsh-ecommerce memory` 和 `dsh-ecommerce remember <文件>` 读取和补充公司的发品记忆——按店铺的店铺资料、产品线 → 类目、表格列名 → SKU 字段、各店铺在各类目确认过的声明——与公司的账号放在一起，另一家公司看不到。
 
 ## 买家账号与风控保护
 

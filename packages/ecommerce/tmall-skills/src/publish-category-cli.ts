@@ -5,7 +5,8 @@
  *
  * Commands:
  * - `categories` lists the store's publishable categories, cached per store for 7 days.
- * - `resolve` finds the category from `--cat <id>`, `--item <own item link or id>`, `--own <title words>`, or `--keyword <product name>`.
+ * - `resolve` finds the category from `--cat <id>`, `--item <own item link or id>`, `--own <title words>`, `--keyword <product name>`,
+ *   or `--line <product line>`, whose category the company remembered.
  * - `rules --cat <id>` saves the category's field rules.
  */
 
@@ -29,7 +30,7 @@ export const CACHE_DAYS = 7
 const USAGE = [
   '用法：',
   '  categories --account <电商账号 id> [--refresh] [--out 目录]',
-  '  resolve --account <电商账号 id> (--cat <类目 id> | --item <本店商品链接或 id> | --own <本店商品标题关键词> | --keyword <商品名>) [--out 目录]',
+  '  resolve --account <电商账号 id> (--cat <类目 id> | --item <本店商品链接或 id> | --own <本店商品标题关键词> | --keyword <商品名> | --line <产品线>) [--out 目录]',
   '  rules --account <电商账号 id> --cat <类目 id> [--out 目录]',
 ].join('\n')
 
@@ -55,7 +56,7 @@ export function parsePublishCategoryOptions(argv: readonly string[]): PublishCat
     args, allowPositionals: true,
     options: {
       account: { type: 'string' }, out: { type: 'string' }, refresh: { type: 'boolean' },
-      cat: { type: 'string' }, item: { type: 'string' }, own: { type: 'string' }, keyword: { type: 'string' },
+      cat: { type: 'string' }, item: { type: 'string' }, own: { type: 'string' }, keyword: { type: 'string' }, line: { type: 'string' },
     },
   })
   try {
@@ -73,11 +74,12 @@ export function parsePublishCategoryOptions(argv: readonly string[]): PublishCat
     if (values.cat === undefined || !/^\d+$/u.test(values.cat)) throw new SkillError(`rules 需要 --cat <类目 id>（数字）。\n${USAGE}`, EXIT.usage)
     return { ...base, catId: values.cat }
   }
-  const given = (['cat', 'item', 'own', 'keyword'] as const).filter(name => values[name] !== undefined && values[name] !== '')
-  if (given.length !== 1) throw new SkillError(`resolve 需要且只能给 --cat、--item、--own、--keyword 其中一个。\n${USAGE}`, EXIT.usage)
-  const name = given[0] as 'cat' | 'item' | 'own' | 'keyword'
+  const given = (['cat', 'item', 'own', 'keyword', 'line'] as const).filter(name => values[name] !== undefined && values[name] !== '')
+  if (given.length !== 1) throw new SkillError(`resolve 需要且只能给 --cat、--item、--own、--keyword、--line 其中一个。\n${USAGE}`, EXIT.usage)
+  const name = given[0] as 'cat' | 'item' | 'own' | 'keyword' | 'line'
   const value = values[name] as string
-  const source: CategorySource = name === 'cat' ? { kind: 'id', id: value } : name === 'item' ? { kind: 'item', input: value } : { kind: name, keyword: value }
+  const source: CategorySource = name === 'cat' ? { kind: 'id', id: value } : name === 'item' ? { kind: 'item', input: value }
+    : name === 'line' ? { kind: 'line', line: value } : { kind: name, keyword: value }
   return { ...base, source }
 }
 
@@ -199,7 +201,7 @@ export async function main(argv: readonly string[], deps: Deps = realDeps): Prom
  * @returns the context.
  */
 function context(page: Page, account: MerchantBrowser, options: PublishCategoryOptions, deps: Deps): ResolveContext {
-  return { categories: async wanted => (await categoriesOf(page, account, options, deps.now(), wanted)).categories }
+  return { categories: async wanted => (await categoriesOf(page, account, options, deps.now(), wanted)).categories, memory: deps.memory }
 }
 
 /**

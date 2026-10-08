@@ -1,6 +1,10 @@
-/** Take over a Tmall merchant account's signed-in Chrome through DSH's `dsh-ecommerce` command. */
+/**
+ * Take over a Tmall merchant account's signed-in Chrome, and read the company's publishing memory,
+ * through DSH's `dsh-ecommerce` command.
+ */
 
 import { execFile } from 'node:child_process'
+import type { PublishMemory } from '@deepseek-ai/dsh-ecommerce-accounts/src/memory.ts'
 import { EXIT, SkillError } from './errors.ts'
 
 /** The account `dsh-ecommerce browser` handed over. */
@@ -110,4 +114,20 @@ export async function reportRisk(accountId: string, run = runDshEcommerce): Prom
   if (code !== 0) return `未能通知 DSH 让这个买家号冷却（${stderr.trim()}），请今天不要再用它。`
   const { account, cooldownUntil } = JSON.parse(stdout) as { account: string; cooldownUntil: string }
   return `DSH 已让买家号 ${account} 冷却到 ${cooldownUntil}，期间不会再被挑选。`
+}
+
+export type { PublishMemory }
+
+/**
+ * Read the company's publishing memory: store information, categories of product lines, table headers,
+ * and confirmed declarations.
+ * @param run - runs `dsh-ecommerce`.
+ * @returns the memory.
+ * @throws SkillError with what DSH said when it cannot be read, such as outside a DSH shell call.
+ */
+export async function readPublishMemory(run = runDshEcommerce): Promise<PublishMemory> {
+  const { code, stdout, stderr } = await run(['memory'])
+  if (code === 127) throw new SkillError(`找不到 dsh-ecommerce 命令：读取发品记忆只能在已登录用户中心的 DSH 桌面版里运行。${stderr.trim()}`)
+  if (code !== 0) throw new SkillError(`读不到发品记忆：${stderr.trim()}`)
+  return JSON.parse(stdout) as PublishMemory
 }

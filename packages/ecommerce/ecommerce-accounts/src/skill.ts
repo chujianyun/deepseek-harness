@@ -5,7 +5,8 @@ export const SKILL_NAME = 'ecommerce-accounts'
 
 /** The Skill's catalog description, which the model reads to decide when to load it. */
 export const SKILL_DESCRIPTION = 'Read store data with the e-commerce accounts (Tmall, Taobao, Pinduoduo, Douyin shop) the user signed in to in DSH, '
-  + 'through the dsh-ecommerce command: list the accounts, pick the merchant account, and take over its signed-in Chrome.'
+  + 'through the dsh-ecommerce command: list the accounts, pick the merchant account, take over its signed-in Chrome, '
+  + 'and read or save what the company confirmed while publishing (store information, categories, table headers, declarations).'
 
 /** The Skill's instructions. */
 export const SKILL_CONTENT = `# E-commerce accounts
@@ -19,6 +20,15 @@ Run them in bash:
 - \`dsh-ecommerce accounts\` prints the accounts as JSON: \`id\`, \`platform\` (\`tmall\`, \`taobao\`, \`pinduoduo\`, \`doudian\`), \`store\` (merchant accounts), \`account\`, \`kind\` (\`merchant\` or \`buyer\`), and \`status\` (\`signed-in\`, \`signed-out\`, \`signing-in\`, \`checking\`, or \`check-failed\`); a buyer account also has \`pagesToday\` and \`pageLimit\`, and \`cooldownUntil\` while it rests.
 - \`dsh-ecommerce browser <id>\` checks with the platform that the account is still signed in, reserves its browser for this bash call, and prints JSON with \`cdpUrl\`, the Chrome DevTools address of its signed-in Chrome. Connect to it in the same bash call, for example with Playwright's \`chromium.connectOverCDP(cdpUrl)\`; the reservation ends when the call ends. Open a tab of your own, close it when you are done, and never close the browser.
 - \`dsh-ecommerce buyer [tmall|taobao]\` picks a buyer account for you — signed in, not resting, with the fewest pages opened today — and takes over its browser the same way; its JSON also has \`pagesLeft\`. If none can be used, it says why for each.
+
+## Publishing memory
+
+What the user confirmed while publishing is remembered for the company, so the next publishing task starts from it:
+
+- \`dsh-ecommerce memory\` prints the company's memory as JSON: \`stores\` (store name → \`values\`, field label → value, such as 产地 → 大陆), \`categories\` (product line → \`platform\`, \`catId\`, \`categoryPath\`), \`columns\` (table header → SKU field), and \`declarations\` (store name → category id → declaration key → \`text\` and \`confirmedAt\`). Every entry has the time it was saved.
+- \`dsh-ecommerce remember <json-file>\` saves entries from a JSON file with any of \`store\` (\`{"name": "…", "values": {"产地": "大陆"}}\`), \`category\` (\`{"line": "…", "platform": "tmall", "catId": "…", "categoryPath": "…"}\`), \`columns\` (\`{"到手价": "price"}\`, fields \`index\`, \`name\`, \`code\`, \`count\`, \`price\`, \`stock\`, \`unitPrice\`, \`ignore\`), and \`declarations\` (\`{"store": "…", "catId": "…", "confirmed": [{"key": "…", "text": "…"}]}\`). A \`null\` value forgets that entry. It prints the memory after the change.
+- Remember only what the user gave or confirmed in this conversation, right after they confirm it. Remember a declaration only after the user confirmed that exact declaration for that store and category; never on their behalf.
+- When the user changes a remembered value, remember the new one.
 
 ## What DSH enforces
 

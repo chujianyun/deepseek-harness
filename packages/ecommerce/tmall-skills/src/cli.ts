@@ -3,7 +3,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import { takeOverMerchant, type MerchantBrowser } from './account.ts'
+import { readPublishMemory, takeOverMerchant, type MerchantBrowser, type PublishMemory } from './account.ts'
 import { beijingDate, pastDate } from './dates.ts'
 import { EXIT, SkillError } from './errors.ts'
 import { openPage, type Page } from './page.ts'
@@ -11,6 +11,8 @@ import { openPage, type Page } from './page.ts'
 /** What a script reaches outside itself; tests replace it. */
 export interface Deps {
   readonly takeOver: (accountId: string) => Promise<MerchantBrowser>
+  /** The company's publishing memory. */
+  readonly memory: () => Promise<PublishMemory>
   readonly openPage: (cdpUrl: string) => Promise<Page>
   readonly fetchFile: typeof fetch
   readonly now: () => Date
@@ -21,6 +23,7 @@ export interface Deps {
 /** The real outside world. */
 export const realDeps: Deps = {
   takeOver: accountId => takeOverMerchant(accountId),
+  memory: () => readPublishMemory(),
   openPage: cdpUrl => openPage(cdpUrl),
   fetchFile: fetch,
   now: () => new Date(),

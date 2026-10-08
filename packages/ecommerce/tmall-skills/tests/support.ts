@@ -124,6 +124,7 @@ export function fakeDeps(page: FakePage, overrides: Partial<Deps> = {}): Deps & 
   const err: string[] = []
   return {
     takeOver: id => Promise.resolve({ id, store: '名流旗舰店（主账号）', account: '名流成人用品旗舰店:小美', cdpUrl: 'http://127.0.0.1:9' }),
+    memory: () => Promise.resolve({ stores: {}, categories: {}, columns: {}, declarations: {} }),
     openPage: () => Promise.resolve(page),
     fetchFile: () => Promise.reject(new Error('no file')),
     now: () => new Date('2026-10-08T03:00:00Z'),

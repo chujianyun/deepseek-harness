@@ -7,7 +7,8 @@
 // Business Advisor figures, writes the reports into the workspace, and its summary reaches the chat.
 // The publish-category skill then finds a new item's category by product name and saves that
 // category's field rules, with the declarations the store must confirm, and the product-draft skill
-// sorts a material folder without detail images into a draft checked against those rules.
+// sorts a material folder without detail images into a draft checked against those rules; once the
+// store's information and a declaration are remembered for the company, the next draft takes them from DSH.
 // With a signed-in buyer account instead, the item skill's script lets DSH pick the buyer account,
 // opens each item page once (counted toward the account's pages today), reads the stand-in's item,
 // 问大家, and reviews, stops at risk control keeping what it read and has DSH rest the account, and is
@@ -39,6 +40,11 @@ const DRAFT_ANSWERS = { values: {
   商品标题: { value: '名流水多多三合一玻尿酸避孕套', source: '模型生成' }, 商品卖点: { value: '玻尿酸润滑', source: '模型生成' },
   导购标题: { value: '名流水多多', source: '模型生成' }, 品牌: { value: '名流', source: '店铺资料' },
 } }
+/** What the scripted model remembers for the store once the user filled it in and confirmed the declaration. */
+const REMEMBERED = {
+  store: { name: '名流旗舰店', values: { 品牌: '名流', 产地: '大陆' } },
+  declarations: { store: '名流旗舰店', catId: '50024154', confirmed: [{ key: 'personalUseConfirm', text: '请检查产品标签和说明书，确认发布的医疗器械可以由消费者个人自行使用。' }] },
+}
 /** The skill each request asks for, and its script. */
 const SCRIPTS: Record<string, string> = {
   'tmall-alimama-scene-report': 'alimama-scene-report.mjs',
@@ -63,7 +69,7 @@ function streamChat(res: ServerResponse, request: ChatRequest, skillsDir: string
     id: 'chatcmpl-tmall', object: 'chat.completion.chunk', created: 0, model: 'acme-chat', choices: [],
     usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 },
   })}\n\n`
-  const lastAsk = request.messages.findLastIndex(message => message.role === 'user' && /2026-10-06 的|采集商品|定天猫类目|整理素材/u.test(JSON.stringify(message.content ?? '')))
+  const lastAsk = request.messages.findLastIndex(message => message.role === 'user' && /2026-10-06 的|采集商品|定天猫类目|整理素材|记住店铺资料/u.test(JSON.stringify(message.content ?? '')))
   const asked = JSON.stringify(request.messages[lastAsk]?.content ?? '')
   const results = request.messages.slice(lastAsk + 1).filter(message => message.role === 'tool').map(message => JSON.stringify(message.content))
   const catalog = JSON.stringify(request.messages.map(message => message.content ?? ''))
@@ -89,6 +95,10 @@ function streamChat(res: ServerResponse, request: ChatRequest, skillsDir: string
   const organizing = asked.includes('整理素材') && catalog.includes('`ecommerce-product-draft`')
   const draft = `"${process.execPath}" "${join(skillsDir, 'ecommerce-product-draft', 'scripts', 'product-draft.mjs')}"`
   if (organizing && results.length === 0) { bash(`${draft} inventory --folder 素材`); return }
+  if (asked.includes('记住店铺资料') && results.length === 0) {
+    bash(`printf '%s' '${JSON.stringify(REMEMBERED)}' > 发品草稿/记忆.json && dsh-ecommerce remember 发品草稿/记忆.json >/dev/null && ${draft} draft --folder 素材 --rules 天猫发品/字段规则_50024154.json --store 名流旗舰店`)
+    return
+  }
   if (organizing && results.length === 1) {
     bash(`printf '%s' '${JSON.stringify(DRAFT_ANSWERS)}' > 发品草稿/答案.json && ${draft} draft --folder 素材 --answers 发品草稿/答案.json --rules 天猫发品/字段规则_50024154.json`)
     return
@@ -222,10 +232,20 @@ it.skipIf(process.platform === 'win32')('runs the packed Tmall data skills with 
     const drafted = lastResult()
     expect(drafted).toContain('图片：1:1 主图 1、3:4 主图 1、白底图 1、透明素材图 1、详情图 0、SKU 图 2')
     expect(drafted).toContain('| SKU1 | 尝鲜装 18只 | ml-a |  | 42.9 |  | sku图/sku1.png |')
-    expect(drafted).toContain('按类目 计生用品 > 避孕套（50024154）的字段规则检查：缺失 0、不符合 0、待店铺确认 2、待确认 1、已填 2')
+    expect(drafted).toContain('按类目 计生用品 > 避孕套（50024154）的字段规则检查：缺失 0、不符合 0、待店铺确认 2、待确认 1、已确认 0、已填 2')
     const draftDir = join(scaffold.workspaceCwd, 'tmall-skills', '发品草稿')
     expect((await readdir(draftDir)).sort()).toEqual(['商品草稿.json', '待确认清单.md', '答案.json', '素材清点.json'])
     expect(JSON.parse(await readFile(join(draftDir, '商品草稿.json'), 'utf8'))).toMatchObject({ catId: '50024154', images: { detail: [] } })
+
+    // The store's information and the confirmed declaration are remembered for the company and fill the next draft.
+    await send('请记住店铺资料，再整理一次草稿')
+    await expect.poll(() => page.getByText(ANSWER).count(), { timeout: 60_000 }).toBe(5)
+    const again = lastResult()
+    expect(again).toContain('店铺资料取自 DSH 记忆')
+    expect(again).toContain('- 品牌（p-20000）：名流〔店铺资料〕')
+    expect(again).toContain('- personalUseConfirm：请检查产品标签和说明书，确认发布的医疗器械可以由消费者个人自行使用。〔店铺确认〕 —— 店铺已于 ')
+    const memory = JSON.parse(await readFile(join(harnessHome, 'ecommerce', tenantId, 'publish-memory.json'), 'utf8')) as { stores: object }
+    expect(memory.stores).toMatchObject({ 名流旗舰店: { values: { 品牌: '名流', 产地: '大陆' } } })
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
     if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-tmall-skills')

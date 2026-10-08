@@ -170,8 +170,25 @@ describe('categories', () => {
   })
 })
 
+const MEMORY = {
+  stores: {}, columns: {}, declarations: {},
+  categories: {
+    水多多: { platform: 'tmall', catId: '50024154', categoryPath: '计生用品 > 避孕套', updatedAt: '2026-10-08T11:00:00.000Z' },
+    颗粒: { platform: 'tmall', catId: '126198864', categoryPath: 'x', updatedAt: 't' },
+    拼团: { platform: 'pinduoduo', catId: '18770', categoryPath: 'y', updatedAt: 't' },
+  },
+}
+
 describe('resolveCategory', () => {
-  const context = { categories: () => Promise.resolve([CONDOMS, LUBE]) }
+  const context = { categories: () => Promise.resolve([CONDOMS, LUBE]), memory: () => Promise.resolve(MEMORY) }
+
+  it('takes the category the company remembered for a product line, while the store may still publish in it', async () => {
+    const line = (name: string) => resolveCategory(new FakePage([]), { kind: 'line', line: name }, context)
+    expect((await line('水多多')).candidates).toEqual([{ category: CONDOMS, reason: '记住的产品线「水多多」类目（2026-10-08T11:00:00.000Z 保存）' }])
+    expect((await line('无')).note).toBe('DSH 里还没有记住产品线「无」的类目。')
+    expect((await line('颗粒')).note).toBe('记住的产品线「颗粒」类目 126198864 现在不能在这家店发布（可能授权已变化）。')
+    expect((await line('拼团')).note).toBe('记住的产品线「拼团」类目在 pinduoduo（18770），不是天猫的。')
+  })
 
   it('takes only the requested item from the manager answer', async () => {
     const loose = new FakePage([ready, on('mtop.tmall.sell.pc.manage.async', { rows: ROWS.slice(0, 1) })])
@@ -291,6 +308,7 @@ describe('publish-category script', () => {
     expect(parsePublishCategoryOptions(['resolve', '--account', 'a1', '--item', '5']).source).toEqual({ kind: 'item', input: '5' })
     expect(parsePublishCategoryOptions(['resolve', '--account', 'a1', '--own', '水']).source).toEqual({ kind: 'own', keyword: '水' })
     expect(parsePublishCategoryOptions(['resolve', '--account', 'a1', '--keyword', '套']).source).toEqual({ kind: 'keyword', keyword: '套' })
+    expect(parsePublishCategoryOptions(['resolve', '--account', 'a1', '--line', '水多多']).source).toEqual({ kind: 'line', line: '水多多' })
     for (const argv of [
       ['categories', '--bogus'], [], ['publish', '--account', 'a1'], ['categories'], ['categories', '--account', ''],
       ['rules', '--account', 'a1'], ['rules', '--account', 'a1', '--cat', 'abc'],
@@ -404,6 +422,9 @@ describe('publish-category script', () => {
     expect(await main(['resolve', '--account', 'a1', '--own', '水多多', '--out', out], deps)).toBe(0)
     expect(deps.out.join('')).toContain('1. 计生用品 > 避孕套（类目 id 50024154）—— 本店标题含「水多多」的 2 个商品在此类目')
     expect(page.evaluated.filter(e => e.includes('categorySelectChildren') && !e.includes('catId='))).toHaveLength(1)
+    const remembered = fakeDeps(new FakePage(routes()), { memory: () => Promise.resolve(MEMORY) })
+    expect(await main(['resolve', '--account', 'a1', '--line', '水多多', '--out', out], remembered)).toBe(0)
+    expect(remembered.out.join('')).toContain('1. 计生用品 > 避孕套（类目 id 50024154）—— 记住的产品线「水多多」类目')
   })
 
   it('saves the rules of a store category, naming the category from the store list when the page does not', async () => {

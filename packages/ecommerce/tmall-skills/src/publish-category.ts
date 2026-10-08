@@ -6,6 +6,7 @@
  * and authorized; the nodes under it are brands, not categories.
  */
 
+import type { PublishMemory } from './account.ts'
 import { EXIT, SkillError } from './errors.ts'
 import { itemIdOf } from './item.ts'
 import { fetchJson, signedOut, sleep, type Page } from './page.ts'
@@ -233,6 +234,7 @@ export type CategorySource =
   | { readonly kind: 'item'; readonly input: string }
   | { readonly kind: 'own'; readonly keyword: string }
   | { readonly kind: 'keyword'; readonly keyword: string }
+  | { readonly kind: 'line'; readonly line: string }
 
 /** A category the store may use, and why it is offered. */
 export interface Candidate {
@@ -252,12 +254,15 @@ export interface Resolution {
 export interface ResolveContext {
   /** The store's publishable categories, read or cached; read again when a cached list lacks one of `wanted`. */
   readonly categories: (wanted: readonly string[]) => Promise<readonly TmallCategory[]>
+  /** The company's publishing memory, for a product line's remembered category. */
+  readonly memory: () => Promise<PublishMemory>
 }
 
 /**
  * Find the categories a source points to, keeping only those the store may publish in.
  * @param page - a tab of the merchant account.
- * @param source - a category id, an item link, words of the store's own item titles, or a product name.
+ * @param source - a category id, an item link, words of the store's own item titles, a product name, or a product line
+ *   whose category the company remembered.
  * @param context - the store's categories.
  * @returns the candidates, most likely first; none when the source points nowhere usable, with a note.
  * @throws SkillError usage for a category id the store may not publish in.
@@ -298,6 +303,17 @@ export async function resolveCategory(page: Page, source: CategorySource, contex
       return lost.length === 0
         ? { source, candidates }
         : { source, candidates, note: `本店标题含「${source.keyword}」的商品还有 ${String(lost.length)} 个类目现在不能发布（可能授权已变化）：${lost.join('、')}` }
+    }
+    case 'line': {
+      const remembered = (await context.memory()).categories[source.line]
+      if (remembered === undefined) return { source, candidates: [], note: `DSH 里还没有记住产品线「${source.line}」的类目。` }
+      if (remembered.platform !== 'tmall') {
+        return { source, candidates: [], note: `记住的产品线「${source.line}」类目在 ${remembered.platform}（${remembered.catId}），不是天猫的。` }
+      }
+      const category = (await context.categories([remembered.catId])).find(c => c.id === remembered.catId)
+      return category === undefined
+        ? { source, candidates: [], note: `记住的产品线「${source.line}」类目 ${remembered.catId} 现在不能在这家店发布（可能授权已变化）。` }
+        : { source, candidates: [{ category, reason: `记住的产品线「${source.line}」类目（${remembered.updatedAt} 保存）` }] }
     }
     case 'keyword': {
       await openEntry(page)
