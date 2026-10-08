@@ -97,7 +97,7 @@ const FORM: PageForm = {
   components: {
     root: { type: 'struct', props: { name: 'root' } },
     nameless: { type: 'input', props: {} },
-    title: { type: 'input', props: { name: 'title', label: '宝贝标题', required: true } },
+    title: { type: 'input', props: { name: 'title', label: '宝贝标题', required: true, maxLength: 60 } },
     shelfTime: {
       type: 'radio',
       props: { name: 'shelfTime', label: '上架时间', required: true, dataSource: [{ value: 0, text: '立刻上架' }, { value: 2, text: '放入仓库' }, 'x', { value: true, text: 'y' }] },
@@ -116,7 +116,7 @@ const FORM: PageForm = {
         dataSource: [
           { name: 'p-20000', label: '品牌', uiType: 'select', required: true, readonly: true, dataSource: [{ value: 1, text: '名流' }] },
           { name: 'p-1', label: '', uiType: 'combobox', dataSource: [{ value: 'a', text: '其他' }] },
-          { name: 'p-2' },
+          { name: 'p-2', maxLength: 20 },
         ],
       },
     },
@@ -164,6 +164,7 @@ describe('categories', () => {
 
   it('lists own items through the manager page and fails loudly when it cannot', async () => {
     expect(ownItemsExpression({ queryTitle: '水多多' }, 5)).toContain('\\"queryTitle\\":\\"水多多\\"')
+    expect(ownItemsExpression({}, 5)).toContain('\\"tab\\":\\"all\\"')
     expect(await ownItems(new FakePage([manager(ROWS)]), { queryTitle: '水多多' })).toContainEqual({ itemId: '823072723004', catId: '777', title: '' })
     expect((await stopped(ownItems(new FakePage([on('mtop', { ret: 'FAIL_SYS_SESSION_EXPIRED' })]), {}))).message).toContain('FAIL_SYS_SESSION_EXPIRED')
     expect((await stopped(ownItems(new FakePage([on('mtop', {})]), {}))).message).toContain('无应答')
@@ -249,7 +250,7 @@ describe('field rules', () => {
     const rules = parseRules(FORM, '50024154')
     expect(rules.categoryPath).toBe('计生用品>>避孕套')
     expect(rules.fields).toEqual([
-      { key: 'title', label: '宝贝标题', uiType: 'input', required: true, visible: true },
+      { key: 'title', label: '宝贝标题', uiType: 'input', required: true, maxLength: 60, visible: true },
       {
         key: 'shelfTime', label: '上架时间', uiType: 'radio', required: true, visible: true,
         options: [{ value: 0, text: '立刻上架' }, { value: 2, text: '放入仓库' }],
@@ -266,7 +267,7 @@ describe('field rules', () => {
       },
       { key: 'p-20000', label: '品牌', uiType: 'select', required: true, propGroup: 'keyProp', readonly: true, visible: true, options: [{ value: 1, text: '名流' }] },
       { key: 'p-1', label: 'p-1', uiType: 'combobox', required: false, propGroup: 'keyProp', allowsCustom: true, visible: true, options: [{ value: 'a', text: '其他' }] },
-      { key: 'p-2', label: 'p-2', uiType: 'input', required: false, propGroup: 'keyProp', visible: true },
+      { key: 'p-2', label: 'p-2', uiType: 'input', required: false, propGroup: 'keyProp', maxLength: 20, visible: true },
       { key: 'color', label: '颜色', uiType: 'newColorSelect', required: false, allowsCustom: true, visible: true },
     ])
     const promises = parseRules({ components: { promise: { type: 'checkbox', props: { name: 'promise', label: '服务承诺', required: true, dataSource: [

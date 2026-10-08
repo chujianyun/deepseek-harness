@@ -8,7 +8,9 @@
 // The publish-category skill then finds a new item's category by product name and saves that
 // category's field rules, with the declarations the store must confirm, and the product-draft skill
 // sorts a material folder without detail images into a draft checked against those rules; once the
-// store's information and a declaration are remembered for the company, the next draft takes them from DSH.
+// store's information and both declarations are remembered for the company, the next draft takes them from DSH.
+// The publish skill then finds no such item in the warehouse, saves the confirmed draft there with its
+// images uploaded to the store's image space, and refuses to save it a second time.
 // With a signed-in buyer account instead, the item skill's script lets DSH pick the buyer account,
 // opens each item page once (counted toward the account's pages today), reads the stand-in's item,
 // 问大家, and reviews, stops at risk control keeping what it read and has DSH rest the account, and is
@@ -43,7 +45,10 @@ const DRAFT_ANSWERS = { values: {
 /** What the scripted model remembers for the store once the user filled it in and confirmed the declaration. */
 const REMEMBERED = {
   store: { name: '名流旗舰店', values: { 品牌: '名流', 产地: '大陆' } },
-  declarations: { store: '名流旗舰店', catId: '50024154', confirmed: [{ key: 'personalUseConfirm', text: '请检查产品标签和说明书，确认发布的医疗器械可以由消费者个人自行使用。' }] },
+  declarations: { store: '名流旗舰店', catId: '50024154', confirmed: [
+    { key: 'personalUseConfirm', text: '请检查产品标签和说明书，确认发布的医疗器械可以由消费者个人自行使用。' },
+    { key: 'productConfirm', text: '您已确认所发布的产品信息都准确无误。' },
+  ] },
 }
 /** The skill each request asks for, and its script. */
 const SCRIPTS: Record<string, string> = {
@@ -69,7 +74,9 @@ function streamChat(res: ServerResponse, request: ChatRequest, skillsDir: string
     id: 'chatcmpl-tmall', object: 'chat.completion.chunk', created: 0, model: 'acme-chat', choices: [],
     usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 },
   })}\n\n`
-  const lastAsk = request.messages.findLastIndex(message => message.role === 'user' && /2026-10-06 的|采集商品|定天猫类目|整理素材|记住店铺资料/u.test(JSON.stringify(message.content ?? '')))
+  // The employee's requests are short; the skill catalog the harness adds as a user message names the same words.
+  const asks = (message: ChatRequest['messages'][number]) => message.role === 'user' && JSON.stringify(message.content ?? '').length < 300
+  const lastAsk = request.messages.findLastIndex(message => asks(message) && /2026-10-06 的|采集商品|定天猫类目|整理素材|记住店铺资料|确认卡片里一键认可/u.test(JSON.stringify(message.content ?? '')))
   const asked = JSON.stringify(request.messages[lastAsk]?.content ?? '')
   const results = request.messages.slice(lastAsk + 1).filter(message => message.role === 'tool').map(message => JSON.stringify(message.content))
   const catalog = JSON.stringify(request.messages.map(message => message.content ?? ''))
@@ -101,6 +108,17 @@ function streamChat(res: ServerResponse, request: ChatRequest, skillsDir: string
   }
   if (organizing && results.length === 1) {
     bash(`printf '%s' '${JSON.stringify(DRAFT_ANSWERS)}' > 发品草稿/答案.json && ${draft} draft --folder 素材 --answers 发品草稿/答案.json --rules 天猫发品/字段规则_50024154.json`)
+    return
+  }
+  const saving = asked.includes('确认卡片里一键认可') && catalog.includes('`tmall-publish`')
+  const store = `"${process.execPath}" "${join(skillsDir, 'tmall-publish', 'scripts', 'publish.mjs')}"`
+  if (saving && results.length === 0) {
+    bash(`${draft} draft --folder 素材 --answers 发品草稿/答案.json --rules 天猫发品/字段规则_50024154.json --store 名流旗舰店 >/dev/null && dsh-ecommerce accounts`)
+    return
+  }
+  if (saving && results.length === 1) { bash(`${store} check --account ${id as string} --draft 发品草稿/商品草稿.json`); return }
+  if (saving && results.length <= 3) {
+    bash(`${store} save --account ${id as string} --draft 发品草稿/商品草稿.json --rules 天猫发品/字段规则_50024154.json --confirmed --stock 1000`)
     return
   }
   if (skill !== undefined && results.length === 1 && id !== undefined) {
@@ -246,6 +264,17 @@ it.skipIf(process.platform === 'win32')('runs the packed Tmall data skills with 
     expect(again).toContain('- personalUseConfirm：请检查产品标签和说明书，确认发布的医疗器械可以由消费者个人自行使用。〔店铺确认〕 —— 店铺已于 ')
     const memory = JSON.parse(await readFile(join(harnessHome, 'ecommerce', tenantId, 'publish-memory.json'), 'utf8')) as { stores: object }
     expect(memory.stores).toMatchObject({ 名流旗舰店: { values: { 品牌: '名流', 产地: '大陆' } } })
+
+    // The confirmed draft goes to the warehouse once: the check finds nothing, the save puts it there, and a second save is refused.
+    await send('用户已在确认卡片里一键认可，请保存到仓库，每个 SKU 库存 1000')
+    await expect.poll(() => page.getByText(ANSWER).count(), { timeout: 90_000 }).toBe(6)
+    const steps = chat.chats.at(-1)!.messages.filter(message => message.role === 'tool').slice(-3).map(message => JSON.stringify(message.content))
+    expect(steps[0]).toContain('店铺 名流旗舰店 的仓库里没有「名流水多多三合一玻尿酸避孕套」，DSH 也没有存过它。')
+    expect(steps[1]).toContain('已保存到店铺 名流旗舰店 的仓库（未上架）：商品 ID 1088292691011，标题「名流水多多三合一玻尿酸避孕套」。')
+    expect(steps[1]).toContain('图片 6 张已传到图片空间的「DSH发品」文件夹。')
+    expect(steps[2]).toContain('没有重复保存：店铺 名流旗舰店 的仓库里已有「名流水多多三合一玻尿酸避孕套」，商品 ID 1088292691011（')
+    const tried = JSON.parse(await readFile(join(publishing, '发品记录.json'), 'utf8')) as { status: string; itemId?: string }[]
+    expect(tried.map(record => [record.status, record.itemId])).toEqual([['submitting', undefined], ['saved', '1088292691011']])
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
     if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-tmall-skills')

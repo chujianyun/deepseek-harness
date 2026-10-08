@@ -4,7 +4,7 @@ import { strToU8, zipSync } from 'fflate'
 import { afterEach, describe, expect, it } from 'vitest'
 import { buildDraft, checkDraft, numberIn, optionKey, parseAnswers, titleWidth, withMemory, type Answers, type Draft } from '../src/draft.ts'
 import { EXIT } from '../src/errors.ts'
-import { imageFormat, measure, readImage } from '../src/images.ts'
+import { fitImage, imageFormat, measure, readImage } from '../src/images.ts'
 import { classifyImage, headerKey, readCsv, suggestField, tableOf, takeInventory, type Inventory } from '../src/materials.ts'
 import { draftText, inventoryText, main, parseProductDraftOptions, parseRulesFile } from '../src/product-draft-cli.ts'
 import type { FieldRule, PublishRules } from '../src/publish-rules.ts'
@@ -57,9 +57,9 @@ const RULES: PublishRules = {
   fields: [
     rule({ key: 'category', label: '当前类目', required: false }),
     rule({ key: 'mainImagesGroup', label: '1:1主图' }),
-    rule({ key: 'title', label: '商品标题' }),
+    rule({ key: 'title', label: '商品标题', maxLength: 60 }),
     rule({ key: 'shopping_title', label: '导购标题', required: false }),
-    rule({ key: 'tmSubTitle', label: '商品卖点', required: false }),
+    rule({ key: 'tmSubTitle', label: '商品卖点', required: false, maxLength: 40 }),
     rule({ key: 'p-20000', label: '品牌', uiType: 'combobox', propGroup: 'keyProp', options: [{ value: 1, text: '名流' }], allowsCustom: true }),
     rule({ key: 'p-8484762', label: '安全套 外观形状', uiType: 'select', propGroup: 'bindProp', options: [{ value: 1, text: '其他' }, { value: 2, text: '大颗粒' }] }),
     rule({ key: 'p-8484761', label: '安全套 厚薄', uiType: 'select', propGroup: 'bindProp', options: [{ value: 1, text: '超薄型' }] }),
@@ -103,6 +103,8 @@ describe('images', () => {
     expect(imageFormat(jpeg(8, 8))).toBe('jpeg')
     expect(imageFormat(strToU8('GIF89a'))).toBeUndefined()
     expect(() => readImage(strToU8('GIF89a'))).toThrow('不是 PNG 或 JPEG')
+    expect(() => fitImage(strToU8('GIF89a'), 8, 8)).toThrow('不是 PNG 或 JPEG')
+    expect(readImage(fitImage(jpeg(30, 20), 8, 8))).toMatchObject({ format: 'png', width: 8, height: 8 })
     expect(readImage(png(100, 100, 'clear'))).toMatchObject({ format: 'png', width: 100, height: 100, whiteBorderShare: 0 })
     expect(readImage(png(100, 100, 'clear')).transparentShare).toBeGreaterThan(0.5)
     const white = readImage(jpeg(64, 48, 'white'))
@@ -346,7 +348,7 @@ describe('checkDraft', () => {
       一口价: { value: '50', source: '店铺资料' as const }, 颜色: { value: ['透明', '其它'], source: '店铺资料' as const },
     }
     const checks = byKey(draftOf({ values }))
-    expect(checks.title).toMatchObject({ status: '不符合', note: '标题宽度 62，天猫最多 60（汉字算 2）' })
+    expect(checks.title).toMatchObject({ status: '不符合', note: '宽度 62，天猫最多 60（汉字算 2）' })
     expect(checks['p-8484762']).toMatchObject({ status: '不符合', note: '「螺纹」不在可选值里' })
     expect(checks.price).toMatchObject({ status: '不符合', value: '50', note: '一口价必须等于某个 SKU 的价格（42.9、69.9）' })
     expect(checks['p-31889']).toMatchObject({ status: '不符合', value: '透明、其它' })
@@ -357,6 +359,9 @@ describe('checkDraft', () => {
     expect(byKey(draftOf({ values: { 一口价: { value: '42.9', source: '模型生成' } } })).price).toMatchObject({ status: '待确认' })
     const punctuated = byKey(draftOf({ values: { 商品标题: { value: `名流（三合一），${'名'.repeat(25)}`, source: '模型生成' } } })).title
     expect(punctuated).toMatchObject({ status: '不符合', value: `名流（三合一），${'名'.repeat(25)}` })
+    expect(byKey(draftOf({ values: { 商品卖点: { value: '玻'.repeat(21), source: '模型生成' } } })).tmSubTitle).toMatchObject({
+      status: '不符合', note: '宽度 42，天猫最多 40（汉字算 2）',
+    })
   })
 
   it('marks what is missing, notes the page conditions, and caps images at what the platform takes', () => {

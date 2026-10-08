@@ -200,11 +200,12 @@ interface ManagerRow {
 /**
  * The expression that lists the store's items through the manager page's signed mtop call.
  * @param filter - the manager's filter fields, such as `queryTitle` or `queryItemId`.
- * @param pageSize - how many rows.
+ * @param pageSize - how many rows; the manager answers at most 20.
+ * @param tab - the manager's tab: `all` for items on sale, `in_stock` for the warehouse.
  * @returns the expression; it answers the table's rows, or the mtop return code or the manager's message on failure.
  */
-export function ownItemsExpression(filter: Readonly<Record<string, string>>, pageSize: number): string {
-  const jsonBody = JSON.stringify({ tab: 'all', pagination: { current: 1, pageSize }, filtertab: '', filter, table: {} })
+export function ownItemsExpression(filter: Readonly<Record<string, string>>, pageSize: number, tab = 'all'): string {
+  const jsonBody = JSON.stringify({ tab, pagination: { current: 1, pageSize }, filtertab: '', filter, table: {} })
   return `(async () => {
   const r = await window.lib.mtop.request({ api: 'mtop.tmall.sell.pc.manage.async', v: '1.0', type: 'POST', data: { url: '/tmall/manager/table.htm', jsonBody: ${JSON.stringify(jsonBody)} } }).catch(e => e)
   if (!r || !r.data || !r.data.result) return { ret: String((r && r.ret) || r) }
@@ -216,15 +217,16 @@ export function ownItemsExpression(filter: Readonly<Record<string, string>>, pag
 }
 
 /**
- * List the store's items (on sale and in the warehouse) matching a filter.
+ * List the store's items on sale, or in the warehouse, matching a filter.
  * @param page - the item manager tab.
  * @param filter - `queryTitle` for words in the title, or `queryItemId` for ids.
  * @param pageSize - the most rows to read.
+ * @param tab - `all` for items on sale, `in_stock` for the warehouse.
  * @returns the items with their categories.
  * @throws SkillError when the list cannot be read.
  */
-export async function ownItems(page: Page, filter: Readonly<Record<string, string>>, pageSize = 100): Promise<OwnItem[]> {
-  const answer = await page.evaluate<{ rows?: readonly ManagerRow[]; ret?: string }>(ownItemsExpression(filter, pageSize))
+export async function ownItems(page: Page, filter: Readonly<Record<string, string>>, pageSize = 100, tab = 'all'): Promise<OwnItem[]> {
+  const answer = await page.evaluate<{ rows?: readonly ManagerRow[]; ret?: string }>(ownItemsExpression(filter, pageSize, tab))
   if (answer.rows === undefined) throw new SkillError(`读取店铺商品列表失败（${answer.ret ?? '无应答'}）。`, EXIT.failed)
   return answer.rows.map(row => ({ itemId: String(row.itemId), catId: String(row.catId), title: row.itemDesc?.desc?.[0]?.text ?? '' }))
 }

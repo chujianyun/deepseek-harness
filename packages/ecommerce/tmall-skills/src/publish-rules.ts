@@ -47,6 +47,8 @@ export interface FieldRule {
   readonly conditions?: readonly string[]
   /** A required single-option checkbox the store ticks to declare something, such as the medical-device personal-use confirmation. */
   readonly declaration?: boolean
+  /** The most a text value may hold, counted as Tmall counts it: a Chinese character counts 2. */
+  readonly maxLength?: number
 }
 
 /** A category's publish form. */
@@ -67,6 +69,7 @@ interface Component {
     readonly required?: boolean
     readonly readonly?: boolean
     readonly visible?: boolean
+    readonly maxLength?: number
     readonly dataSource?: unknown
     readonly descriptions?: { readonly data?: { readonly label?: string } }
   }
@@ -79,6 +82,7 @@ interface CatProp {
   readonly uiType?: string
   readonly required?: boolean
   readonly readonly?: boolean
+  readonly maxLength?: number
   readonly dataSource?: readonly { readonly value: string | number; readonly text: string }[]
 }
 
@@ -163,6 +167,7 @@ export function parseRules(form: PageForm, catId: string): PublishRules {
           ...options === undefined ? {} : { options },
           ...prop.readonly === true ? { readonly: true } : {},
           ...OPEN_CHOICE.has(uiType) ? { allowsCustom: true } : {},
+          ...typeof prop.maxLength === 'number' ? { maxLength: prop.maxLength } : {},
           visible: props.visible !== false, ...withConditions(prop.name),
         })
       }
@@ -176,6 +181,7 @@ export function parseRules(form: PageForm, catId: string): PublishRules {
       ...options === undefined ? {} : { options },
       ...props.readonly === true ? { readonly: true } : {},
       ...OPEN_CHOICE.has(uiType) ? { allowsCustom: true } : {},
+      ...typeof props.maxLength === 'number' ? { maxLength: props.maxLength } : {},
       visible: props.visible !== false, ...withConditions(props.name),
       ...uiType === 'checkbox' && required && options?.length === 1 ? { declaration: true } : {},
     })

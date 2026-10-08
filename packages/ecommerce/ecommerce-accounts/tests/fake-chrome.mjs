@@ -16,9 +16,12 @@
 // .xlsx this server hands out — with one day's figures for scenes 371 and 436. An item page renders its
 // item, fetches its description, and answers its 问大家 and review APIs, with images this server hands
 // out; on item 600000000004 the APIs answer with risk control. Tmall's publish entry answers its category tree
-// and search with the store's 计生用品 > 避孕套, and that category's publish page carries its form. Its tabs are
+// and search with the store's 计生用品 > 避孕套, and that category's publish page carries its form; the publish
+// page also answers its image space folders and uploads and saves what its request helper submits to the
+// warehouse, which the item manager lists under in_stock. Its tabs are
 // kept in `<user-data-dir>/fake-tabs.json` and come back with --restore-last-session. As in Chrome, a
 // closed tab is still listed once by Target.getTargets, but has no window any more.
+import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -172,6 +175,40 @@ const publishForm = () => ({ form: { components: {
   personalUseConfirm: { type: 'checkbox', props: { name: 'personalUseConfirm', label: '', required: true, dataSource: [{ value: '1', text: '请检查产品标签和说明书，确认发布的医疗器械可以由消费者个人自行使用。' }] } },
   productConfirm: { type: 'checkbox', props: { name: 'productConfirm', label: '产品确认', required: true, readonly: true, dataSource: [{ value: '1', text: '您已确认所发布的产品信息都准确无误。' }] } },
 }, models: {}, rules: [] } })
+/** The publish page's own values: the item id it reserved, its defaults, and the SKU measurement column. */
+const publishBase = () => ({
+  global: { id: 1088292691011, catId: 50024154, gpfRenderTrace: 'fake-trace' },
+  defaults: { shelfTime: { type: 0 }, descRepublicOfSell: { descPageRenderParam: { catId: 50024154, descDomain: 'fake', descVersion: '2.0.9' } } },
+  measurement: { name: 'skuParam_p-409464968', unit: { value: 528, text: '只' } },
+})
+/** The store's image space folders and files, and the items saved to its warehouse. */
+const shop = { folders: [{ id: '1', name: '默认' }], files: [], warehouse: [] }
+const sellerApi = (expression) => {
+  if (expression.includes('picturecenter.console.dir.query')) return { data: { dirs: { children: shop.folders } } }
+  if (expression.includes('picturecenter.console.dir.add')) {
+    shop.folders.push({ id: '9001', name: /"name":"([^"]+)"/u.exec(expression)?.[1] })
+    return { data: { jsPictureCategoryDO: { pictureCategoryId: '9001' } } }
+  }
+  if (expression.includes('picturecenter.console.file.query')) return { data: { fileModule: /"page":1,/u.test(expression) ? shop.files : [] } }
+  const id = /\\"queryItemId\\":\\"(\d+)\\"/u.exec(expression)?.[1]
+  const title = /\\"queryTitle\\":\\"([^\\]+)\\"/u.exec(expression)?.[1]
+  const rows = expression.includes('\\"tab\\":\\"in_stock\\"') ? shop.warehouse.filter(item => (id === undefined || item.itemId === id) && (title === undefined || item.title.includes(title))) : []
+  return { rows: rows.map(item => ({ itemId: Number(item.itemId), catId: 50024154, itemDesc: { desc: [{ text: item.title }] } })) }
+}
+const upload = (expression) => {
+  const bytes = Buffer.from(/atob\("([^"]*)"\)/u.exec(expression)?.[1] ?? '', 'base64')
+  const name = JSON.parse(/form\.append\('name', ("[^"]*")\)/u.exec(expression)?.[1] ?? '""')
+  const file = { md5: createHash('md5').update(bytes).digest('hex'), pictureId: String(shop.files.length + 1), fullUrl: `https://img.alicdn.com/fake/${name}`, pixel: '800x800', sizes: String(bytes.length) }
+  shop.files.push(file)
+  return { object: { fileId: file.pictureId, url: file.fullUrl, pix: file.pixel, size: file.sizes } }
+}
+const submitItem = (expression) => {
+  const query = new URLSearchParams(JSON.parse(/new URLSearchParams\(("(?:[^"\\]|\\.)*")\)/u.exec(expression)?.[1] ?? '""'))
+  const form = JSON.parse(query.get('jsonBody') ?? '{}')
+  if (form.shelfTime?.type !== 2) return { models: { globalMessage: { message: '测试店铺只收放入仓库的商品' } } }
+  shop.warehouse.push({ itemId: query.get('itemId'), title: form.title?.title?.[0] ?? '' })
+  return { models: { globalMessage: { successUrl: `https://sell.publish.tmall.com/tmall/success.htm?primaryId=${query.get('itemId')}&auctionStatus=-2` } } }
+}
 /** An item page's 问大家 and review APIs: two questions, two main reviews, one negative tag, and a follow-up. */
 const itemApi = (target, expression) => {
   const success = data => ({ ret: 'SUCCESS::调用成功', data, punish: false })
@@ -195,7 +232,12 @@ const evaluateIn = (target, expression) => {
   if (expression.includes('#nocaptcha')) return false
   if (expression === "document.readyState === 'complete'") return true
   if (expression.includes('categorySelectChildren') || expression.includes('retrievalDataAsyncOpt')) return categoryApi(expression)
+  if (expression.startsWith('Boolean(window.lib')) return true
+  if (expression.includes('j.models.global')) return target.url.includes('catId=50024154') ? publishBase() : null
   if (expression.includes('window.Json2')) return target.url.includes('catId=50024154') ? publishForm() : { error: '类目为空或不存在' }
+  if (expression.includes('picturecenter.console') || expression.includes('mtop.tmall.sell.pc.manage.async')) return sellerApi(expression)
+  if (expression.includes('upload.api')) return upload(expression)
+  if (expression.includes('GlobalStore')) return submitItem(expression)
   if (expression.includes('window.lib.mtop.request')) return itemApi(target, expression)
   const api = [
     ['/report/query.json', { data: { list: SCENES }, info: { ok: true } }],

@@ -381,8 +381,9 @@ function fromValue(base: Pick<FieldCheck, 'key' | 'label' | 'required'>, field: 
   const options = field.options ?? []
   const refused = field.options !== undefined && field.allowsCustom !== true
     && normalized.some(value => !options.some(o => o.text === value))
-  if (field.key === 'title' && titleWidth(normalized[0] as string) > 60) notes.push(`标题宽度 ${String(titleWidth(normalized[0] as string))}，天猫最多 60（汉字算 2）`)
-  const tooWide = field.key === 'title' && titleWidth(normalized[0] as string) > 60
+  const width = titleWidth(normalized.join(''))
+  const tooWide = field.maxLength !== undefined && width > field.maxLength
+  if (tooWide) notes.push(`宽度 ${String(width)}，天猫最多 ${String(field.maxLength)}（汉字算 2）`)
   return {
     ...base, status: refused || tooWide ? '不符合' : status, source: entry.source, value: normalized.join('、'), filled: normalized,
     ...notes.length === 0 ? {} : { note: notes.join('；') },

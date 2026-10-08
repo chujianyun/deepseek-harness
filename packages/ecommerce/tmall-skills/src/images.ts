@@ -49,10 +49,7 @@ export function imageFormat(bytes: Uint8Array): 'png' | 'jpeg' | undefined {
 export function readImage(bytes: Uint8Array): ImageFacts {
   const format = imageFormat(bytes)
   if (format === undefined) throw new Error('不是 PNG 或 JPEG 图片')
-  const pixels: Pixels = format === 'png'
-    ? PNG.sync.read(Buffer.from(bytes))
-    : decodeJpeg(bytes, { useTArray: true, formatAsRGBA: true, maxMemoryUsageInMB: 1024 })
-  return { format, ...measure(pixels) }
+  return { format, ...measure(decode(bytes)) }
 }
 
 /**
@@ -81,4 +78,47 @@ export function measure(pixels: Pixels): Omit<ImageFacts, 'format'> {
     }
   }
   return { width, height, transparentShare: transparent / sampled, whiteBorderShare: white / border }
+}
+
+/**
+ * An image cut to a size the platform requires: the largest centered part with the target's shape,
+ * scaled to the target by averaging the source pixels each target pixel covers, as PNG.
+ * @param bytes - a PNG or JPEG file.
+ * @param width - the target width.
+ * @param height - the target height.
+ * @returns the PNG file.
+ * @throws Error when the file is not a readable PNG or JPEG.
+ */
+export function fitImage(bytes: Uint8Array, width: number, height: number): Buffer {
+  const source = decode(bytes)
+  const scale = Math.min(source.width / width, source.height / height)
+  const left = (source.width - width * scale) / 2
+  const top = (source.height - height * scale) / 2
+  const target = new PNG({ width, height })
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const x0 = Math.floor(left + x * scale)
+      const y0 = Math.floor(top + y * scale)
+      const x1 = Math.max(x0 + 1, Math.floor(left + (x + 1) * scale))
+      const y1 = Math.max(y0 + 1, Math.floor(top + (y + 1) * scale))
+      const sum = [0, 0, 0, 0]
+      for (let sy = y0; sy < y1; sy++) {
+        for (let sx = x0; sx < x1; sx++) {
+          const at = (sy * source.width + sx) * 4
+          for (let c = 0; c < 4; c++) sum[c] = (sum[c] as number) + (source.data[at + c] as number)
+        }
+      }
+      const count = (x1 - x0) * (y1 - y0)
+      const at = (y * width + x) * 4
+      for (let c = 0; c < 4; c++) target.data[at + c] = Math.round((sum[c] as number) / count)
+    }
+  }
+  return PNG.sync.write(target)
+}
+
+/** Decode a PNG or JPEG file to RGBA pixels. */
+function decode(bytes: Uint8Array): Pixels {
+  const format = imageFormat(bytes)
+  if (format === undefined) throw new Error('不是 PNG 或 JPEG 图片')
+  return format === 'png' ? PNG.sync.read(Buffer.from(bytes)) : decodeJpeg(bytes, { useTArray: true, formatAsRGBA: true, maxMemoryUsageInMB: 1024 })
 }
