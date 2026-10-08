@@ -8,17 +8,19 @@
 
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import { takeOverBuyer, type BuyerBrowser } from './account.ts'
+import { reportRisk, takeOverBuyer, type BuyerBrowser } from './account.ts'
 import { fileSafe, writeFiles } from './cli.ts'
 import { EXIT, SkillError } from './errors.ts'
 import { factsReport, isNegative, itemFacts } from './item-facts.ts'
-import { itemIdOf, itemUrl, openItem, readQuestions, readReviews, type Collected, type ItemPage, type Limits, type Pace } from './item.ts'
+import { itemIdOf, itemUrl, openItem, readQuestions, readReviews, RiskStop, type Collected, type ItemPage, type Limits, type Pace } from './item.ts'
 import { openPage, sleep, type Page } from './page.ts'
 import { toCsv } from './sheet.ts'
 
 /** What the script reaches outside itself; tests replace it. */
 export interface ItemDeps {
   readonly takeOver: () => Promise<BuyerBrowser>
+  /** Tell DSH about risk control met through the APIs; returns what to tell the user. */
+  readonly reportRisk: (accountId: string) => Promise<string>
   readonly openPage: (cdpUrl: string) => Promise<Page>
   readonly fetchFile: typeof fetch
   readonly pace: Pace
@@ -29,6 +31,7 @@ export interface ItemDeps {
 /** The real outside world. */
 export const realItemDeps: ItemDeps = {
   takeOver: () => takeOverBuyer(),
+  reportRisk: accountId => reportRisk(accountId),
   openPage: cdpUrl => openPage(cdpUrl),
   fetchFile: fetch,
   pace: { sleep, random: Math.random },
@@ -83,6 +86,8 @@ interface ItemOutcome {
   readonly line: string
   /** Where its files are, when any were written. */
   readonly dir?: string
+  /** Everything asked for was read. */
+  readonly complete: boolean
 }
 
 /**
@@ -114,8 +119,9 @@ export async function main(argv: readonly string[], deps: ItemDeps = realItemDep
       const outcome = await collect(page, deps, itemId, options)
       outcomes.push(outcome.result)
       if (outcome.stop !== undefined) {
-        stop = outcome.stop
-        if (index + 1 < options.items.length) stop = new SkillError(`${stop.message}\n商品 ${options.items.slice(index + 1).join('、')} 没有采集。`, stop.exitCode)
+        const rested = outcome.stop instanceof RiskStop ? `\n${await deps.reportRisk(buyer.id)}` : ''
+        const rest = index + 1 < options.items.length ? `\n商品 ${options.items.slice(index + 1).join('、')} 没有采集。` : ''
+        stop = new SkillError(`${outcome.stop.message}${rested}${rest}`, outcome.stop.exitCode)
         break
       }
     }
@@ -131,6 +137,8 @@ export async function main(argv: readonly string[], deps: ItemDeps = realItemDep
     ...outcomes.flatMap(outcome => [outcome.line, ...outcome.dir === undefined ? [] : [`  文件：${outcome.dir}（报告.md、facts.json、skus.csv、questions.csv、reviews.csv、reviews_negative.csv、item.json、images/）`]]),
     '',
   ].join('\n'))
+  const incomplete = outcomes.filter(outcome => !outcome.complete).map(outcome => outcome.itemId)
+  if (stop === undefined && incomplete.length > 0) stop = new SkillError(`商品 ${incomplete.join('、')} 没有完整采集，原因见上方各行。`)
   if (stop === undefined) return 0
   deps.stderr(`${stop.message}\n`)
   return stop.exitCode
@@ -145,25 +153,36 @@ async function collect(
     opened = await openItem(page, itemId)
   } catch (error) {
     if (!(error instanceof SkillError)) throw error
-    // A page that is not a standard item page only skips this item; other stops end the run.
-    if (error.exitCode === EXIT.failed) return { result: { itemId, line: `- ${itemId}：${error.message}` } }
-    return { result: { itemId, line: `- ${itemId}：未采集（${error.message.split('\n')[0] as string}）` }, stop: error }
+    // A page that is not a standard item page, or one without SKU data, only skips this item; other stops end the run.
+    if (error.exitCode === EXIT.failed) return { result: { itemId, line: `- ${itemId}：${error.message}`, complete: false } }
+    return { result: { itemId, line: `- ${itemId}：未采集（${error.message.split('\n')[0] as string}）`, complete: false }, stop: error }
   }
   const dir = join(options.out, `单品_${itemId}`)
   const saved = await saveImages(deps.fetchFile, dir, opened.item, opened.descImages)
   const collected: Collected = { questions: [], reviews: [], tags: [], calls: 0 }
-  let stop: SkillError | undefined
-  try {
-    await readQuestions(page, deps.pace, itemId, options.limits.questions, collected)
-    await readReviews(page, deps.pace, itemId, options.limits, collected)
-  } catch (error) {
-    stop = error instanceof SkillError ? error : new SkillError(`读取商品 ${itemId} 时失败：${(error as Error).message}；已读到的部分已保存。`)
+  let stop: RiskStop | undefined
+  const problems: string[] = []
+  // Risk control stops the run; another failure only loses that part, and the rest of the item is still read.
+  for (const [what, read] of [
+    ['问大家', () => readQuestions(page, deps.pace, itemId, options.limits.questions, collected)],
+    ['评价', () => readReviews(page, deps.pace, itemId, options.limits, collected)],
+  ] as const) {
+    if (stop !== undefined) break
+    try {
+      await read()
+    } catch (error) {
+      if (error instanceof RiskStop) stop = error
+      else problems.push(`${what}没有读完（${(error as Error).message}）`)
+    }
   }
   const facts = itemFacts({
     itemId, url: itemUrl(itemId), item: opened.item, descImages: opened.descImages, savedImages: saved,
     tags: collected.tags, reviews: collected.reviews, questions: collected.questions,
   })
-  const notes = stop === undefined ? [] : [`⚠️ 采集中途停止，以下只基于已读到的部分：${stop.message}`]
+  const notes = [
+    ...stop === undefined ? [] : [`⚠️ 采集中途停止，以下只基于已读到的部分：${stop.message}`],
+    ...problems.map(problem => `⚠️ ${problem}，以下统计不含这部分。`),
+  ]
   const negative = collected.reviews.filter(isNegative)
   const [report] = await writeFiles(dir, '报告', [['md', factsReport(facts, notes)]])
   await writeFiles(dir, 'facts', [['json', `${JSON.stringify(facts, null, 1)}\n`]])
@@ -174,8 +193,9 @@ async function collect(
   await writeFiles(dir, 'reviews_negative', [['csv', reviewsCsv(negative)]])
   const line = `- ${itemId} ${opened.item.title}：主图 ${String(opened.item.mainImages.length)}、详情图 ${String(opened.descImages.length)}（保存图片 ${String(saved)} 张），SKU ${String(opened.item.skus.length)}，`
     + `问大家 ${String(collected.questions.length)}，评价 ${String(collected.reviews.length)}（主列表 ${String(collected.reviews.filter(review => review.source === 'all').length)}，负面标签 ${String(facts.reviews.tagRows)}，追评 ${String(facts.reviews.appends.sample)}；中差评视图 ${String(negative.length)}），`
-    + `接口调用 ${String(collected.calls)} 次${opened.item.riskDegraded ? '；⚠️ 平台降级（活动价和销量可能缺失）' : ''}${stop === undefined ? '' : '；⚠️ 中途停止，只保存了已读到的部分'}。报告：${report as string}`
-  return { result: { itemId, line, dir: resolve(dir) }, ...stop === undefined ? {} : { stop } }
+    + `接口调用 ${String(collected.calls)} 次${opened.item.riskDegraded ? '；⚠️ 平台降级（活动价和销量可能缺失）' : ''}${stop === undefined ? '' : '；⚠️ 中途停止，只保存了已读到的部分'}${problems.map(problem => `；⚠️ ${problem}`).join('')}。报告：${report as string}`
+  const complete = stop === undefined && problems.length === 0
+  return { result: { itemId, line, dir: resolve(dir), complete }, ...stop === undefined ? {} : { stop } }
 }
 
 const SKU_COLUMNS: readonly (readonly [string, 'skuId' | 'sku' | 'priceTitle' | 'price' | 'promoTitle' | 'promoPrice' | 'stock' | 'stockText' | 'image'])[] = [
@@ -206,16 +226,24 @@ async function saveImages(fetchFile: typeof fetch, dir: string, item: ItemPage, 
   ]
   let saved = 0
   for (const [name, url] of wanted) {
+    let bytes: Uint8Array | undefined
     try {
-      const response = await fetchFile(url.startsWith('//') ? `https:${url}` : url, { headers: { referer: 'https://detail.tmall.com/' } })
-      if (!response.ok) continue
-      await writeFiles(join(dir, 'images'), name, [[extension(url), new Uint8Array(await response.arrayBuffer())]])
-      saved++
+      bytes = await download(fetchFile, url)
     } catch {
       // A network failure for one image skips it; the count tells the user how many were saved.
+      continue
     }
+    if (bytes === undefined) continue
+    await writeFiles(join(dir, 'images'), name, [[extension(url), bytes]])
+    saved++
   }
   return saved
+}
+
+/** An image's bytes with a Tmall referer, or undefined when the server refuses it. */
+async function download(fetchFile: typeof fetch, url: string): Promise<Uint8Array | undefined> {
+  const response = await fetchFile(url.startsWith('//') ? `https:${url}` : url, { headers: { referer: 'https://detail.tmall.com/' } })
+  return response.ok ? new Uint8Array(await response.arrayBuffer()) : undefined
 }
 
 function pad(index: number): string {

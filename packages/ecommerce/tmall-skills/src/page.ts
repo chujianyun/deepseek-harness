@@ -36,8 +36,9 @@ export interface Page {
    * Read the body of each response the page receives from a matching address, from now on.
    * @param match - true for the addresses to read.
    * @param listener - called with each body once it has arrived; a body Chrome no longer holds is skipped.
+   * @returns a function that stops reading.
    */
-  onResponse(match: (url: string) => boolean, listener: (body: string) => void): void
+  onResponse(match: (url: string) => boolean, listener: (body: string) => void): () => void
   /**
    * Wait for a condition, checking it every half second.
    * @param condition - true when the wait is over.
@@ -106,10 +107,10 @@ export async function openPage(cdpUrl: string, timeoutMs = 20_000, loadTimeoutMs
     },
     onResponse(match, listener) {
       const wanted = new Set<string>()
-      cdp.on('Network.responseReceived', (params, from) => {
+      const stopReceived = cdp.on('Network.responseReceived', (params, from) => {
         if (from === sessionId && match((params.response as { url: string }).url)) wanted.add(params.requestId as string)
       })
-      cdp.on('Network.loadingFinished', (params, from) => {
+      const stopFinished = cdp.on('Network.loadingFinished', (params, from) => {
         const requestId = params.requestId as string
         if (from !== sessionId || !wanted.delete(requestId)) return
         send<{ body: string; base64Encoded: boolean }>('Network.getResponseBody', { requestId }).then(
@@ -117,6 +118,10 @@ export async function openPage(cdpUrl: string, timeoutMs = 20_000, loadTimeoutMs
           () => { /* Chrome dropped the body, as it does for a page that navigated away; nothing to read. */ },
         )
       })
+      return () => {
+        stopReceived()
+        stopFinished()
+      }
     },
     async waitFor(condition, waitMs) {
       const deadline = Date.now() + waitMs

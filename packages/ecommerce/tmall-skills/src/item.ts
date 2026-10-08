@@ -401,7 +401,8 @@ export async function readReviews(page: Page, pace: Pace, itemId: string, limits
   const seen = new Set<string>()
   const pages = async (label: string, source: string, limit: number, filter: object): Promise<void> => {
     let taken = 0
-    for (let pageNo = 1; taken < limit; pageNo++) {
+    // The main list's first page is read even when no reviews are kept from it: the impression tags come with it.
+    for (let pageNo = 1; taken < limit || (source === 'all' && pageNo === 1); pageNo++) {
       into.calls++
       const answer = await mtop<ReviewPage>(page, pace, label, 'mtop.taobao.rate.detaillist.get', '6.0', {
         showTrueCount: false, auctionNumId: itemId, pageNo, pageSize: 50, orderType: '', searchImpr: '-8', expression: '', skuVids: '',
@@ -419,12 +420,17 @@ export async function readReviews(page: Page, pace: Pace, itemId: string, limits
       if (String(answer.hasNext) !== 'true' || list.length === 0) return
     }
   }
-  // The first page is read even with no main reviews wanted: the impression tags come with it.
-  await pages('评价', 'all', Math.max(limits.reviews, 1), {})
+  await pages('评价', 'all', limits.reviews, {})
   for (const tag of into.tags.filter(item => item.negative)) {
     await pages(`评价标签「${tag.tag}」`, `tag:${tag.tag}`, limits.perTag, { expression: tag.labelId })
   }
   if (limits.appends > 0) await pages('追评', 'append', limits.appends, { rateType: '2' })
+}
+
+/** An item page that was read: the item and its description images. */
+export interface OpenedItem {
+  readonly item: ItemPage
+  readonly descImages: readonly string[]
 }
 
 /**
@@ -433,12 +439,21 @@ export async function readReviews(page: Page, pace: Pace, itemId: string, limits
  * @param itemId - the item.
  * @returns the item and its description images.
  * @throws SkillError stopped when DSH refused the page (out of pages or risk control), or the page
- *   shows risk control; signed-out on a sign-in page or an item page without SKU data; failed for a
- *   page that is not a standard item page.
+ *   shows risk control; signed-out on a sign-in page; failed for a page that is not a standard item
+ *   page or has no SKU data.
  */
-export async function openItem(page: Page, itemId: string): Promise<{ readonly item: ItemPage; readonly descImages: readonly string[] }> {
+export async function openItem(page: Page, itemId: string): Promise<OpenedItem> {
   let desc: string | undefined
-  page.onResponse(url => url.includes('mtop.taobao.detail.getdesc'), (body) => { desc ??= body })
+  // The description request names its item in its address, so a late answer for an earlier item is not taken.
+  const stopReading = page.onResponse(url => url.includes('mtop.taobao.detail.getdesc') && url.includes(itemId), (body) => { desc ??= body })
+  try {
+    return await readItemPage(page, itemId, () => desc)
+  } finally {
+    stopReading()
+  }
+}
+
+async function readItemPage(page: Page, itemId: string, desc: () => string | undefined): Promise<OpenedItem> {
   try {
     await page.goto(itemUrl(itemId))
   } catch (error) {
@@ -455,9 +470,20 @@ export async function openItem(page: Page, itemId: string): Promise<{ readonly i
   const res = await page.evaluate<RenderedItem | null>(RENDERED)
   if (res === null) throw new SkillError(`商品 ${itemId} 没有标准详情页（天猫国际等商品电脑端不支持），跳过。`)
   if (Object.keys(res.skuCore?.sku2info ?? {}).length === 0) {
-    throw new SkillError(`商品 ${itemId} 的详情页没有 SKU 数据，像是未登录看到的门禁页：请到 DSH 设置 → 电商账号检查这个买家号。`, EXIT.signedOut)
+    throw new SkillError(`商品 ${itemId} 的详情页没有 SKU 数据（商品可能已下架，或买家号看到的是未登录的门禁页，可到 DSH 设置 → 电商账号检查），跳过。`)
   }
   // The page fetches its description on its own; a replay is refused, so wait for that one.
-  await page.waitFor(() => desc !== undefined, 15_000)
-  return { item: parseItem(res), descImages: desc === undefined ? [] : descImages(desc) }
+  await page.waitFor(() => desc() !== undefined, 15_000)
+  const body = desc()
+  return { item: parseItem(res), descImages: body === undefined ? [] : readableDescImages(body) }
+}
+
+/** The description images, or none when the body is not the JSON or JSONP the page usually gets. */
+function readableDescImages(body: string): string[] {
+  try {
+    return descImages(body)
+  } catch {
+    // An error page or a cut-short body: the description is missing, the rest of the item is still read.
+    return []
+  }
 }

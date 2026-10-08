@@ -261,7 +261,8 @@ wss.on('connection', (socket) => {
         if (params.url.includes('/item.htm?id=')) {
           const desc = { data: { components: { layout: [{ ID: 'd1' }], componentData: { d1: { model: { picUrl: `http://127.0.0.1:${String(port)}/fake-img/desc1.jpg` } } } } } }
           bodies.set('desc', `mtopjsonp3(${JSON.stringify(desc)})`)
-          emit('Network.responseReceived', { requestId: 'desc', response: { url: 'https://h5api.m.tmall.com/h5/mtop.taobao.detail.getdesc/7.0/?data=1' } }, sessionId)
+          const id = /id=(\d+)/u.exec(params.url)?.[1] ?? ''
+          emit('Network.responseReceived', { requestId: 'desc', response: { url: `https://h5api.m.tmall.com/h5/mtop.taobao.detail.getdesc/7.0/?data=%7B%22id%22%3A%22${id}%22%7D` } }, sessionId)
           return emit('Network.loadingFinished', { requestId: 'desc' }, sessionId)
         }
         if (process.env.FAKE_CHROME_SILENT !== undefined) return

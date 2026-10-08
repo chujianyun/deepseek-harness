@@ -122,6 +122,24 @@ describe('facts', () => {
     expect(factsReport(facts, [])).toContain('好中差：未标 1，差评 1。')
   })
 
+  it('counts a review once in the negative pool, and matches multi-option SKUs to the longest name', () => {
+    const item = { ...parseItem(RENDERED_ITEM), skus: [
+      { ...parseItem(RENDERED_ITEM).skus[0] as Sku, sku: '红色 / L' },
+      { ...parseItem(RENDERED_ITEM).skus[0] as Sku, sku: '【10只】' },
+      { ...parseItem(RENDERED_ITEM).skus[0] as Sku, sku: '【10只】超薄' },
+    ] }
+    const facts = itemFacts({
+      itemId: '1', url: 'u', item, descImages: [], savedImages: 0, tags: [], questions: [],
+      reviews: [
+        review({ id: '1', rateType: '差评', sku: '颜色分类:红色；尺码:L', content: '质量很差，用了就破了' }),
+        review({ id: '1', source: 'tag:容易破', rateType: '差评', content: '质量很差，用了就破了' }),
+        review({ id: '2', rateType: '好评', sku: '规格:【10只】超薄 加送2只', content: '好' }),
+      ],
+    })
+    expect(facts.reviews.negativePool).toBe(1)
+    expect(facts.skuSales.rows.map(row => row.sku)).toEqual(['红色 / L', '【10只】超薄'])
+  })
+
   it('reports an empty item without dividing by zero', () => {
     const empty = itemFacts({ itemId: '1', url: 'u', item: { ...parseItem({ feature: { pcIdentityRisk: 'true' } }), priceDesc: '', sellCount: '' }, descImages: [], savedImages: 0, tags: [], reviews: [], questions: [] })
     expect(empty.reviews.appends.medianDays).toBeNull()
@@ -158,6 +176,7 @@ describe('the command line', () => {
     process.env.PATH = '/nowhere'
     try {
       await expect(realItemDeps.takeOver()).rejects.toThrow('找不到 dsh-ecommerce 命令')
+      expect(await realItemDeps.reportRisk('b1')).toContain('未能通知 DSH 让这个买家号冷却')
     } finally {
       process.env.PATH = path
     }
@@ -176,6 +195,7 @@ describe('running the script', () => {
     const err: string[] = []
     return {
       takeOver: () => Promise.resolve(BUYER), openPage: () => Promise.resolve(page),
+      reportRisk: id => Promise.resolve(`DSH 已让买家号 ${id} 冷却到 2026-10-11T03:00:00.000Z，期间不会再被挑选。`),
       fetchFile: url => Promise.resolve((url as string).includes('b.png') ? new Response('', { status: 404 }) : new Response(new Uint8Array([1, 2, 3]))),
       pace: { sleep: () => Promise.resolve(), random: () => 0 }, stdout: (text) => { out.push(text) }, stderr: (text) => { err.push(text) },
       out, err, ...overrides,
@@ -223,16 +243,27 @@ describe('running the script', () => {
     expect(run.out.join('')).toContain('问大家 2，评价 1（')
     expect(run.out.join('')).toContain('⚠️ 中途停止，只保存了已读到的部分')
     expect(run.err.join('')).toContain('没有尝试验证、重试或换号')
-    expect(run.err.join('')).toContain('商品 524565741530 没有采集。')
+    expect(run.err.join('')).toContain('\nDSH 已让买家号 b1 冷却到 2026-10-11T03:00:00.000Z，期间不会再被挑选。\n商品 524565741530 没有采集。')
   })
 
-  it('saves what was read when another failure ends an item', async () => {
+  it('stops at risk control in 问大家 before reading reviews', async () => {
     const dir = await outDir()
-    const page = itemPage([questionsRoute, expression => expression.includes('detaillist') ? { ret: 'FAIL_BIZ', data: null, punish: false } : undefined])
+    const page = itemPage([expression => expression.includes('wdj.list') ? { ret: 'RGV587_ERROR', data: null, punish: false } : undefined, reviewsRoute])
     const run = deps(page)
-    expect(await main(['794818635459', '--out', dir], run)).toBe(EXIT.failed)
-    expect(run.err.join('')).toContain('读取商品 794818635459 时失败：mtop.taobao.rate.detaillist.get 返回 FAIL_BIZ；已读到的部分已保存。')
-    expect(await readdir(join(dir, '单品_794818635459'))).toContain('questions.csv')
+    expect(await main(['794818635459', '--out', dir], run)).toBe(EXIT.stopped)
+    expect(page.evaluated.some(expression => expression.includes('detaillist'))).toBe(false)
+    expect(run.err.join('')).toMatch(/读取问大家时平台出现风控[\s\S]*冷却到 2026-10-11T03:00:00\.000Z，期间不会再被挑选。\n$/u)
+  })
+
+  it('goes on to reviews and the next item when 问大家 fails without risk control, and says what was not read', async () => {
+    const dir = await outDir()
+    const page = itemPage([expression => expression.includes('wdj.list') ? { ret: 'FAIL_BIZ_QA_CLOSED', data: null, punish: false } : undefined, reviewsRoute])
+    const run = deps(page)
+    expect(await main(['794818635459', '524565741530', '--out', dir], run)).toBe(EXIT.failed)
+    expect((await readdir(dir)).sort()).toEqual(['单品_524565741530', '单品_794818635459'])
+    expect(run.out.join('')).toContain('评价 5（主列表 2，负面标签 1，追评 2；中差评视图 3），接口调用 4 次；⚠️ 问大家没有读完（mtop.taobao.wdj.list.merge.search 返回 FAIL_BIZ_QA_CLOSED）。')
+    expect(await readFile(join(dir, '单品_794818635459', '报告.md'), 'utf8')).toContain('⚠️ 问大家没有读完（mtop.taobao.wdj.list.merge.search 返回 FAIL_BIZ_QA_CLOSED），以下统计不含这部分。')
+    expect(run.err).toEqual(['商品 794818635459、524565741530 没有完整采集，原因见上方各行。\n'])
   })
 
   it('skips an item without a standard page and goes on', async () => {
@@ -243,8 +274,9 @@ describe('running the script', () => {
     page.evaluate = (original => <T>(expression: string): Promise<T> => expression.includes('__ICE_APP_CONTEXT__')
       ? Promise.resolve((++opened === 1 ? null : RENDERED_ITEM) as T) : original(expression))(page.evaluate.bind(page))
     const run = deps(page)
-    expect(await main(['600000000001', '794818635459', '--out', dir], run)).toBe(0)
+    expect(await main(['600000000001', '794818635459', '--out', dir], run)).toBe(EXIT.failed)
     expect(run.out.join('')).toContain('- 600000000001：商品 600000000001 没有标准详情页')
+    expect(run.err).toEqual(['商品 600000000001 没有完整采集，原因见上方各行。\n'])
     expect(await readdir(dir)).toEqual(['单品_794818635459'])
   })
 

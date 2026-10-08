@@ -25,6 +25,11 @@ export const DESC_BODY = `mtopjsonp3(${JSON.stringify({ data: { components: {
   componentData: { d1: { model: { picUrl: '//img.alicdn.com/d1.jpg' } }, text: { model: {} }, d2: { model: { picUrl: 'https://img.alicdn.com/d2.jpg' } } },
 } } })})`
 
+/** The description request of an item, which names the item in its data. */
+export function descUrl(itemId: string): string {
+  return `https://h5api.m.taobao.com/h5/mtop.taobao.detail.getdesc/7.0/?jsv=2.7.2&data=%7B%22id%22%3A%22${itemId}%22%7D`
+}
+
 /** A 问大家 page. */
 export function questionPage(from: number, count: number, hasNext: boolean): object {
   return {
@@ -62,8 +67,8 @@ export function itemPage(mtop: Route[], rendered: unknown = RENDERED_ITEM, desc:
     on('#nocaptcha', false),
     ...mtop,
   ], (url, page) => {
-    if (desc !== null) page.respond('https://h5api.m.taobao.com/h5/mtop.taobao.detail.getdesc/7.0/?x=1', desc)
-    void url
+    const id = /id=(\d+)/u.exec(url)?.[1] ?? ''
+    if (desc !== null) page.respond(descUrl(id), desc)
   })
 }
 

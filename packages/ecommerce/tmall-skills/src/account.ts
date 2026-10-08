@@ -97,3 +97,17 @@ async function takeOver(args: readonly string[], run: typeof runDshEcommerce): P
   }
   return JSON.parse(stdout) as TakenAccount
 }
+
+/**
+ * Tell DSH that a script met the platform's risk control through its APIs, so the buyer account this
+ * bash call took over rests as after a risk page.
+ * @param accountId - the buyer account.
+ * @param run - runs `dsh-ecommerce`.
+ * @returns what to tell the user: until when the account rests, or why DSH could not be told.
+ */
+export async function reportRisk(accountId: string, run = runDshEcommerce): Promise<string> {
+  const { code, stdout, stderr } = await run(['risk', accountId])
+  if (code !== 0) return `未能通知 DSH 让这个买家号冷却（${stderr.trim()}），请今天不要再用它。`
+  const { account, cooldownUntil } = JSON.parse(stdout) as { account: string; cooldownUntil: string }
+  return `DSH 已让买家号 ${account} 冷却到 ${cooldownUntil}，期间不会再被挑选。`
+}

@@ -110,6 +110,8 @@ describe('openPage', () => {
     const page = await openPage(fake.url)
     const bodies: string[] = []
     page.onResponse(url => url.includes('getdesc'), (body) => { bodies.push(body) })
+    const stopped = page.onResponse(() => true, () => { throw new Error('a stopped reader heard a response') })
+    stopped()
     await page.goto('https://item.taobao.com/item.htm?id=1')
     expect(await page.waitFor(() => fake.calls.filter(call => call.method === 'Network.getResponseBody').length === 3, 2000)).toBe(true)
     await page.waitFor(() => bodies.length === 2, 2000)

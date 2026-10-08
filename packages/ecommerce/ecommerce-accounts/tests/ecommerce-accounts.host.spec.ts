@@ -615,13 +615,15 @@ describe('e-commerce accounts for the model', () => {
       { id: expect.any(String) as string, platform: 'pinduoduo', store: '名流旗舰店', account: 'pdd', kind: 'merchant', status: 'signed-out' },
     ])
     expect(listed.stdout).not.toMatch(/cookie|user-data|ecommerce\//iu)
-    const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao]\n'
+    const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id>\n'
     expect(await runCommand(env, varsOf(env, exec))).toMatchObject({ code: 2, stderr: usage })
     expect(await runCommand(env, varsOf(env, exec), 'browser')).toMatchObject({ code: 2, stderr: usage })
+    expect(await runCommand(env, varsOf(env, exec), 'risk')).toMatchObject({ code: 2, stderr: usage })
     expect((await runCommand(env, {}, 'accounts')).code).toBe(2)
     const url = env.ctx.shellEnv.collect(exec).DSH_ECOMMERCE_URL!
     expect(await (await fetch(`${url}/other`)).text()).toBe('DSH: unknown command "other".')
     expect(await (await fetch(`${url}/browser`)).text()).toBe('DSH: there is no e-commerce account "". Run dsh-ecommerce accounts to list them.')
+    expect(await (await fetch(`${url}/risk`)).text()).toBe('DSH: risk control can only be reported for a buyer account this shell call took over, not "".')
     // Once the call ends, its address reaches nothing.
     const vars = env.ctx.shellEnv.collect(exec)
     endCall(env, exec)
@@ -707,7 +709,7 @@ describe('e-commerce accounts for the model', () => {
 
   it('answers a command that fails instead of leaving the script waiting', async () => {
     const broken = () => Promise.reject(new Error('broken'))
-    const bridge = new Bridge({ accounts: broken, browser: broken, buyer: broken })
+    const bridge = new Bridge({ accounts: broken, browser: broken, buyer: broken, risk: broken })
     const stop = await bridge.start()
     try {
       const url = bridge.urlFor({ callId: 'c-1', tenantId: 't-a' })
@@ -847,6 +849,38 @@ describe('buyer accounts and risk protection', () => {
     expect(busy.code).toBe(1)
     expect(busy.stderr).toContain('DSH: no buyer account can be used now. Stop, and tell the user why:\n- the Tmall buyer account "买家号二" is in use by another task.')
     expect(busy.stderr).toContain('- the Tmall buyer account "买家号一" is resting after the platform\'s risk control')
+  })
+
+  it('rests a buyer account its call took over when a script reports risk control met through the platform\'s APIs', async () => {
+    const env = await setup()
+    const first = await signedInBuyer(env, buyer)
+    const second = await signedInBuyer(env, { ...buyer, account: '买家号二' })
+    const exec = bashCall('c-1')
+    const taken = JSON.parse((await runCommand(env, varsOf(env, exec), 'buyer')).stdout) as { id: string }
+    expect(taken.id).toBe(first)
+    // Only the account this call took over can be reported; another call's or none at all is refused.
+    const refusal = (id: string) => `DSH: risk control can only be reported for a buyer account this shell call took over, not "${id}".\n`
+    expect(await runCommand(env, varsOf(env, exec), 'risk', second)).toMatchObject({ code: 1, stderr: refusal(second) })
+    expect(await runCommand(env, varsOf(env, bashCall('c-2')), 'risk', first)).toMatchObject({ code: 1, stderr: refusal(first) })
+    expect(await runCommand(env, varsOf(env, exec), 'risk', 'nope')).toMatchObject({ code: 1, stderr: refusal('nope') })
+    const before = Date.now()
+    const reported = await runCommand(env, varsOf(env, exec), 'risk', first)
+    expect(reported.code).toBe(0)
+    const resting = (await env.service.getState()).accounts[0]!.cooldownUntil!
+    expect(Date.parse(resting) - before).toBeGreaterThanOrEqual(72 * 3_600_000 - 1000)
+    expect(JSON.parse(reported.stdout)).toEqual({ id: first, account: '买家号一', cooldownUntil: resting })
+    endCall(env, exec)
+    // The rested account is passed over; the other one is picked.
+    expect((JSON.parse((await runCommand(env, varsOf(env, bashCall('c-3')), 'buyer')).stdout) as { id: string }).id).toBe(second)
+    // A merchant account taken over by the call is not a buyer account, and a call outlives no tenant switch.
+    const shop = await env.service.addAccount(merchant)
+    const merchantCall = bashCall('c-4')
+    await env.service.startSignIn(shop.accountId)
+    expect(await runCommand(env, varsOf(env, merchantCall), 'risk', shop.accountId)).toMatchObject({ code: 1, stderr: refusal(shop.accountId) })
+    const started = varsOf(env, bashCall('c-5'))
+    env.hub.set(null)
+    await env.settle(s => s.tenantId === null)
+    expect((await runCommand(env, started, 'risk', first)).stderr).toBe('DSH: DSH is signed out of the user center, so there are no e-commerce accounts.\n')
   })
 
   it('picks the buyer account that opened the fewest pages, and says when there is none or the platform has none', async () => {

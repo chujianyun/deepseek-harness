@@ -1,7 +1,7 @@
 import { chmod, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { runDshEcommerce, takeOverBuyer, takeOverMerchant, type EcommerceCommandResult } from '../src/account.ts'
+import { reportRisk, runDshEcommerce, takeOverBuyer, takeOverMerchant, type EcommerceCommandResult } from '../src/account.ts'
 import { main as alimamaMain } from '../src/alimama-report.ts'
 import { fileSafe, parseOptions, realDeps, runReport, writeFiles } from '../src/cli.ts'
 import { EXIT, SkillError } from '../src/errors.ts'
@@ -72,6 +72,18 @@ describe('takeOverMerchant', () => {
       await expect(takeOverBuyer(ran({ code: 1, stderr: refusal }))).rejects.toMatchObject({ exitCode: EXIT.stopped })
     }
     await expect(takeOverBuyer(ran({ code: 1, stderr: 'DSH: there is no buyer account for this.' }))).rejects.toMatchObject({ exitCode: EXIT.failed })
+  })
+
+  it('reports risk control to DSH for the buyer account, and says when DSH could not be told', async () => {
+    const args: unknown[] = []
+    const run = (given: readonly string[]): Promise<EcommerceCommandResult> => {
+      args.push(given)
+      return ran({ stdout: JSON.stringify({ id: 'b1', account: 'tb1', cooldownUntil: '2026-10-11T03:00:00.000Z' }) })()
+    }
+    expect(await reportRisk('b1', run)).toBe('DSH 已让买家号 tb1 冷却到 2026-10-11T03:00:00.000Z，期间不会再被挑选。')
+    expect(args).toEqual([['risk', 'b1']])
+    expect(await reportRisk('b1', ran({ code: 1, stderr: 'DSH: risk control can only be reported for a buyer account this shell call took over, not "b1".\n' })))
+      .toBe('未能通知 DSH 让这个买家号冷却（DSH: risk control can only be reported for a buyer account this shell call took over, not "b1".），请今天不要再用它。')
   })
 
   it('runs the dsh-ecommerce on PATH and reports how it ended', async () => {

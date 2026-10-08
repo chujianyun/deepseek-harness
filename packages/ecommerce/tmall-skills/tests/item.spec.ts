@@ -4,8 +4,8 @@ import {
   descImages, impressionTags, itemIdOf, itemUrl, mtop, openItem, parseItem, readQuestions, readReviews, reviewRow, RiskStop,
   type Collected, type Pace,
 } from '../src/item.ts'
-import { FakePage } from './support.ts'
-import { DESC_BODY, itemPage, mtopAnswer, mtopData, questionPage, rawReview, RENDERED_ITEM, TAGS } from './item-fixtures.ts'
+import { FakePage, on } from './support.ts'
+import { DESC_BODY, descUrl, itemPage, mtopAnswer, mtopData, questionPage, rawReview, RENDERED_ITEM, TAGS } from './item-fixtures.ts'
 
 const sleeps: number[] = []
 const PACE: Pace = { sleep: (ms) => { sleeps.push(ms); return Promise.resolve() }, random: () => 0.5 }
@@ -150,8 +150,8 @@ describe('reviews', () => {
 
   it('reads the first page for its tags even with no main reviews wanted, and skips follow-ups when asked', async () => {
     const into = fresh()
-    await readReviews(itemPage([mtopAnswer('mtop.taobao.rate.detaillist.get', { hasNext: false, rateList: [rawReview(1)] })]), PACE, '9', { questions: 0, reviews: 0, appends: 0, perTag: 5 }, into)
-    expect([into.reviews.length, into.calls, into.tags]).toEqual([1, 1, []])
+    await readReviews(itemPage([mtopAnswer('mtop.taobao.rate.detaillist.get', { hasNext: false, rateList: [rawReview(1)], imprNewItemVOS: TAGS })]), PACE, '9', { questions: 0, reviews: 0, appends: 0, perTag: 0 }, into)
+    expect([into.reviews.length, into.calls, into.tags.length]).toEqual([0, 1, 2])
     const empty = fresh()
     await readReviews(itemPage([mtopAnswer('mtop.taobao.rate.detaillist.get', { hasNext: true })]), PACE, '9', { questions: 0, reviews: 5, appends: 0, perTag: 5 }, empty)
     expect([empty.reviews.length, empty.calls]).toEqual([0, 1])
@@ -199,9 +199,22 @@ describe('opening the item page', () => {
     expect(await stopped(openItem(slider, '1'))).toBeInstanceOf(RiskStop)
   })
 
-  it('skips a page that is not a standard item page, and reads an item without SKU data as signed out', async () => {
+  it('skips a page that is not a standard item page or has no SKU data', async () => {
     const none = await stopped(openItem(itemPage([], null), '1'))
     expect([none.exitCode, none.message]).toEqual([EXIT.failed, expect.stringContaining('没有标准详情页')])
-    expect((await stopped(openItem(itemPage([], { item: {} }), '1'))).exitCode).toBe(EXIT.signedOut)
+    const bare = await stopped(openItem(itemPage([], { item: {} }), '1'))
+    expect([bare.exitCode, bare.message]).toEqual([EXIT.failed, expect.stringContaining('没有 SKU 数据（商品可能已下架')])
+  })
+
+  it('reads no description from a broken body, or from another item\'s late answer, and stops listening after the item', async () => {
+    expect((await openItem(itemPage([], RENDERED_ITEM, '<html>error</html>'), '1')).descImages).toEqual([])
+    const late = new FakePage([on('__ICE_APP_CONTEXT__', RENDERED_ITEM), on('#nocaptcha', false)], (_url, page) => { page.respond(descUrl('2'), DESC_BODY) })
+    expect((await openItem(late, '1')).descImages).toEqual([])
+    const listening = itemPage([])
+    await openItem(listening, '794818635459')
+    let heard = false
+    listening.onResponse(() => true, () => { heard = true })
+    listening.respond(descUrl('794818635459'), DESC_BODY)
+    expect(heard).toBe(true)
   })
 })

@@ -26,6 +26,8 @@ export interface BridgeHandlers {
   readonly browser: (grant: Grant, accountId: string) => Promise<BridgeReply>
   /** Pick a buyer account; an empty platform allows any. */
   readonly buyer: (grant: Grant, platform: string) => Promise<BridgeReply>
+  /** Rest a buyer account the call took over, after risk control a script met through the platform's APIs. */
+  readonly risk: (grant: Grant, accountId: string) => Promise<BridgeReply>
 }
 
 /** The loopback endpoint and the tokens of the live calls. */
@@ -92,6 +94,7 @@ export class Bridge {
     if (command === 'accounts') return this.handlers.accounts(grant)
     if (command === 'browser') return this.handlers.browser(grant, url.searchParams.get('id') ?? '')
     if (command === 'buyer') return this.handlers.buyer(grant, url.searchParams.get('platform') ?? '')
+    if (command === 'risk') return this.handlers.risk(grant, url.searchParams.get('id') ?? '')
     return { status: 404, body: `DSH: unknown command "${command}".` }
   }
 }
@@ -99,7 +102,7 @@ export class Bridge {
 /** The `dsh-ecommerce` command: POSIX shell and curl, so it needs nothing DSH ships. */
 export const SCRIPT = `#!/bin/sh
 # dsh-ecommerce: the e-commerce accounts DSH keeps signed in, for this DSH shell call.
-usage='usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao]'
+usage='usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id>'
 if [ -z "$DSH_ECOMMERCE_URL" ]; then
   echo "dsh-ecommerce: e-commerce accounts are only available in a DSH shell call while DSH is signed in to the user center." >&2
   exit 2
@@ -110,6 +113,9 @@ case "$1" in
     if [ -z "$2" ]; then echo "$usage" >&2; exit 2; fi
     set -- --get --data-urlencode "id=$2" "$DSH_ECOMMERCE_URL/browser" ;;
   buyer) set -- --get --data-urlencode "platform=$2" "$DSH_ECOMMERCE_URL/buyer" ;;
+  risk)
+    if [ -z "$2" ]; then echo "$usage" >&2; exit 2; fi
+    set -- --get --data-urlencode "id=$2" "$DSH_ECOMMERCE_URL/risk" ;;
   *) echo "$usage" >&2; exit 2 ;;
 esac
 out=$(curl -sS -w '\\n%{http_code}' "$@") || exit 1

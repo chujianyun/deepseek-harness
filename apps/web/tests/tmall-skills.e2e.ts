@@ -7,8 +7,8 @@
 // Business Advisor figures, writes the reports into the workspace, and its summary reaches the chat.
 // With a signed-in buyer account instead, the item skill's script lets DSH pick the buyer account,
 // opens each item page once (counted toward the account's pages today), reads the stand-in's item,
-// 问大家, and reviews, stops at risk control keeping what it read, and is refused once the account's
-// pages for the day are used.
+// 问大家, and reviews, stops at risk control keeping what it read and has DSH rest the account, and is
+// refused while the account rests.
 import { once } from 'node:events'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
@@ -189,7 +189,7 @@ it.skipIf(process.platform === 'win32')('runs the packed Tmall data skills with 
   }
 }, 180_000)
 
-it.skipIf(process.platform === 'win32')('runs the packed item skill with a buyer account DSH picks, stops at risk control, and is refused once the day\'s pages are used', async () => {
+it.skipIf(process.platform === 'win32')('runs the packed item skill with a buyer account DSH picks, stops at risk control, rests the account, and is refused while it rests', async () => {
   const harnessHome = await mkdtemp(join(tmpdir(), 'dsh-tmall-item-home-'))
   const skillsDir = join(harnessHome, 'skills')
   await packSkills(skillsDir)
@@ -252,14 +252,17 @@ it.skipIf(process.platform === 'win32')('runs the packed item skill with a buyer
     expect(report).toContain('「用了一次就破了，质量太差」')
     expect((await readdir(join(item, 'images'))).sort()).toEqual(['desc_01.jpg', 'main_01.jpg', 'main_02.jpg', 'sku_01_【10只】超薄.jpg'])
     expect(await readFile(join(reports, '单品_600000000004', '报告.md'), 'utf8')).toContain('⚠️ 采集中途停止')
-    // Each item page counted once toward the buyer account's pages today, and the account is free again.
+    // Each item page counted once toward the buyer account's pages today; the script told DSH about the
+    // risk control the APIs met, so the account rests, and it is free of the call again.
     await expect.poll(async () => (await accounts.getState()).accounts[0]!.pagesToday).toBe(2)
-    expect((await accounts.getState()).accounts[0]!.inUse).toBe(false)
+    const rested = (await accounts.getState()).accounts[0]!
+    expect([rested.inUse, typeof rested.cooldownUntil]).toEqual([false, 'string'])
+    expect(first).toContain(`DSH 已让买家号 tb_buyer_1 冷却到 ${rested.cooldownUntil as string}，期间不会再被挑选。`)
 
-    // The day's two pages are used: the next request is refused before any page opens.
+    // The resting account is not handed out: the next request stops before any page opens.
     await send('请采集商品 524565741530 做单品报告')
     await expect.poll(() => page.getByText(ANSWER).count(), { timeout: 60_000 }).toBe(2)
-    expect(lastResult()).toContain('has opened its 2 pages for today')
+    expect(lastResult()).toContain('is resting after the platform')
     expect((await accounts.getState()).accounts[0]!.pagesToday).toBe(2)
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {

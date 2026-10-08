@@ -161,20 +161,27 @@ export function itemFacts(input: FactsInput): ItemFacts {
   const sold = new Map<string, number>()
   let unidentified = 0
   for (const review of main) {
-    const hit = item.skus.find(sku => sku.sku !== '' && (review.sku.includes(sku.sku) || (review.sku !== '' && sku.sku.includes(review.sku))))
-    const key = hit !== undefined ? hit.sku : review.sku !== '' ? `[已下架/改名] ${review.sku.slice(0, 30)}` : undefined
+    const bought = skuValues(review.sku)
+    const hit = item.skus.find(sku => sku.sku === bought)
+      ?? longest(item.skus.filter(sku => sku.sku !== '' && bought !== '' && (bought.includes(sku.sku) || sku.sku.includes(bought))), sku => sku.sku)[0]
+    const key = hit !== undefined ? hit.sku : bought !== '' ? `[已下架/改名] ${bought.slice(0, 30)}` : undefined
     if (key === undefined) unidentified++
     else sold.set(key, (sold.get(key) ?? 0) + 1)
   }
 
   const appends = input.reviews.filter(review => review.source === 'append')
   const appendNegative = (review: Review): boolean => isNegative({ rateType: '', source: '', content: review.append, append: '' })
-  // The three pools never share a review: each source is read without duplicates and keeps its own label.
+  // A review can come back under several sources (the main list and a negative tag); it counts once.
+  const pooled = new Set<string>()
   const negativePool = [
     ...main.filter(review => review.rateType === '中评' || review.rateType === '差评'),
     ...input.reviews.filter(review => review.source.startsWith('tag:')),
     ...appends.filter(appendNegative),
-  ]
+  ].filter((review) => {
+    if (pooled.has(review.id)) return false
+    pooled.add(review.id)
+    return true
+  })
   const categories = new Map<string, number>()
   const examples = new Map<string, Quote[]>()
   for (const review of negativePool) {
@@ -238,6 +245,14 @@ export function itemFacts(input: FactsInput): ItemFacts {
         .map(question => ({ ...cite(question), date: question.date.slice(0, 10) })),
     },
   }
+}
+
+/**
+ * A review's purchased SKU in the item's SKU-name form: the option values of 「属性:值；属性:值」,
+ * joined with ' / ', without placeholder options.
+ */
+function skuValues(sku: string): string {
+  return sku.split('；').map(part => part.slice(part.indexOf(':') + 1).trim()).filter(value => value !== '' && !value.startsWith('其它')).join(' / ')
 }
 
 function quote(review: Review): Quote {

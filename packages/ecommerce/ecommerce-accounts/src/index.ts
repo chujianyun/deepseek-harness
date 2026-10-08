@@ -194,6 +194,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     accounts: grant => this.modelAccounts(grant),
     browser: (grant, id) => this.modelBrowser(grant, id),
     buyer: (grant, platform) => this.modelBuyer(grant, platform),
+    risk: (grant, id) => this.modelRisk(grant, id),
   })
   /** Unregisters the Skill while a tenant is signed in. */
   private skill: (() => void) | undefined
@@ -688,9 +689,32 @@ export class EcommerceAccountsService extends TypertRemoteService {
       },
       risk: (url) => {
         this.ctx.logger.warn(`ecommerce-accounts: risk control on ${entry.id} at ${url}`)
-        this.updateEntry({ ...current(), cooldownUntil: new Date(Date.now() + this.options.cooldownHours * 3_600_000).toISOString() })
+        this.rest(current())
       },
     }
+  }
+
+  /** Rest a buyer account for `cooldownHours` from now. */
+  private rest(entry: Entry): Entry {
+    const rested = { ...entry, cooldownUntil: new Date(Date.now() + this.options.cooldownHours * 3_600_000).toISOString() }
+    this.updateEntry(rested)
+    return rested
+  }
+
+  /**
+   * Answer `dsh-ecommerce risk <id>`: a script met the platform's risk control through its APIs, which
+   * DSH's watch does not see, so the buyer account this call took over rests like after a risk page.
+   */
+  private modelRisk(grant: Grant, accountId: string): Promise<BridgeReply> {
+    if (grant.tenantId !== this.tenantId) return Promise.resolve(refused(SIGNED_OUT_OF_HUB))
+    const entry = this.entries.find(item => item.id === accountId)
+    if (entry === undefined || entry.kind !== 'buyer' || this.leases.get(entry.id)?.callId !== grant.callId) {
+      return Promise.resolve(refused(`DSH: risk control can only be reported for a buyer account this shell call took over, not "${accountId}".`))
+    }
+    this.ctx.logger.warn(`ecommerce-accounts: risk control reported by a script on ${entry.id}`)
+    const rested = this.rest(entry)
+    const body = JSON.stringify({ id: rested.id, account: rested.account, cooldownUntil: rested.cooldownUntil }, null, 2)
+    return Promise.resolve({ status: 200, body })
   }
 
   /** Replace an account's ledger row now, and save it. */

@@ -64,8 +64,10 @@ export class FakePage implements Page {
     this.listeners.push(listener)
   }
 
-  onResponse(match: (url: string) => boolean, listener: (body: string) => void): void {
-    this.responses.push({ match, listener })
+  onResponse(match: (url: string) => boolean, listener: (body: string) => void): () => void {
+    const entry = { match, listener }
+    this.responses.push(entry)
+    return () => { this.responses.splice(this.responses.indexOf(entry), 1) }
   }
 
   /** Receive a response as the page. */
