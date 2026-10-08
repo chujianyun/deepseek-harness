@@ -265,5 +265,19 @@ export async function takeInventory(folder: string): Promise<Inventory> {
     else if (VIDEO_EXTENSIONS.has(extension)) videos.push(file)
     else others.push(file)
   }
-  return { folder, images, tables, documents, videos, others, unreadable }
+  return { folder, images: whiteShotsAsMain(images), tables, documents, videos, others, unreadable }
+}
+
+/**
+ * Several unnamed square images with white borders are product shots on white, the usual main images,
+ * rather than one white-background image each.
+ * @param images - the sorted images.
+ * @returns them, such shots moved to 1:1 main images when there is more than one.
+ */
+function whiteShotsAsMain(images: ImageEntry[]): ImageEntry[] {
+  const unnamed = images.filter(image => image.kind === 'white' && nameHint(image.file) === undefined)
+  if (unnamed.length < 2) return images
+  return images.map(image => unnamed.includes(image)
+    ? { ...image, kind: 'main', reason: `1:1 白底（${String(unnamed.length)} 张没有名称线索的白底图，按主图）`, warnings: [...image.warnings, ...mainWarnings(image.facts as ImageFacts)] }
+    : image)
 }

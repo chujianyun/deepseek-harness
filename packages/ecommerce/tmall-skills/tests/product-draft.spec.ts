@@ -60,12 +60,13 @@ const RULES: PublishRules = {
     rule({ key: 'title', label: '商品标题' }),
     rule({ key: 'shopping_title', label: '导购标题', required: false }),
     rule({ key: 'tmSubTitle', label: '商品卖点', required: false }),
-    rule({ key: 'p-20000', label: '品牌', uiType: 'combobox', options: [{ value: 1, text: '名流' }], allowsCustom: true }),
-    rule({ key: 'p-8484762', label: '安全套 外观形状', uiType: 'select', options: [{ value: 1, text: '其他' }, { value: 2, text: '大颗粒' }] }),
-    rule({ key: 'p-8484761', label: '安全套 厚薄', uiType: 'select', options: [{ value: 1, text: '超薄型' }] }),
+    rule({ key: 'p-20000', label: '品牌', uiType: 'combobox', propGroup: 'keyProp', options: [{ value: 1, text: '名流' }], allowsCustom: true }),
+    rule({ key: 'p-8484762', label: '安全套 外观形状', uiType: 'select', propGroup: 'bindProp', options: [{ value: 1, text: '其他' }, { value: 2, text: '大颗粒' }] }),
+    rule({ key: 'p-8484761', label: '安全套 厚薄', uiType: 'select', propGroup: 'bindProp', options: [{ value: 1, text: '超薄型' }] }),
     rule({ key: 'p-31889', label: '颜色', uiType: 'sequentialCheckbox', required: false, options: [{ value: 1, text: '透明' }] }),
-    rule({ key: 'p-132644733', label: '注册证号', uiType: 'combobox', options: [{ value: 'x', text: '粤械' }], allowsCustom: true }),
-    rule({ key: 'p-168920851', label: '产品标准' }),
+    rule({ key: 'p-132644733', label: '注册证号', uiType: 'combobox', propGroup: 'itemProp', options: [{ value: 'x', text: '粤械' }], allowsCustom: true }),
+    rule({ key: 'p-168920851', label: '产品标准', propGroup: 'bindProp' }),
+    rule({ key: 'p-21845', label: '避孕套规格', uiType: 'sequentialCombobox' }),
     rule({ key: 'qualification', label: '商品资质', visible: false }),
     rule({ key: 'personalUseConfirm', label: 'personalUseConfirm', uiType: 'checkbox', declaration: true, options: [{ value: '1', text: '确认个人可自行使用。' }] }),
     rule({ key: 'productConfirm', label: '产品确认', uiType: 'checkbox', declaration: true }),
@@ -177,6 +178,19 @@ describe('sorting', () => {
 })
 
 describe('takeInventory', () => {
+  it('takes several unnamed white-background squares for main images, and one for the white image', async () => {
+    const root = await folder()
+    for (const n of [1, 2]) await put(root, `${String(n)}.png`, png(100, 100, 'white'))
+    await put(root, '3.png', png(90, 120))
+    const shots = await takeInventory(root)
+    expect(shots.images.map(image => [image.kind, image.reason])).toEqual([
+      ['main', '1:1 白底（2 张没有名称线索的白底图，按主图）'], ['main', '1:1 白底（2 张没有名称线索的白底图，按主图）'], ['main34', '3:4（90×120）'],
+    ])
+    expect(shots.images[0]?.warnings).toEqual(['1:1 主图建议至少 800×800，这张只有 100×100'])
+    await put(root, '2.png', png(100, 100))
+    expect((await takeInventory(root)).images.map(image => image.kind)).toEqual(['white', 'main', 'main34'])
+  })
+
   it('takes stock of a folder like 510107068-新品准备', async () => {
     const root = await sampleFolder()
     await put(root, '说明.docx', 'x')
@@ -214,7 +228,8 @@ describe('answers', () => {
       ['[]', '答案文件 应是对象'], ['{"columns":null}', 'columns 应是对象'], ['{"columns":{"价":"money"}}', 'columns.价 应是'],
       ['{"images":{"a":"cover"}}', 'images.a 应是'], ['{"skuImages":{"a":1}}', 'skuImages.a 应是'],
       ['{"values":{"产地":{"value":1,"source":"店铺资料"}}}', 'values.产地.value 应是'], ['{"values":{"产地":{"value":"大陆","source":"猜的"}}}', 'values.产地.source 应是'],
-      ['{"values":{"产地":"大陆"}}', 'values.产地 应是对象'],
+      ['{"values":{"产地":"大陆"}}', 'values.产地 应是对象'], ['{"images":{"a":"constructor"}}', 'images.a 应是'],
+      ['{"values":{"产地":{"value":" ","source":"店铺资料"}}}', 'values.产地.value 应是非空'], ['{"values":{"产地":{"value":[],"source":"店铺资料"}}}', 'values.产地.value 应是非空'],
     ] as const) {
       expect(() => parseAnswers(text), text).toThrow(message)
     }
@@ -260,7 +275,7 @@ describe('buildDraft', () => {
     ]), {})
     expect(draft.skuTable).toBe('规格.csv')
     expect(draft.skus.map(sku => sku.name)).toEqual(['甲', '丙', '甲'])
-    expect(draft.skus[2]).toEqual({ index: '3', name: '甲', price: 9 })
+    expect(draft.skus[2]).toEqual({ index: '5', name: '甲', price: 9 })
     expect(draft.problems).toEqual([
       'SKU 表第 3 行没有 规格名称', 'SKU「乙」的售价「免费」不是有效价格', 'SKU「丙」的数量「2.5」不是整数', 'SKU「丙」的库存「x」不是整数',
       'SKU 名称「甲」重复', '商家编码「c1」重复',
@@ -272,7 +287,12 @@ describe('buildDraft', () => {
   it('takes the model\'s columns, image kinds, and SKU images over the rules', () => {
     const images = [image('a/1.png', 'unknown'), image('b/sku-2.png', 'sku'), image('b/sku-1.png', 'sku'), image('b/封面.png', 'sku'), image('b/多余.png', 'sku')]
     const lettered = buildDraft(inventoryOf([['A款', '甲', '20']], [image('s/1.png', 'sku')], ['序号', '款', '售价']), { columns: { 款: 'name' } })
-    expect(lettered.skus).toEqual([{ index: 'A款', name: '甲', price: 20, image: 's/1.png' }])
+    expect(lettered.skus).toEqual([{ index: 'A款', name: '甲', price: 20 }])
+    expect(lettered.missing[0]).toBe('SKU「甲」的 SKU 图')
+    const shifted = buildDraft(inventoryOf([['甲', '', '', '待定'], ['乙', '', '', '9'], ['丙', '', '', '8']], ['s/sku1.png', 's/sku2_800x800.png', 's/sku3_800x800.png'].map(f => image(f, 'sku'))), {})
+    expect(shifted.skus.map(sku => [sku.index, sku.image])).toEqual([['2', 's/sku2_800x800.png'], ['3', 's/sku3_800x800.png']])
+    const twice = buildDraft(inventoryOf([['甲', '', '', '1'], ['乙', '', '', '2']], [image('s/a.png', 'sku')]), { skuImages: { 's/a.png': '甲' } })
+    expect(twice.skus.map(sku => sku.image)).toEqual(['s/a.png', undefined])
     const draft = buildDraft(inventoryOf([['甲', 'c1', '', '20'], ['乙', 'c2', '', '30']], images, ['款', '编码', '数量', '售价']), {
       columns: { 款: 'name', 编码: 'ignore' }, images: { 'a/1.png': 'main', 'nope.png': 'main' }, skuImages: { 'b/封面.png': '乙', 'b/多余.png': 'nobody' },
     })
@@ -300,13 +320,14 @@ describe('checkDraft', () => {
   it('fills the form from images, SKUs, and sourced values, normalizing options', () => {
     const checks = byKey(draftOf())
     expect(Object.keys(checks)).toEqual([
-      'mainImagesGroup', 'title', 'shopping_title', 'tmSubTitle', 'p-20000', 'p-8484762', 'p-8484761', 'p-132644733', 'p-168920851',
+      'mainImagesGroup', 'title', 'shopping_title', 'tmSubTitle', 'p-20000', 'p-8484762', 'p-8484761', 'p-132644733', 'p-168920851', 'p-21845',
       'personalUseConfirm', 'productConfirm', 'sku', 'price', 'quantity', 'shelfTime', 'tmDeliveryTime', 'yinHeWhiteBgImage', 'descRepublicOfSell',
     ])
     expect(checks.mainImagesGroup).toMatchObject({ status: '已填', source: '素材原值', value: '2 张' })
     expect(checks.title).toMatchObject({ status: '待确认', source: '模型生成', value: '名流水多多三合一玻尿酸避孕套' })
     expect(checks['p-20000']).toMatchObject({ status: '已填', source: '店铺资料', value: '名流' })
-    expect(checks['p-8484762']).toMatchObject({ status: '已填', value: '其他', note: '「其它」已按平台可选值写成「其他」' })
+    expect(checks['p-8484762']).toMatchObject({ status: '已填', value: '其他', filled: ['其他'], note: '「其它」已按平台可选值写成「其他」' })
+    expect(checks['p-21845']).toMatchObject({ status: '缺失', note: '需要销售属性的值（SKU 表只填颜色分类）' })
     expect(checks['p-8484761']).toMatchObject({ status: '已填', value: '超薄型', note: '「超薄 型」已按平台可选值写成「超薄型」' })
     expect(checks['p-132644733']).toMatchObject({ status: '已填', note: '「皖械注准20182180006」不在可选值里，作为自定义值' })
     expect(checks['p-168920851']).toEqual({ key: 'p-168920851', label: '产品标准', required: true, status: '缺失' })
@@ -333,6 +354,9 @@ describe('checkDraft', () => {
       key: 'price', label: '一口价', required: true, status: '已填', source: '店铺资料', value: '69.9',
     })
     expect(byKey(draftOf({ values: { 一口价: { value: '贵', source: '店铺资料' } } })).price).toMatchObject({ status: '不符合', note: '一口价不是数字' })
+    expect(byKey(draftOf({ values: { 一口价: { value: '42.9', source: '模型生成' } } })).price).toMatchObject({ status: '待确认' })
+    const punctuated = byKey(draftOf({ values: { 商品标题: { value: `名流（三合一），${'名'.repeat(25)}`, source: '模型生成' } } })).title
+    expect(punctuated).toMatchObject({ status: '不符合', value: `名流（三合一），${'名'.repeat(25)}` })
   })
 
   it('marks what is missing, notes the page conditions, and caps images at what the platform takes', () => {
@@ -347,6 +371,8 @@ describe('checkDraft', () => {
     expect(required.sku).toMatchObject({ status: '缺失', note: '没有 SKU' })
     const stockless = byKey(draftOf({ skus: [{ index: '1', name: '甲', price: 1 }], values: { 库存: { value: '100', source: '店铺资料' } } }))
     expect(stockless.quantity).toMatchObject({ status: '已填', value: '100', source: '店铺资料' })
+    const counted = byKey(draftOf({ skus: [{ index: '1', name: '甲', price: 1 }], values: { 商品数量: { value: '50', source: '店铺资料' }, 库存: { value: '9', source: '店铺资料' } } }))
+    expect(counted.quantity).toMatchObject({ value: '50' })
     const hidden = byKey(draftOf({ values: { 商品资质: { value: '有', source: '店铺资料' } } }))
     expect(hidden.qualification).toMatchObject({ status: '已填', value: '有' })
   })
@@ -396,11 +422,11 @@ describe('product-draft script', () => {
     expect(text).toContain('图片：1:1 主图 2、3:4 主图 2、白底图 1、透明素材图 1、详情图 3、SKU 图 3（其他素材 1 张不使用：素材图/场景图.jpeg）')
     expect(text).toContain('| SKU1 | 1盒【18只】 | m-a | 18 | 42.9 |  | sku图/sku1.png |')
     expect(text).toContain('待确认（模型生成）：\n- 商品标题：名流水多多三合一玻尿酸避孕套')
-    expect(text).toContain('按类目 计生用品 > 避孕套（50024154）的字段规则检查：缺失 3、不符合 0、待店铺确认 2、待确认 3、已填 12')
+    expect(text).toContain('按类目 计生用品 > 避孕套（50024154）的字段规则检查：缺失 4、不符合 0、待店铺确认 2、待确认 3、已填 12')
     expect(text).toContain('- personalUseConfirm：确认个人可自行使用。')
     expect(text).toContain('- 安全套 外观形状（p-8484762）：其他〔沿用旧商品〕 —— 「其它」已按平台可选值写成「其他」')
     const draft = JSON.parse(await readFile(join(out, '商品草稿.json'), 'utf8')) as { catId: string; checks: unknown[]; createdAt: string }
-    expect([draft.catId, draft.checks.length, draft.createdAt]).toEqual(['50024154', 20, '2026-10-08T03:00:00.000Z'])
+    expect([draft.catId, draft.checks.length, draft.createdAt]).toEqual(['50024154', 21, '2026-10-08T03:00:00.000Z'])
     expect(await readFile(join(out, '待确认清单.md'), 'utf8')).toMatch(/^# 待确认清单\n\n商品草稿/u)
   })
 

@@ -84,15 +84,16 @@ export function parseAnswers(text: string): Answers {
     if (typeof field !== 'string' || !fields.includes(field)) throw new Error(`columns.${header} 应是 ${fields.join('/')} 之一`)
   }
   for (const [file, kind] of Object.entries(record(root.images, 'images'))) {
-    if (typeof kind !== 'string' || !(kind in KIND_LABEL)) throw new Error(`images.${file} 应是 ${Object.keys(KIND_LABEL).join('/')} 之一`)
+    if (typeof kind !== 'string' || !Object.hasOwn(KIND_LABEL, kind)) throw new Error(`images.${file} 应是 ${Object.keys(KIND_LABEL).join('/')} 之一`)
   }
   for (const [file, sku] of Object.entries(record(root.skuImages, 'skuImages'))) {
     if (typeof sku !== 'string') throw new Error(`skuImages.${file} 应是 SKU 序号或名称`)
   }
   for (const [label, entry] of Object.entries(record(root.values, 'values'))) {
     const { value, source } = record(entry, `values.${label}`)
-    const text = typeof value === 'string' || (Array.isArray(value) && value.every(item => typeof item === 'string'))
-    if (!text) throw new Error(`values.${label}.value 应是文字或文字列表`)
+    const items: unknown[] = Array.isArray(value) ? value : [value]
+    const text = items.length > 0 && items.every(item => typeof item === 'string' && item.trim() !== '')
+    if (!text) throw new Error(`values.${label}.value 应是非空文字或非空文字列表`)
     if (!ANSWER_SOURCES.includes(source as Source)) throw new Error(`values.${label}.source 应是 ${ANSWER_SOURCES.join('/')} 之一`)
   }
   return root
@@ -195,7 +196,7 @@ function readSkus(
     }
     const code = cell('code')
     skus.push({ row, sku: {
-      index: cell('index') || String(skus.length + 1), name, price,
+      index: cell('index') || String(at + 1), name, price,
       ...code === undefined || code === '' ? {} : { code }, ...count === undefined ? {} : { count }, ...stock === undefined ? {} : { stock },
     } })
   })
@@ -210,24 +211,28 @@ function readSkus(
   return skus
 }
 
-/** The number in a name, such as 3 in `sku3` or `SKU-03`. */
+/** The first number in a name, such as 3 in `sku3`, `SKU-03`, or `sku3_800x800`. */
 function numberOf(name: string): string | undefined {
-  return /(\d+)(?!.*\d)/u.exec(name)?.[1]?.replace(/^0+(?=\d)/u, '')
+  return /\d+/u.exec(name)?.[0].replace(/^0+(?=\d)/u, '')
 }
 
-/** Give each SKU its image: by the model's answer, else by the number in the file name. */
+/**
+ * Give each SKU its image: by the model's answer, else by the number in the file name matching the number
+ * in the SKU's index (its row in the table when there is no index column). An image goes to one SKU only.
+ */
 function matchSkuImages(
   skus: { sku: DraftSku }[], files: readonly string[], answers: Readonly<Record<string, string>>, missing: string[], problems: string[],
 ): void {
   const used = new Set<string>()
-  skus.forEach((entry, at) => {
-    const position = String(at + 1)
-    const answered = files.find(file => answers[file] === entry.sku.index || answers[file] === entry.sku.name)
-    const numbered = files.find(file => answers[file] === undefined && numberOf(file.split('/').at(-1) as string) === (numberOf(entry.sku.index) ?? position))
+  for (const entry of skus) {
+    const number = numberOf(entry.sku.index)
+    const free = files.filter(file => !used.has(file))
+    const answered = free.find(file => answers[file] === entry.sku.index || answers[file] === entry.sku.name)
+    const numbered = free.find(file => answers[file] === undefined && number !== undefined && numberOf(file.split('/').at(-1) as string) === number)
     const image = answered ?? numbered
     if (image === undefined) missing.push(`SKU「${entry.sku.name}」的 SKU 图`)
     else { used.add(image); entry.sku = { ...entry.sku, image } }
-  })
+  }
   const unused = files.filter(file => !used.has(file))
   if (unused.length > 0 && skus.length > 0) problems.push(`这些 SKU 图对不上任何 SKU：${unused.join('、')}`)
 }
@@ -243,6 +248,8 @@ export interface FieldCheck {
   readonly status: FieldStatus
   /** What goes in, for the user to read. */
   readonly value?: string
+  /** The values to submit, options written as the platform lists them; for fields filled from a value. */
+  readonly filled?: readonly string[]
   readonly source?: Source
   readonly note?: string
 }
@@ -319,10 +326,11 @@ function checkField(field: FieldRule, draft: Draft): FieldCheck {
       if (draft.skus.length > 0 && draft.skus.every(sku => sku.stock !== undefined)) {
         return { ...base, status: '已填', source: '素材原值', value: String(draft.skus.reduce((sum, sku) => sum + (sku.stock as number), 0)) }
       }
-      return fromValue(base, field, draft.values['库存'], '每个 SKU 的库存')
+      return fromValue(base, field, draft.values[field.label] ?? draft.values['库存'], '每个 SKU 的库存')
     }
   }
-  return fromValue(base, field, draft.values[VALUE_FIELDS[field.key] ?? field.label] ?? findByKey(draft.values, field.label))
+  const saleProp = field.key.startsWith('p-') && field.propGroup === undefined
+  return fromValue(base, field, draft.values[VALUE_FIELDS[field.key] ?? field.label] ?? findByKey(draft.values, field.label), saleProp ? '销售属性的值（SKU 表只填颜色分类）' : undefined)
 }
 
 /** A value whose label matches the field's once compared like options. */
@@ -341,14 +349,14 @@ function checkPrice(base: Pick<FieldCheck, 'key' | 'label' | 'required'>, draft:
   if (prices.length > 0 && !prices.includes(price)) {
     return { ...base, status: '不符合', source, value: String(price), note: `一口价必须等于某个 SKU 的价格（${prices.join('、')}）` }
   }
-  return { ...base, status: '已填', source, value: String(price), ...given === undefined ? { note: '取最低的 SKU 价格' } : {} }
+  return { ...base, status: source === '模型生成' ? '待确认' : '已填', source, value: String(price), ...given === undefined ? { note: '取最低的 SKU 价格' } : {} }
 }
 
 /** A field filled from a sourced value, its options normalized. */
 function fromValue(base: Pick<FieldCheck, 'key' | 'label' | 'required'>, field: FieldRule, entry: SourcedValue | undefined, needed?: string): FieldCheck {
   if (entry === undefined) return { ...base, status: '缺失', ...needed === undefined ? {} : { note: `需要${needed}` } }
   const status: FieldStatus = entry.source === '模型生成' ? '待确认' : '已填'
-  const values = (typeof entry.value === 'string' ? [entry.value] : entry.value).map(value => value.normalize('NFKC').replace(/\s+/gu, ' ').trim())
+  const values = (typeof entry.value === 'string' ? [entry.value] : entry.value).map(value => value.replace(/\s+/gu, ' ').trim())
   const notes: string[] = []
   const normalized = values.map((value) => {
     if (field.options === undefined) return value
@@ -366,7 +374,7 @@ function fromValue(base: Pick<FieldCheck, 'key' | 'label' | 'required'>, field: 
   if (field.key === 'title' && titleWidth(normalized[0] as string) > 60) notes.push(`标题宽度 ${String(titleWidth(normalized[0] as string))}，天猫最多 60（汉字算 2）`)
   const tooWide = field.key === 'title' && titleWidth(normalized[0] as string) > 60
   return {
-    ...base, status: refused || tooWide ? '不符合' : status, source: entry.source, value: normalized.join('、'),
+    ...base, status: refused || tooWide ? '不符合' : status, source: entry.source, value: normalized.join('、'), filled: normalized,
     ...notes.length === 0 ? {} : { note: notes.join('；') },
   }
 }
