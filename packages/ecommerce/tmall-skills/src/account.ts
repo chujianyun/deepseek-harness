@@ -40,7 +40,7 @@ export function runDshEcommerce(args: readonly string[]): Promise<EcommerceComma
 }
 
 /** The platforms a merchant skill works with, and their names for the user. */
-export const MERCHANT_PLATFORMS = { tmall: '天猫', pinduoduo: '拼多多' } as const
+export const MERCHANT_PLATFORMS = { tmall: '天猫', pinduoduo: '拼多多', doudian: '抖店' } as const
 
 /** A platform a merchant skill works with. */
 export type MerchantPlatform = keyof typeof MERCHANT_PLATFORMS

@@ -20,7 +20,9 @@
 // page also answers its image space folders and uploads and saves what its request helper submits to the
 // warehouse, which the item manager lists under in_stock and all. Pinduoduo's seller pages answer the
 // backend calls the pdd-publish skill makes: the 避孕套 category and its template, image uploads, and a
-// 草稿箱 that a save adds to. Its tabs are
+// 草稿箱 that a save adds to. A Douyin shop's new-item page has a form store DSH finds, its 避孕套 form,
+// a draft save that adds a 下架 draft, and the category, list, and upload calls the doudian-publish skill
+// makes. Its tabs are
 // kept in `<user-data-dir>/fake-tabs.json` and come back with --restore-last-session. As in Chrome, a
 // closed tab is still listed once by Target.getTargets, but has no window any more.
 import { createHash } from 'node:crypto'
@@ -241,6 +243,43 @@ const pddApi = (expression) => {
     default: return { success: false, error_code: 50000, error_msg: `fake chrome has no ${route}` }
   }
 }
+/** A Douyin shop's drafts. */
+const dyShop = { drafts: [] }
+const DY_FORM = {
+  properties: [
+    { id: '1687', label: '品牌', required: true, options: [{ value_id: '1275155012', value_name: '名流', additions: { brand_cn_name: '名流' } }] },
+    { id: '3990', label: '医疗器械备案/注册号', required: true },
+  ],
+  qualifications: [{ id: '6994739134078140716', label: '医疗器械注册证', required: true, options: [{ value: '7674837201351786794', label: '医疗器械注册证_20260817_112810', urls: ['https://p3-aio.ecombdimg.com/fake-q.png'] }] }],
+  freight: [{ label: '包邮', value: '0' }],
+  delivery: [{ label: '48小时', value: '2' }],
+  proofTypes: [{ label: '吊牌价', value: '2' }],
+}
+const dyApi = (expression) => {
+  const [, method, literal] = /x\.open\("(\w+)", ("[^"]*") \+/u.exec(expression) ?? []
+  const [route, query = ''] = JSON.parse(literal ?? '""').split('?')
+  const params = new URLSearchParams(query)
+  const ok = data => ({ code: 0, msg: '', data })
+  const line = { first_cid: 1000000480, second_cid: 1000000495, third_cid: 1000000638, fourth_cid: 0, first_name: '医疗器械及保健用品', second_name: '计生用品', third_name: '避孕套' }
+  switch (`${method} ${route}`) {
+    case 'GET /product/tproduct/categoryOptionsN': return ok(params.get('cid') === '0' ? [{ id: 1000000480, name: '医疗器械及保健用品', is_leaf: false }] : [])
+    case 'GET /product/tproduct/searchCategoryN': return ok([line])
+    case 'GET /product/tproduct/getCategoryDetail': return ok([{ ...line, first_cname: line.first_name, second_cname: line.second_name, third_cname: line.third_name }])
+    case 'GET /product/tproduct/list': {
+      const query = params.get('product_id_and_name')
+      const rows = params.get('check_status') === '3' ? [] : dyShop.drafts
+      return ok(query === null ? rows : rows.filter(row => row.product_id === query || row.name.includes(query)))
+    }
+    default: return { code: 10004, msg: `fake chrome has no ${route}` }
+  }
+}
+const dySave = (expression) => {
+  const first = JSON.parse(/Object\.entries\((\{.*?\})\)\) s\.form/su.exec(expression)?.[1] ?? '{}')
+  if (first.start_sale_type !== '1') return { notOffSale: true }
+  const id = `38471000000000000${String(dyShop.drafts.length + 1).padStart(2, '0')}`
+  dyShop.drafts.unshift({ product_id: id, name: first.title, draft_status: 1, status: 0, check_status: 1 })
+  return { product_id: id }
+}
 /** An item page's 问大家 and review APIs: two questions, two main reviews, one negative tag, and a follow-up. */
 const itemApi = (target, expression) => {
   const success = data => ({ ret: 'SUCCESS::调用成功', data, punish: false })
@@ -264,6 +303,11 @@ const evaluateIn = (target, expression) => {
   if (expression.includes('#nocaptcha')) return false
   if (expression === "document.readyState === 'complete'") return true
   if (expression.includes('categorySelectChildren') || expression.includes('retrievalDataAsyncOpt')) return categoryApi(expression)
+  if (expression.includes('window.__dshGoodsStore = value') || expression.includes('window.__dshDraftGuard = true')) return true
+  if (expression.includes("extra('category_properties')")) return DY_FORM
+  if (expression.includes('publishStore.saveGoods')) return dySave(expression)
+  if (expression.includes('/product/img/batchupload')) return { code: 0, data: [`https://p3-aio.ecombdimg.com/fake-${String(Date.now())}.png`] }
+  if (expression.includes('new XMLHttpRequest()') && expression.includes('/product/tproduct/')) return dyApi(expression)
   if (expression.includes('if (window.__dshPdd) return true')) return true
   if (expression.startsWith('window.__dshPdd(')) return pddApi(expression)
   if (expression.includes('file.pinduoduo.com/v3/store_image')) return { url: `https://pfs.pinduoduo.com/fake-${String(Date.now())}.png` }

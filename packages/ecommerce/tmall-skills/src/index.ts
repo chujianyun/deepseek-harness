@@ -30,6 +30,7 @@ export const SKILLS: readonly TmallSkill[] = [
   { name: 'ecommerce-product-draft', scripts: { 'product-draft.mjs': 'product-draft-cli.ts' } },
   { name: 'tmall-publish', scripts: { 'publish.mjs': 'publish-cli.ts' } },
   { name: 'pdd-publish', scripts: { 'pdd-publish.mjs': 'pdd-cli.ts' } },
+  { name: 'doudian-publish', scripts: { 'doudian-publish.mjs': 'doudian-cli.ts' } },
 ]
 
 const PACKAGE = fileURLToPath(new URL('..', import.meta.url))
