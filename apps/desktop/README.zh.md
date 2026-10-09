@@ -171,9 +171,9 @@ Web 侧的对应命令是 `pnpm run dev:web` 与 `pnpm run start:web`，见[开�
 
 重复启动和 `dsh://open` 会保持工作区隐藏，直到启动登录检查或欢迎页登录允许进入。从 Welcome 进入时，键盘焦点落在文档上，不选中侧边栏控件；Tab 导航仍可使用。
 
-Desktop 在 Host 启动后、打开工作区前读取用户中心登录状态。未登录时，欢迎窗口只提供一个操作“用公司账号登录”；没有 API Key 页面，也不能跳过。模型在工作区中配置：没有可用提供商时，新会话会显示[模型首次引导](../../packages/client/ui-settings-models/README.zh.md)（填写 DeepSeek 官方 Key，或「使用其他模型提供商」打开设置 → 模型），没有 Key 时发送消息会说明到哪里配置。
+Desktop 在 Host 启动后、打开工作区前读取用户中心登录状态。未登录时，欢迎窗口显示 MO WorkAI Logo、「MO WorkAI，我帮你」和唯一的操作「登录」；没有 API Key 页面，也不能跳过。模型在工作区中配置：没有可用提供商时，新会话会显示[模型首次引导](../../packages/client/ui-settings-models/README.zh.md)（填写 DeepSeek 官方 Key，或「使用其他模型提供商」打开设置 → 模型），没有 Key 时发送消息会说明到哪里配置。
 
-欢迎页显示用户中心超级管理员为本机上次登录的租户设置的登录页品牌：Logo 按比例缩放在品牌行内，欢迎标题按管理员填写的原样显示，中英文界面相同。[Hub 账号](../../packages/credentials/hub-account/README.zh.md)在每次登录后、以及已登录时每次启动时缓存这两项，因此离线和登录前也能显示。租户没有设置的项不显示。没有缓存时（首次启动，或租户恢复默认后）欢迎页不显示 Logo 和标题，只显示「使用公司账号登录后开始使用」和登录按钮。工作区中，侧栏品牌行由 [Hub 账号界面](../../packages/client/ui-hub-account/README.zh.md)负责：显示当前租户的 Logo，下方是构建版本号；租户没有设置 Logo 时显示公司名称。
+欢迎页始终显示内置的 MO WorkAI Logo，不论租户是否设置了登录页 Logo。欢迎标题是用户中心超级管理员为本机上次登录的租户设置的，按管理员填写的原样显示，中英文界面相同。[Hub 账号](../../packages/credentials/hub-account/README.zh.md)在每次登录后、以及已登录时每次启动时缓存品牌信息，因此离线和登录前也能显示标题。没有标题时（首次启动，或租户没有设置）不显示标题。登录页把 Logo、标题、「MO WorkAI，我帮你」和「登录」按钮依次居中排列在窗口中部。工作区中，侧栏品牌行由 [Hub 账号界面](../../packages/client/ui-hub-account/README.zh.md)负责：显示当前租户的 Logo，下方是构建版本号；租户没有设置 Logo 时显示公司名称。
 
 欢迎窗口在显示前读取共享的 `locale.preference`。用户明确选择的英文或中文优先；否则 Desktop 按系统语言顺序匹配支持的语言，并以英文兜底。主界面在挂载前通过隔离 preload 读取同一偏好和系统语言顺序。在设置中切换语言会更新桌面壳的当前词典和菜单；自动选择不会写入偏好。欢迎窗口不提供语言切换入口。
 
