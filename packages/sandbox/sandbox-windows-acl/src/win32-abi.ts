@@ -48,9 +48,9 @@ export const NO_INHERITANCE = 0
 export const ERROR_ACCESS_DENIED = 5
 /** TOKEN_INFORMATION_CLASS value for the token default DACL. */
 export const TokenDefaultDacl = 6
-/** SECURITY_INFORMATION flag selecting the DACL. */
 /** SECURITY_INFORMATION bit for the owner SID. */
 export const OWNER_SECURITY_INFORMATION = 0x00000001
+/** SECURITY_INFORMATION flag selecting the DACL. */
 export const DACL_SECURITY_INFORMATION = 0x00000004
 /** SECURITY_INFORMATION flag selecting the mandatory integrity label. */
 export const LABEL_SECURITY_INFORMATION = 0x00000010
