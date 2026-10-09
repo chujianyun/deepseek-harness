@@ -21,8 +21,8 @@ export class InstallError extends Error {
   constructor(readonly code: 'network' | 'verification' | 'storage' | 'busy' | 'launch', message: string) { super(message) }
 }
 
-/** Waits between attempts to move a directory that another process still holds, about 3 s in all. */
-const HELD_RETRY_DELAYS_MS = [100, 200, 400, 800, 800, 800]
+/** How long moving the checked CLI into place keeps retrying while another process holds its files. */
+const HELD_RETRY_MS = 3000
 
 /**
  * Whether a file operation may succeed when tried again: `EBUSY`, and on Windows `EPERM` and `EACCES`,
@@ -33,15 +33,19 @@ function transient(error: unknown): boolean {
   return code === 'EBUSY' || (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES'))
 }
 
-/** Rename a directory, retrying while another process holds its files; the abort reason ends the wait. */
-async function renameRetrying(from: string, to: string, signal: AbortSignal): Promise<void> {
-  for (const delay of [...HELD_RETRY_DELAYS_MS, undefined]) {
+/**
+ * Run a file operation, retrying it while another process holds the files until `deadline`. Node's own
+ * `rm` retries are not used: on Windows they wait for as long as the file stays held.
+ */
+async function retrying(operation: () => Promise<void>, deadline: number, signal: AbortSignal): Promise<void> {
+  for (let delay = 100; ; delay = Math.min(delay * 2, 800)) {
     try {
-      await rename(from, to)
+      await operation()
       return
     } catch (error) {
-      if (delay === undefined || !transient(error)) throw error
-      await new Promise(resolve => setTimeout(resolve, delay))
+      const left = deadline - Date.now()
+      if (!transient(error) || left <= 0) throw error
+      await new Promise(resolve => setTimeout(resolve, Math.min(delay, left)))
       signal.throwIfAborted()
     }
   }
@@ -168,16 +172,18 @@ export async function installCli(
     await unpack(archivePath, archive.file, name, staging)
     if (skillsPath !== undefined) await unpackSkills(skillsPath, join(staging, SKILLS_DIR))
   } catch (error) {
-    await rm(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }).catch(() => undefined)
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined)
     throw new InstallError('storage', `${archive.file}: ${String(error)}`)
   }
   // The version check runs from the final directory: renaming a directory right after its executable ran
   // fails on Windows while the exited process or a virus scanner still holds the file.
+  const deadline = Date.now() + HELD_RETRY_MS
   try {
-    await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 })
-    await renameRetrying(staging, target, signal)
+    await retrying(() => rm(target, { recursive: true, force: true }), deadline, signal)
+    await retrying(() => rename(staging, target), deadline, signal)
   } catch (error) {
-    await rm(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }).catch(() => undefined)
+    // Cleanup is best effort: the next install clears the staging directory first.
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined)
     signal.throwIfAborted()
     throw new InstallError(await blockedBy(root, error), `${target}: ${String(error)}`)
   }
@@ -185,7 +191,7 @@ export async function installCli(
     const { stdout } = await runNativeCommand(join(target, name), ['--version'], AbortSignal.any([signal, AbortSignal.timeout(LAUNCH_TIMEOUT_MS)]), 'hidden')
     if (!stdout.includes(spec.version)) throw new Error(`reported ${JSON.stringify(stdout.trim())}`)
   } catch (error) {
-    await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }).catch(() => undefined)
+    await rm(target, { recursive: true, force: true }).catch(() => undefined)
     signal.throwIfAborted()
     throw new InstallError('launch', `${name} --version: ${String(error)}`)
   }
