@@ -16,7 +16,7 @@ Platform 内嵌文档使用持久化 WebContentsView 分区，分区名由 Platf
 
 Desktop Host 的 Platform API 请求与更新策略请求用相同的 Platform 客户端请求头标识已安装客户端：平台、客户端版本、语言、以秒为单位的时区偏移，以及有意保持为空的 bundle id。账号操作按调用逐次传入调用界面的身份；账号 provider 管理[仅 API 使用的请求头配置](../../packages/credentials/deepseek-account-platform/README.zh.md#use-this-package)。更新策略额外上报架构、更新通道和内置运行时版本。 原生账号状态解析器接受 `no-response` 登录失败，并在供 UI 使用的安全投影中保留该错误码。
 
-只有登录用户中心（Skill Hub）后才能打开工作区；DeepSeek 账号或已配置的 API Key 不再能打开工作区。在设置中退出登录、用户中心拒绝续期、切换租户，都会关闭工作区并回到 Welcome；拒绝续期后 Welcome 显示本地化的登录失效提示。Desktop 要求配置 [Hub 账号](../../packages/credentials/hub-account/README.zh.md)（`DSH_HUB_ORIGIN`）；未配置时启动检查失败，Desktop 报告启动错误。
+只有登录用户中心（Skill Hub）后才能打开工作区；DeepSeek 账号或已配置的 API Key 不再能打开工作区。在设置中退出登录、用户中心拒绝续期、切换租户，都会关闭工作区并回到 Welcome；拒绝续期后 Welcome 显示本地化的登录失效提示。打包后的 Desktop 登录其发布配置指定的用户中心（见[打包](#user-center-settings)）；启动环境中的 `DSH_HUB_ORIGIN` 与 `DSH_HUB_CLIENT_ID` 会替换它们，开发与测试启动正是借此连接自己的 [Hub 账号](../../packages/credentials/hub-account/README.zh.md)用户中心。两者都没有时，Desktop 不启动 Host，启动对话框说明没有配置用户中心，只提供退出。
 
 桌面麦克风访问仅允许主 `dsh-app://app` 页面发起的音频请求。macOS 使用系统麦克风授权、随包用途说明，以及主应用与 Helper 签名中的 `com.apple.security.device.audio-input` 权限。
 
@@ -418,6 +418,10 @@ Windows 下载完成后的更新确认说明应用会在安装期间关闭、完
 若任务收尾失败但已确认 Host 退出，安装会被拒绝，壳会在允许再次确认重启前恢复当前版本的 Host。Host 正常停止后的安装器启动失败使用同一恢复路径。替代 Host 启动并完成认证后，壳重新加载原有应用地址，让 Web 页面获取当前端口、Cookie 和启动注入数据；页面加载失败时打开原生致命故障恢复弹窗。未确认进程退出时，绝不允许启动替代 Host。已下载目标保留以供重试。已知强更策略在恢复过程中继续阻塞；Host 恢复失败打开原生致命故障恢复弹窗。
 
 已确认 Host 退出但任务未成功收尾时，常规与强更弹窗均展示本地化恢复提示。两种语言都根据类型化的准备失败原因选择提示，翻译文案变化不会改变失败分类。“查看技术详情”默认折叠，仅展示退出状态、信号、关闭确认和截止时间事实，不展示插件 stderr。展开详情既不重试，也不授权安装。
+
+### 用户中心设置
+
+打包要求从 `.env.windows` 或 `.env.macos` 读取 `DSH_DESKTOP_HUB_ORIGIN`（公司用户中心的 HTTPS 源站，不含凭据、路径、查询或片段）和 `DSH_DESKTOP_HUB_CLIENT_ID`（在其中登记的公共 DSH 客户端），未签名和仅准备构建同样要求；两者都不会回退到父环境。打包把两者作为 `dshHub` 嵌入应用清单。每次启动 Host 前，除非启动环境（包括登录 shell 读取的结果）已设置 `DSH_HUB_ORIGIN`，Desktop 把它们作为 `DSH_HUB_ORIGIN` 与 `DSH_HUB_CLIENT_ID` 传给 Host；未打包的开发清单不含 `dshHub`，因此开发启动需自行设置这些变量。用户中心超级管理员把该客户端登记为 `public` 客户端，回调地址为 `http://127.0.0.1/callback`，权限为 `profile`、`skills:read` 和 `skills:write`。
 
 ### 强制更新策略
 

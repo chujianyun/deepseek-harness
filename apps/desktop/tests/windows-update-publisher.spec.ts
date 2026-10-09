@@ -51,6 +51,8 @@ describe('Windows update publisher', () => {
   beforeAll(() => {
     vi.stubEnv('DSH_DESKTOP_APP_ID', 'com.example.publisher-test')
     vi.stubEnv('DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN', 'https://policy.example.com')
+    vi.stubEnv('DSH_DESKTOP_HUB_ORIGIN', 'https://hub.example.com')
+    vi.stubEnv('DSH_DESKTOP_HUB_CLIENT_ID', 'dsh_test')
     vi.stubEnv('DSH_DESKTOP_MANDATORY_UPDATE_CONFIG', JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }))
     vi.stubEnv('DSH_DESKTOP_TARGET_PLATFORM', 'win32')
     vi.stubEnv('DSH_DESKTOP_UNSIGNED', '1')
@@ -80,7 +82,7 @@ describe('Windows update publisher', () => {
     await withCertificate({ CN: 'Publisher', O: 'Company', C: 'CN' }, async (file, signTool) => {
       const config = createElectronBuilderConfig({
         DSH_DESKTOP_APP_ID: 'com.example.publisher-test',
-        DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
+        DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com', DSH_DESKTOP_HUB_ORIGIN: 'https://hub.example.com', DSH_DESKTOP_HUB_CLIENT_ID: 'dsh_test',
         DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN: 'https://policy.example.com',
         ...(explicitTarget ? { DSH_DESKTOP_TARGET_PLATFORM: 'win32' } : {}),
         DSH_DESKTOP_WINDOWS_CER_FILE: file,

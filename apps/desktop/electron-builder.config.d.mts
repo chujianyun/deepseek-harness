@@ -1,4 +1,5 @@
 import type { AfterPackContext, BeforePackContext } from 'app-builder-lib'
+import type { DesktopHubEnvironment } from './scripts/desktop-hub-environment.d.mts'
 
 /** Electron-builder fields asserted by the Desktop release tests. */
 export interface DesktopElectronBuilderConfig {
@@ -16,7 +17,7 @@ export interface DesktopElectronBuilderConfig {
     { readonly from: string, readonly to: 'dsh', readonly filter: readonly ['**/*'] },
     { readonly from: string, readonly to: 'dsh/node_modules', readonly filter: readonly ['**/*'] },
   ]
-  readonly extraMetadata: { readonly dshDesktopAppId: string }
+  readonly extraMetadata: { readonly dshDesktopAppId: string; readonly dshHub: DesktopHubEnvironment }
   readonly asarUnpack: readonly string[]
   readonly extraResources: readonly [
     { readonly from: string, readonly to: 'runtime' },

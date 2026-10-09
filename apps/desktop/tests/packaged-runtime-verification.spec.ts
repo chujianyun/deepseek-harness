@@ -12,7 +12,7 @@ vi.mock('../scripts/windows-asar-unpack.mjs', async importOriginal => ({
 
 const ENVIRONMENT = {
   DSH_DESKTOP_APP_ID: 'com.example.installer',
-  DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
+  DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com', DSH_DESKTOP_HUB_ORIGIN: 'https://hub.example.com', DSH_DESKTOP_HUB_CLIENT_ID: 'dsh_test',
   DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
   DSH_DESKTOP_TARGET_PLATFORM: 'win32',
   DSH_DESKTOP_TARGET_ARCH: 'x64',

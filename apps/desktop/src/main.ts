@@ -48,6 +48,7 @@ import { DesktopUpdateSchedule, resolveDesktopUpdateScheduleConfig } from './upd
 import { desktopUpdateErrorSummary, presentDesktopUpdate } from './update-presentation.ts'
 import { desktopErrorState } from './startup-error.ts'
 import { readDesktopLoginShellEnvironment, resolveDesktopLoginShellConfig } from './login-shell-environment.ts'
+import { desktopHubEnvironment, resolveDesktopHubConfig } from './hub-config.ts'
 import { DesktopMandatoryUpdatePolicy, resolveDesktopPolicyConfig, type DesktopPolicyState } from './mandatory-update-policy.ts'
 import { desktopClientMetadata, desktopClientVersion } from './client-metadata.ts'
 import { DesktopMandatoryUpdateWindow } from './mandatory-update-window.ts'
@@ -321,8 +322,13 @@ async function main(): Promise<void> {
     for (const failure of result.failures) console.warn(`desktop login shell: ${failure.shell} failed (${failure.reason})`)
     return result.environment
   })
+  // A packaged manifest carries the release's user center; a development manifest carries none.
+  const bundledHub = readFile(join(app.getAppPath(), 'package.json'), 'utf8')
+    .then(text => resolveDesktopHubConfig((JSON.parse(text) as { dshHub?: unknown }).dshHub))
   let hostEnvironment: NodeJS.ProcessEnv = process.env
-  const prepareHostEnvironment = async (): Promise<void> => { hostEnvironment = await loginShell }
+  const prepareHostEnvironment = async (): Promise<void> => {
+    hostEnvironment = desktopHubEnvironment(await loginShell, await bundledHub)
+  }
   let quitting = false
   let startup: Promise<void> | undefined
   let workspaceRecovery: Promise<void> | undefined

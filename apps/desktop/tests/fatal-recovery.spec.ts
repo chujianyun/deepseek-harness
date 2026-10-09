@@ -239,3 +239,19 @@ it('writes the report once for the first fatal failure and not for the recovery-
   expect(operations.writeReport).toHaveBeenCalledOnce()
   expect(operations.show.mock.calls[1]![0].detail).toContain(REPORT_PATH)
 })
+
+it.each(['en', 'zh-CN'])('states the missing user center and offers only exit in %s', async (locale) => {
+  const { operations, choice, stopped, recovery } = fixture(locale, async () => REPORT_PATH)
+  const pending = recovery.report(new Error('desktop: no user center is configured (DSH_HUB_ORIGIN and DSH_HUB_CLIENT_ID)'), 'main')
+  await shown(operations)
+  const options = operations.show.mock.calls[0]![0]
+  expect(options.buttons).toEqual([operations.messages().exitApplication])
+  expect(options.detail).toBe(`${operations.messages().startupHubNotConfigured}\n${operations.messages().reportWrittenTo.replace('{path}', REPORT_PATH)}`)
+  await expect([options.title, options.message, options.detail, ...options.buttons!].join('\n') + '\n')
+    .toMatchFileSnapshot(`expected/fatal-hub-not-configured-${locale}.txt`)
+  choice.resolve({ response: 0, checkboxChecked: false })
+  stopped.resolve(undefined)
+  await pending
+  expect(operations.exit).toHaveBeenCalledOnce()
+  expect(operations.restart).not.toHaveBeenCalled()
+})

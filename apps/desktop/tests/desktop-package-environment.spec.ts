@@ -7,7 +7,7 @@ import { resolveWindowsPackageSettings } from '../scripts/windows-package-settin
 
 const WINDOWS = { platform: 'win32', arch: 'x64' } as const
 const MACOS = { platform: 'darwin', arch: 'arm64' } as const
-const POLICY = { DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
+const POLICY = { DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com', DSH_DESKTOP_HUB_ORIGIN: 'https://hub.example.com', DSH_DESKTOP_HUB_CLIENT_ID: 'dsh_test',
   DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }) }
 const RELEASE = { ...POLICY, DSH_DESKTOP_APP_ID: 'com.example.desktop', DOWNLOAD_TEST_ORIGIN: 'https://updates.example.com',
   DOWNLOAD_TEST_RELEASE_ID: '0123456789abcdef0123456789abcdef' }
@@ -61,6 +61,7 @@ describe('Desktop local packaging configuration', () => {
         CSC_LINK: 'stale-certificate', DOWNLOAD_TEST_ORIGIN: 'https://stale.example.com',
         DOWNLOAD_TEST_RELEASE_ID: 'a'.repeat(32), download_test_release_id: 'b'.repeat(32),
         dsh_desktop_windows_key_container: 'case-insensitive-stale-container',
+        DSH_DESKTOP_HUB_ORIGIN: 'https://stale.example.com', dsh_desktop_hub_client_id: 'stale-client',
       }
       expect(loadDesktopPackageEnvironment('win32', parent, directory)).toEqual({
         PATH: 'build-tools', DSH_DESKTOP_APP_ID: 'com.example.windows',
@@ -200,5 +201,14 @@ it('owns macOS tuning in the local file and validates it before signing credenti
     expect(env.DSH_DESKTOP_MACOS_NOTARIZATION_PROXY).toBe('')
     expect(() =>{  validateDesktopPackageEnvironment({ ...RELEASE, DSH_DESKTOP_MACOS_PACK_CONCURRENCY: '' }, MACOS) }).toThrow('PACK_CONCURRENCY')
     expect(() =>{  validateDesktopPackageEnvironment({ ...RELEASE, DSH_DESKTOP_MACOS_NOTARIZATION_PROXY: 'socks5://localhost:8080' }, MACOS) }).toThrow('NOTARIZATION_PROXY')
+  })
+})
+
+describe('Desktop user-center release settings', () => {
+  it.each([[WINDOWS, { unsigned: true }], [MACOS, { prepareOnly: true }]] as const)('are required for every %j build (%j)', (target, options) => {
+    const { DSH_DESKTOP_HUB_ORIGIN: _origin, ...withoutOrigin } = RELEASE
+    const { DSH_DESKTOP_HUB_CLIENT_ID: _client, ...withoutClient } = RELEASE
+    expect(() => { validateDesktopPackageEnvironment(withoutOrigin, target, options) }).toThrow('DSH_DESKTOP_HUB_ORIGIN')
+    expect(() => { validateDesktopPackageEnvironment(withoutClient, target, options) }).toThrow('DSH_DESKTOP_HUB_CLIENT_ID')
   })
 })
