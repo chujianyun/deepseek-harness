@@ -2,7 +2,7 @@
  * Web boot kernel. It owns only the module system, Cordis loader, and a
  * framework-free boot page; plugin composition and the renderer handoff are
  * `bootClient` and `mountClient`. The dynamic UI renderer receives the mount
- * point after every client entry activates.
+ * point after every shipped client entry activates; third-party entries that do not activate are warned about.
  * @module @deepseek-ai/dsh-client-web/src/boot
  */
 import { Context } from '@deepseek-ai/cordis'
@@ -15,6 +15,16 @@ import { mountClient } from './mount.ts'
 import { getStaticModules } from './seed.ts'
 import { installWindowDragRecall } from './window-drag/recall.ts'
 import './base.css'
+
+/**
+ * Entries outside the `@deepseek-ai` scope come from third-party plugins installed in the user's profile;
+ * one that does not activate is warned about and leaves the shipped client running.
+ * @param name - entry name (package name).
+ * @returns whether the entry is a third-party plugin.
+ */
+export function isThirdPartyEntry(name: string): boolean {
+  return !name.startsWith('@deepseek-ai/')
+}
 
 /** Module transport hook replaced by jsdom tests. */
 export type BootSeams = Pick<ClientModuleCreateOptions, 'loadBundle'>
@@ -85,6 +95,7 @@ export class AppWebEntry {
         ctx,
         modules: this.modules,
         manifest: this.manifest,
+        optional: isThirdPartyEntry,
         onEntryState: (name, state) => {
           if (onFailure === undefined || state !== 'failed') this.page.setState(name, state)
         },
