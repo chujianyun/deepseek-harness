@@ -12,8 +12,6 @@ import type { NativePtr, Win32Bindings } from './ffi.ts'
 import { buildExplicitAccess } from './acl.ts'
 import * as abi from './win32-abi.ts'
 
-export { openCurrentProcessToken } from './process-token.ts'
-
 /**
  * Find and copy the token's logon session SID (S-1-5-5-x-y, attribute
  * SE_GROUP_LOGON_ID). The restricted token needs it for WinSta0/desktop and

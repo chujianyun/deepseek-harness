@@ -25,7 +25,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import { allocOverlapped, allocPtrSlot, decodePtr, decodeUint8At, decodeUint16At, decodeUint32At, getTempPath, isInvalidHandle, isNullPtr, ptrAddress, sameSidAt, throwLastError, throwWin32 } from './ffi.ts'
+import { allocOverlapped, allocPtrSlot, decodePtr, freeBytes, decodeUint8At, decodeUint16At, decodeUint32At, getTempPath, isInvalidHandle, isNullPtr, ptrAddress, sameSidAt, throwLastError, throwWin32 } from './ffi.ts'
 import type { NativePtr, Win32Bindings } from './ffi.ts'
 import { Win32Error } from '@deepseek-ai/dsh-win32-process'
 import { currentUserSid } from './process-token.ts'
@@ -392,8 +392,23 @@ export function grantWrite(
       applyGrant(api, path, sidPtr, lowLabelSidPtr, worldSidPtr)
     } catch (error) {
       if (!deniedApply(error)) throw error
-      allowUserWriteOwner(api, path)
-      applyGrant(api, path, sidPtr, lowLabelSidPtr, worldSidPtr)
+      const userSid = currentUserSid(api)
+      try {
+        if (!ownedBy(api, path, userSid)) {
+          refuse(api, path, 'the directory belongs to another account, such as an administrator, so the sandbox cannot grant writes in it. '
+            + `Use a workspace inside the user's own folders, or have an administrator give the user Full Control of ${path}`)
+        }
+        try {
+          allowUserWriteOwner(api, path, userSid)
+          applyGrant(api, path, sidPtr, lowLabelSidPtr, worldSidPtr)
+        } catch (retryError) {
+          if (!deniedApply(retryError)) throw retryError
+          refuse(api, path, 'Windows refused to change the permissions of this directory although the user owns it, as a network share '
+            + 'or a security policy may. Use a workspace on a local disk inside the user\'s own folders')
+        }
+      } finally {
+        freeBytes(userSid)
+      }
     }
   })
 }
@@ -401,6 +416,28 @@ export function grantWrite(
 /** Whether a security edit failed because the caller lacks the right to apply it. */
 function deniedApply(error: unknown): boolean {
   return error instanceof Win32Error && error.api === 'SetNamedSecurityInfoW' && error.win32Code === abi.ERROR_ACCESS_DENIED
+}
+
+/** Throw the denied grant with what the user can do about it. */
+function refuse(api: Win32Bindings, path: string, reason: string): never {
+  throwWin32(api, 'SetNamedSecurityInfoW', abi.ERROR_ACCESS_DENIED, `grantWrite(${path}): ${reason}`)
+}
+
+/** Whether `userSid` owns the directory. */
+function ownedBy(api: Win32Bindings, path: string, userSid: NativePtr): boolean {
+  const ownerSlot = allocPtrSlot()
+  const descriptorSlot = allocPtrSlot()
+  const readResult = api.getNamedSecurityInfoW(
+    path, abi.SE_FILE_OBJECT, abi.OWNER_SECURITY_INFORMATION, ownerSlot, allocPtrSlot(), allocPtrSlot(), allocPtrSlot(), descriptorSlot,
+  )
+  if (readResult !== abi.ERROR_SUCCESS) throwWin32(api, 'GetNamedSecurityInfoW', readResult, `${path} owner`)
+  const owner = decodePtr(ownerSlot)
+  const descriptor = decodePtr(descriptorSlot)
+  try {
+    return owner !== null && sameSidAt(owner, 0, userSid, 0)
+  } finally {
+    if (descriptor !== null) api.localFree(descriptor)
+  }
 }
 
 /** One read-merge-write of the grant; see {@link grantWrite}. */
@@ -436,26 +473,16 @@ function applyGrant(api: Win32Bindings, path: string, sidPtr: NativePtr, lowLabe
 }
 
 /**
- * Give the caller's user WRITE_OWNER on the directory alone, through the owner's implicit WRITE_DAC,
- * so the Low label can be applied. A directory owned by another account refuses the edit: the error
- * then names that cause and what the user can do.
+ * Give the owning user WRITE_OWNER on the directory alone, through the owner's implicit WRITE_DAC, so the
+ * Low label can be applied. The ACE stays; a workspace under the user's profile inherits Full Control, which
+ * already includes this right.
  */
-function allowUserWriteOwner(api: Win32Bindings, path: string): void {
-  const userSid = currentUserSid(api)
-  try {
-    const { oldAcl, descriptor } = readCurrentSecurity(api, path)
-    mergeAndApply(
-      api, path, buildExplicitAccess(userSid, abi.GRANT_ACCESS, abi.WRITE_OWNER, abi.NO_INHERITANCE),
-      oldAcl, { kind: 'keep' }, descriptor, 'grantWrite owner right',
-    )
-  } catch (error) {
-    if (!deniedApply(error)) throw error
-    throwWin32(api, 'SetNamedSecurityInfoW', abi.ERROR_ACCESS_DENIED, `grantWrite(${path}): the directory belongs to another account, `
-      + 'such as an administrator, so the sandbox cannot grant writes in it. Use a workspace inside the user\'s own folders, '
-      + `or have an administrator give the user Full Control of ${path}`)
-  } finally {
-    api.localFree(userSid)
-  }
+function allowUserWriteOwner(api: Win32Bindings, path: string, userSid: NativePtr): void {
+  const { oldAcl, descriptor } = readCurrentSecurity(api, path)
+  mergeAndApply(
+    api, path, buildExplicitAccess(userSid, abi.GRANT_ACCESS, abi.WRITE_OWNER, abi.NO_INHERITANCE),
+    oldAcl, { kind: 'keep' }, descriptor, 'grantWrite owner right',
+  )
 }
 
 /**

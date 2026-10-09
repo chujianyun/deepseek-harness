@@ -14,18 +14,18 @@ import * as abi from './win32-abi.ts'
  * handle is obtained through a real OpenProcess handle because the
  * GetCurrentProcess() pseudo-handle is not addressable through koffi).
  * @param api - the binding table.
+ * @param access - the token rights to open it with; reading needs only TOKEN_QUERY.
  * @returns the opened token handle.
  */
-export function openCurrentProcessToken(api: Win32Bindings): NativePtr {
+export function openCurrentProcessToken(
+  api: Win32Bindings,
+  access: number = abi.TOKEN_QUERY | abi.TOKEN_DUPLICATE | abi.TOKEN_ADJUST_DEFAULT | abi.TOKEN_ASSIGN_PRIMARY,
+): NativePtr {
   const processHandle = api.openProcess(abi.PROCESS_QUERY_INFORMATION, 0, process.pid)
   if (isNullPtr(processHandle)) throwLastError(api, 'OpenProcess', `pid ${process.pid}`)
 
   const tokenSlot = allocPtrSlot()
-  const opened = api.openProcessToken(
-    processHandle,
-    abi.TOKEN_QUERY | abi.TOKEN_DUPLICATE | abi.TOKEN_ADJUST_DEFAULT | abi.TOKEN_ASSIGN_PRIMARY,
-    tokenSlot,
-  )
+  const opened = api.openProcessToken(processHandle, access, tokenSlot)
   if (opened === 0) {
     const win32Code = api.getLastError()
     api.closeHandle(processHandle) // best-effort on the error path
@@ -40,10 +40,10 @@ export function openCurrentProcessToken(api: Win32Bindings): NativePtr {
 /**
  * Copy the SID of the user the current process runs as (TokenUser).
  * @param api - the binding table.
- * @returns a copied SID; the caller frees it with LocalFree.
+ * @returns a copied SID; the caller frees it with `freeBytes`.
  */
 export function currentUserSid(api: Win32Bindings): NativePtr {
-  const token = openCurrentProcessToken(api)
+  const token = openCurrentProcessToken(api, abi.TOKEN_QUERY)
   try {
     const neededSlot = allocUint32()
     api.getTokenInformation(token, abi.TokenUser, null, 0, neededSlot) // expected to fail with ERROR_INSUFFICIENT_BUFFER

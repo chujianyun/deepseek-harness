@@ -15,8 +15,9 @@ import koffi from 'koffi'
 import { allocBytes, isNullPtr } from '../src/ffi.ts'
 import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
 import {
-  createRestrictedToken, findLogonSid, makeWellKnownSid, openCurrentProcessToken, restrictTokenIntegrity, setTokenDefaultDaclGrant,
+  createRestrictedToken, findLogonSid, makeWellKnownSid, restrictTokenIntegrity, setTokenDefaultDaclGrant,
 } from '../src/token.ts'
+import { openCurrentProcessToken } from '../src/process-token.ts'
 import * as abi from '../src/win32-abi.ts'
 
 const PVOID = koffi.pointer('void')

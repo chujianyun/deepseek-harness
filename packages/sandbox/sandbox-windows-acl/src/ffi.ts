@@ -148,6 +148,14 @@ export function allocBytes(length: number): NativePtr {
 }
 
 /**
+ * Free a block {@link allocBytes} returned.
+ * @param pointer - the block.
+ */
+export function freeBytes(pointer: NativePtr): void {
+  requireKoffi().free(pointer)
+}
+
+/**
  * Allocate one zeroed x64 OVERLAPPED record.
  * @returns allocated pointer.
  * @remarks Koffi 3.1.1 crashes when LockFileEx or UnlockFileEx receives NULL;
