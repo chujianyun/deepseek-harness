@@ -64,51 +64,44 @@ export function signInFor(providerId: string): LlmProviderSignIn | undefined {
 export const LOOPBACK_CALLBACK_PORTS: Readonly<Record<string, number>> = { 'openai-codex': 1455 }
 
 /**
- * Whether another program already listens on a loopback port. The probe binds
- * the address pi-ai's logins use by default and releases it before answering.
+ * Whether a socket already listens on one address. The probe binds the
+ * address and releases it before answering; only `EADDRINUSE` counts, so an
+ * address the host lacks (no IPv6 loopback) or may not bind reads as free.
  * @param port - the port to probe.
- * @returns true when the bind is refused.
+ * @param host - the address to probe.
+ * @returns true when another socket holds the address.
  */
-function loopbackPortTaken(port: number): Promise<boolean> {
+function addressInUse(port: number, host: string): Promise<boolean> {
   return new Promise((resolve) => {
     const server = createServer()
-    server.once('error', () => { resolve(true) })
-    server.listen({ port, host: '127.0.0.1', exclusive: true }, () => { server.close(() => { resolve(false) }) })
+    server.once('error', (error: NodeJS.ErrnoException) => { resolve(error.code === 'EADDRINUSE') })
+    server.listen({ port, host, exclusive: true }, () => { server.close(() => { resolve(false) }) })
   })
 }
 
 /**
- * The notice for a browser login whose redirect port another program holds.
+ * Whether a loopback port is in use where a browser's `localhost` redirect can
+ * land: the IPv4 address pi-ai binds (`PI_OAUTH_CALLBACK_HOST`, which pi-ai
+ * reads from the process environment, else `127.0.0.1`) and IPv6 `::1`, which
+ * browsers may try first.
+ * @param port - the port to probe.
+ * @returns true when either address is held.
+ */
+async function loopbackPortTaken(port: number): Promise<boolean> {
+  const host = process.env['PI_OAUTH_CALLBACK_HOST'] || '127.0.0.1'
+  const held = await Promise.all([addressInUse(port, host), addressInUse(port, '::1')])
+  return held.includes(true)
+}
+
+/**
+ * The notice for a browser login whose redirect port is already in use.
  * @param port - the taken port.
  * @returns the instruction naming both ways to finish.
  */
 export function callbackPortTakenNotice(port: number): string {
-  return `Port ${port} on this computer is already used by another program, so the browser cannot hand the`
-    + ' sign-in back here. Cancel and choose device code login, or sign in on the page and paste the full'
-    + " address from the browser's address bar below."
-}
-
-/** pi-ai's refusal when a route resolves no credential at all (`Models.applyAuth`). */
-const NOT_CONFIGURED = /^Provider is not configured: (.+)$/
-
-/**
- * Reword pi-ai's no-credential refusal for a route that offers account sign-in.
- *
- * pi-ai says only that the provider "is not configured", which tells a person
- * who signed out nothing about what to do. A route with an account sign-in
- * reaches that refusal exactly when no grant is stored (and, for a route that
- * also takes a key, none is set), so the reworded text names the fix.
- * @param text - the failure text pi-ai reported.
- * @returns the reworded failure, or undefined when `text` is another failure
- *   or names a route without account sign-in.
- */
-export function signedOutFailure(text: string): string | undefined {
-  const providerId = NOT_CONFIGURED.exec(text)?.[1]
-  const signIn = providerId === undefined ? undefined : signInFor(providerId)
-  if (signIn === undefined) return undefined
-  return signIn.acceptsApiKey
-    ? `The "${providerId}" account is not signed in and no API key is set. Sign in or add a key under Settings → Models, then send the message again.`
-    : `The "${providerId}" account is not signed in. Sign in to it under Settings → Models, then send the message again.`
+  return `Port ${port} on this computer is already in use (by another program or another sign-in), so the`
+    + ' browser cannot hand the sign-in back here. Cancel and choose device code login, or sign in on the page'
+    + " and paste the full address from the browser's address bar below."
 }
 
 /**
@@ -130,8 +123,8 @@ function redirectsTo(url: string, port: number): boolean {
  * has a `code` beside its `url` rather than folding the code into the message.
  * @param event - what pi-ai reported.
  * @param session - the attempt to report it to.
- * @param takenPort - the login's loopback redirect port, when another program
- *   held it as the attempt began.
+ * @param takenPort - the login's loopback redirect port, when it was in use at
+ *   the last probe.
  */
 function relay(event: AuthEvent, session: AuthorizationSession, takenPort?: number): void {
   switch (event.type) {
@@ -240,13 +233,22 @@ export function registerPiAiFlows(ctx: Context, auth: PiAiAuthInjection): void {
         // back one a flow declared.
         const type: AuthType = session.method === 'oauth' ? 'oauth' : 'api_key'
         const callbackPort = type === 'oauth' ? LOOPBACK_CALLBACK_PORTS[providerId] : undefined
-        const takenPort = callbackPort !== undefined && await loopbackPortTaken(callbackPort) ? callbackPort : undefined
+        const probe = async (): Promise<number | undefined> =>
+          callbackPort !== undefined && await loopbackPortTaken(callbackPort) ? callbackPort : undefined
+        let takenPort = await probe()
         // pi-ai persists what the login returns through that same store, which
         // is what makes it the single writer of this record.
         await models.login(providerId, type, {
           signal: session.signal,
           notify: (event) => { relay(event, session, takenPort) },
-          prompt: prompt => session.prompt(restate(prompt)),
+          prompt: async (prompt) => {
+            const answer = await session.prompt(restate(prompt))
+            // A login method question precedes pi-ai's bind, and the human may
+            // sit on it; probe again so the notice describes the port as the
+            // browser path starts.
+            if (callbackPort !== undefined && prompt.type === 'select') takenPort = await probe()
+            return answer
+          },
         })
       },
     })

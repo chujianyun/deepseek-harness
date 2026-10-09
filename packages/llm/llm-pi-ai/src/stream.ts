@@ -9,11 +9,11 @@
  */
 
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWindowExceededError, isQuotaExceededError, LlmError, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
+import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWindowExceededError, isQuotaExceededError, LlmError, QUOTA_EXCEEDED_CODE, SIGN_IN_REQUIRED_CODE } from '@deepseek-ai/dsh-llm'
 import type { FinishReason, StreamChunk, TokenUsage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import type { AssistantMessage, AssistantMessageEvent, Usage as PiUsage } from '@earendil-works/pi-ai'
-import { signedOutFailure } from './login.ts'
+import { catalogProvider } from './catalog.ts'
 import { toPiReplayState } from './replay.ts'
 
 /**
@@ -69,13 +69,38 @@ function classifyPiAiError(message: string): string {
 }
 
 /**
+ * pi-ai's refusal when a route resolves no credential at all
+ * (`Models.applyAuth`). pi-ai flattens its `ModelsError` to this text before
+ * the stream event reaches the adapter, so the wording is the only signal;
+ * `tests/oauth-route.spec.ts` runs the installed pi-ai to keep it matched.
+ */
+const NOT_CONFIGURED = /^Provider is not configured: (.+)$/
+
+/**
+ * Reword pi-ai's no-credential refusal for a catalog route that authenticates
+ * only through an account sign-in (`openai-codex`). Such a route reaches the
+ * refusal exactly when no grant is stored, so the reworded text names the
+ * fix. A route that also takes a key keeps pi-ai's text, because the missing
+ * piece there may be the key.
+ * @param text - the failure text pi-ai reported.
+ * @returns the reworded failure, or undefined for any other failure or route.
+ */
+function signedOutFailure(text: string): string | undefined {
+  const providerId = NOT_CONFIGURED.exec(text)?.[1]
+  const auth = providerId === undefined ? undefined : catalogProvider(providerId)?.auth
+  if (auth?.oauth === undefined || auth.apiKey !== undefined) return undefined
+  return `The "${providerId}" account is not signed in. Sign in to it under Settings → Models, then send the message again.`
+}
+
+/**
  * Map a terminal pi-ai event to the harness finish reason.
  * @param message - the assistant message carried by the `done` or `error` event.
  * @param contextWindow - resolved catalog capacity for usage-based overflow detection.
  * @returns the mapped harness reason. Recognized error text, `stop` usage above
  *   `contextWindow`, and zero-output `length` usage that fills the window map
  *   to `CONTEXT_WINDOW_EXCEEDED`; pi-ai's no-credential refusal on a route
- *   with account sign-in maps to `SIGN_IN_REQUIRED` with sign-in instructions; a `stop`
+ *   that authenticates only through account sign-in maps to
+ *   `SIGN_IN_REQUIRED` with sign-in instructions; a `stop`
  *   with no content blocks maps to an
  *   `EMPTY_RESPONSE` error, while terminal `pending` and `deferred` states map
  *   to non-retryable `PI_AI_ERROR` failures.
@@ -126,7 +151,7 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
     case 'error': {
       const text = message.errorMessage ?? 'pi-ai stream error'
       const signedOut = signedOutFailure(text)
-      if (signedOut !== undefined) return { kind: 'error', failure: { message: signedOut, code: 'SIGN_IN_REQUIRED' } }
+      if (signedOut !== undefined) return { kind: 'error', failure: { message: signedOut, code: SIGN_IN_REQUIRED_CODE } }
       return { kind: 'error', failure: { message: text, code: classifyPiAiError(text) } }
     }
   }

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -23,6 +23,7 @@ const roots: Context[] = []
 const servers: Server[] = []
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await Promise.all(roots.splice(0).map(ctx => ctx.fiber.dispose()))
   await Promise.all(servers.splice(0).map(server => new Promise<void>((resolve) => {
     server.close(() => { resolve() })
@@ -112,7 +113,9 @@ it('tells a signed-out OAuth route to sign in again before any request goes out'
   expect(endpoint.requests).toHaveLength(0)
 })
 
-it('names the API key alternative when a signed-out route also takes one', async () => {
+it('keeps pi-ai’s refusal for a signed-out route that also takes a key', async () => {
+  // The missing piece there may be the key, so the sign-in wording would mislead.
+  for (const name of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_OAUTH_TOKEN']) vi.stubEnv(name, '')
   const ctx = new Context()
   roots.push(ctx)
   await ctx.plugin(LlmRuntime)
@@ -126,9 +129,6 @@ it('names the API key alternative when a signed-out route also takes one', async
 
   expect(result.finish).toMatchObject({
     kind: 'error',
-    failure: {
-      code: 'SIGN_IN_REQUIRED',
-      message: 'The "anthropic" account is not signed in and no API key is set. Sign in or add a key under Settings → Models, then send the message again.',
-    },
+    failure: { code: 'PI_AI_ERROR', message: 'Provider is not configured: anthropic' },
   })
 })
