@@ -16,7 +16,7 @@
 import { randomUUID } from 'node:crypto'
 import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
-import { WebError } from '@deepseek-ai/dsh-web'
+import type { WebError } from '@deepseek-ai/dsh-web'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { EmbeddingState } from '@deepseek-ai/dsh-embedding'
 import type {} from '@deepseek-ai/dsh-hub-account'
@@ -996,7 +996,9 @@ export class KnowledgeBaseService extends TypertRemoteService {
       base.store.updateItem(item.id, { name: title === '' ? url : title, size: Buffer.byteLength(markdown) })
       return undefined
     } catch (error) {
-      return { reason: error instanceof WebError && error.code === 'WEB_BLOCKED_URL' ? 'blocked' : 'unreachable', error }
+      // Matched by name and code, not instanceof: the web service and its providers may load another copy of dsh-web.
+      const blocked = error instanceof Error && error.name === 'WebError' && (error as WebError).code === 'WEB_BLOCKED_URL'
+      return { reason: blocked ? 'blocked' : 'unreachable', error }
     }
   }
 }
