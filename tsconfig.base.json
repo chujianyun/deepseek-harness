@@ -43,6 +43,7 @@
       "@deepseek-ai/dsh-deepseek-account/types": ["./packages/credentials/deepseek-account/src/types.ts"],
       "@deepseek-ai/dsh-hub-account": ["./packages/credentials/hub-account/src/index.ts"],
       "@deepseek-ai/dsh-hub-account/types": ["./packages/credentials/hub-account/src/types.ts"],
+      "@deepseek-ai/dsh-llm-pi-ai/image-tool": ["./packages/llm/llm-pi-ai/src/image-tool.ts"],
       "@deepseek-ai/dsh-embedding": ["./packages/llm/embedding/src/index.ts"],
       "@deepseek-ai/dsh-embedding/types": ["./packages/llm/embedding/src/types.ts"],
       "@deepseek-ai/dsh-knowledge-base": ["./packages/knowledge/knowledge-base/src/index.ts"],

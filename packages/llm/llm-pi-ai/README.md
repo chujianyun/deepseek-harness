@@ -96,6 +96,10 @@ A provider pi-ai ships a login for can be signed into through the harness author
 
 The configurable-provider directory marks each catalog route with an OAuth login through its `signIn` field — the record key, the `oauth` method to start, and whether the route also takes an API key (`false` for `openai-codex`) — so a settings surface can offer account sign-in through the `authorization` Remote namespace. A signed-in route needs no `apiKeyEnv`: its requests carry the stored grant.
 
+### Generate images through the ChatGPT sign-in
+
+The `@deepseek-ai/dsh-llm-pi-ai/image-tool` entry (`llm-pi-ai-image-tool` in the base bundle) registers `generate_image` while a ChatGPT (Codex) sign-in is stored at `llm-pi-ai/openai-codex`, and withdraws it when the record goes. A call resolves the account's token through pi-ai (refreshing it under the store's lock), posts to `<baseURL>/codex/responses` with OpenAI's hosted `image_generation` tool forced, stores the returned image through `ctx.attachments`, and returns it as an image block beside a short summary. `model` (default `gpt-5.6-sol`), `baseURL` (default `https://chatgpt.com/backend-api`), and `timeoutMs` (default 300000) are its configuration. A missing or refused sign-in, an HTTP refusal, a failed generation, and an unstorable image each fail the call with a message naming what to do; a service response is never echoed into the model's context.
+
 ### Resolve the model catalog
 
 A profile's `models` list replaces the route's installed catalog rather than extending it; each entry defaults its unset fields from the installed model of the same id, so narrowing a route to two models, correcting one capacity, or adding a model newer than the installed catalog are one-line edits. `modelOverrides` reshapes individual installed-catalog models without that cost — correct one model, keep the other thirty-seven — and is refused when set beside a `models` list, on a hand-declared route, or naming a model the catalog does not describe, because a silently unchanged model would be a typo someone hunts for later.
@@ -197,6 +201,20 @@ Provider tokenization governs exact input. Retained images add the stable attach
 
 Conversion preserves logical request order, while image handles and offload placeholders add model-visible text. A changed execution-world path rewrites a historical handle and can prevent reuse from that image even when attachment identity and request bytes stay stable. Changing adapter instance, provider, model, or another upstream token has the same suffix effect. An offload decision turns an earlier image into placeholder text, so reuse ends at that message; the omission never reverts, so the prefix stays stable afterwards.
 
+### generate_image
+
+#### What the model sees
+
+While a ChatGPT (Codex) account is signed in, the tool list carries `generate_image` with a required `prompt` and optional `size` (1024x1024, 1536x1024, 1024x1536), `quality` (low, medium, high), and `background` (auto, opaque, transparent). Its result is one text line naming the stored image's size and media type, a `Revised prompt:` line when the service rewrote the prompt, and the image itself; a model without image input receives the image as the harness's text projection instead.
+
+#### Token effect
+
+The tool schema adds a fixed definition while the account is signed in. Each result adds its text lines plus the image's visual tokens, or the text projection on a text-only route.
+
+#### KV Cache effect
+
+Signing in or out changes the tool list, so the next request's reusable prefix ends before the tool definitions. A recorded result appends to later requests without invalidating their earlier prefix.
+
 ### Provider response
 
 #### What the model sees
@@ -221,6 +239,7 @@ These limits define where the adapter stops and future work begins. They are cur
 - **`maxRequestImageBytes` counts base64 image payload only** — text, tools, descriptors, and JSON structure ride outside the bound, so it must sit below the gateway's request-body cap with headroom.
 - **A sign-in lives only in the process that started it** — an authorization attempt is not durable, so reloading the page mid-login abandons it and the human starts over. Signing out is `deleteRecord` on the stored record, which forgets it locally without telling the issuer.
 - **Provider-native discovery answers through this plugin's ambient context** — a route naming no credential defers to the catalog provider's own resolution, which asks for environment values (`AZURE_OPENAI_API_KEY`, `AWS_PROFILE`, and each provider's own set) and for local credential files. Both questions are answered here: the credential seam is consulted before the process environment, and file existence is checked against the host process's filesystem with `~` expanded. What it cannot do is *read* a credential file's contents — a provider that parses `~/.aws/credentials` itself does so directly, outside the seam.
+- **Image generation spends a non-public endpoint** — `generate_image` posts to the ChatGPT backend's Codex Responses endpoint, which OpenAI does not document; a protocol change breaks it until this entry follows, and which images an account may generate is the service's decision.
 - **Reset restores inherited configuration** — resetting a route supplied by a lower profile layer restores that route.
 - **Complete Config replacement can remove inherited dictionary entries** — a field reset instead restores its inherited value.
 - **`headers` can carry a credential the redactor never sees** — profile resolution rejects names and values Fetch cannot represent, but the dict remains plain strings; store credentials as `apiKeyEnv` references.

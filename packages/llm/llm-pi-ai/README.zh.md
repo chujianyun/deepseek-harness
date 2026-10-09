@@ -96,6 +96,10 @@ pi-ai 提供登录的提供方可以通过 harness 授权 seam 登录：流程�
 
 可配置提供方目录用 `signIn` 字段标出每条带 OAuth 登录的目录路由——记录键、要发起的 `oauth` 方法，以及该路由是否也接受 API 密钥（`openai-codex` 为 `false`）——设置界面据此通过 `authorization` Remote namespace 提供账号登录。已登录的路由不需要 `apiKeyEnv`：它的请求携带已存储的授权凭据。
 
+### 通过 ChatGPT 登录生成图片
+
+`@deepseek-ai/dsh-llm-pi-ai/image-tool` 入口（base bundle 中为 `llm-pi-ai-image-tool`）在 `llm-pi-ai/openai-codex` 存有 ChatGPT（Codex）登录时注册 `generate_image`，记录删除后撤下。一次调用经 pi-ai 取得该账号的令牌（在存储锁下续期），向 `<baseURL>/codex/responses` 发送强制调用 OpenAI 托管 `image_generation` 工具的请求，经 `ctx.attachments` 存储返回的图片，并以一段简短说明加图片块返回。配置项为 `model`（默认 `gpt-5.6-sol`）、`baseURL`（默认 `https://chatgpt.com/backend-api`）与 `timeoutMs`（默认 300000）。未登录或登录被拒、HTTP 拒绝、生成失败、图片无法存储时，调用都以说明下一步该做什么的消息失败；服务端响应绝不会回显进模型上下文。
+
 ### 解析模型目录
 
 profile 的 `models` 列表会替换而非扩展路由的已安装目录；每个条目从同 id 已安装模型取未设置字段的默认值，因此把路由收窄到两个模型、修正一个容量或添加比已安装目录更新的模型都是一行编辑。`modelOverrides` 无需该代价即可重塑个别已安装目录模型——修正一个模型，保留其余三十七个——当它与 `models` 列表并存、位于手工声明路由上、或点名目录未描述的模型时会被拒绝，因为静默不变的模型会成为别人日后寻找的拼写错误。
@@ -197,6 +201,20 @@ Config 更新严格验证发生变化的 provider。初始加载将已存储的�
 
 转换保持逻辑请求顺序，图片句柄与卸载占位符则会添加模型可见文本。即使附件身份与请求字节保持稳定，执行世界路径变化也会改写历史句柄，并可能从该图片起阻止复用。更换适配器实例、提供方、模型或其他上游 token 具有相同的后缀影响。一次省略决策会把较早图片换成占位文本，因此复用在该消息处结束；省略永不回退，此后前缀保持稳定。
 
+### generate_image
+
+#### 模型看到的内容
+
+登录 ChatGPT（Codex）账号期间，工具列表包含 `generate_image`：必填 `prompt`，可选 `size`（1024x1024、1536x1024、1024x1536）、`quality`（low、medium、high）与 `background`（auto、opaque、transparent）。结果是一行说明已存储图片尺寸与媒体类型的文字、服务改写提示词时的一行 `Revised prompt:`，以及图片本身；不支持图片输入的模型收到的是 harness 的文字投影。
+
+#### Token 影响
+
+登录期间工具 schema 增加一段固定定义。每次结果增加上述文字行与图片的视觉 token，纯文本路由上则是文字投影。
+
+#### KV Cache 影响
+
+登录或退出会改变工具列表，因此下一次请求的可复用前缀止于工具定义之前。已记录的结果追加到后续请求，不会使其更早的前缀失效。
+
 ### 提供方响应
 
 #### 模型看到什么
@@ -221,6 +239,7 @@ pi-ai 事件变成 harness 的推理、文本、工具调用、用量与 finish 
 - **`maxRequestImageBytes` 只计算 base64 图片载荷**，文本、工具、描述符与 JSON 结构在该上限之外，因此它必须留有余量地低于网关请求体上限。
 - **登录只存在于发起它的进程中**——授权尝试不持久，因此登录中途刷新页面会放弃它，用户需要重新开始。退出登录是对已存储记录执行 `deleteRecord`，只在本地忘记它，不会告知签发方。
 - **提供方原生发现经本插件的 ambient context 回答**——不点名凭据的路由交由目录提供方自身解析，它会询问环境值（`AZURE_OPENAI_API_KEY`、`AWS_PROFILE` 及各提供方自有集合）与本地凭据文件。两个问题都在这里得到回答：凭据 seam 先于进程环境被查询，文件存在性则针对宿主进程的文件系统以 `~` 展开后检查。它做不到的是*读取*凭据文件内容——自行解析 `~/.aws/credentials` 的提供方会直接读取，不经该 seam。
+- **图片生成使用非公开接口**——`generate_image` 请求 ChatGPT 后端的 Codex Responses 接口，OpenAI 没有公开文档；协议变化会使其失效，直到本入口跟进，账号能生成哪些图片由服务方决定。
 - **重置恢复继承配置**——重置下层 profile 提供的路由会恢复该路由。
 - **完整替换 Config 可以移除继承的字典条目**——字段重置则恢复其继承值。
 - **`headers` 可以携带 redactor 永远看不到的凭据**——profile 解析会拒绝 Fetch 无法表示的名称与值，但该字典仍是纯字符串；以 `apiKeyEnv` 引用存储凭据。
