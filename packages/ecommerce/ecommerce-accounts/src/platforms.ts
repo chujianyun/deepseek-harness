@@ -6,6 +6,9 @@
 
 import type { EcommerceAccountKind, EcommercePlatform } from './types.ts'
 
+/** Every platform an account can be on. */
+export const ECOMMERCE_PLATFORMS = ['tmall', 'taobao', 'pinduoduo', 'doudian'] as const satisfies readonly EcommercePlatform[]
+
 /** What the platform's check response says. */
 export type CheckAnswer =
   | { readonly signedIn: false }

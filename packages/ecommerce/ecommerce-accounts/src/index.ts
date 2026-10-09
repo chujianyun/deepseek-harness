@@ -42,7 +42,7 @@ import { applyUpdate, DamagedMemory, MemoryUpdate, readMemory } from './memory.t
 import { Cdp, closeBlankTabs, hideWindows, pageTabs, probe, showSignIn, type ProbeResult } from './cdp.ts'
 import { alive, closeChrome, ensureTab, findChrome, launchChrome, profileHolder, readRecord, type ChromeInfo } from './chrome.ts'
 import { guardBrowser, type GuardRules } from './guard.ts'
-import { PUBLIC_PAGE, specOf, type PlatformSpec } from './platforms.ts'
+import { ECOMMERCE_PLATFORMS, PUBLIC_PAGE, specOf, type PlatformSpec } from './platforms.ts'
 import { SKILL_CONTENT, SKILL_DESCRIPTION, SKILL_NAME } from './skill.ts'
 import type {
   AddEcommerceAccountInput, AddEcommerceAccountResult, ChromeView, EcommerceAccountsState, EcommerceAccountStatus, EcommerceAccountView,
@@ -158,7 +158,7 @@ const ledgerSchema = z.object({
   version: z.literal(1),
   accounts: z.array(z.object({
     id: z.string().min(1),
-    platform: z.enum(['tmall', 'taobao', 'pinduoduo', 'doudian']),
+    platform: z.enum(ECOMMERCE_PLATFORMS),
     kind: z.enum(['merchant', 'buyer']),
     storeName: z.string(),
     account: z.string().min(1),

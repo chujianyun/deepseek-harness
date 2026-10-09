@@ -182,6 +182,8 @@ const MEMORY = {
     },
     颗粒: { tmall: { catId: '126198864', categoryPath: 'x', updatedAt: 't' } },
     拼团: { pinduoduo: { catId: '18770', categoryPath: 'y', updatedAt: 't' }, doudian: { catId: '1000000638', categoryPath: 'z', updatedAt: 't' } },
+    // A platform name an older remember saved is shown as it was saved.
+    旧线: { 淘宝店: { catId: '1', categoryPath: 'w', updatedAt: 't' } },
   },
 }
 
@@ -194,6 +196,7 @@ describe('resolveCategory', () => {
     expect((await line('无')).note).toBe('DSH 里还没有记住产品线「无」的类目。')
     expect((await line('颗粒')).note).toBe('记住的产品线「颗粒」类目 126198864 现在不能在这家店发布（可能授权已变化）。')
     // Another platform's category id never stands in for Tmall's.
+    expect((await line('旧线')).note).toBe('DSH 记住了产品线「旧线」在淘宝店的类目，还没有记住天猫的；按商品名或主图找天猫类目，用户确认后再记下。')
     expect((await line('拼团')).note).toBe('DSH 记住了产品线「拼团」在拼多多、抖店的类目，还没有记住天猫的；按商品名或主图找天猫类目，用户确认后再记下。')
   })
 

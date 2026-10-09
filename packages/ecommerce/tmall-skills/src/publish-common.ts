@@ -6,8 +6,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import type { CategoryMemory, CategoryPlatform } from '@deepseek-ai/dsh-ecommerce-accounts/src/memory.ts'
-import type { PublishMemory } from './account.ts'
+import { MERCHANT_PLATFORMS, type CategoryMemory, type EcommercePlatform, type PublishMemory } from './account.ts'
 import type { Draft, FieldCheck } from './draft.ts'
 import { EXIT, SkillError } from './errors.ts'
 import type { PublishRules } from './publish-rules.ts'
@@ -232,7 +231,7 @@ export function categoriesText(categories: readonly CandidateCategory[], reason:
 }
 
 /** The platforms' names for the user. */
-const CATEGORY_PLATFORM_NAMES: Readonly<Record<CategoryPlatform, string>> = { tmall: '天猫', taobao: '淘宝', pinduoduo: '拼多多', doudian: '抖店' }
+const PLATFORM_NAMES: Readonly<Record<string, string>> = { ...MERCHANT_PLATFORMS, taobao: '淘宝' } satisfies Record<EcommercePlatform, string>
 
 /**
  * The category the company remembered for a product line on one platform. A line remembered only on
@@ -242,12 +241,13 @@ const CATEGORY_PLATFORM_NAMES: Readonly<Record<CategoryPlatform, string>> = { tm
  * @param platform - the platform being published to.
  * @returns the category, or what to tell the model when there is none.
  */
-export function rememberedCategory(memory: PublishMemory, line: string, platform: CategoryPlatform): CategoryMemory | string {
+export function rememberedCategory(memory: PublishMemory, line: string, platform: EcommercePlatform): CategoryMemory | string {
   const byPlatform = memory.categories[line] ?? {}
   const entry = byPlatform[platform]
   if (entry !== undefined) return entry
-  const others = (Object.keys(byPlatform) as CategoryPlatform[]).map(other => CATEGORY_PLATFORM_NAMES[other])
-  const name = CATEGORY_PLATFORM_NAMES[platform]
+  // A platform name saved before platforms were kept apart is shown as it was saved.
+  const others = Object.keys(byPlatform).map(other => PLATFORM_NAMES[other] ?? other)
+  const name = PLATFORM_NAMES[platform] as string
   return others.length === 0
     ? `DSH 里还没有记住产品线「${line}」的类目。`
     : `DSH 记住了产品线「${line}」在${others.join('、')}的类目，还没有记住${name}的；按商品名或主图找${name}类目，用户确认后再记下。`

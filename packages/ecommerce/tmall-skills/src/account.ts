@@ -4,7 +4,8 @@
  */
 
 import { execFile } from 'node:child_process'
-import type { PublishMemory } from '@deepseek-ai/dsh-ecommerce-accounts/src/memory.ts'
+import type { CategoryMemory, PublishMemory } from '@deepseek-ai/dsh-ecommerce-accounts/src/memory.ts'
+import type { EcommercePlatform } from '@deepseek-ai/dsh-ecommerce-accounts/src/types.ts'
 import { EXIT, SkillError } from './errors.ts'
 
 /** The account `dsh-ecommerce browser` handed over. */
@@ -124,7 +125,7 @@ export async function reportRisk(accountId: string, run = runDshEcommerce): Prom
   return `DSH 已让买家号 ${account} 冷却到 ${cooldownUntil}，期间不会再被挑选。`
 }
 
-export type { PublishMemory }
+export type { CategoryMemory, EcommercePlatform, PublishMemory }
 
 /**
  * Read the company's publishing memory: store information, categories of product lines, table headers,

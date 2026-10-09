@@ -974,9 +974,16 @@ describe('publishing memory', () => {
     const run = (...args: string[]) => runCommand(env, varsOf(env, bashCall(`c-${String(Math.random())}`)), ...args)
     const path = join(env.home, 'ecommerce', 't-a', 'publish-memory.json')
     await mkdir(join(path, '..'), { recursive: true })
-    await writeFile(path, JSON.stringify({ categories: { 水多多: { platform: 'pinduoduo', catId: '18770', categoryPath: '成人用品 > 计生用品 > 避孕套', updatedAt: '2026-10-09T01:35:15.002Z' } } }))
+    // An older remember took any platform name; a later platform name in a line is kept too.
+    await writeFile(path, JSON.stringify({ categories: {
+      水多多: { platform: 'pinduoduo', catId: '18770', categoryPath: '成人用品 > 计生用品 > 避孕套', updatedAt: '2026-10-09T01:35:15.002Z' },
+      旧线: { platform: '淘宝', catId: '1', categoryPath: 'x', updatedAt: 't' },
+      新线: { jd: { catId: '2', categoryPath: 'y', updatedAt: 't' } },
+    } }))
     const old = { pinduoduo: { catId: '18770', categoryPath: '成人用品 > 计生用品 > 避孕套', updatedAt: '2026-10-09T01:35:15.002Z' } }
-    expect(JSON.parse((await run('memory')).stdout)).toMatchObject({ categories: { 水多多: old } })
+    expect(JSON.parse((await run('memory')).stdout)).toMatchObject({ categories: {
+      水多多: old, 旧线: { 淘宝: { catId: '1', categoryPath: 'x', updatedAt: 't' } }, 新线: { jd: { catId: '2', categoryPath: 'y', updatedAt: 't' } },
+    } })
     await run('remember', await write(dir, 'a.json', { category: { line: '水多多', platform: 'doudian', catId: '1000000638' } }))
     const saved = JSON.parse(await readFile(path, 'utf8')) as { categories: Record<string, Record<string, unknown>> }
     expect(saved.categories['水多多']).toEqual({ ...old, doudian: { catId: '1000000638', categoryPath: '', updatedAt: expect.any(String) as string } })
@@ -998,6 +1005,9 @@ describe('publishing memory', () => {
     expect(onePlatform.categories).toEqual({ 水多多: { doudian: expect.any(Object) as object }, 颗粒: { tmall: expect.any(Object) as object } })
     const lastPlatform = JSON.parse((await run({ forget: { categories: [{ line: '颗粒', platform: 'tmall' }] } })).stdout) as { categories: object }
     expect(lastPlatform.categories).toEqual({ 水多多: { doudian: expect.any(Object) as object } })
+    // One remember that forgets a line and sets a platform of it keeps the new platform only.
+    const replaced = JSON.parse((await run({ category: { line: '水多多', platform: 'pinduoduo', catId: '18770' }, forget: { categories: ['水多多'] } })).stdout) as { categories: object }
+    expect(replaced.categories).toEqual({ 水多多: { pinduoduo: expect.objectContaining({ catId: '18770' }) as object } })
     await run({ declarations: { store: '名流', catId: '2', confirmed: confirmed(['c']) } })
     const forget = { categories: ['水多多', '无'], declarations: [{ store: '名流', catId: '1', keys: ['a'] }, { store: '别家', catId: '1' }] }
     type Forgot = { categories: object; declarations: Record<string, Record<string, object>> }

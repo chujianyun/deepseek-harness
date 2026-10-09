@@ -8,6 +8,7 @@
 
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
+import { ECOMMERCE_PLATFORMS } from './platforms.ts'
 
 /** A field value: one text, or several for a multi-choice field. */
 export type MemoryValue = string | readonly string[]
@@ -18,12 +19,6 @@ export interface StoreMemory {
   readonly values: Readonly<Record<string, MemoryValue>>
   readonly updatedAt: string
 }
-
-/** The platforms a category is remembered for, as the accounts name them. */
-export const CATEGORY_PLATFORMS = ['tmall', 'taobao', 'pinduoduo', 'doudian'] as const
-
-/** A platform a category is remembered for. */
-export type CategoryPlatform = typeof CATEGORY_PLATFORMS[number]
 
 /** The category a product line is published in on one platform. */
 export interface CategoryMemory {
@@ -43,8 +38,12 @@ export interface DeclarationMemory {
 export interface PublishMemory {
   /** Store name → its information. */
   readonly stores: Readonly<Record<string, StoreMemory>>
-  /** Product line → platform → its category there. */
-  readonly categories: Readonly<Record<string, Readonly<Partial<Record<CategoryPlatform, CategoryMemory>>>>>
+  /**
+   * Product line → platform → its category there. A remember writes only the platforms of
+   * {@link ECOMMERCE_PLATFORMS}; a file may hold other platform names, such as one saved before
+   * categories were kept per platform, which are kept as they are.
+   */
+  readonly categories: Readonly<Record<string, Readonly<Partial<Record<string, CategoryMemory>>>>>
   /** Table header → SKU field, such as 到手价 → price. */
   readonly columns: Readonly<Record<string, { readonly field: string; readonly updatedAt: string }>>
   /** Store name → category id → declaration key → its confirmation. */
@@ -72,13 +71,13 @@ const catId = z.string().regex(/^\d+$/u)
  */
 export const MemoryUpdate = z.object({
   store: z.object({ name: key, values: z.record(key, value.nullable()) }).strict().optional(),
-  category: z.object({ line: key, platform: z.enum(CATEGORY_PLATFORMS), catId, categoryPath: z.string().max(500).default('') }).strict().optional(),
+  category: z.object({ line: key, platform: z.enum(ECOMMERCE_PLATFORMS), catId, categoryPath: z.string().max(500).default('') }).strict().optional(),
   columns: z.record(key, z.enum(SKU_FIELDS).nullable()).optional(),
   declarations: z.object({
     store: key, catId, confirmed: z.array(z.object({ key, text: z.string().max(2000) }).strict()).min(1),
   }).strict().optional(),
   forget: z.object({
-    categories: z.array(z.union([key, z.object({ line: key, platform: z.enum(CATEGORY_PLATFORMS) }).strict()])).min(1).optional(),
+    categories: z.array(z.union([key, z.object({ line: key, platform: z.enum(ECOMMERCE_PLATFORMS) }).strict()])).min(1).optional(),
     /** Declarations of a store and category; without keys, all of them. */
     declarations: z.array(z.object({ store: key, catId, keys: z.array(key).min(1).optional() }).strict()).min(1).optional(),
   }).strict().optional(),
@@ -90,10 +89,13 @@ export type MemoryUpdate = z.infer<typeof MemoryUpdate>
 /** The memory file, as written. */
 const byName = <T extends z.ZodType>(entry: T) => z.record(z.string(), entry)
 const category = z.object({ catId: z.string(), categoryPath: z.string(), updatedAt: z.string() })
-/** A product line's categories; a line written before they were kept per platform holds one, which is read as that platform's. */
+/**
+ * A product line's categories by platform; a line written before they were kept per platform holds one
+ * with its platform, read as that platform's whatever name it was saved under.
+ */
 const lineCategories = z.union([
-  category.extend({ platform: z.enum(CATEGORY_PLATFORMS) }).strict().transform(({ platform, ...entry }) => ({ [platform]: entry })),
-  z.partialRecord(z.enum(CATEGORY_PLATFORMS), category),
+  category.extend({ platform: z.string().min(1) }).strict().transform(({ platform, ...entry }) => ({ [platform]: entry })),
+  z.record(z.string(), category),
 ])
 const MemoryFile = z.object({
   stores: byName(z.object({ values: byName(value), updatedAt: z.string() })).default({}),
@@ -120,18 +122,19 @@ export function applyUpdate(memory: PublishMemory, update: MemoryUpdate, now: st
     if (Object.keys(values).length === 0) Reflect.deleteProperty(stores, update.store.name)
     else stores[update.store.name] = { values, updatedAt: now }
   }
-  const categories: Record<string, Partial<Record<CategoryPlatform, CategoryMemory>>> = {}
+  const categories: Record<string, Partial<Record<string, CategoryMemory>>> = {}
   for (const [line, byPlatform] of Object.entries(memory.categories)) categories[line] = { ...byPlatform }
-  if (update.category !== undefined) {
-    const { line, platform, ...entry } = update.category
-    categories[line] = { ...categories[line], [platform]: { ...entry, updatedAt: now } }
-  }
+  // Forgetting comes first, so a remember that forgets a line and sets one of its platforms keeps the new one.
   for (const forgotten of update.forget?.categories ?? []) {
     if (typeof forgotten === 'string') { Reflect.deleteProperty(categories, forgotten); continue }
     const byPlatform = categories[forgotten.line]
     if (byPlatform === undefined) continue
     Reflect.deleteProperty(byPlatform, forgotten.platform)
     if (Object.keys(byPlatform).length === 0) Reflect.deleteProperty(categories, forgotten.line)
+  }
+  if (update.category !== undefined) {
+    const { line, platform, ...entry } = update.category
+    categories[line] = { ...categories[line], [platform]: { ...entry, updatedAt: now } }
   }
   const columns = { ...memory.columns }
   for (const [header, field] of Object.entries(update.columns ?? {})) {
