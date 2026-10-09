@@ -41,7 +41,6 @@ function actions() {
   return {
     begin: vi.fn<SignInActions['begin']>(() => Promise.resolve()),
     answer: vi.fn<SignInActions['answer']>(() => Promise.resolve()),
-    decline: vi.fn<SignInActions['decline']>(() => Promise.resolve()),
     cancel: vi.fn<SignInActions['cancel']>(() => Promise.resolve()),
     signOut: vi.fn<SignInActions['signOut']>(() => Promise.resolve()),
     open: vi.fn<SignInActions['open']>(),
@@ -231,13 +230,19 @@ describe('sign-in rows', () => {
     expect(providerUsable(row({ signIn: ANTHROPIC }))).toBe(true)
   })
 
-  function face(flows: () => Promise<{ ok: true; value: AuthorizationFlowView[] } | { ok: false; error: Error }>) {
+  function face() {
     return {
       llm: {
         listProviders: () => okay([{ id: 'openai-codex', name: 'openai-codex' }, { id: 'anthropic', name: 'anthropic' }]),
         listConfigurableProviders: () => okay([
-          { provider: 'openai-codex', displayName: 'openai-codex', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai-codex'], declared: false, signIn: CODEX },
-          { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'anthropic'], declared: false, signIn: ANTHROPIC },
+          {
+            provider: 'openai-codex', displayName: 'openai-codex', settingsNs: 'llm-pi-ai',
+            settingsPath: ['providers', 'openai-codex'], declared: false, signIn: CODEX,
+          },
+          {
+            provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-pi-ai',
+            settingsPath: ['providers', 'anthropic'], declared: false, signIn: ANTHROPIC,
+          },
         ]),
         discoverModels: () => okay([]),
       },
@@ -248,18 +253,21 @@ describe('sign-in rows', () => {
       credentials: {
         describe: (refs: string[]) => okay(Object.fromEntries(refs.map(ref => [ref, { configured: false, writable: true }]))),
       },
-      authorization: { list: vi.fn(flows) },
     }
   }
 
-  async function mount(scripted: ReturnType<typeof face>) {
+  /** Mount the section over a sign-in source; rows read sign-in state from that source alone. */
+  async function mount(scripted: ReturnType<typeof face>, frames: AuthorizationFlowView[] | undefined) {
     const ctx = Object.assign(new Context(), { remote: { ...scripted, session: { modelCatalog: () => okay({ groups: [] }) } } }) as never
-    const controller = new ModelsSettingsStore(ctx, settingsSchema, new SettingsDescribeMirror(ctx))
-    await controller.load()
     const source = createSignInSource({
-      begin: key => okay(flow({ key })), answer: () => okay(undefined), decline: () => okay(undefined),
-      cancel: () => okay(undefined), signOut: key => okay(flow({ key })), open: vi.fn(),
+      begin: key => okay(flow({ key })), answer: () => okay(undefined),
+      cancel: () => okay(undefined), signOut: key => okay(flow({ key })), open: vi.fn(), opensPages: false,
     })
+    if (frames !== undefined) source.publish(frames)
+    const controller = new ModelsSettingsStore(
+      ctx, settingsSchema, new SettingsDescribeMirror(ctx), key => source.store.getSnapshot().flows[key]?.signedIn,
+    )
+    await controller.load()
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
@@ -274,17 +282,15 @@ describe('sign-in rows', () => {
   }
 
   it('marks a signed-in row configured, and a sign-in-only row missing until signed in', async () => {
-    const scripted = face(() => okay([flow({ signedIn: false }), flow({ key: ANTHROPIC.key, signedIn: true })]))
-    const { controller } = await mount(scripted)
+    const { controller } = await mount(face(), [flow({ signedIn: false }), flow({ key: ANTHROPIC.key, signedIn: true })])
     expect(controller.store.getSnapshot().rows.map(r => r.signedIn)).toEqual([false, true])
     const items = screen.getAllByRole('listitem')
     expect(within(items[0]!).getByRole('img').getAttribute('aria-label')).toBe(en.signedOut)
     expect(within(items[1]!).getByRole('img').getAttribute('aria-label')).toBe(en.signedIn)
   })
 
-  it('leaves sign-in state unknown when the Host cannot list flows, and opens a card with the sign-in block', async () => {
-    const scripted = face(() => Promise.resolve({ ok: false as const, error: new Error('no authorization service') }))
-    const { controller, source } = await mount(scripted)
+  it('leaves sign-in state unknown before the first frame, and opens a card with the sign-in block', async () => {
+    const { controller, source } = await mount(face(), undefined)
     expect(controller.store.getSnapshot().rows.map(r => r.signedIn)).toEqual([undefined, undefined])
     expect(within(screen.getAllByRole('listitem')[0]!).queryByRole('img')).toBeNull()
     source.publish([flow({ signedIn: true })])
@@ -294,22 +300,27 @@ describe('sign-in rows', () => {
     expect(screen.queryByLabelText(en.keyInput)).toBeNull()
   })
 
-  it('leaves sign-in state unknown for a route without sign-in and for a flow the Host does not list', async () => {
-    const scripted = face(() => okay([]))
+  it('leaves a route without sign-in, and a flow the stream does not name, unknown', async () => {
+    const scripted = face()
     scripted.llm.listConfigurableProviders = () => okay([
-      { provider: 'openai-codex', displayName: 'openai-codex', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai-codex'], declared: false, signIn: CODEX },
+      {
+        provider: 'openai-codex', displayName: 'openai-codex', settingsNs: 'llm-pi-ai',
+        settingsPath: ['providers', 'openai-codex'], declared: false, signIn: CODEX,
+      },
       { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'anthropic'], declared: false } as never,
     ])
-    const { controller } = await mount(scripted)
+    const { controller } = await mount(scripted, [flow({ key: 'llm-pi-ai/other', signedIn: true })])
     expect(controller.store.getSnapshot().rows.map(r => r.signedIn)).toEqual([undefined, undefined])
   })
 
-  it('does not ask for sign-in state when no route signs in', async () => {
-    const scripted = face(() => okay([]))
-    scripted.llm.listConfigurableProviders = () => okay([
-      { provider: 'openai-codex', displayName: 'openai-codex', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai-codex'], declared: false } as never,
-    ])
-    await mount(scripted)
-    expect(scripted.authorization.list).not.toHaveBeenCalled()
+  it('keeps sign-in controls open while settings are read-only', async () => {
+    const scripted = face()
+    scripted.settings.describe = () => okay({
+      writable: false, hasDocument: true, namespaces: [piAi({ providers: { 'openai-codex': {}, anthropic: {} } })],
+    })
+    await mount(scripted, [flow({ signedIn: false })])
+    fireEvent.click(screen.getByRole('button', { name: 'Edit openai-codex' }))
+    const signIn = await screen.findByRole('group', { name: en.accountSignIn })
+    expect(within(signIn).getByRole<HTMLButtonElement>('button', { name: en.signIn }).disabled).toBe(false)
   })
 })

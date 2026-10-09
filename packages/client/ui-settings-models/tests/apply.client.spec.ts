@@ -38,7 +38,6 @@ async function bench(isLoopback = true, mock = RemoteMock.create().load(remoteDe
     list: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     begin: vi.fn(),
     answer: vi.fn(),
-    decline: vi.fn(),
     cancel: vi.fn(),
     signOut: vi.fn(),
     watch: vi.fn(),
@@ -66,10 +65,11 @@ async function bench(isLoopback = true, mock = RemoteMock.create().load(remoteDe
   let wake: (() => void) | undefined
   let fail: ((error: Error) => void) | undefined
   type StreamOptions = { open: (signal: AbortSignal) => unknown; ended: () => Error }
-  const stream = { options: undefined as StreamOptions | undefined, accepted: vi.fn(), dispose: vi.fn() }
+  const stream = { options: undefined as StreamOptions | undefined, opened: 0, accepted: vi.fn(), dispose: vi.fn() }
   Object.assign(remote, {
     $stream: (options: StreamOptions) => {
       stream.options = options
+      stream.opened += 1
       return {
         dispose: stream.dispose,
         async *[Symbol.asyncIterator]() {
@@ -166,50 +166,70 @@ describe('ui-settings-models apply', () => {
     ])
   })
 
-  it('feeds the Host sign-in stream into the injected sign-in store and survives a broken stream', async () => {
-    const b = await bench()
+  it('follows the Host sign-in stream once the page loads, reopens it when the Host ends it, and refreshes rows on sign-in', async () => {
+    const listProviders = vi.fn(() => Promise.resolve({ ok: true, value: [{ id: 'openai-codex', name: 'openai-codex' }] }))
+    const b = await bench(true, undefined, {
+      listProviders,
+      listConfigurableProviders: vi.fn(() => Promise.resolve({ ok: true, value: [{
+        provider: 'openai-codex', displayName: 'openai-codex', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai-codex'],
+        declared: false, signIn: { key: 'llm-pi-ai/openai-codex', method: 'oauth', acceptsApiKey: false },
+      }] })),
+    })
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const injected = (b.slots.entries('settings.section')[0]!.inject as () => unknown)() as {
+      controller: { load: () => Promise<void>; store: { getSnapshot: () => { rows: { signedIn?: boolean }[] } } }
+      hooks: { signIns: { getSnapshot: () => { flows: Record<string, unknown> } } }
+      signIn: Record<string, (...args: unknown[]) => unknown>
+    }
+    // Nothing streams for a window that never opens the Models page.
+    expect(b.stream.opened).toBe(0)
+    await injected.controller.load()
+    expect(b.stream.opened).toBe(1)
     const signal = new AbortController().signal
     b.stream.options!.open(signal)
     expect(b.authorization.watch).toHaveBeenCalledWith(signal)
     expect(b.stream.options!.ended().message).toBe('authorization stream ended')
-    const injected = (b.slots.entries('settings.section')[0]!.inject as () => unknown)() as {
-      hooks: { signIns: { getSnapshot: () => { flows: Record<string, unknown> } } }
-      signIn: { open: (url: string) => void }
-    }
+
+    const loads = listProviders.mock.calls.length
+    expect(injected.controller.store.getSnapshot().rows[0]?.signedIn).toBeUndefined()
     const view = { key: 'llm-pi-ai/openai-codex', label: 'ChatGPT', methods: [], signedIn: true, attempt: null }
     b.push([view])
     await vi.waitFor(() => { expect(injected.hooks.signIns.getSnapshot().flows).toEqual({ 'llm-pi-ai/openai-codex': view }) })
     expect(b.stream.accepted).toHaveBeenCalledOnce()
+    // A changed sign-in state refreshes the rows; a frame that changes no sign-in state does not.
+    await vi.waitFor(() => { expect(injected.controller.store.getSnapshot().rows[0]?.signedIn).toBe(true) })
+    expect(listProviders.mock.calls.length).toBe(loads + 1)
+    b.push([{ ...view, label: 'ChatGPT (Codex)' }])
+    await vi.waitFor(() => { expect(b.stream.accepted).toHaveBeenCalledTimes(2) })
+    expect(listProviders.mock.calls.length).toBe(loads + 1)
+
     // Each card action reaches its own Remote method, addressed through the key's current attempt.
     const running = { ...view, attempt: { id: 'a1', method: 'oauth', phase: 'running', notices: [], prompts: [] } }
     const answered = { ok: true, value: undefined }
     b.authorization.begin.mockResolvedValue({ ok: true, value: running })
     b.authorization.answer.mockResolvedValue(answered)
-    b.authorization.decline.mockResolvedValue(answered)
     b.authorization.cancel.mockResolvedValue(answered)
     b.authorization.signOut.mockResolvedValue({ ok: true, value: view })
-    const actions = (injected as unknown as { signIn: Record<string, (...args: unknown[]) => Promise<void>> }).signIn
-    await actions.begin!('llm-pi-ai/openai-codex', 'oauth')
-    await actions.answer!('llm-pi-ai/openai-codex', '1', 'browser')
-    await actions.decline!('llm-pi-ai/openai-codex', '1')
-    await actions.cancel!('llm-pi-ai/openai-codex')
-    await actions.signOut!('llm-pi-ai/openai-codex')
+    await injected.signIn['begin']!('llm-pi-ai/openai-codex', 'oauth')
+    await injected.signIn['answer']!('llm-pi-ai/openai-codex', '1', 'browser')
+    await injected.signIn['cancel']!('llm-pi-ai/openai-codex')
+    await injected.signIn['signOut']!('llm-pi-ai/openai-codex')
     expect(b.authorization.begin).toHaveBeenCalledWith('llm-pi-ai/openai-codex', 'oauth')
     expect(b.authorization.answer).toHaveBeenCalledWith('a1', '1', 'browser')
-    expect(b.authorization.decline).toHaveBeenCalledWith('a1', '1')
     expect(b.authorization.cancel).toHaveBeenCalledWith('a1')
     expect(b.authorization.signOut).toHaveBeenCalledWith('llm-pi-ai/openai-codex')
     const open = vi.fn()
     vi.stubGlobal('window', { open })
-    injected.signIn.open('https://auth.example/authorize')
+    injected.signIn['open']!('https://auth.example/authorize')
     expect(open).toHaveBeenCalledWith('https://auth.example/authorize', '_blank', 'noopener,noreferrer')
-    b.breakStream(new Error('carrier gone'))
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(b.slots.entries('settings.section')).toHaveLength(1)
-    await b.ctx.fiber.dispose()
+
+    // The Host ending the stream (a restarted namespace) is followed by a new one.
+    b.breakStream(new Error('authorization stream ended'))
+    await vi.waitFor(() => { expect(b.stream.opened).toBe(2) }, { timeout: 3000 })
     expect(b.stream.dispose).toHaveBeenCalledOnce()
+    await b.ctx.fiber.dispose()
+    expect(b.stream.dispose).toHaveBeenCalledTimes(2)
   })
 
   it('registers the models nav entry for declarations before or after apply', async () => {

@@ -388,7 +388,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     const signIn = props.credentialOnly === true ? undefined : props.signIn
     return (
       <>
-        {signIn === undefined ? null : <AccountSignIn {...signIn} disabled={disabled} t={t} />}
+        {/* Signing in writes a credential record, never settings, so read-only settings leave it open. */}
+        {signIn === undefined ? null : <AccountSignIn {...signIn} disabled={busy} t={t} />}
         {signIn?.declaration.acceptsApiKey === false ? null : <div className={styles['field']}>
           <span className={styles['fieldLabel']}>{t('keyInput')}</span>
           <input

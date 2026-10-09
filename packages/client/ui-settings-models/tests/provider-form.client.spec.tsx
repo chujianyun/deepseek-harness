@@ -17,6 +17,7 @@ import { createModelsOperations } from '../src/client/operations.ts'
 import type { ModelsOperations } from '../src/client/operations.ts'
 import { en } from '../src/client/locales.ts'
 import { settingsSchema } from './settings-schema.client.ts'
+import { noSignIns } from './sign-ins.client.ts'
 
 afterEach(cleanup)
 
@@ -204,11 +205,12 @@ function firstMutate(mutate: ReturnType<typeof vi.fn>): MutateCall {
 async function mountSection(options: Parameters<typeof scriptedFace>[0] = {}) {
   const scripted = scriptedFace(options)
   const controller = new ModelsSettingsStore(
-    ctxWith(scripted.face), settingsSchema, new SettingsDescribeMirror(ctxWith(scripted.face)))
+    ctxWith(scripted.face), settingsSchema, new SettingsDescribeMirror(ctxWith(scripted.face)), () => undefined)
   await controller.load()
   const injected: ModelsSectionProps = {
     controller,
     useSnapshot: bindSnapshotSelector(controller.store),
+    ...noSignIns(),
     operations: operationsWith(scripted.face),
     schema: settingsSchema,
     t,
@@ -822,11 +824,12 @@ describe('provider rows', () => {
       settingsPath: ['providers', 'openai'],
     }]))) as never
     const controller = new ModelsSettingsStore(
-      ctxWith(scripted.face), settingsSchema, new SettingsDescribeMirror(ctxWith(scripted.face)))
+      ctxWith(scripted.face), settingsSchema, new SettingsDescribeMirror(ctxWith(scripted.face)), () => undefined)
     await controller.load()
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
+      {...noSignIns()}
       operations={operationsWith(scripted.face)}
       schema={settingsSchema}
       t={t}

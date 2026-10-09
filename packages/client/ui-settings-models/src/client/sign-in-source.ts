@@ -1,9 +1,9 @@
 /**
  * Account sign-in state and actions over the `authorization` Remote: the
  * Host's flow views keyed by credential record, which action is in flight for
- * which key, and the last refusal per key. A sign-in started from this window
- * opens the first page its attempt reports; an attempt joined from elsewhere
- * does not.
+ * which key, and the last refusal per key. Where the window may open pages by
+ * itself, a sign-in started from it opens the first page its attempt reports;
+ * an attempt joined from elsewhere does not.
  */
 
 import type {
@@ -26,18 +26,18 @@ export interface SignInSnapshot {
 export interface SignInDependencies {
   readonly begin: (key: string, method: string) => Promise<RemoteResult<AuthorizationFlowView>>
   readonly answer: (attemptId: AuthorizationAttemptId, promptId: AuthorizationPromptId, value: string) => Promise<RemoteResult<void>>
-  readonly decline: (attemptId: AuthorizationAttemptId, promptId: AuthorizationPromptId) => Promise<RemoteResult<void>>
   readonly cancel: (attemptId: AuthorizationAttemptId) => Promise<RemoteResult<void>>
   readonly signOut: (key: string) => Promise<RemoteResult<AuthorizationFlowView>>
   /** Open a page outside the app: the system browser on Desktop, a new tab on the Web. */
   readonly open: (url: string) => void
+  /** Whether a page may open without a click, which a browser blocks as a popup. */
+  readonly opensPages: boolean
 }
 
 /** The actions a provider card invokes, each addressed by the flow's credential record key. */
 export interface SignInActions {
   readonly begin: (key: string, method: string) => Promise<void>
   readonly answer: (key: string, promptId: AuthorizationPromptId, value: string) => Promise<void>
-  readonly decline: (key: string, promptId: AuthorizationPromptId) => Promise<void>
   readonly cancel: (key: string) => Promise<void>
   readonly signOut: (key: string) => Promise<void>
   /** Open a page the running attempt reported. */
@@ -65,7 +65,7 @@ export function createSignInSource(deps: SignInDependencies): SignInSource {
 
   const openIfDue = (view: AuthorizationFlowView): void => {
     const attempt = view.attempt
-    if (attempt === null || !toOpen.has(attempt.id)) return
+    if (!deps.opensPages || attempt === null || !toOpen.has(attempt.id)) return
     if (attempt.phase !== 'running') { toOpen.delete(attempt.id); return }
     const url = attempt.notices.find(notice => notice.url !== undefined)?.url
     if (url === undefined) return
@@ -117,7 +117,6 @@ export function createSignInSource(deps: SignInDependencies): SignInSource {
         else adopt(result.value)
       },
       answer: (key, promptId, value) => onAttempt(key, attemptId => deps.answer(attemptId, promptId, value)),
-      decline: (key, promptId) => onAttempt(key, attemptId => deps.decline(attemptId, promptId)),
       cancel: key => onAttempt(key, attemptId => deps.cancel(attemptId)),
       signOut: async (key) => {
         const result = await run(key, () => deps.signOut(key))

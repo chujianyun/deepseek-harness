@@ -232,38 +232,28 @@ export function providerCopy(template: string, target: ProviderIdentity): string
 export function ModelsSection(props: ModelsSectionProps): ReactNode {
   const { controller, useSnapshot, useSignIns, signIn, operations, schema, t, renderSlot } = props
   if (
-    controller === undefined || useSnapshot === undefined || operations === undefined
-    || schema === undefined || t === undefined
+    controller === undefined || useSnapshot === undefined || useSignIns === undefined || signIn === undefined
+    || operations === undefined || schema === undefined || t === undefined
   ) return null
-  // Without the sign-in face the cards offer no account sign-in.
-  const accounts = useSignIns === undefined || signIn === undefined ? undefined : { useSignIns, signIn }
-  return <Loaded injected={{ controller, useSnapshot, operations, schema, t }} accounts={accounts} renderSlot={renderSlot} />
+  return <Loaded injected={{ controller, useSnapshot, useSignIns, signIn, operations, schema, t }} renderSlot={renderSlot} />
 }
 
-/** The section face with the sign-in members, which the section can do without. */
-type LoadedFace = Omit<ModelsSectionFace, 'useSignIns' | 'signIn'>
-
-function Loaded({ injected, accounts, renderSlot }: {
-  injected: LoadedFace
-  accounts: Pick<ModelsSectionFace, 'useSignIns' | 'signIn'> | undefined
-  renderSlot: ModelsRenderSlot
-}): ReactNode {
+function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderSlot: ModelsRenderSlot }): ReactNode {
   const { controller, operations, schema, t } = injected
   const snapshot = injected.useSnapshot(value => value)
-  const signIns = accounts?.useSignIns(value => value)
-  /** The sign-in block's props for one route, or nothing when the route or the section offers no account sign-in. */
-  const signInOf = (declaration: LlmProviderSignIn | undefined): { signIn?: ProviderSignInProps } =>
-    declaration === undefined || accounts === undefined || signIns === undefined
-      ? {}
-      : {
-        signIn: {
-          declaration,
-          flow: signIns.flows[declaration.key],
-          busy: signIns.busy[declaration.key] === true,
-          failure: signIns.failures[declaration.key],
-          actions: accounts.signIn,
-        },
-      }
+  const signIns = injected.useSignIns(value => value)
+  /** The sign-in block's props for one route, or nothing when the route has no account sign-in. */
+  const signInOf = (declaration: LlmProviderSignIn | undefined): { signIn?: ProviderSignInProps } => declaration === undefined
+    ? {}
+    : {
+      signIn: {
+        declaration,
+        flow: signIns.flows[declaration.key],
+        busy: signIns.busy[declaration.key] === true,
+        failure: signIns.failures[declaration.key],
+        actions: injected.signIn,
+      },
+    }
   const state = { ...snapshot, rows: snapshot.rows.map(row => row.entry.provider === 'deepseek-account'
     ? { ...row, entry: { ...row.entry, displayName: t('deepSeekAccount') } } : row) }
   const [editing, setEditing] = useState<EditorTarget | undefined>(undefined)

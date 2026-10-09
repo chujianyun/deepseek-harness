@@ -20,11 +20,11 @@ function flow(key: string, overrides: Partial<AuthorizationFlowView> = {}): Auth
 const okay = <T>(value: T) => Promise.resolve({ ok: true as const, value })
 const refused = (message: string) => Promise.resolve({ ok: false as const, error: new RemoteError('authorization/rejected', message, { key: KEY }) })
 
-function source() {
+function source(opensPages = true) {
   const deps = {
+    opensPages,
     begin: vi.fn<SignInDependencies['begin']>(key => okay(flow(key, { attempt: attempt('a1') }))),
     answer: vi.fn<SignInDependencies['answer']>(() => okay(undefined)),
-    decline: vi.fn<SignInDependencies['decline']>(() => okay(undefined)),
     cancel: vi.fn<SignInDependencies['cancel']>(() => okay(undefined)),
     signOut: vi.fn<SignInDependencies['signOut']>(key => okay(flow(key))),
     open: vi.fn<SignInDependencies['open']>(),
@@ -105,24 +105,27 @@ describe('createSignInSource', () => {
     expect(s.store.getSnapshot().failures).toEqual({})
   })
 
-  it('answers, declines, and cancels through the key\'s current attempt, and does nothing without one', async () => {
+  it('answers and cancels through the key\'s current attempt, and does nothing without one', async () => {
     const s = source()
     await s.actions.answer(KEY, promptId, 'x')
-    await s.actions.decline(KEY, promptId)
     await s.actions.cancel(KEY)
     s.publish([flow(KEY)])
     await s.actions.cancel(KEY)
     expect(s.deps.answer).not.toHaveBeenCalled()
-    expect(s.deps.decline).not.toHaveBeenCalled()
     expect(s.deps.cancel).not.toHaveBeenCalled()
 
     s.publish([flow(KEY, { attempt: attempt('a1') })])
     await s.actions.answer(KEY, promptId, 'browser')
-    await s.actions.decline(KEY, promptId)
     await s.actions.cancel(KEY)
     expect(s.deps.answer).toHaveBeenCalledWith('a1', '1', 'browser')
-    expect(s.deps.decline).toHaveBeenCalledWith('a1', '1')
     expect(s.deps.cancel).toHaveBeenCalledWith('a1')
+  })
+
+  it('never opens a page by itself where the window may not, which leaves the link to the user', async () => {
+    const s = source(false)
+    await s.actions.begin(KEY, 'oauth')
+    s.publish([flow(KEY, { attempt: attempt('a1', { notices: [{ message: 'Open it', url: 'https://auth.example/1' }] }) })])
+    expect(s.deps.open).not.toHaveBeenCalled()
   })
 
   it('adopts the view a sign-out answers, and records a refused one', async () => {

@@ -174,11 +174,13 @@ export class ModelsSettingsStore {
    * `remote.credentials` namespaces carry the directory and credential reads.
    * @param schema - settings-owned schema and immutable path operations.
    * @param describeFace - the shared mirror's describe face (namespace views and writability).
+   * @param signedIn - whether the account behind a sign-in key is signed in, or undefined while unknown.
    */
   constructor(
     private readonly ctx: ClientContext,
     private readonly schema: SettingsSchemaOperations,
     private readonly describeFace: SettingsDescribeFace,
+    private readonly signedIn: (key: string) => boolean | undefined,
   ) {}
 
   /**
@@ -231,17 +233,9 @@ export class ModelsSettingsStore {
           && catalog.value.groups.some(group => group.id === 'deepseek-account' && group.models.length > 0)
       }
     }
-    if (rows.some(row => row.entry.signIn !== undefined)) {
-      const flows = await this.ctx.remote.authorization.list()
-      // Sign-in state enriches the rows like credential state does: a failed
-      // read leaves it unknown instead of failing the page.
-      if (flows.ok) {
-        const signedIn = new Map(flows.value.map(flow => [flow.key, flow.signedIn]))
-        for (const row of rows) {
-          const known = row.entry.signIn === undefined ? undefined : signedIn.get(row.entry.signIn.key)
-          if (known !== undefined) row.signedIn = known
-        }
-      }
+    for (const row of rows) {
+      const known = row.entry.signIn === undefined ? undefined : this.signedIn(row.entry.signIn.key)
+      if (known !== undefined) row.signedIn = known
     }
     const refs = [...new Set(rows.filter(row => row.entry.provider !== 'deepseek-account').map(row => row.apiKeyEnv ?? deriveKeyRef(row.entry.provider)))]
     let credentials: Record<string, CredentialInfo> = {}
