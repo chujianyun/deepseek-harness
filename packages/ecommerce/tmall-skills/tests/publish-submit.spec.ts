@@ -319,7 +319,7 @@ describe('buildForm', () => {
     for (const key of ['title', 'shopping_title', 'tmSubTitle', 'threeToFourImages', 'yinHeWhiteBgImage', 'guideImageGroup', 'tmDeliveryTime', 'auctionPoint', 'personalUseConfirm']) {
       expect(form[key], key).toBeUndefined()
     }
-    expect((form.sku as object[])[0]).toEqual(expect.not.objectContaining({ skuOuterId: expect.anything() as object }))
+    expect((form.sku as { skuOuterId?: string }[])[0]?.skuOuterId ?? undefined).toBeUndefined()
     const commit = (form.descRepublicOfSell as { descPageCommitParam: object }).descPageCommitParam
     expect(commit).toMatchObject({ detailHeight: 0, catId: undefined })
     const nameless = buildForm({ global: {}, defaults: {} }, { draft: { ...draft, skus: [{ index: '1', name: 'a', code: 'x1', price: 1 }, { index: '2', name: 'b', price: 2 }] }, checks: [], rules: RULES, stock: 3, images: { '方图/1.png': image('1') } })

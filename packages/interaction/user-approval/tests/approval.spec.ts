@@ -296,7 +296,7 @@ describe('ApprovalService.request', () => {
     const ctx = await mounted()
     const { agent } = fakeAgent()
     const onRemember = vi.fn()
-    // A remembering answer whose outcome is no grant, as a client could send it over the wire.
+    // A remembering answer whose outcome is no grant: an answer a client sends arrives as parsed JSON the types cannot rule out.
     const malformed = JSON.parse('{"outcome":"rejected","remember":true}') as ApprovalAnswer
     ctx.on('approval/request', () => Promise.resolve(malformed))
     await expect(ctx.approval.request(requestOf(agent, { remember: true }), { onRemember })).resolves.toBe('unavailable')

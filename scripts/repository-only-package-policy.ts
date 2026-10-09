@@ -1,3 +1,5 @@
+import { PRIVATE_EXPERIMENTAL_PACKAGE_DIRECTORIES } from './experimental-package-policy.ts'
+
 /**
  * Packages under `packages/` that are built and used only from this repository and never published to
  * npm. They are no release member: they stay private, the dsh package-entry rules do not apply, and
@@ -20,3 +22,8 @@ export function isRepositoryOnlyPackageDirectory(
 ): boolean {
   return repositoryOnly.includes(directory)
 }
+
+/** Every package directory npm never receives: private experimental packages and repository-only packages. */
+export const UNPUBLISHED_PACKAGE_DIRECTORIES: readonly string[] = [
+  ...PRIVATE_EXPERIMENTAL_PACKAGE_DIRECTORIES, ...REPOSITORY_ONLY_PACKAGE_DIRECTORIES,
+]

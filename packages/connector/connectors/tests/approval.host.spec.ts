@@ -29,9 +29,9 @@ async function auditedAgent() {
   cleanups.push(() => ctx.fiber.dispose())
   await mountAgentLoopTestDependencies(ctx)
   const agent = await (await mountAgentLoopTestHarness(ctx)).create(SessionId(`audited-${String(cleanups.length)}`))
-  const appended = () => agent.session.ownEvents()
-    .filter(event => event.type === 'connectors/always-allowed')
-    .map(event => ({ type: event.type, data: event.data }))
+  // Every event the gate appends after the agent exists, of any type.
+  const before = agent.session.ownEvents().length
+  const appended = () => agent.session.ownEvents().slice(before).map(event => ({ type: event.type, data: event.data }))
   return { agent, appended }
 }
 

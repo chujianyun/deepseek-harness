@@ -49,8 +49,9 @@ describe('takeOverMerchant', () => {
   })
 
   it('refuses an account that is not a Tmall merchant account', async () => {
-    await expect(takeOverMerchant('b1', ran({ stdout: JSON.stringify({ ...MERCHANT, platform: 'taobao', kind: 'buyer' }) })))
-      .rejects.toMatchObject({ exitCode: EXIT.usage, message: expect.stringContaining('平台 taobao，类型 buyer') as string })
+    const buyer = () => takeOverMerchant('b1', ran({ stdout: JSON.stringify({ ...MERCHANT, platform: 'taobao', kind: 'buyer' }) }))
+    await expect(buyer()).rejects.toMatchObject({ exitCode: EXIT.usage })
+    await expect(buyer()).rejects.toThrow('平台 taobao，类型 buyer')
   })
 
   it('lets DSH pick a buyer account and reads its pages left', async () => {

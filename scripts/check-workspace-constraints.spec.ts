@@ -18,7 +18,7 @@ import {
   readWorkspaceManifests,
   type WorkspaceManifest,
 } from './check-workspace-constraints.ts'
-import { isRepositoryOnlyPackageDirectory, REPOSITORY_ONLY_PACKAGE_DIRECTORIES } from './repository-only-package-policy.ts'
+import { isRepositoryOnlyPackageDirectory } from './repository-only-package-policy.ts'
 
 const experimental = {
   dir: 'packages/experimental/prototype',
@@ -226,10 +226,11 @@ describe('experimental workspace constraints', () => {
 describe('repository-only packages', () => {
   const tool = { dir: 'packages/ecommerce/tmall-skills', manifest: { name: '@deepseek-ai/dsh-tmall-skills', private: true } } satisfies WorkspaceManifest
 
-  it('lists the Skill Hub packaging package and only directories it names', () => {
-    expect(REPOSITORY_ONLY_PACKAGE_DIRECTORIES).toEqual(['packages/ecommerce/tmall-skills'])
+  it('names exact directories only', () => {
     expect(isRepositoryOnlyPackageDirectory(tool.dir)).toBe(true)
     expect(isRepositoryOnlyPackageDirectory('packages/ecommerce/ecommerce-accounts')).toBe(false)
+    expect(isRepositoryOnlyPackageDirectory('packages/ecommerce/tmall-skills/src')).toBe(false)
+    expect(isRepositoryOnlyPackageDirectory('packages/x/y', ['packages/x/y'])).toBe(true)
   })
 
   it('requires it to stay private and leaves out the release and package-entry rules', () => {
