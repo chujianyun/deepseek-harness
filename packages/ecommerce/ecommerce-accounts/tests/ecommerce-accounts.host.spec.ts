@@ -236,10 +236,27 @@ describe('e-commerce accounts', () => {
     const env = await setup()
     const { accountId } = await env.service.addAccount(merchant)
     await env.service.startSignIn(accountId)
-    await new Promise(resolve => setTimeout(resolve, 500))
+    const tabsFile = join(env.browserDir(accountId), 'user-data', 'fake-tabs.json')
+    await expect.poll(async () => JSON.parse(await readFile(tabsFile, 'utf8')) as string[]).toEqual(['https://login.tmall.com/'])
+  })
+
+  it('leaves the blank tabs of a Chrome that was already running when a sign-in starts again', async () => {
+    const env = await setup({ config: { signInTimeoutMs: 400 } })
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    await env.settle(s => s.accounts[0]!.status === 'signed-out')
+    const record = await readRecord(env.browserDir(accountId))
+    const cdp = await Cdp.connect(record!.port, 5000)
+    try {
+      // A blank tab of the user's, or one a platform page opened.
+      await cdp.send('Target.createTarget', { url: 'about:blank' })
+    } finally {
+      cdp.close()
+    }
+    await env.service.startSignIn(accountId)
     const tabs = JSON.parse(await readFile(join(env.browserDir(accountId), 'user-data', 'fake-tabs.json'), 'utf8')) as string[]
-    expect(tabs).toHaveLength(1)
-    expect(tabs[0]).not.toBe('about:blank')
+    expect(tabs).toContain('about:blank')
+    expect(tabs.filter(url => url === 'https://login.tmall.com/')).toHaveLength(2)
   })
 
   it('checks at once when the user says the sign-in is done, and keeps waiting while it is not', async () => {
