@@ -16,6 +16,8 @@ export interface MandatoryUpdateView {
   readonly locale: DesktopLocale
   readonly policy: DesktopPolicyState
   readonly update: DesktopUpdateState
+  /** The installation has no update source, so the user updates only through the policy's download page. */
+  readonly manualOnly: boolean
   readonly error?: string
   readonly confirmation?: { readonly version: string; readonly active: boolean; readonly revision: number }
   readonly deferred: boolean
@@ -39,6 +41,8 @@ export interface MandatoryUpdateWindowOptions {
   readonly parent: () => BrowserWindow | undefined
   readonly policy: () => DesktopPolicyState
   readonly update: () => DesktopUpdateState
+  /** Whether the updater can check for and install a release; without it the page is the only way to update. */
+  readonly hasUpdateSource: () => boolean
   readonly refresh: () => Promise<void>
   readonly download: (version: string) => Promise<DesktopUpdateState>
   readonly install: (version: string) => Promise<DesktopUpdateState>
@@ -248,7 +252,7 @@ export class DesktopMandatoryUpdateWindow {
         mandatoryReadyDetail: this.options.locale.messages.updateDownloadedDetailWindows } }
       : this.options.locale
     return { locale, policy: this.options.policy(), update: this.options.update(),
-      deferred: this.deferred,
+      manualOnly: !this.options.hasUpdateSource(), deferred: this.deferred,
       ...(this.confirmation === undefined ? {}
         : { confirmation: { version: this.confirmation.version, active: this.confirmation.active, revision: this.confirmation.revision } }),
       ...(this.restart === undefined ? {} : { restart: this.restart }),

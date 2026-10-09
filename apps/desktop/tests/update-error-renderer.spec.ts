@@ -78,7 +78,7 @@ it.each(['en', 'zh-CN'])('keeps ordinary diagnostics folded, text-only, and keyb
 it('keeps mandatory diagnostics expandable without clearing the block or authorizing installation', async () => {
   const p = page('mandatory-update')
   const locale = resolveDesktopLocale('zh-CN')
-  const initial: MandatoryUpdateView = { locale, deferred: false, policy: { blocking: true, checking: false },
+  const initial: MandatoryUpdateView = { locale, deferred: false, manualOnly: false, policy: { blocking: true, checking: false },
     update: { phase: 'error', failedOperation: 'install', preparationFailure: 'stop-failed', version: '0.1.6-nightly.1',
       message: 'different shell locale', technicalDetails: 'exit 0; shutdown acknowledged false' } }
   const action = vi.fn(async () => {})
@@ -129,7 +129,7 @@ it('keeps mandatory diagnostics expandable without clearing the block or authori
 
 function mandatoryPage(update: MandatoryUpdateView['update']) {
   const p = page('mandatory-update')
-  const initial: MandatoryUpdateView = { locale: resolveDesktopLocale('zh'), deferred: false,
+  const initial: MandatoryUpdateView = { locale: resolveDesktopLocale('zh'), deferred: false, manualOnly: false,
     policy: { blocking: true, checking: false, title: '需要更新', page: 'https://downloads.example.com/desktop' }, update }
   const action = vi.fn(async () => {})
   let publish!: (view: MandatoryUpdateView) => void
@@ -219,7 +219,7 @@ it('renders server markup literally in a dedicated safety case', async () => {
 it.each(['en', 'zh-CN'])('records mandatory update guidance and actions across its states: %s', async (language) => {
   const p = page('mandatory-update')
   const locale = resolveDesktopLocale(language)
-  const base: MandatoryUpdateView = { locale, deferred: false, policy: { blocking: true, checking: false,
+  const base: MandatoryUpdateView = { locale, deferred: false, manualOnly: false, policy: { blocking: true, checking: false,
     page: 'https://example.invalid/download' }, update: { phase: 'available', version: '0.1.7-alpha.2' } }
   let publish!: (view: MandatoryUpdateView) => void
   const api: MandatoryUpdateApi = { status: async () => base, action: async () => {},
