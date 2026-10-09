@@ -50,6 +50,8 @@ try {
       ?? 'https://test.example.com',
     DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: signingEnvironment.DSH_DESKTOP_MANDATORY_UPDATE_CONFIG
       ?? JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
+    DSH_DESKTOP_HUB_ORIGIN: signingEnvironment.DSH_DESKTOP_HUB_ORIGIN ?? 'https://hub.example.com',
+    DSH_DESKTOP_HUB_CLIENT_ID: signingEnvironment.DSH_DESKTOP_HUB_CLIENT_ID ?? 'dsh_installer_test',
     ...signingRun ? { DSH_DESKTOP_PACKAGING_RUN_DIR: signingRun.directory } : {},
   })
   const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')

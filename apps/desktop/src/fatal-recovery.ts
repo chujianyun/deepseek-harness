@@ -4,6 +4,7 @@ import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron'
 import type { CrashReportSource } from './crash-report.ts'
 import { formatDesktopMessage, type DesktopMessages } from './locale.ts'
 import { desktopErrorState } from './startup-error.ts'
+import { HUB_NOT_CONFIGURED } from './hub-config.ts'
 
 interface RecoveryOperations {
   messages(): DesktopMessages
@@ -71,17 +72,21 @@ export class DesktopFatalRecovery {
     let message = messages.fatalSummary
     for (;;) {
       const addressInUse = /\blisten EADDRINUSE\b/u.test(detail)
+      // Restarting cannot supply a user center, so this failure offers only Exit.
+      const hubMissing = detail.includes(HUB_NOT_CONFIGURED)
+      const known = addressInUse ? messages.startupAddressInUse : hubMissing ? messages.startupHubNotConfigured : undefined
+      const restart = [messages.exitApplication, messages.restartApplication]
+      const buttons = hubMissing ? [messages.exitApplication]
+        : addressInUse ? restart : [...restart, messages.disableThirdPartyPlugins]
       const { response } = await this.operations.show({
         type: 'error',
         title: messages.startupFailed,
         message,
-        detail: addressInUse
-          ? `${messages.startupAddressInUse}${reportLine(messages, reportPath)}`
+        detail: known !== undefined
+          ? `${known}${reportLine(messages, reportPath)}`
           : dialogDetail(detail, messages, reportPath),
-        buttons: addressInUse
-          ? [messages.exitApplication, messages.restartApplication]
-          : [messages.exitApplication, messages.restartApplication, messages.disableThirdPartyPlugins],
-        defaultId: 1,
+        buttons,
+        defaultId: buttons.length > 1 ? 1 : 0,
         cancelId: 0,
         noLink: true,
       })

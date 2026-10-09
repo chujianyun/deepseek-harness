@@ -9,6 +9,7 @@ import { DESKTOP_IPC, type DesktopUpdateState } from '../src/ipc.ts'
 import { MANDATORY_IPC } from '../src/mandatory-update-ipc.ts'
 import { DesktopHostFatalError, DesktopHostUncleanExitError } from '../src/host-process.ts'
 import { en, zh } from '../src/locale.ts'
+import { HUB_NOT_CONFIGURED } from '../src/hub-config.ts'
 import { DesktopUpdatePreparationError } from '../src/update-error.ts'
 import { writeCrashReport } from '../src/crash-report.ts'
 
@@ -48,6 +49,7 @@ const harness = await vi.hoisted(async () => {
   let quitCompleted = deferred()
   let policyBlocked = deferred()
   let embeddedPolicy: unknown
+  let embeddedHub: unknown
   let closeWindowsOnQuit = false
   let updateState: DesktopUpdateState = { phase: 'idle' }
   let platformDisposeDeferred: ReturnType<typeof deferred> | undefined
@@ -222,6 +224,8 @@ const harness = await vi.hoisted(async () => {
     get policyBlocked() { return policyBlocked },
     get embeddedPolicy() { return embeddedPolicy },
     set embeddedPolicy(value: unknown) { embeddedPolicy = value },
+    get embeddedHub() { return embeddedHub },
+    set embeddedHub(value: unknown) { embeddedHub = value },
     nextNavigation() { navigated = deferred(); return navigated.promise },
     nextHostStart() { hostStarted = deferred(); return hostStarted.promise },
     deferPlatformDispose() { platformDisposeDeferred = deferred(); return platformDisposeDeferred },
@@ -251,6 +255,7 @@ const harness = await vi.hoisted(async () => {
       navigated = deferred(); dialogShown = deferred(); quitCompleted = deferred()
       policyBlocked = deferred()
       embeddedPolicy = undefined
+      embeddedHub = { origin: 'https://hub.example.com', clientId: 'dsh_bundled' }
       platformDisposeDeferred = undefined
       platformCloseDeferred = undefined
     },
@@ -299,7 +304,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs/promises')>()
   return { ...original, readFile: vi.fn((path: Parameters<typeof original.readFile>[0], encoding?: 'utf8') => {
     if (path === join('desktop-test-app', 'package.json')) {
-      return Promise.resolve(JSON.stringify({ dshDesktopAppId: 'com.deepseek.dsh', dshMandatoryUpdatePolicy: harness.embeddedPolicy }))
+      return Promise.resolve(JSON.stringify({ dshDesktopAppId: 'com.deepseek.dsh', dshMandatoryUpdatePolicy: harness.embeddedPolicy, dshHub: harness.embeddedHub }))
     }
     return encoding === undefined ? original.readFile(path) : original.readFile(path, encoding)
   }) }
@@ -409,6 +414,8 @@ beforeEach(() => {
   vi.stubEnv('DSH_DESKTOP_PRIMARY_RUNTIME_DIR', 'test-primary-runtime')
   vi.stubGlobal('process', { ...process, platform: 'win32', arch: 'x64', resourcesPath: 'desktop-test-resources' })
   vi.stubEnv('DSH_DESKTOP_HOST_INSPECT_PORT', undefined)
+  vi.stubEnv('DSH_HUB_ORIGIN', undefined)
+  vi.stubEnv('DSH_HUB_CLIENT_ID', undefined)
   vi.stubEnv('DSH_DESKTOP_DEV_PROJECT_DIR', undefined)
   vi.stubEnv('DSH_DESKTOP_MANDATORY_UPDATE_CONFIG', undefined)
   vi.stubEnv('DSH_DESKTOP_UPDATE_JOURNAL_DIR', undefined)
@@ -435,6 +442,9 @@ describe('desktop main startup', () => {
   it('routes shell update documents and assets through the registered main protocol handler', async () => {
     const root = join(import.meta.dirname, '..')
     vi.spyOn(harness.app, 'getAppPath').mockReturnValue(root)
+    // The development manifest at `root` bundles no user center.
+    vi.stubEnv('DSH_HUB_ORIGIN', 'https://hub.example.com')
+    vi.stubEnv('DSH_HUB_CLIENT_ID', 'dsh_local')
     const web = await import('../src/web-document.ts')
     const actual = await vi.importActual<typeof import('../src/web-document.ts')>('../src/web-document.ts')
     vi.mocked(web.serveWebDocument).mockImplementation(actual.serveWebDocument)
@@ -2068,6 +2078,47 @@ describe('desktop main startup', () => {
     expect(signal?.aborted).toBe(false)
     harness.app.emit('will-quit')
     expect(signal?.aborted).toBe(true)
+  })
+
+  it('gives the Host the bundled user center unless the launch environment names one', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    expect(harness.hosts[0]!.environment).toMatchObject({ DSH_HUB_ORIGIN: 'https://hub.example.com', DSH_HUB_CLIENT_ID: 'dsh_bundled' })
+  })
+
+  it('keeps a user center the login shell names over the bundled one', async () => {
+    harness.loginShell.mockImplementation(async (base) => {
+      const read = await harness.readLoginShell(base)
+      return { ...read, environment: { ...read.environment, DSH_HUB_ORIGIN: 'http://localhost:8080', DSH_HUB_CLIENT_ID: 'dsh_local' } }
+    })
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    harness.prepared.resolve()
+    await harness.hostStarted.promise
+    expect(harness.hosts[0]!.environment).toMatchObject({ DSH_HUB_ORIGIN: 'http://localhost:8080', DSH_HUB_CLIENT_ID: 'dsh_local' })
+  })
+
+  it('starts no Host and states the missing user center when neither the package nor the environment names one', async () => {
+    harness.embeddedHub = undefined
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const boot = invoke(DESKTOP_IPC.boot) as Promise<unknown>
+    harness.prepared.resolve()
+    const failure = await boot.then(() => undefined, (error: unknown) => error)
+    expect(String(failure)).toContain(HUB_NOT_CONFIGURED)
+    // The renderer reports a rejected boot as its startup failure.
+    const window = harness.windows[0]!
+    const frame = { url: 'dsh-app://app/' }
+    Object.assign(window.webContents, { mainFrame: frame })
+    const handler = harness.handlers.get(DESKTOP_IPC.bootFailed)! as (event: unknown, message: unknown) => void
+    handler({ sender: window.webContents, senderFrame: frame }, `Error invoking remote method 'dsh-desktop:boot': ${String(failure)}`)
+    await harness.dialogShown.promise
+    const options = harness.dialog.showMessageBox.mock.calls.at(-1)![0] as MessageBoxOptions
+    expect(options.detail).toContain(en.startupHubNotConfigured)
+    expect(options.buttons).toEqual([en.exitApplication])
+    expect(harness.hosts).toHaveLength(0)
   })
 
   it('prepares recovery offscreen and starts one Host before choosing the first visible window', async () => {
