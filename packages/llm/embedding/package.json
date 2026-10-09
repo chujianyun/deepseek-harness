@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-embedding",
   "description": "Embedding models for Desktop knowledge bases: the downloaded local model and API embedding models over configured provider routes",
-  "version": "0.2.1-alpha.1",
+  "version": "1.0.0",
   "publishConfig": {
     "access": "public"
   },

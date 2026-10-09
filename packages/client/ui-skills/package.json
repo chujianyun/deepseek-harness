@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-skills",
   "description": "Skills page for the dsh web client: the installed skills on this machine, switched on and off, edited, revealed, or uninstalled",
-  "version": "0.2.1-alpha.1",
+  "version": "1.0.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
