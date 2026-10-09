@@ -25,7 +25,8 @@ import { useId, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button, IconPlusOutlineRegular, Modal, SegmentedControl } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { LlmProviderSignIn, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 // Type-only: pulls this package's SlotMap merge (the two Models child slots).
 import type {} from './slot-contract.ts'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
@@ -33,7 +34,8 @@ import { deriveKeyRef, protocolChoices, providerUsable } from './store.ts'
 import type { ModelsSettingsStore, ProviderRow } from './store.ts'
 import type { ModelsOperations } from './operations.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
-import { ProviderEditor, type ProviderEditorProps } from './ProviderEditor.tsx'
+import { ProviderEditor, type ProviderEditorProps, type ProviderSignInProps } from './ProviderEditor.tsx'
+import type { SignInActions, SignInSnapshot } from './sign-in-source.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -44,7 +46,11 @@ export interface ModelsSectionInjected {
   hooks: {
     /** Page snapshot bound by the UI renderer as useSnapshot. */
     snapshot: ModelsSettingsStore['store']
+    /** Account sign-in state bound by the UI renderer as useSignIns. */
+    signIns: SnapshotStore<SignInSnapshot>
   }
+  /** Account sign-in actions, addressed by credential record key. */
+  signIn: SignInActions
   /** The Host operations the section and its cards invoke. */
   operations: ModelsOperations
   /** Settings schema and immutable path callbacks. */
@@ -92,6 +98,8 @@ interface EditorTarget extends ProviderIdentity {
   credentialRef?: string
   /** The adapter reports this route as one it does not ship (see {@link ProviderEditorProps.declared}). */
   declared?: boolean
+  /** How the route signs in to an account, when it can. */
+  signIn?: LlmProviderSignIn
 }
 
 /** A dormant directory row the add card can adopt, with its registered namespace. */
@@ -109,7 +117,7 @@ interface CatalogDraft {
 /** Values that vary around the shared provider-editor rendering. */
 interface ProviderEditorRenderProps extends Pick<
   ProviderEditorProps,
-  'namespace' | 'schema' | 'operations' | 't' | 'readOnly' | 'onClose'
+  'namespace' | 'schema' | 'operations' | 't' | 'readOnly' | 'onClose' | 'signIn'
 > {
   target: EditorTarget
 }
@@ -200,6 +208,7 @@ function targetOf(row: ProviderRow): EditorTarget {
     ...credentialRef === undefined ? {} : { credentialRef },
     // Only declared routes may expose route-owned fields.
     ...row.entry.declared === true ? { declared: true } : {},
+    ...row.entry.signIn === undefined ? {} : { signIn: row.entry.signIn },
   }
 }
 
@@ -221,17 +230,30 @@ export function providerCopy(template: string, target: ProviderIdentity): string
  * @returns the section, or null while the shell has not injected yet.
  */
 export function ModelsSection(props: ModelsSectionProps): ReactNode {
-  const { controller, useSnapshot, operations, schema, t, renderSlot } = props
+  const { controller, useSnapshot, useSignIns, signIn, operations, schema, t, renderSlot } = props
   if (
-    controller === undefined || useSnapshot === undefined || operations === undefined
-    || schema === undefined || t === undefined
+    controller === undefined || useSnapshot === undefined || useSignIns === undefined || signIn === undefined
+    || operations === undefined || schema === undefined || t === undefined
   ) return null
-  return <Loaded injected={{ controller, useSnapshot, operations, schema, t }} renderSlot={renderSlot} />
+  return <Loaded injected={{ controller, useSnapshot, useSignIns, signIn, operations, schema, t }} renderSlot={renderSlot} />
 }
 
 function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderSlot: ModelsRenderSlot }): ReactNode {
   const { controller, operations, schema, t } = injected
   const snapshot = injected.useSnapshot(value => value)
+  const signIns = injected.useSignIns(value => value)
+  /** The sign-in block's props for one route, or nothing when the route has no account sign-in. */
+  const signInOf = (declaration: LlmProviderSignIn | undefined): { signIn?: ProviderSignInProps } => declaration === undefined
+    ? {}
+    : {
+      signIn: {
+        declaration,
+        flow: signIns.flows[declaration.key],
+        busy: signIns.busy[declaration.key] === true,
+        failure: signIns.failures[declaration.key],
+        actions: injected.signIn,
+      },
+    }
   const state = { ...snapshot, rows: snapshot.rows.map(row => row.entry.provider === 'deepseek-account'
     ? { ...row, entry: { ...row.entry, displayName: t('deepSeekAccount') } } : row) }
   const [editing, setEditing] = useState<EditorTarget | undefined>(undefined)
@@ -417,6 +439,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                   t,
                   readOnly: !state.writable,
                   onClose: (changed) => { closeSetup(changed, target) },
+                  ...signInOf(target.signIn),
                 })}
                 {renderSlot(
                   'settings.models.provider-card',
@@ -427,10 +450,16 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
             )
           }
           const open = !addOpen && editing?.provider === row.entry.provider
-          const credentialConfigured = row.credential?.configured === true
+          // A signed-in account counts as the row's credential; a route that
+          // only signs in is missing one until it is signed in.
+          const keyConfigured = row.credential?.configured === true
+          const credentialConfigured = keyConfigured || row.signedIn === true
+          const signInOnlyMissing = row.entry.signIn?.acceptsApiKey === false && row.signedIn === false
           const credentialMissing = !credentialConfigured
-            && row.apiKeyEnv !== undefined
-            && row.credential?.configured === false
+            && ((row.apiKeyEnv !== undefined && row.credential?.configured === false) || signInOnlyMissing)
+          // The dot names what the row holds: a key, or a signed-in account.
+          const configuredLabel = keyConfigured ? t('credentialConfigured') : t('signedIn')
+          const missingLabel = signInOnlyMissing ? t('signedOut') : t('credentialMissing')
           return (
             <li key={row.entry.provider} className={styles['rowCard']}>
               <div className={styles['rowHead']}>
@@ -447,8 +476,8 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                       <span
                         className={`${styles['credentialDot']} ${styles['credentialDotConfigured']}`}
                         role="img"
-                        aria-label={t('credentialConfigured')}
-                        title={t('credentialConfigured')}
+                        aria-label={configuredLabel}
+                        title={configuredLabel}
                       />
                     )
                     : credentialMissing
@@ -456,8 +485,8 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                         <span
                           className={`${styles['credentialDot']} ${styles['credentialDotMissing']}`}
                           role="img"
-                          aria-label={t('credentialMissing')}
-                          title={t('credentialMissing')}
+                          aria-label={missingLabel}
+                          title={missingLabel}
                         />
                       )
                       : null}
@@ -512,6 +541,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                   t,
                   readOnly: !state.writable,
                   onClose: (changed) => { closeEditor(changed, target) },
+                  ...signInOf(target.signIn),
                 })
                 : null}
             </li>
@@ -601,6 +631,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                       readOnly={!state.writable}
                       onClose={(changed) => { closeEditor(changed, draft.target) }}
                       onBusyChange={setCatalogBusy}
+                      {...signInOf(draft.target.signIn)}
                     />
                     {addRow === undefined
                       ? null

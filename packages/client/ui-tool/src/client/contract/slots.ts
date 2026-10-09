@@ -42,6 +42,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * slot.
      */
     'tool.call.images': { kind: 'single'; scope: 'session'; owner: ToolImagesOwnerProps }
+    /**
+     * Durable images a Turn's `generate_image` calls produced, declared by the
+     * generated-images Turn-tail entry and filled by the attachment
+     * presentation plugin like `tool.call.images`. They show under the Turn's
+     * answer, outside the collapsed process holding the Tool rows.
+     */
+    'tool.call.generated-images': { kind: 'single'; scope: 'session'; owner: ToolImagesOwnerProps }
   }
 }
 

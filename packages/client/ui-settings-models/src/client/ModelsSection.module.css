@@ -722,3 +722,37 @@ select.input {
   line-height: 20px;
   text-align: center;
 }
+
+/* Account sign-in block: the status beside its action, then the running
+   attempt's page link, code, and questions. */
+.signInActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.signInStatus {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.signInAttempt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.signInLink {
+  align-self: flex-start;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-link);
+}
+
+.signInCode {
+  font-family: var(--dsw-font-markdown-code-block-font-family);
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+}

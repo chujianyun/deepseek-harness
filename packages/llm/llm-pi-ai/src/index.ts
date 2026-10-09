@@ -71,7 +71,8 @@ import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
 import type { StoredModelDiscoveryProfile } from './discovery.ts'
-import { registerPiAiFlows } from './login.ts'
+import { registerPiAiFlows, signInFor } from './login.ts'
+import { CODEX_BASE_URL, IMAGE_PROVIDER, registerImageTool } from './image-tool.ts'
 
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
@@ -128,6 +129,7 @@ function directoryEntries(
   const catalog = new Set(catalogProviderIds())
   const entries = new Map<string, LlmConfigurableProvider>()
   const declare = (provider: string, displayName: string, error?: string): void => {
+    const signIn = signInFor(provider)
     entries.set(provider, {
       provider,
       displayName,
@@ -137,6 +139,7 @@ function directoryEntries(
       // narrowing a shipped provider's models stores a profile too, and that
       // route is still one pi-ai knows.
       declared: !catalog.has(provider),
+      ...signIn === undefined ? {} : { signIn },
       ...error === undefined ? {} : { error },
     })
   }
@@ -232,6 +235,17 @@ export function apply(ctx: Context, config: Config): void {
   // composition without it (headless, ACP) simply has no surface to sign in
   // from, while everything else this plugin does still works.
   ctx.inject(['authorization'], (authorized) => { registerPiAiFlows(authorized, auth) })
+  // generate_image spends the Codex sign-in; scoped to the services it needs, so a
+  // composition without a tool registry or attachment store still mounts the adapter.
+  let recheckImageTool: (() => void) | undefined
+  ctx.inject(['tools', 'attachments', 'credentials'], (scoped) => {
+    recheckImageTool = registerImageTool(scoped, {
+      auth,
+      settings: () => config.imageGeneration.get(),
+      baseURL: () => profiles().get(IMAGE_PROVIDER)?.baseURL ?? CODEX_BASE_URL,
+    })
+    scoped.effect(() => () => { recheckImageTool = undefined }, 'llm-pi-ai: generate_image settings')
+  })
   // The full installed catalog is configurable from the moment the plugin
   // mounts — dormant or not — so configuration surfaces can offer every
   // pi-ai provider before any route exists. Hand-declared routes join it as
@@ -324,6 +338,8 @@ export function apply(ctx: Context, config: Config): void {
   ensureRegistrationFacts()
 
   ctx.on('loader/volatile-update', () => {
+    // Delivered to this fiber only: the image tool lives in an injected child scope.
+    recheckImageTool?.()
     try { ensureRegistrationFacts(); ensureDirectory() }
     catch (error) {
       ctx.logger.error('llm-pi-ai: configuration conflicts with an existing provider route')

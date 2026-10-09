@@ -11,6 +11,8 @@
  * display name and wire protocol of a pi-ai route the adapter does not ship —
  * the two fields the create card asked that route for, editable here for the
  * same reason).
+ * A route with an account sign-in carries the sign-in block above the key
+ * field, or in its place when the route takes no key.
  * Reasoning effort is deliberately absent: it is a per-MODEL capability, and
  * the models under one provider disagree about it, so a provider-scoped
  * control can only be set to a value some of them reject. The composer's
@@ -30,6 +32,8 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import {
   DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
 } from './DeepSeekModelsEditor.tsx'
+import { AccountSignIn, type AccountSignInProps } from './AccountSignIn.tsx'
+import { ImageGenerationSwitch } from './ImageGenerationSwitch.tsx'
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
@@ -43,7 +47,13 @@ import styles from './ModelsSection.module.css'
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
 type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
 
+/** The route whose signed-in account `generate_image` spends; its card carries the image-generation switch. */
+const IMAGE_ROUTE = 'openai-codex'
+/** Where the image-generation switch lives in the pi-ai settings section. */
+const IMAGE_SWITCH_PATH = ['imageGeneration', 'enabled'] as const
 
+/** What a card needs to offer account sign-in: everything the block takes but the card's own copy and lock. */
+export type ProviderSignInProps = Omit<AccountSignInProps, 't' | 'disabled'>
 
 /** Props of {@link ProviderEditor}. */
 export interface ProviderEditorProps {
@@ -61,6 +71,11 @@ export interface ProviderEditorProps {
    * override every one of them and the card does not offer it.
    */
   declared?: boolean
+  /**
+   * Account sign-in for this route, when it has one. A route that signs in
+   * only (no API key) shows the sign-in block in place of the key field.
+   */
+  signIn?: ProviderSignInProps
   /** The owning namespace view (schema, layers, secrets). */
   namespace: SettingsNamespaceView
   /** Settings-owned synchronous schema and immutable path operations. */
@@ -376,9 +391,28 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     if (accountProvider) return <DeepSeekModelsEditor {...catalogProps}
       defaultContextWindow={typeof defaultContextWindow === 'number' ? defaultContextWindow : undefined}
       defaultMaxTokens={typeof defaultMaxTokens === 'number' ? defaultMaxTokens : undefined} />
+    const signIn = props.credentialOnly === true ? undefined : props.signIn
     return (
       <>
-        <div className={styles['field']}>
+        {/* Signing in writes a credential record, never settings, so read-only settings leave it open. */}
+        {signIn === undefined ? null : <AccountSignIn {...signIn} disabled={busy} t={t} />}
+        {signIn === undefined || props.provider !== IMAGE_ROUTE
+          ? null
+          : (
+            <ImageGenerationSwitch
+              enabled={schema.getPath(namespace.value, IMAGE_SWITCH_PATH) !== false}
+              disabled={disabled}
+              t={t}
+              onChange={async (next) => {
+                const written = await operations.writeSettings(namespace.ns, [{ op: 'set', path: [...IMAGE_SWITCH_PATH], value: next }], undefined)
+                if (written.kind !== 'written') return written.message
+                // Keep the card's own Save fenced at the revision this write produced.
+                setExpectedRevision(written.view.revision)
+                return undefined
+              }}
+            />
+          )}
+        {signIn?.declaration.acceptsApiKey === false ? null : <div className={styles['field']}>
           <span className={styles['fieldLabel']}>{t('keyInput')}</span>
           <input
             className={styles['input']}
@@ -394,7 +428,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
             onChange={(event) => { setKeyDraft(event.target.value) }}
           />
           {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
-        </div>
+        </div>}
         {props.credentialOnly === true ? null : <details className={styles['customized']}>
           <summary className={styles['customizedSummary']}>{t('customized')}</summary>
           <div className={styles['customizedBody']}>

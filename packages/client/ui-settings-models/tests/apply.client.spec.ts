@@ -34,6 +34,14 @@ async function bench(isLoopback = true, mock = RemoteMock.create().load(remoteDe
   const locale = new LocaleRuntime(ctx)
   locale.setLocale('zh')
   ctx.provide('locale', locale)
+  const authorization = {
+    list: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
+    begin: vi.fn(),
+    answer: vi.fn(),
+    cancel: vi.fn(),
+    signOut: vi.fn(),
+    watch: vi.fn(),
+  }
   const remote = new TestRemote(ctx, {
     credentials: {
       describe: vi.fn(() => Promise.resolve({ ok: true, value: {} })),
@@ -48,11 +56,38 @@ async function bench(isLoopback = true, mock = RemoteMock.create().load(remoteDe
     },
     settings: mock.remote.settings,
     session: { initializeDefaultModel: vi.fn(async () => ({ ok: true, value: undefined })) },
+    authorization,
   })
   // The fixed Host facts the settings provider reads its persistence from.
   remote.$host = { home: undefined, isLoopback }
+  // The sign-in stream: frames the spec pushes, delivered until it fails or ends.
+  const frames: unknown[][] = []
+  let wake: (() => void) | undefined
+  let fail: ((error: Error) => void) | undefined
+  type StreamOptions = { open: (signal: AbortSignal) => unknown; ended: () => Error }
+  const stream = { options: undefined as StreamOptions | undefined, opened: 0, accepted: vi.fn(), dispose: vi.fn() }
+  Object.assign(remote, {
+    $stream: (options: StreamOptions) => {
+      stream.options = options
+      stream.opened += 1
+      return {
+        dispose: stream.dispose,
+        async *[Symbol.asyncIterator]() {
+          for (;;) {
+            const value = frames.shift()
+            if (value !== undefined) { yield { value, accept: stream.accepted }; continue }
+            await new Promise<void>((resolve, reject) => { wake = resolve; fail = reject })
+          }
+        },
+      }
+    },
+  })
+  const push = (views: unknown[]): void => { frames.push(views); wake?.() }
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, remote }
+  return {
+    ctx, slots: ctx.get('slots') as SlotRegistry, locale, remote, authorization, stream, push,
+    breakStream: (error: Error) => { fail?.(error) },
+  }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -126,9 +161,75 @@ describe('ui-settings-models apply', () => {
 
   it('declares the services it uses', () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'remote', 'remote.credentials', 'remote.llm', 'remote.settings', 'remote.session',
+      'slots', 'locale', 'remote', 'remote.authorization', 'remote.credentials', 'remote.llm', 'remote.settings', 'remote.session',
       'configForms', 'settingsSchema',
     ])
+  })
+
+  it('follows the Host sign-in stream once the page loads, reopens it when the Host ends it, and refreshes rows on sign-in', async () => {
+    const listProviders = vi.fn(() => Promise.resolve({ ok: true, value: [{ id: 'openai-codex', name: 'openai-codex' }] }))
+    const b = await bench(true, undefined, {
+      listProviders,
+      listConfigurableProviders: vi.fn(() => Promise.resolve({ ok: true, value: [{
+        provider: 'openai-codex', displayName: 'openai-codex', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai-codex'],
+        declared: false, signIn: { key: 'llm-pi-ai/openai-codex', method: 'oauth', acceptsApiKey: false },
+      }] })),
+    })
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const injected = (b.slots.entries('settings.section')[0]!.inject as () => unknown)() as {
+      controller: { load: () => Promise<void>; store: { getSnapshot: () => { rows: { signedIn?: boolean }[] } } }
+      hooks: { signIns: { getSnapshot: () => { flows: Record<string, unknown> } } }
+      signIn: Record<string, (...args: unknown[]) => unknown>
+    }
+    // Nothing streams for a window that never opens the Models page.
+    expect(b.stream.opened).toBe(0)
+    await injected.controller.load()
+    expect(b.stream.opened).toBe(1)
+    const signal = new AbortController().signal
+    b.stream.options!.open(signal)
+    expect(b.authorization.watch).toHaveBeenCalledWith(signal)
+    expect(b.stream.options!.ended().message).toBe('authorization stream ended')
+
+    const loads = listProviders.mock.calls.length
+    expect(injected.controller.store.getSnapshot().rows[0]?.signedIn).toBeUndefined()
+    const view = { key: 'llm-pi-ai/openai-codex', label: 'ChatGPT', methods: [], signedIn: true, attempt: null }
+    b.push([view])
+    await vi.waitFor(() => { expect(injected.hooks.signIns.getSnapshot().flows).toEqual({ 'llm-pi-ai/openai-codex': view }) })
+    expect(b.stream.accepted).toHaveBeenCalledOnce()
+    // A changed sign-in state refreshes the rows; a frame that changes no sign-in state does not.
+    await vi.waitFor(() => { expect(injected.controller.store.getSnapshot().rows[0]?.signedIn).toBe(true) })
+    expect(listProviders.mock.calls.length).toBe(loads + 1)
+    b.push([{ ...view, label: 'ChatGPT (Codex)' }])
+    await vi.waitFor(() => { expect(b.stream.accepted).toHaveBeenCalledTimes(2) })
+    expect(listProviders.mock.calls.length).toBe(loads + 1)
+
+    // Each card action reaches its own Remote method, addressed through the key's current attempt.
+    const running = { ...view, attempt: { id: 'a1', method: 'oauth', phase: 'running', notices: [], prompts: [] } }
+    const answered = { ok: true, value: undefined }
+    b.authorization.begin.mockResolvedValue({ ok: true, value: running })
+    b.authorization.answer.mockResolvedValue(answered)
+    b.authorization.cancel.mockResolvedValue(answered)
+    b.authorization.signOut.mockResolvedValue({ ok: true, value: view })
+    await injected.signIn['begin']!('llm-pi-ai/openai-codex', 'oauth')
+    await injected.signIn['answer']!('llm-pi-ai/openai-codex', '1', 'browser')
+    await injected.signIn['cancel']!('llm-pi-ai/openai-codex')
+    await injected.signIn['signOut']!('llm-pi-ai/openai-codex')
+    expect(b.authorization.begin).toHaveBeenCalledWith('llm-pi-ai/openai-codex', 'oauth')
+    expect(b.authorization.answer).toHaveBeenCalledWith('a1', '1', 'browser')
+    expect(b.authorization.cancel).toHaveBeenCalledWith('a1')
+    expect(b.authorization.signOut).toHaveBeenCalledWith('llm-pi-ai/openai-codex')
+    const open = vi.fn()
+    vi.stubGlobal('window', { open })
+    injected.signIn['open']!('https://auth.example/authorize')
+    expect(open).toHaveBeenCalledWith('https://auth.example/authorize', '_blank', 'noopener,noreferrer')
+
+    // The Host ending the stream (a restarted namespace) is followed by a new one.
+    b.breakStream(new Error('authorization stream ended'))
+    await vi.waitFor(() => { expect(b.stream.opened).toBe(2) }, { timeout: 3000 })
+    expect(b.stream.dispose).toHaveBeenCalledOnce()
+    await b.ctx.fiber.dispose()
+    expect(b.stream.dispose).toHaveBeenCalledTimes(2)
   })
 
   it('registers the models nav entry for declarations before or after apply', async () => {

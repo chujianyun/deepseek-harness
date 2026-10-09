@@ -7,9 +7,11 @@
  * @module dsh-llm-pi-ai/login
  */
 
+import { createServer } from 'node:net'
 import type { AuthEvent, AuthPrompt, AuthType, Provider } from '@earendil-works/pi-ai'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AuthorizationMethod, AuthorizationPrompt, AuthorizationSession } from '@deepseek-ai/dsh-authorization'
+import type { LlmProviderSignIn } from '@deepseek-ai/dsh-llm'
 import { isCredentialKeySegment } from '@deepseek-ai/dsh-credentials'
 import { catalogProvider, catalogProviderIds } from './catalog.ts'
 import { recordKeyFor } from './auth.ts'
@@ -36,6 +38,84 @@ function loginMethods(provider: Provider | undefined): AuthorizationMethod[] {
 }
 
 /**
+ * How a configuration surface signs into one catalog route's account: the
+ * record its flow writes, the flow method to start, and whether the route also
+ * takes an API key. Only an OAuth login counts — the interactive key prompt
+ * every installed provider also ships asks for what the settings form's key
+ * field already collects. A route {@link registerPiAiFlows} skips declares
+ * nothing; every other declared sign-in has a flow behind it once the
+ * composition mounts the authorization service, as every shipped profile does.
+ * @param providerId - a catalog provider id.
+ * @returns the declaration, or undefined when the route offers no account sign-in.
+ */
+export function signInFor(providerId: string): LlmProviderSignIn | undefined {
+  const provider = catalogProvider(providerId)
+  if (provider?.auth.oauth === undefined || !isCredentialKeySegment(providerId)) return undefined
+  return { key: recordKeyFor(providerId), method: 'oauth', acceptsApiKey: provider.auth.apiKey !== undefined }
+}
+
+/**
+ * The fixed loopback port each pi-ai browser login receives its redirect on,
+ * for the logins that carry on without a word when another program holds it.
+ * pi-ai's ChatGPT (Codex) login then still opens the sign-in page, but the
+ * browser hands the result to whichever program owns the port, and the
+ * attempt waits for a pasted address it never asked for in so many words.
+ */
+export const LOOPBACK_CALLBACK_PORTS: Readonly<Record<string, number>> = { 'openai-codex': 1455 }
+
+/**
+ * Whether a socket already listens on one address. The probe binds the
+ * address and releases it before answering; only `EADDRINUSE` counts, so an
+ * address the host lacks (no IPv6 loopback) or may not bind reads as free.
+ * @param port - the port to probe.
+ * @param host - the address to probe.
+ * @returns true when another socket holds the address.
+ */
+function addressInUse(port: number, host: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createServer()
+    server.once('error', (error: NodeJS.ErrnoException) => { resolve(error.code === 'EADDRINUSE') })
+    server.listen({ port, host, exclusive: true }, () => { server.close(() => { resolve(false) }) })
+  })
+}
+
+/**
+ * Whether a loopback port is in use where a browser's `localhost` redirect can
+ * land: the IPv4 address pi-ai binds (`PI_OAUTH_CALLBACK_HOST`, which pi-ai
+ * reads from the process environment, else `127.0.0.1`) and IPv6 `::1`, which
+ * browsers may try first.
+ * @param port - the port to probe.
+ * @returns true when either address is held.
+ */
+async function loopbackPortTaken(port: number): Promise<boolean> {
+  const host = process.env['PI_OAUTH_CALLBACK_HOST'] || '127.0.0.1'
+  const held = await Promise.all([addressInUse(port, host), addressInUse(port, '::1')])
+  return held.includes(true)
+}
+
+/**
+ * The notice for a browser login whose redirect port is already in use.
+ * @param port - the taken port.
+ * @returns the instruction naming both ways to finish.
+ */
+export function callbackPortTakenNotice(port: number): string {
+  return `Port ${port} on this computer is already in use (by another program or another sign-in), so the`
+    + ' browser cannot hand the sign-in back here. Cancel and choose device code login, or sign in on the page'
+    + " and paste the full address from the browser's address bar below."
+}
+
+/**
+ * Whether a sign-in page sends the browser back to a loopback port.
+ * @param url - the sign-in page address.
+ * @param port - the loopback port.
+ * @returns true when its `redirect_uri` names that port on a loopback host.
+ */
+function redirectsTo(url: string, port: number): boolean {
+  const redirect = URL.parse(new URL(url).searchParams.get('redirect_uri') ?? '')
+  return redirect !== null && ['localhost', '127.0.0.1'].includes(redirect.hostname) && redirect.port === String(port)
+}
+
+/**
  * Restate one pi-ai login event in the seam's vocabulary.
  *
  * A device-code grant is the one event carrying two things the human needs at
@@ -43,8 +123,10 @@ function loginMethods(provider: Provider | undefined): AuthorizationMethod[] {
  * has a `code` beside its `url` rather than folding the code into the message.
  * @param event - what pi-ai reported.
  * @param session - the attempt to report it to.
+ * @param takenPort - the login's loopback redirect port, when it was in use at
+ *   the last probe.
  */
-function relay(event: AuthEvent, session: AuthorizationSession): void {
+function relay(event: AuthEvent, session: AuthorizationSession, takenPort?: number): void {
   switch (event.type) {
     case 'info': {
       const link = event.links?.[0]
@@ -53,7 +135,9 @@ function relay(event: AuthEvent, session: AuthorizationSession): void {
     }
     case 'auth_url':
       session.notify({
-        message: event.instructions ?? 'Open this page to continue signing in.',
+        message: takenPort !== undefined && redirectsTo(event.url, takenPort)
+          ? callbackPortTakenNotice(takenPort)
+          : event.instructions ?? 'Open this page to continue signing in.',
         url: event.url,
       })
       return
@@ -148,12 +232,23 @@ export function registerPiAiFlows(ctx: Context, auth: PiAiAuthInjection): void {
         // Total over the two ids declared above, and the seam only ever hands
         // back one a flow declared.
         const type: AuthType = session.method === 'oauth' ? 'oauth' : 'api_key'
+        const callbackPort = type === 'oauth' ? LOOPBACK_CALLBACK_PORTS[providerId] : undefined
+        const probe = async (): Promise<number | undefined> =>
+          callbackPort !== undefined && await loopbackPortTaken(callbackPort) ? callbackPort : undefined
+        let takenPort = await probe()
         // pi-ai persists what the login returns through that same store, which
         // is what makes it the single writer of this record.
         await models.login(providerId, type, {
           signal: session.signal,
-          notify: (event) => { relay(event, session) },
-          prompt: prompt => session.prompt(restate(prompt)),
+          notify: (event) => { relay(event, session, takenPort) },
+          prompt: async (prompt) => {
+            const answer = await session.prompt(restate(prompt))
+            // A login method question precedes pi-ai's bind, and the human may
+            // sit on it; probe again so the notice describes the port as the
+            // browser path starts.
+            if (callbackPort !== undefined && prompt.type === 'select') takenPort = await probe()
+            return answer
+          },
         })
       },
     })

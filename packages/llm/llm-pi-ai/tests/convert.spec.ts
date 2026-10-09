@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, ImageRequestTarget, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
-import { createToolResultMessage, createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, createMessage } from '@deepseek-ai/dsh-llm'
+import { createToolResultMessage, createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, MODEL_NOT_AVAILABLE_CODE, createMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AssistantMessage, AssistantMessageEvent, Usage } from '@earendil-works/pi-ai'
 import { transformMessages } from '@earendil-works/pi-ai/api/transform-messages'
@@ -936,6 +936,49 @@ describe('mapStopReason / mapUsage', () => {
       stopReason: 'error',
       errorMessage: 'vector length limit exceeded',
     }))).toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR' } })
+  })
+
+  it('maps an account without access to the model to MODEL_NOT_AVAILABLE with the provider reason', () => {
+    const credits = '429 {"type":"error","error":{"type":"rate_limit_error","message":"Usage credits are required for this model.",'
+      + '"details":{"error_code":"credits_required","can_user_purchase_credits":true,"model":"claude-fable-5"}},"request_id":"req_1"}'
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: credits }))).toEqual({
+      kind: 'error',
+      failure: { code: MODEL_NOT_AVAILABLE_CODE, message: 'This account cannot use the selected model: Usage credits are required for this model.' },
+    })
+    const sentence = "The 'gpt-5.3-codex-spark' model is not supported when using Codex with a ChatGPT account."
+    // In-stream error, HTTP 400 detail body, and a sentence followed by more text.
+    for (const errorMessage of [`Codex error: ${sentence}`, JSON.stringify({ detail: sentence }), `${sentence} Upgrade your plan.`]) {
+      expect(mapStopReason(assistant({ stopReason: 'error', errorMessage }))).toEqual({
+        kind: 'error',
+        failure: { code: MODEL_NOT_AVAILABLE_CODE, message: `This account cannot use the selected model: ${sentence}` },
+      })
+    }
+    // credits_required decides on its own; the provider's message is optional.
+    for (const errorMessage of ['429 {"error":{"details":{"error_code":"credits_required"}}}',
+      '429 {"error":{"message":7,"details":{"error_code":"credits_required"}}}',
+      '429 {"error":{"message":"","details":{"error_code":"credits_required"}}}']) {
+      expect(mapStopReason(assistant({ stopReason: 'error', errorMessage }))).toEqual({
+        kind: 'error',
+        failure: { code: MODEL_NOT_AVAILABLE_CODE, message: 'This account cannot use the selected model: Usage credits are required for this model.' },
+      })
+    }
+  })
+
+  it('keeps other 429 refusals retryable rate limits', () => {
+    for (const errorMessage of [
+      '429 {"type":"error","error":{"type":"rate_limit_error","message":"Number of requests has exceeded your rate limit."}}',
+      '429 {"type":"error","error":{"type":"rate_limit_error","details":{"error_code":"too_many_requests"}}}',
+      '429 {"type":"error"',
+      '429 {"error":null}',
+      '429 {"error":"credits_required"}',
+      '429 {"error":{"message":"Usage credits are required for this model."}}',
+      '429 {"error":{"message":"m","details":null}}',
+      '429 {"error":{"message":"m","details":{"reason":"credits_required"}}}',
+      '429 null',
+      '429 {"type":"error"}',
+    ]) {
+      expect(mapStopReason(assistant({ stopReason: 'error', errorMessage }))).toMatchObject({ kind: 'error', failure: { code: 'RATE_LIMIT' } })
+    }
   })
 
   it.each([

@@ -25,6 +25,7 @@ import type { ModelsOperations } from '../src/client/operations.ts'
 import type { ProviderRow } from '../src/client/store.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { settingsSchema } from './settings-schema.client.ts'
+import { noSignIns } from './sign-ins.client.ts'
 
 afterEach(cleanup)
 
@@ -287,12 +288,13 @@ async function mountFace(scripted: ReturnType<typeof scriptedFace>) {
   const { face, update, mutate, set, unset } = scripted
   const ctx = ctxWith(face)
   const mirror = new SettingsDescribeMirror(ctx)
-  const controller = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+  const controller = new ModelsSettingsStore(ctx, settingsSchema, mirror, () => undefined)
   await controller.load()
   const renderSlot = stubRenderSlot()
   const injected: ModelsSectionProps = {
     controller,
     useSnapshot: bindSnapshotSelector(controller.store),
+    ...noSignIns(),
     operations: operationsWith(face),
     schema: settingsSchema,
     t,
@@ -479,11 +481,12 @@ describe('ModelsSection', () => {
     face.credentials.describe.mockImplementation((refs: string[]) => Promise.resolve(remoteOk(
       Object.fromEntries(refs.map(ref => [ref, { configured: false, writable: true }])),
     )))
-    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)))
+    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)), () => undefined)
     await controller.load()
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
+      {...noSignIns()}
       operations={operationsWith(face)}
       schema={settingsSchema}
       t={t}
@@ -503,12 +506,13 @@ describe('ModelsSection', () => {
     face.credentials.describe.mockImplementation((refs: string[]) => Promise.resolve(remoteOk(
       Object.fromEntries(refs.map(ref => [ref, { configured: true, writable: true }])),
     )))
-    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)))
+    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)), () => undefined)
     await controller.load()
     cleanup()
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
+      {...noSignIns()}
       operations={operationsWith(face)}
       schema={settingsSchema}
       t={t}
@@ -1286,11 +1290,12 @@ describe('ModelsSection', () => {
   it('renders the card without the stored-key hint when the credential probe is refused', async () => {
     const { face } = scriptedFace()
     face.credentials.describe = vi.fn(() => Promise.resolve(remoteFail('no credential provider')))
-    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)))
+    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)), () => undefined)
     await controller.load()
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
+      {...noSignIns()}
       operations={operationsWith(face)}
       schema={settingsSchema}
       t={t}
@@ -1420,11 +1425,12 @@ describe('ModelsSection', () => {
     const face = scriptedFace()
     face.face.llm.listProviders = vi.fn(() => Promise.resolve(remoteFail('directory down', 'gateway/internal'))) as never
     const controller = new ModelsSettingsStore(
-      ctxWith(face.face), settingsSchema, new SettingsDescribeMirror(ctxWith(face.face)))
+      ctxWith(face.face), settingsSchema, new SettingsDescribeMirror(ctxWith(face.face)), () => undefined)
     await controller.load()
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
+      {...noSignIns()}
       operations={operationsWith(face.face)}
       schema={settingsSchema}
       t={t}
@@ -1442,12 +1448,13 @@ describe('ModelsSection', () => {
       hasDocument: false,
       namespaces: wireNamespaces(),
     })))
-    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)))
+    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)), () => undefined)
     await controller.load()
     cleanup()
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
+      {...noSignIns()}
       operations={operationsWith(face)}
       schema={settingsSchema}
       t={t}
@@ -1753,10 +1760,11 @@ describe('ModelsSection', () => {
 
   it('loads on first render of an idle controller', async () => {
     const { face } = scriptedFace()
-    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)))
+    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)), () => undefined)
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
+      {...noSignIns()}
       operations={operationsWith(face)}
       schema={settingsSchema}
       t={t}

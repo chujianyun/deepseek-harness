@@ -24,8 +24,11 @@
   en: c5d28300fa2cfc6f
   zh: c162855dcb54b65b
 /deepseek-ai-dsh-llm-pi-ai/use-this-package/sign-in-to-a-provider:
-  en: c36f66438638ae08
-  zh: 066a2fc4cb97c86f
+  en: 4a3237d0e1b75653
+  zh: 4b232b40c6b35d69
+/deepseek-ai-dsh-llm-pi-ai/use-this-package/generate-images-through-the-chatgpt-sign-in:
+  en: 5b3e8f055eff9861
+  zh: 0fce2debfa699b92
 /deepseek-ai-dsh-llm-pi-ai/use-this-package/resolve-the-model-catalog:
   en: 376f83206858b601
   zh: 38bb6993609c96a6
@@ -74,6 +77,18 @@
 /deepseek-ai-dsh-llm-pi-ai/model-experience/provider-request-through-pi-ai/kv-cache-effect:
   en: 8c1f842a95ab46fb
   zh: d6dd124c82f1d96b
+/deepseek-ai-dsh-llm-pi-ai/model-experience/generate-image:
+  en: 8aaafd8cde9012f4
+  zh: 8aaafd8cde9012f4
+/deepseek-ai-dsh-llm-pi-ai/model-experience/generate-image/what-the-model-sees:
+  en: 9be37471b16cbd48
+  zh: df5ec1c36c74aa9a
+/deepseek-ai-dsh-llm-pi-ai/model-experience/generate-image/token-effect:
+  en: 41377da2844f05bd
+  zh: b3153d1e3c81c02c
+/deepseek-ai-dsh-llm-pi-ai/model-experience/generate-image/kv-cache-effect:
+  en: b36f5d7ebfec0f7a
+  zh: 564ceb4524963075
 /deepseek-ai-dsh-llm-pi-ai/model-experience/provider-response:
   en: 802d7ff60a1d03ff
   zh: c41c56e28f3e8680
@@ -87,8 +102,8 @@
   en: b6bd570c0159ba08
   zh: 7d2d91eea6a8d830
 /deepseek-ai-dsh-llm-pi-ai/known-limitations-and-deferred-work:
-  en: bb240ee5dd3f81c7
-  zh: 884506a36f4aac62
+  en: fb2c9861899c3892
+  zh: 1ee67a51782a3cbc
 /deepseek-ai-dsh-llm-pi-ai/known-limitations-and-deferred-work/dev-note:
   en: 3678dd0f6642c2a5
   zh: 75cbdd064cc64282

@@ -10,6 +10,27 @@ import type { CredentialKey } from '@deepseek-ai/dsh-credentials'
 import type { AuthEvent, AuthInteraction, AuthPrompt, AuthType, Credential } from '@earendil-works/pi-ai'
 
 const login = vi.hoisted(() => vi.fn())
+const probe = vi.hoisted(() => ({ refusals: {} as Record<string, string>, binds: [] as string[] }))
+
+// The callback-port probe binds real loopback addresses; specs run concurrently
+// beside e2e runs whose real ChatGPT login holds that port, so each bind is
+// answered here instead: an address in `refusals` fails with that error code.
+vi.mock('node:net', async importOriginal => ({
+  ...await importOriginal<typeof import('node:net')>(),
+  createServer: () => {
+    let refused: ((error: { code: string }) => void) | undefined
+    return {
+      once: (_event: 'error', listener: (error: { code: string }) => void) => { refused = listener },
+      listen: (options: { port: number; host: string }, listening: () => void) => {
+        probe.binds.push(`${options.host} ${options.port}`)
+        const code = probe.refusals[options.host]
+        if (code === undefined) listening()
+        else refused?.({ code })
+      },
+      close: (closed: () => void) => { closed() },
+    }
+  },
+}))
 
 // The whole of what this module does with pi-ai is run one provider's login
 // against a collection built with the harness store, so the collection is the
@@ -20,7 +41,7 @@ vi.mock('../src/models.ts', async importOriginal => ({
 }))
 
 const { credentialStoreFrom, authContextFrom, recordKeyFor } = await import('../src/auth.ts')
-const { registerPiAiFlows } = await import('../src/login.ts')
+const { callbackPortTakenNotice, registerPiAiFlows } = await import('../src/login.ts')
 
 const CODEX = recordKeyFor('openai-codex')
 const dirs: string[] = []
@@ -77,6 +98,8 @@ async function attempt(
 
 afterEach(async () => {
   login.mockReset()
+  probe.refusals = {}
+  probe.binds.length = 0
   await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
 })
 
@@ -194,5 +217,95 @@ describe('pi-ai login flows', () => {
       signal: controller.signal,
     })).resolves.toEqual({ status: 'cancelled' })
     expect(seen?.aborted).toBe(true)
+  })
+})
+
+describe('a browser login whose redirect port is already in use', () => {
+  const page = 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback'
+  const browserLogin = (interaction: AuthInteraction): Promise<void> => {
+    interaction.notify({ type: 'auth_url', url: page, instructions: 'A browser window should open.' })
+    return Promise.resolve()
+  }
+
+  it('says so on the sign-in page notice and names both ways to finish', async () => {
+    const ctx = await harness()
+    probe.refusals = { '127.0.0.1': 'EADDRINUSE' }
+
+    const ui = await attempt(ctx, browserLogin)
+
+    expect(probe.binds).toEqual(['127.0.0.1 1455', '::1 1455'])
+    expect(ui.notices).toEqual([{ message: callbackPortTakenNotice(1455), url: page }])
+    expect(callbackPortTakenNotice(1455)).toBe('Port 1455 on this computer is already in use (by another program or'
+      + ' another sign-in), so the browser cannot hand the sign-in back here. Cancel and choose device code login, or'
+      + " sign in on the page and paste the full address from the browser's address bar below.")
+  })
+
+  it('counts a listener on the IPv6 loopback a browser may try first', async () => {
+    const ctx = await harness()
+    probe.refusals = { '::1': 'EADDRINUSE' }
+
+    const ui = await attempt(ctx, browserLogin)
+
+    expect(ui.notices.map(notice => notice.message)).toEqual([callbackPortTakenNotice(1455)])
+  })
+
+  it('probes the callback host pi-ai is told to bind', async () => {
+    const ctx = await harness()
+    vi.stubEnv('PI_OAUTH_CALLBACK_HOST', '127.0.0.9')
+    try {
+      await attempt(ctx, browserLogin)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+
+    expect(probe.binds).toEqual(['127.0.0.9 1455', '::1 1455'])
+  })
+
+  it('keeps the provider’s instructions when the port is free or cannot be bound for another reason', async () => {
+    const ctx = await harness()
+    probe.refusals = { '127.0.0.1': 'EACCES', '::1': 'EADDRNOTAVAIL' }
+
+    const ui = await attempt(ctx, browserLogin)
+
+    expect(ui.notices).toEqual([{ message: 'A browser window should open.', url: page }])
+  })
+
+  it('probes again once the login method is chosen', async () => {
+    const ctx = await harness()
+
+    const ui = await attempt(ctx, async (interaction) => {
+      // Free while the method question is open; taken by the time it is answered.
+      probe.refusals = { '127.0.0.1': 'EADDRINUSE' }
+      await interaction.prompt({ type: 'select', message: 'Method', options: [{ id: 'browser', label: 'Browser' }] })
+      await browserLogin(interaction)
+    })
+
+    expect(probe.binds).toHaveLength(4)
+    expect(ui.notices.map(notice => notice.message)).toEqual([callbackPortTakenNotice(1455)])
+  })
+
+  it('keeps the provider’s instructions for a page that does not return to that port', async () => {
+    const ctx = await harness()
+    probe.refusals = { '127.0.0.1': 'EADDRINUSE' }
+
+    const ui = await attempt(ctx, (interaction) => {
+      interaction.notify({ type: 'auth_url', url: 'https://auth.example/start?redirect_uri=https%3A%2F%2Fexample.com%3A1455%2F' })
+      interaction.notify({ type: 'auth_url', url: 'https://auth.example/plain' })
+      return Promise.resolve()
+    })
+
+    expect(ui.notices.map(notice => notice.message)).toEqual([
+      'Open this page to continue signing in.',
+      'Open this page to continue signing in.',
+    ])
+  })
+
+  it('probes nothing for a provider or method without a fixed redirect port', async () => {
+    const ctx = await harness()
+
+    await attempt(ctx, () => Promise.resolve(), { key: recordKeyFor('anthropic'), method: 'api-key' })
+    await attempt(ctx, () => Promise.resolve(), { key: recordKeyFor('anthropic'), method: 'oauth' })
+
+    expect(probe.binds).toEqual([])
   })
 })

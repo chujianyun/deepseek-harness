@@ -120,6 +120,17 @@ describe('configurable-provider directory', () => {
     expect(ctx.llm.listConfigurableProviders()[0]!.displayName).toBe('OpenAI')
   })
 
+  it('carries a sign-in declaration as a detached copy', async () => {
+    const ctx = await setup()
+    const source = entry({ provider: 'openai-codex', signIn: { key: 'llm-pi-ai/openai-codex', method: 'oauth', acceptsApiKey: false } })
+    ctx.llm.registerConfigurableProviders([source])
+    source.signIn!.acceptsApiKey = true
+    const listed = ctx.llm.listConfigurableProviders()
+    expect(listed[0]!.signIn).toEqual({ key: 'llm-pi-ai/openai-codex', method: 'oauth', acceptsApiKey: false })
+    listed[0]!.signIn!.key = 'mutated'
+    expect(ctx.llm.listConfigurableProviders()[0]!.signIn?.key).toBe('llm-pi-ai/openai-codex')
+  })
+
   it('withdraws every entry when the registration disposes', async () => {
     const ctx = await setup()
     const dispose = ctx.llm.registerConfigurableProviders([entry()])

@@ -1,0 +1,8 @@
+version: 1
+scenario: generate-image
+profile: headless
+composition: generate-image
+recording: authored
+header:
+  class: generate-image
+  pin: true

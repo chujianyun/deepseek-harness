@@ -79,6 +79,7 @@ const TOOL_TITLE_KEYS: Record<string, ToolTitleKey> = {
   cordis_undefine: 'tool.title.removeCordis',
   pwsh: 'tool.title.pwsh',
   read_image: 'tool.title.readImage',
+  generate_image: 'tool.title.generateImage',
   todo_write: 'todo.rowTitle',
   ask_user_question: 'ask.rowTitle',
   create_goal: 'tool.title.createGoal',

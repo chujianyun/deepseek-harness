@@ -498,8 +498,31 @@ interface LlmConfigurableProvider {
    * from outside.
    */
   declared?: boolean
+  /**
+   * Present when this route can be authorized by signing in to an account:
+   * the authorization flow to start, and whether the route also takes an API
+   * key. Absent when the route authenticates through an API key alone.
+   */
+  signIn?: LlmProviderSignIn
   /** Configuration diagnostic for repair; unaffected models may remain serviceable. */
   error?: string
+}
+```
+
+```ts type-equiv
+/** How one configurable provider route is signed into. */
+interface LlmProviderSignIn {
+  /**
+   * Credential record key (`<scope>/<id>`) the route's authorization flow
+   * writes; a configuration surface starts and watches the sign-in through
+   * this key. A string rather than the branded `CredentialKey` because the
+   * credentials packages depend on this one.
+   */
+  key: string
+  /** Id of the flow method that signs in to the account, passed back when starting the sign-in. */
+  method: string
+  /** Whether the route also authenticates through an API key; false when signing in is the only way. */
+  acceptsApiKey: boolean
 }
 ```
 

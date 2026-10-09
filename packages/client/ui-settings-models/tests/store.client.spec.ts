@@ -143,7 +143,7 @@ function api(overrides: {
 describe('ModelsSettingsStore', () => {
   it('joins rows with configured, removable, and credential state', async () => {
     const { ctx, mirror, seenRefs } = api()
-    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror, () => undefined)
     await store.load()
     const state = store.store.getSnapshot()
     expect(state.status).toBe('ready')
@@ -173,7 +173,7 @@ describe('ModelsSettingsStore', () => {
 
   it('degrades the credential badge, not the page, when the credential domain fails', async () => {
     const { ctx, mirror } = api({ describeCredentials: () => Promise.resolve(remoteFail('no provider')) })
-    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror, () => undefined)
     await store.load()
     const state = store.store.getSnapshot()
     expect(state.status).toBe('ready')
@@ -183,11 +183,11 @@ describe('ModelsSettingsStore', () => {
 
   it('surfaces a directory failure and keeps the last good rows', async () => {
     const { ctx, mirror } = api()
-    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror, () => undefined)
     await store.load()
     expect(store.store.getSnapshot().rows).toHaveLength(4)
     const broken = api({ providers: () => Promise.resolve(fail('directory down')) })
-    const failing = new ModelsSettingsStore(broken.ctx, settingsSchema, broken.mirror)
+    const failing = new ModelsSettingsStore(broken.ctx, settingsSchema, broken.mirror, () => undefined)
     await failing.load()
     expect(failing.store.getSnapshot()).toMatchObject({ status: 'error', error: 'directory down' })
     // The first store's snapshot is untouched by the second's failure.
@@ -200,7 +200,7 @@ describe('ModelsSettingsStore', () => {
       llm: { listConfigurableProviders: () => Promise<RemoteAnswer<never>> }
     }).llm
     llm.listConfigurableProviders = () => Promise.resolve(remoteFail<never>('configuration directory down'))
-    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror, () => undefined)
 
     await store.load()
 
@@ -223,7 +223,7 @@ describe('ModelsSettingsStore', () => {
         return ok({ providers: DIRECTORY })
       },
     })
-    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror, () => undefined)
     const first = store.load()
     const second = store.load()
     release?.()
@@ -253,7 +253,7 @@ describe('edge joins', () => {
         ] as never,
       })),
     })
-    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror, () => undefined)
     await store.load()
     const state = store.store.getSnapshot()
     expect(state.rows[0]).toMatchObject({ configured: true, removable: false })
@@ -276,7 +276,7 @@ describe('edge joins', () => {
         Object.fromEntries(refs.map(ref => [ref, { configured: true, writable: true }])),
       )),
     })
-    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror, () => undefined)
     await store.load()
     // The dormant row names no reference, so the join asks about the page's
     // own derived <ROUTE>_API_KEY — what the editor would display for it.
@@ -289,7 +289,7 @@ describe('edge joins', () => {
 
   it('surfaces a settings describe failure', async () => {
     const { ctx, mirror } = api({ describeSettings: () => Promise.resolve(remoteFail('settings down')) })
-    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror, () => undefined)
     await store.load()
     expect(store.store.getSnapshot()).toMatchObject({ status: 'error', error: 'settings down' })
   })
@@ -299,7 +299,7 @@ describe('edge joins', () => {
     const store = new ModelsSettingsStore(
       ctx,
       settingsSchema,
-      new SettingsDescribeMirror(ctx, 'memory'),
+      new SettingsDescribeMirror(ctx, 'memory'), () => undefined,
     )
     await store.load()
     expect(store.store.getSnapshot()).toMatchObject({
@@ -318,7 +318,7 @@ describe('edge joins', () => {
           : remoteFail('settings refresh down'))
       },
     })
-    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror, () => undefined)
     await store.load()
     await mirror.load()
     expect(mirror.getSnapshot().error).toBe('settings refresh down')
@@ -341,7 +341,7 @@ describe('edge joins', () => {
         return ok({ providers: DIRECTORY })
       },
     })
-    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror, () => undefined)
     const first = store.load()
     const second = store.load()
     await second
@@ -357,7 +357,7 @@ it.each([false, true])('uses account availability without asking for an API key:
   const { ctx, mirror, seenRefs } = api({ accountAvailable, providers: async () => ok({ providers: [{
     provider: 'deepseek-account', displayName: 'DeepSeek Account', settingsNs: 'llm-deepseek-account', settingsPath: [], active: true,
   }] }) })
-  const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+  const store = new ModelsSettingsStore(ctx, settingsSchema, mirror, () => undefined)
   await store.load()
   const rows = store.store.getSnapshot().rows
   expect(rows).toHaveLength(accountAvailable ? 1 : 0)
@@ -374,7 +374,7 @@ it('removes the account row after sign-out and restores it after sign-in', async
     provider: 'deepseek-account', displayName: 'DeepSeek Account', settingsNs: 'llm-deepseek-account', settingsPath: [], active: true,
   }, ...DIRECTORY] }) }
   const { ctx, mirror } = api(overrides)
-  const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+  const store = new ModelsSettingsStore(ctx, settingsSchema, mirror, () => undefined)
   await store.load()
   expect(store.store.getSnapshot().rows[0]?.entry.provider).toBe('deepseek-account')
   overrides.accountAvailable = false

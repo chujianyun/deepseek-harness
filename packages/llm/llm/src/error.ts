@@ -50,6 +50,26 @@ export const EMPTY_RESPONSE_CODE = 'EMPTY_RESPONSE'
  */
 export const INVALID_CREDENTIAL_CODE = 'INVALID_CREDENTIAL'
 
+/**
+ * Canonical code for a request on a route that authenticates only through an
+ * account sign-in when no sign-in is stored. Distinct from
+ * `MISSING_CREDENTIAL` because the fix is signing in to the account, not
+ * supplying a key, and from `ACCOUNT_SIGN_IN_REQUIRED`, which names the
+ * first-party DeepSeek account. Outside the default retryable set: nothing
+ * changes until someone signs in.
+ */
+export const SIGN_IN_REQUIRED_CODE = 'SIGN_IN_REQUIRED'
+
+/**
+ * Canonical code for a request the provider refuses because the account may
+ * not use the selected model: the plan does not include it, or it needs
+ * credits the account has not bought. Distinct from `RATE_LIMIT` and `QUOTA`
+ * because waiting or topping up the current balance does not help; the fix is
+ * another model or a change on the provider's side. Outside the default
+ * retryable set.
+ */
+export const MODEL_NOT_AVAILABLE_CODE = 'MODEL_NOT_AVAILABLE'
+
 /** Structured codes and plain phrases that explicitly name a context bound being exceeded. */
 const STRUCTURED_CONTEXT_OVERFLOW = new RegExp(
   String.raw`(?:^|[^a-z0-9])context[\s_-](?:length|window)[\s_-]`

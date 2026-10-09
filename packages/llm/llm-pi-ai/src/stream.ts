@@ -9,10 +9,12 @@
  */
 
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWindowExceededError, isQuotaExceededError, LlmError, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
+import z from '@deepseek-ai/schemastery'
+import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWindowExceededError, isQuotaExceededError, LlmError, MODEL_NOT_AVAILABLE_CODE, QUOTA_EXCEEDED_CODE, SIGN_IN_REQUIRED_CODE } from '@deepseek-ai/dsh-llm'
 import type { FinishReason, StreamChunk, TokenUsage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import type { AssistantMessage, AssistantMessageEvent, Usage as PiUsage } from '@earendil-works/pi-ai'
+import { catalogProvider } from './catalog.ts'
 import { toPiReplayState } from './replay.ts'
 
 /**
@@ -68,12 +70,82 @@ function classifyPiAiError(message: string): string {
 }
 
 /**
+ * pi-ai's refusal when a route resolves no credential at all
+ * (`Models.applyAuth`). pi-ai flattens its `ModelsError` to this text before
+ * the stream event reaches the adapter, so the wording is the only signal;
+ * `tests/oauth-route.spec.ts` runs the installed pi-ai to keep it matched.
+ */
+const NOT_CONFIGURED = /^Provider is not configured: (.+)$/
+
+/**
+ * Reword pi-ai's no-credential refusal for a catalog route that authenticates
+ * only through an account sign-in (`openai-codex`). Such a route reaches the
+ * refusal exactly when no grant is stored, so the reworded text names the
+ * fix. A route that also takes a key keeps pi-ai's text, because the missing
+ * piece there may be the key.
+ * @param text - the failure text pi-ai reported.
+ * @returns the reworded failure, or undefined for any other failure or route.
+ */
+function signedOutFailure(text: string): string | undefined {
+  const providerId = NOT_CONFIGURED.exec(text)?.[1]
+  const auth = providerId === undefined ? undefined : catalogProvider(providerId)?.auth
+  if (auth?.oauth === undefined || auth.apiKey !== undefined) return undefined
+  return `The "${providerId}" account is not signed in. Sign in to it under Settings → Models, then send the message again.`
+}
+
+/**
+ * Codex's refusal of a model the signed-in ChatGPT plan does not include. It arrives either as an
+ * in-stream error (`Codex error: <sentence>`) or as an HTTP 400 body (`{"detail":"<sentence>"}`), so the
+ * sentence is matched wherever it sits in the text.
+ */
+const CODEX_MODEL_REFUSED = /The '[^']+' model is not supported when using Codex with a ChatGPT account\.?/u
+
+/** Anthropic's refusal of a model that needs credits the account has not bought; any `message` is kept as text. */
+const CREDITS_REQUIRED = z.object({
+  error: z.object({
+    message: z.any(),
+    details: z.object({ error_code: z.const('credits_required').required() }).required(),
+  }).required(),
+})
+
+/**
+ * The provider's own reason when it refuses the selected model for this
+ * account. pi-ai flattens the HTTP body into the error text, so Anthropic's
+ * refusal arrives as `429 <JSON>` whose `error.details.error_code` is
+ * `credits_required`.
+ * @param text - the failure text pi-ai reported.
+ * @returns the provider's reason, or undefined for any other failure.
+ */
+function modelRefusal(text: string): string | undefined {
+  const codex = CODEX_MODEL_REFUSED.exec(text)?.[0]
+  if (codex !== undefined) return codex
+  if (!text.startsWith('429 {')) return undefined
+  let body: unknown
+  try { body = JSON.parse(text.slice(4)) } catch (_notJson) {
+    // A truncated or non-JSON body is an ordinary rate limit as far as this check knows.
+    return undefined
+  }
+  let refusal: ReturnType<typeof CREDITS_REQUIRED>
+  // The schema checks the untyped body; its parameter type describes valid input only.
+  try { refusal = CREDITS_REQUIRED(body as never) } catch (_otherRateLimit) {
+    // Any other 429 body is an ordinary rate limit.
+    return undefined
+  }
+  const message: unknown = refusal.error.message
+  return typeof message === 'string' && message !== '' ? message : 'Usage credits are required for this model.'
+}
+
+/**
  * Map a terminal pi-ai event to the harness finish reason.
  * @param message - the assistant message carried by the `done` or `error` event.
  * @param contextWindow - resolved catalog capacity for usage-based overflow detection.
  * @returns the mapped harness reason. Recognized error text, `stop` usage above
  *   `contextWindow`, and zero-output `length` usage that fills the window map
- *   to `CONTEXT_WINDOW_EXCEEDED`; a `stop` with no content blocks maps to an
+ *   to `CONTEXT_WINDOW_EXCEEDED`; pi-ai's no-credential refusal on a route
+ *   that authenticates only through account sign-in maps to
+ *   `SIGN_IN_REQUIRED` with sign-in instructions; a provider's refusal of the
+ *   model for this account maps to `MODEL_NOT_AVAILABLE`; a `stop`
+ *   with no content blocks maps to an
  *   `EMPTY_RESPONSE` error, while terminal `pending` and `deferred` states map
  *   to non-retryable `PI_AI_ERROR` failures.
  */
@@ -122,6 +194,12 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
     }
     case 'error': {
       const text = message.errorMessage ?? 'pi-ai stream error'
+      const signedOut = signedOutFailure(text)
+      if (signedOut !== undefined) return { kind: 'error', failure: { message: signedOut, code: SIGN_IN_REQUIRED_CODE } }
+      const refusal = modelRefusal(text)
+      if (refusal !== undefined) {
+        return { kind: 'error', failure: { message: `This account cannot use the selected model: ${refusal}`, code: MODEL_NOT_AVAILABLE_CODE } }
+      }
       return { kind: 'error', failure: { message: text, code: classifyPiAiError(text) } }
     }
   }

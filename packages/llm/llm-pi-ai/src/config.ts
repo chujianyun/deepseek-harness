@@ -226,6 +226,20 @@ export interface Config {
    * and registers them the moment a settings section supplies profiles.
    */
   providers: Volatile<Record<string, PiAiProviderProfile>>
+  /** `generate_image` through the ChatGPT (Codex) sign-in; read live, so turning it off withdraws the tool at once. */
+  imageGeneration: Volatile<ImageGenerationConfig>
+}
+
+/** Settings of the `generate_image` tool. */
+export interface ImageGenerationConfig {
+  /** Offer the tool while a ChatGPT (Codex) account is signed in. */
+  enabled: boolean
+  /** Codex model that runs the hosted image generation call. */
+  model: string
+  /** Upper bound of one generation, in milliseconds. */
+  timeoutMs: number
+  /** Most bytes accepted from one generation's event stream. */
+  maxResponseBytes: number
 }
 
 /** Plain options accepted by the provider resolver. */
@@ -351,6 +365,14 @@ const profile = z.object({
 /** Runtime schema for {@link Config}. */
 export const Config = z.object({
   providers: z.dict(profile).default({}).volatile(),
+  imageGeneration: z.object({
+    enabled: z.boolean().default(true).description('Offer generate_image while a ChatGPT (Codex) account is signed in.'),
+    // The Codex CLI's default model, which the hosted image tool is served for.
+    model: z.string().default('gpt-5.6-sol').description('Codex model that runs the hosted image generation call.'),
+    timeoutMs: z.natural().min(1).default(300_000).description('Upper bound of one generation, in milliseconds.'),
+    // A generated image arrives base64-encoded inside the stream; this leaves room for a few high-quality images.
+    maxResponseBytes: z.natural().min(1).default(64 * 1024 * 1024).description('Most bytes accepted from one generation stream.'),
+  }).default({}).volatile(),
 })
 
 /**

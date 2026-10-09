@@ -9,7 +9,7 @@
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {
-  CredentialInfo, LlmConfigurableProvider, LlmProviderInfo, SettingsNamespaceView,
+  CredentialInfo, LlmConfigurableProvider, LlmProviderInfo, LlmProviderSignIn, SettingsNamespaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -30,6 +30,8 @@ export interface ProviderDirectoryEntry {
   readonly settingsPath: readonly string[]
   readonly active: boolean
   readonly declared?: boolean
+  /** How this route signs in to an account, when it can. */
+  readonly signIn?: LlmProviderSignIn
   readonly error?: string
 }
 
@@ -52,6 +54,7 @@ export function joinProviderDirectory(
     settingsPath: [...entry.settingsPath],
     active: active.has(entry.provider),
     ...entry.declared === undefined ? {} : { declared: entry.declared },
+    ...entry.signIn === undefined ? {} : { signIn: { ...entry.signIn } },
     ...entry.error === undefined ? {} : { error: entry.error },
   }))
   for (const provider of registered) {
@@ -90,6 +93,11 @@ export interface ProviderRow {
    * own derivation rule.
    */
   derivedCredential?: CredentialInfo
+  /**
+   * Whether the account the route signs in to holds a stored credential;
+   * absent when the route has no account sign-in or the read failed.
+   */
+  signedIn?: boolean
 }
 
 /** Page snapshot. */
@@ -166,11 +174,13 @@ export class ModelsSettingsStore {
    * `remote.credentials` namespaces carry the directory and credential reads.
    * @param schema - settings-owned schema and immutable path operations.
    * @param describeFace - the shared mirror's describe face (namespace views and writability).
+   * @param signedIn - whether the account behind a sign-in key is signed in, or undefined while unknown.
    */
   constructor(
     private readonly ctx: ClientContext,
     private readonly schema: SettingsSchemaOperations,
     private readonly describeFace: SettingsDescribeFace,
+    private readonly signedIn: (key: string) => boolean | undefined,
   ) {}
 
   /**
@@ -223,6 +233,10 @@ export class ModelsSettingsStore {
           && catalog.value.groups.some(group => group.id === 'deepseek-account' && group.models.length > 0)
       }
     }
+    for (const row of rows) {
+      const known = row.entry.signIn === undefined ? undefined : this.signedIn(row.entry.signIn.key)
+      if (known !== undefined) row.signedIn = known
+    }
     const refs = [...new Set(rows.filter(row => row.entry.provider !== 'deepseek-account').map(row => row.apiKeyEnv ?? deriveKeyRef(row.entry.provider)))]
     let credentials: Record<string, CredentialInfo> = {}
     let credentialError: string | null = null
@@ -270,13 +284,15 @@ export class ModelsSettingsStore {
  * profile names is stored. A profile naming no reference authenticates through
  * the provider's own path (the Bedrock chain, Vertex ADC, a gateway that needs
  * nothing), as does a live route with no settings address at all, so neither
- * owes this page a key.
+ * owes this page a key — except a route whose only way in is an account
+ * sign-in, which is usable once signed in.
  * @param row - one joined provider row.
  * @returns whether the user already has this provider to talk to.
  */
 export function providerUsable(row: ProviderRow): boolean {
   if (!row.entry.active) return false
   if (row.entry.provider === 'deepseek-account') return row.accountAvailable === true
+  if (row.entry.signIn?.acceptsApiKey === false) return row.signedIn === true
   if (row.apiKeyEnv === undefined) return true
   return row.credential?.configured === true
 }

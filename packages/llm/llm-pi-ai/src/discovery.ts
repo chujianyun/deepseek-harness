@@ -126,12 +126,14 @@ function listingUrl(baseURL: string, api: string): string {
  * is checked first so an honest server is turned away without transferring
  * anything; the accumulated total is what actually enforces the bound, because
  * a server that under-declares (or streams) tells us nothing up front.
+ * @param response - the reply whose body to read.
+ * @param limit - the most bytes accepted.
+ * @param oversized - the error thrown once the body outgrows `limit`.
+ * @returns the body text.
  */
-async function readBounded(response: Response, url: string): Promise<string> {
-  const oversized = (): LlmError =>
-    new LlmError(`${url} answered with more than ${MAX_RESPONSE_BYTES} bytes`, 'DISCOVERY_FAILED')
+export async function readBounded(response: Response, limit: number, oversized: () => Error): Promise<string> {
   const declared = Number(response.headers.get('content-length') ?? Number.NaN)
-  if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
+  if (Number.isFinite(declared) && declared > limit) {
     await response.body?.cancel()
     throw oversized()
   }
@@ -145,7 +147,7 @@ async function readBounded(response: Response, url: string): Promise<string> {
       const { done, value } = await reader.read()
       if (done) break
       total += value.byteLength
-      if (total > MAX_RESPONSE_BYTES) throw oversized()
+      if (total > limit) throw oversized()
       chunks.push(value)
     }
   } finally {
@@ -343,7 +345,8 @@ export async function discoverModels(
   }
   let text: string
   try {
-    text = await readBounded(response, url)
+    text = await readBounded(response, MAX_RESPONSE_BYTES, () =>
+      new LlmError(`${url} answered with more than ${MAX_RESPONSE_BYTES} bytes`, 'DISCOVERY_FAILED'))
   } catch (error: unknown) {
     // Cancellation during the body read rejects with the abort reason, which
     // may be any value; the caller gets the same coded failure it would have

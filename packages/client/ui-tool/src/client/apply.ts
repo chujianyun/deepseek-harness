@@ -13,13 +13,21 @@ import { bashToolviewSample } from './tool/toolviews/bash-sample.tsx'
 import { fileMutationToolview } from './tool/toolviews/file-mutation-row.tsx'
 import { readToolview } from './tool/toolviews/read-row.tsx'
 import { readImageToolview } from './tool/toolviews/read-image-row.tsx'
+import { generateImageToolview } from './tool/toolviews/generate-image-row.tsx'
+import { generatedImagesDefinition } from './tool/generated/generated-images.ts'
+import { GeneratedImagesTail } from './tool/generated/GeneratedImagesTail.tsx'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { searchToolview } from './tool/toolviews/search-row.tsx'
 import { detailsToolview } from './tool/toolviews/details-row.tsx'
 import { todoToolview } from './tool/toolviews/todo-row.tsx'
 import { webToolview } from './tool/toolviews/web-row.tsx'
 
-/** Required services: the slot registry and the Remote face carrying the Host home used for POSIX `~`. */
-export const inject = ['slots', 'remote']
+/**
+ * Required services: the slot registry, the Remote face carrying the Host home used for POSIX `~`, and the
+ * conversation service the generated-images Turn data and image URLs come from.
+ */
+export const inject = ['slots', 'remote', 'uiConversation']
 
 /**
  * Mount the whole-Tool renderers and built-in atomic Tool registrations.
@@ -41,9 +49,25 @@ export function apply(ctx: ClientContext): void {
     inject: toolInject,
   }, ToolCallTree))
 
+  // Generated images show under the Turn's answer, outside the collapsed process holding their Tool rows.
+  ctx.effect(() => ctx.uiConversation.events.register(generatedImagesDefinition), 'ui-tool: generated images')
+  ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+    name: 'conversation.chat.turnTail',
+    id: '@deepseek-ai/dsh-client-ui-tool/generated-images',
+    locale: NS,
+    children: { 'tool.call.generated-images': { kind: 'single', scope: 'session' } },
+    inject: sessionId => ({
+      loadImage: Object.assign(
+        (attachment: ImageAttachmentRef) => ctx.uiConversation.imageUrl(sessionId, attachment),
+        { peek: (attachment: ImageAttachmentRef) => ctx.uiConversation.peekImageUrl(sessionId, attachment) },
+      ),
+    }),
+  }, GeneratedImagesTail))
+
   ctx.plugin(bashToolviewSample)
   ctx.plugin(readToolview)
   ctx.plugin(readImageToolview)
+  ctx.plugin(generateImageToolview)
   ctx.plugin(fileMutationToolview)
   ctx.plugin(searchToolview)
   ctx.plugin(webToolview)
