@@ -206,7 +206,7 @@ export async function launchChrome(options: LaunchOptions): Promise<ChromeProces
 
 /**
  * Close an account's Chrome through `Browser.close`, so it writes its cookies, and wait until it
- * stops answering; signal the process only when that fails.
+ * stops answering and its process has ended; signal the process only when that fails.
  * @param dir - the account's browser directory.
  * @param timeoutMs - how long to wait for each step.
  */
@@ -232,6 +232,31 @@ export async function closeChrome(dir: string, timeoutMs: number): Promise<void>
       }
       await new Promise(resolve => setTimeout(resolve, 1000))
     }
+    // Chrome stops answering before its process ends and lets go of its files, which on Windows
+    // keeps the browser data from being deleted. Only a Chrome that answered here is known to own
+    // the recorded pid; an old record's pid may belong to another process by now.
+    if (!await exited(record.pid, timeoutMs)) {
+      try {
+        process.kill(record.pid, 'SIGKILL')
+      } catch {
+        // The process ended meanwhile.
+      }
+      await exited(record.pid, timeoutMs)
+    }
   }
   await rm(join(dir, RECORD), { force: true })
+}
+
+/** Wait until the process is gone; resolves to whether it went within the time. */
+async function exited(pid: number, timeoutMs: number): Promise<boolean> {
+  for (const deadline = Date.now() + timeoutMs; ;) {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      // ESRCH: no such process. EPERM only for a process DSH did not start, which a recorded Chrome is not.
+      return true
+    }
+    if (Date.now() >= deadline) return false
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
 }

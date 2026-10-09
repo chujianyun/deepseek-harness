@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -26,7 +26,7 @@ const FAKE = fileURLToPath(new URL('./fake-chrome.mjs', import.meta.url))
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
-  for (const key of ['FAKE_CHROME_VERSION', 'FAKE_CHROME_SILENT', 'FAKE_CHROME_BASE64', 'FAKE_CHROME_STUBBORN', 'FAKE_CHROME_NO_BODY', 'FAKE_CHROME_NO_CLOSE', 'FAKE_CHROME_OFFLINE', 'FAKE_CHROME_NO_STORE', 'FAKE_CHROME_NO_STORE_BODY']) {
+  for (const key of ['FAKE_CHROME_VERSION', 'FAKE_CHROME_SILENT', 'FAKE_CHROME_BASE64', 'FAKE_CHROME_STUBBORN', 'FAKE_CHROME_NO_BODY', 'FAKE_CHROME_NO_CLOSE', 'FAKE_CHROME_LINGER_MS', 'FAKE_CHROME_OFFLINE', 'FAKE_CHROME_NO_STORE', 'FAKE_CHROME_NO_STORE_BODY']) {
     Reflect.deleteProperty(process.env, key)
   }
 })
@@ -333,6 +333,31 @@ describe('e-commerce accounts', () => {
     expect(await alive(record!.port)).toBe(false)
     expect(await readdir(join(env.home, 'ecommerce', 't-a', 'browsers'))).toEqual([])
     expect(await code(env.service.deleteAccount(accountId))).toBe('ecommerce-accounts/not-found')
+  })
+
+  it('waits for a Chrome that keeps running after its DevTools port closes before deleting its data', async () => {
+    process.env.FAKE_CHROME_LINGER_MS = '1500'
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    const record = await readRecord(env.browserDir(accountId))
+    expect((await env.service.deleteAccount(accountId)).accounts).toEqual([])
+    expect(() => process.kill(record!.pid, 0)).toThrow()
+    expect(await readdir(join(env.home, 'ecommerce', 't-a', 'browsers'))).toEqual([])
+  })
+
+  it('keeps the account and says its browser data could not be removed when the deletion fails', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    const browsers = join(env.home, 'ecommerce', 't-a', 'browsers')
+    await chmod(browsers, 0o500)
+    try {
+      expect(await code(env.service.deleteAccount(accountId))).toBe('ecommerce-accounts/delete-failed')
+    } finally {
+      await chmod(browsers, 0o700)
+    }
+    expect((await env.service.getState()).accounts.map(account => account.id)).toEqual([accountId])
   })
 
   it('leaves a deleted account deleted when a check or sign-in waited behind the deletion', async () => {

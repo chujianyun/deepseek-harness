@@ -1288,10 +1288,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async deleteAccount(accountId: string): Promise<EcommerceAccountsState>',
-        description: 'Delete an account and its browser data, closing its Chrome first.',
+        description: 'Delete an account and its browser data, closing its Chrome first and waiting for its process to end.',
         parameters: [{ name: 'accountId', description: 'the account.' }],
         returns: 'the state without it.',
-        throws: ['RemoteError `hub-account/signed-out` or `ecommerce-accounts/not-found`.'],
+        throws: ['RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`, or `ecommerce-accounts/delete-failed` when the browser data cannot be removed; the account then stays.'],
       },
     ],
   },

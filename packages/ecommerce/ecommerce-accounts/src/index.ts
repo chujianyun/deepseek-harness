@@ -474,10 +474,11 @@ export class EcommerceAccountsService extends TypertRemoteService {
   }
 
   /**
-   * Delete an account and its browser data, closing its Chrome first.
+   * Delete an account and its browser data, closing its Chrome first and waiting for its process to end.
    * @param accountId - the account.
    * @returns the state without it.
-   * @throws RemoteError `hub-account/signed-out` or `ecommerce-accounts/not-found`.
+   * @throws RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`, or `ecommerce-accounts/delete-failed`
+   *   when the browser data cannot be removed; the account then stays.
    */
   @Remote
   async deleteAccount(accountId: string): Promise<EcommerceAccountsState> {
@@ -488,7 +489,12 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const dir = this.dirOf(entry.id)
     return this.queued(entry.id, async () => {
       await closeChrome(dir, this.options.chromeTimeoutMs)
-      await rm(dir, { recursive: true, force: true })
+      try {
+        // Windows reports a file a process just let go of as busy for a moment; rm retries EBUSY and EPERM.
+        await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+      } catch (error) {
+        throw new RemoteError('ecommerce-accounts/delete-failed', 'The account\'s browser data could not be removed', { accountId: entry.id, reason: String(error) })
+      }
       return this.serialized(async () => {
         const tenantId = this.requireTenant()
         this.entries = this.entries.filter(item => item.id !== entry.id)
