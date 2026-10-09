@@ -24,6 +24,8 @@ import { WelcomeNotice } from './WelcomeNotice.tsx'
 import type { WelcomeNoticeInjected } from './WelcomeNotice.tsx'
 import { WelcomeNoticeStore } from './welcome-store.ts'
 import { ModelsSettingsStore } from './store.ts'
+import { createSignInSource } from './sign-in-source.ts'
+import type { AuthorizationFlowView } from '@deepseek-ai/dsh-api-remotes/client'
 import { createModelsOperations } from './operations.ts'
 import { createSettingsSchemaOperations } from './schema-operations.ts'
 import { en, zh, type ModelsKey } from './locales.ts'
@@ -65,7 +67,7 @@ export function refreshIfLoaded(controller: ModelsSettingsStore): void {
  * constrained; registration depends on each slot through `slots.inject()`.
  */
 export const inject = [
-  'slots', 'locale', 'remote', 'remote.credentials', 'remote.llm', 'remote.settings', 'remote.session',
+  'slots', 'locale', 'remote', 'remote.authorization', 'remote.credentials', 'remote.llm', 'remote.settings', 'remote.session',
   'configForms', 'settingsSchema',
 ]
 
@@ -90,9 +92,32 @@ export function apply(ctx: ClientContext): void {
   // Registration-time text (the nav label thunk) and the inject faces share
   // one bound translate; copy freshness rides the locale revision.
   const t = ctx.locale.bind(NS) as ModelsSectionInjected['t']
+  const authorization = ctx.remote.authorization
+  const signIn = createSignInSource({
+    begin: (key, method) => authorization.begin(key, method),
+    answer: (attemptId, promptId, value) => authorization.answer(attemptId, promptId, value),
+    decline: (attemptId, promptId) => authorization.decline(attemptId, promptId),
+    cancel: attemptId => authorization.cancel(attemptId),
+    signOut: key => authorization.signOut(key),
+    // Desktop hands a new window's page to the system browser; the Web opens a tab.
+    open: (url) => { window.open(url, '_blank', 'noopener,noreferrer') },
+  })
+  const signInStream = ctx.remote.$stream<AuthorizationFlowView[]>({
+    name: 'authorization', open: signal => authorization.watch(signal), ended: () => new Error('authorization stream ended'),
+  })
+  ctx.effect(() => () => signInStream.dispose(), 'ui-settings-models: sign-in stream')
+  void (async () => {
+    for await (const frame of signInStream) {
+      signIn.publish(frame.value)
+      frame.accept()
+    }
+  })().catch(() => {
+    // The stream reconnects on its own; a disposed plugin simply stops listening.
+  })
   const injected = (): ModelsSectionInjected => ({
     controller,
-    hooks: { snapshot: controller.store },
+    hooks: { snapshot: controller.store, signIns: signIn.store },
+    signIn: signIn.actions,
     operations,
     schema,
     t,

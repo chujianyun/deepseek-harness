@@ -11,6 +11,8 @@
  * display name and wire protocol of a pi-ai route the adapter does not ship —
  * the two fields the create card asked that route for, editable here for the
  * same reason).
+ * A route with an account sign-in carries the sign-in block above the key
+ * field, or in its place when the route takes no key.
  * Reasoning effort is deliberately absent: it is a per-MODEL capability, and
  * the models under one provider disagree about it, so a provider-scoped
  * control can only be set to a value some of them reject. The composer's
@@ -30,6 +32,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import {
   DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
 } from './DeepSeekModelsEditor.tsx'
+import { AccountSignIn, type AccountSignInProps } from './AccountSignIn.tsx'
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
@@ -43,7 +46,8 @@ import styles from './ModelsSection.module.css'
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
 type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
 
-
+/** What a card needs to offer account sign-in: everything the block takes but the card's own copy and lock. */
+export type ProviderSignInProps = Omit<AccountSignInProps, 't' | 'disabled'>
 
 /** Props of {@link ProviderEditor}. */
 export interface ProviderEditorProps {
@@ -61,6 +65,11 @@ export interface ProviderEditorProps {
    * override every one of them and the card does not offer it.
    */
   declared?: boolean
+  /**
+   * Account sign-in for this route, when it has one. A route that signs in
+   * only (no API key) shows the sign-in block in place of the key field.
+   */
+  signIn?: ProviderSignInProps
   /** The owning namespace view (schema, layers, secrets). */
   namespace: SettingsNamespaceView
   /** Settings-owned synchronous schema and immutable path operations. */
@@ -376,9 +385,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     if (accountProvider) return <DeepSeekModelsEditor {...catalogProps}
       defaultContextWindow={typeof defaultContextWindow === 'number' ? defaultContextWindow : undefined}
       defaultMaxTokens={typeof defaultMaxTokens === 'number' ? defaultMaxTokens : undefined} />
+    const signIn = props.credentialOnly === true ? undefined : props.signIn
     return (
       <>
-        <div className={styles['field']}>
+        {signIn === undefined ? null : <AccountSignIn {...signIn} disabled={disabled} t={t} />}
+        {signIn?.declaration.acceptsApiKey === false ? null : <div className={styles['field']}>
           <span className={styles['fieldLabel']}>{t('keyInput')}</span>
           <input
             className={styles['input']}
@@ -394,7 +405,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
             onChange={(event) => { setKeyDraft(event.target.value) }}
           />
           {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
-        </div>
+        </div>}
         {props.credentialOnly === true ? null : <details className={styles['customized']}>
           <summary className={styles['customizedSummary']}>{t('customized')}</summary>
           <div className={styles['customizedBody']}>

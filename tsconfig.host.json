@@ -133,6 +133,7 @@
     "apps/web/tests/tmall-skills.e2e.ts",
     "apps/web/tests/assistants.e2e.ts",
     "apps/web/tests/assistant-knowledge.e2e.ts",
+    "apps/web/tests/models-account-sign-in.e2e.ts",
     "apps/web/tests/models-custom-provider.e2e.ts",
     "apps/web/tests/skills-market.e2e.ts",
     "apps/web/tests/skills-market-lifecycle.e2e.ts",
