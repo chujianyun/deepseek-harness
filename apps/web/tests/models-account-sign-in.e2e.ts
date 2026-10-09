@@ -84,7 +84,8 @@ function interceptTokenExchange(access: string) {
   globalThis.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
     if (url !== TOKEN_URL) return original(input, init)
-    exchanges.push(new URLSearchParams(String(init?.body)))
+    // pi-ai posts the exchange as a URLSearchParams form body.
+    exchanges.push(new URLSearchParams(init?.body instanceof URLSearchParams ? init.body : ''))
     return new Response(JSON.stringify({ access_token: access, refresh_token: 'refresh-e2e', expires_in: 3600 }), {
       headers: { 'content-type': 'application/json' },
     })
