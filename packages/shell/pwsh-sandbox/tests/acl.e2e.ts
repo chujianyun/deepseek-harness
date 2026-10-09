@@ -40,6 +40,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('pwsh-sandbox real ACL confinement
   let secretFile!: string
   let escapeFile!: string
   let executor!: SandboxPwshExecutor
+  let root!: Context
 
   beforeAll(async () => {
     // The workspace escape sits under the profile. A separate directory under
@@ -54,6 +55,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('pwsh-sandbox real ACL confinement
     escapeFile = join(scratchRoot, 'escaped.txt')
 
     const ctx = new Context()
+    root = ctx
     await ctx.plugin(LocalSandboxProvider, {})
     await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: writableDir })
     await ctx.plugin(LocalSubprocessRuntime)
@@ -133,7 +135,8 @@ describe.skipIf(!isWin32 || !pwshAvailable())('pwsh-sandbox real ACL confinement
     expect(once.exitCode, `stderr: ${once.stderr.text}`).toBe(0)
     expect(once.stdout.text).toContain('SECOND-START')
 
-    const warn = vi.spyOn(executor.ctx.logger, 'warn')
+    // Every plugin's logger shares the root logger's prototype.
+    const warn = vi.spyOn(Object.getPrototypeOf(root.logger) as { warn: (message: string) => void }, 'warn')
     try {
       const twice = await run(executor, executor.resolve({ command: 'exit -1073741502', sandboxPolicy: policy }))
       expect(twice.exitCode).toBe(0xC0000142)

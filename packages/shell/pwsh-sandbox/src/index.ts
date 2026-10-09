@@ -39,6 +39,9 @@ import { classifyDenial, classifyRunnerFailure, isRunnerSpawnFailure, matchesSig
  */
 export type Config = LocalConfig
 
+/** STATUS_DLL_INIT_FAILED: Windows could not initialize the confined process, so its command did not run. */
+const STATUS_DLL_INIT_FAILED = 0xC0000142
+
 /**
  * Registers as `ctx.shell` in place of the local pwsh executor and requires a
  * `ctx.sandbox` provider plus `ctx.sandboxPolicy`; the tool layer carries the
@@ -49,9 +52,6 @@ export type Config = LocalConfig
  * renders.
  */
 /* jscpd:ignore-start -- deliberate call-for-call mirror of bash-sandbox's executor (pwsh-tool-and-executor Agent Note) */
-
-/** STATUS_DLL_INIT_FAILED: Windows could not initialize the confined process, so its command did not run. */
-const STATUS_DLL_INIT_FAILED = 0xC0000142
 
 export class SandboxPwshExecutor extends PwshLocalExecutor {
   static override inject = ['subprocess', 'sandbox', 'sandboxPolicy']
