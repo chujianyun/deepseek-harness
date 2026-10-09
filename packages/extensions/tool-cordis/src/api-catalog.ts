@@ -1870,7 +1870,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Add a web page, fetched on this machine when processed; only that page is read.',
         parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'url', description: 'an http or https address.' }],
         returns: 'the state with the page last.',
-        throws: ['RemoteError `knowledge/not-found` or `knowledge/invalid-url`.'],
+        throws: ['RemoteError `knowledge/not-found`, `knowledge/invalid-url`, or `knowledge/credentials-in-url` for an address carrying a user name or password.'],
       },
       {
         signature: '@Remote createNote(id: string, title: string, content: string): Promise<KnowledgeState>',

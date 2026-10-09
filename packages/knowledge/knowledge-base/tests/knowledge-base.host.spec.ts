@@ -10,6 +10,7 @@ vi.mock('@deepseek-ai/dsh-native-command', () => ({
   openNativeAssociatedPath: (path: string) => { opened.paths.push(path); return Promise.resolve() },
 }))
 import { Context } from '@deepseek-ai/cordis'
+import { WebError } from '@deepseek-ai/dsh-web'
 import type { EmbeddingState } from '@deepseek-ai/dsh-embedding'
 import { RemoteError, remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import KnowledgeBaseService, { type Config, type KnowledgeState } from '../src/index.ts'
@@ -727,6 +728,13 @@ describe('knowledge bases', () => {
     for (const bad of ['ftp://example.com/x', 'not a url']) {
       expect(remoteErrorOf(await service.addUrl(id, bad).catch((error: unknown) => error))).toMatchObject({ code: 'knowledge/invalid-url' })
     }
+    // An address with credentials is refused before it is kept, and the error does not repeat it.
+    for (const secret of ['https://admin:pw@intra.example.com/wiki', 'https://:pw@intra.example.com/']) {
+      const refused = remoteErrorOf(await service.addUrl(id, secret).catch((error: unknown) => error))
+      expect(refused).toMatchObject({ code: 'knowledge/credentials-in-url' })
+      expect(JSON.stringify(refused)).not.toContain('pw')
+    }
+    expect((await service.getState()).bases[0]!.items).toHaveLength(3)
   })
 
   it('fails a page the web service blocks, such as an intranet address, as blocked rather than unreachable', async () => {
@@ -734,7 +742,7 @@ describe('knowledge bases', () => {
     const { id } = (await service.createBase('网页库', LOCAL)).bases[0]!
     vi.spyOn(console, 'info').mockImplementation(() => undefined)
     const url = 'http://127.0.0.1:5181/page.html'
-    web.pages.set(url, Object.assign(new Error('URL hostname "127.0.0.1" resolves to a non-public IP address'), { code: 'WEB_BLOCKED_URL' }))
+    web.pages.set(url, new WebError('URL hostname "127.0.0.1" resolves to a non-public IP address', 'WEB_BLOCKED_URL'))
     await service.addUrl(id, url)
     expect((await until(next => settled(next) && next.bases[0]!.items.length === 1)).bases[0]!.items[0]).toMatchObject({ status: 'failed', error: 'blocked' })
   })

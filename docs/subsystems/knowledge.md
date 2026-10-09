@@ -129,7 +129,8 @@ Host owner of the knowledge bases and of the `knowledgeBases` Remote namespace.
  * @param id - knowledge base id.
  * @param url - an http or https address.
  * @returns the state with the page last.
- * @throws RemoteError `knowledge/not-found` or `knowledge/invalid-url`.
+ * @throws RemoteError `knowledge/not-found`, `knowledge/invalid-url`, or `knowledge/credentials-in-url` for an
+ *   address carrying a user name or password.
  */
 @Remote addUrl(id: string, url: string): Promise<KnowledgeState>
 
