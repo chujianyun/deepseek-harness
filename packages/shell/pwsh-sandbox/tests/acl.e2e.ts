@@ -8,10 +8,10 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
@@ -41,7 +41,6 @@ describe.skipIf(!isWin32 || !pwshAvailable())('pwsh-sandbox real ACL confinement
   let secretFile!: string
   let escapeFile!: string
   let executor!: SandboxPwshExecutor
-  let root!: Context
 
   beforeAll(async () => {
     // The workspace escape sits under the profile. A separate directory under
@@ -56,7 +55,6 @@ describe.skipIf(!isWin32 || !pwshAvailable())('pwsh-sandbox real ACL confinement
     escapeFile = join(scratchRoot, 'escaped.txt')
 
     const ctx = new Context()
-    root = ctx
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(LocalSandboxProvider, {})
     await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: writableDir })
@@ -126,27 +124,17 @@ describe.skipIf(!isWin32 || !pwshAvailable())('pwsh-sandbox real ACL confinement
     expect(result.sandbox).toEqual({ mode: 'workspace-write', denied: false, enforcement: 'partial' })
   }, 60_000)
 
-  it('starts a command once more when Windows could not initialize it (0xC0000142), and explains a second failure', async () => {
+  it('explains a confined command that exits with 0xC0000142, mirroring the code without starting it again', async () => {
     const policy: SandboxExecutionPolicy = { mode: 'workspace-write', workspaceRoot: writableDir }
     // `exit -1073741502` ends PowerShell with 0xC0000142, as a process that failed DLL initialization does.
-    const marker = join(writableDir, 'dll-init-once.txt')
-    const once = await run(executor, executor.resolve({
-      command: `if (Test-Path '${marker}') { 'SECOND-START' } else { New-Item -ItemType File '${marker}' | Out-Null; exit -1073741502 }`,
+    const counter = join(writableDir, 'dll-init-starts.txt')
+    const result = await run(executor, executor.resolve({
+      command: `Add-Content -Path '${counter}' -Value start; exit -1073741502`,
       sandboxPolicy: policy,
     }))
-    expect(once.exitCode, `stderr: ${once.stderr.text}`).toBe(0)
-    expect(once.stdout.text).toContain('SECOND-START')
-
-    // Every plugin's logger shares the root logger's prototype.
-    const warn = vi.spyOn(Object.getPrototypeOf(root.logger) as { warn: (message: string) => void }, 'warn')
-    try {
-      const twice = await run(executor, executor.resolve({ command: 'exit -1073741502', sandboxPolicy: policy }))
-      expect(twice.exitCode).toBe(0xC0000142)
-      expect(twice.stderr.text).toContain('windows-acl-run: the confined process failed to start twice (0xC0000142, STATUS_DLL_INIT_FAILED); the command did not run.')
-      expect(twice.sandbox).toEqual({ mode: 'workspace-write', denied: false, enforcement: 'partial' })
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('confined PowerShell failed to start twice (0xC0000142) mode=workspace-write'))
-    } finally {
-      warn.mockRestore()
-    }
+    expect(result.exitCode).toBe(0xC0000142)
+    expect(result.stderr.text).toContain('windows-acl-run: the confined process exited with 0xC0000142 (STATUS_DLL_INIT_FAILED): Windows could not initialize it, so the command most likely did not run.')
+    expect(result.sandbox).toEqual({ mode: 'workspace-write', denied: false, enforcement: 'partial' })
+    expect(readFileSync(counter, 'utf8').trim().split(/\r?\n/u)).toEqual(['start'])
   }, 60_000)
 })

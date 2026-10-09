@@ -40,7 +40,10 @@
  * Failure contract: every runner-side failure (bad args, missing
  * directories, token/grant/spawn errors) prints `windows-acl-run: <detail>`
  * to stderr and exits 127 — the seam's RUNNER_FAILURE_RULES matches that
- * signature. The child is NEVER spawned unrestricted.
+ * signature. The child is NEVER spawned unrestricted. A child that exits with
+ * STATUS_DLL_INIT_FAILED (0xC0000142) gets one more `windows-acl-run:` line that
+ * explains it, beside its mirrored exit code; that is a command result, not a
+ * runner failure, and the command is not started again, since only the code is known.
  * @module @deepseek-ai/dsh-sandbox-windows-acl/runner
  */
 
@@ -54,10 +57,7 @@ import { tempWriteSid, workspaceWriteSid } from './workspace-sid.ts'
 
 const RUNNER_SIGNATURE = 'windows-acl-run'
 const RUNNER_FAILURE_EXIT = 127
-/**
- * STATUS_DLL_INIT_FAILED: the child died while Windows initialized its DLLs, before any of the command ran.
- * Seen once on a loaded machine and not reproducible since, so the runner starts such a child once more.
- */
+/** STATUS_DLL_INIT_FAILED: Windows could not initialize the child's DLLs, which usually means none of its command ran. */
 const STATUS_DLL_INIT_FAILED = 0xC0000142
 
 class RunnerFailure extends Error {}
@@ -184,29 +184,20 @@ async function main(): Promise<number> {
       }
     }
 
-    const controlled = process.env[SUBPROCESS_CONTROL_ENV] === 'pipe'
-    const run = async (): Promise<number> => (await (sandbox as AclSandbox).spawn({
+    const child = sandbox.spawn({
       command: parsed.command,
       args: parsed.args,
       stdio: 'inherit',
-      ...controlled ? { controlFileDescriptor: SUBPROCESS_CONTROL_FD } : {},
-    }).wait()).exitCode
-    // The control pipe stays open here until no second start can need it.
-    let exitCode: number
-    try {
-      exitCode = await run()
-      if (exitCode === STATUS_DLL_INIT_FAILED) {
-        exitCode = await run()
-        if (exitCode === STATUS_DLL_INIT_FAILED) {
-          process.stderr.write(`${RUNNER_SIGNATURE}: the confined process failed to start twice (0xC0000142, STATUS_DLL_INIT_FAILED); `
-            + 'the command did not run. Windows could not initialize the new process, which usually passes once system '
-            + 'resources free up: try again later, or ask the user to restart DSH.\n')
-        }
-      }
-    } finally {
-      if (controlled) closeSync(SUBPROCESS_CONTROL_FD)
+      ...process.env[SUBPROCESS_CONTROL_ENV] === 'pipe' ? { controlFileDescriptor: SUBPROCESS_CONTROL_FD } : {},
+    })
+    if (process.env[SUBPROCESS_CONTROL_ENV] === 'pipe') closeSync(SUBPROCESS_CONTROL_FD)
+    const result = await child.wait()
+    if (result.exitCode === STATUS_DLL_INIT_FAILED) {
+      process.stderr.write(`${RUNNER_SIGNATURE}: the confined process exited with 0xC0000142 (STATUS_DLL_INIT_FAILED): `
+        + 'Windows could not initialize it, so the command most likely did not run. This usually passes once system '
+        + 'resources free up: run the command again if that is safe, or ask the user to restart DSH if it keeps failing.\n')
     }
-    return exitCode
+    return result.exitCode
   } finally {
     // Cleanup failures must not mask the child's exit code: report and keep going.
     if (initialized) {
