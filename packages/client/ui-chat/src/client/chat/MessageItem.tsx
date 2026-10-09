@@ -58,6 +58,7 @@ function failureMessage(
   if (code === 'QUOTA' || code === 'ACCOUNT_QUOTA') return t('message.failure.quota')
   if (code === 'MISSING_CREDENTIAL') return t('message.failure.missingCredential')
   if (code === 'SIGN_IN_REQUIRED') return t('message.failure.signInRequired')
+  if (code === 'MODEL_NOT_AVAILABLE') return t('message.failure.modelNotAvailable')
   return code === 'AUTH' ? t('message.failure.auth') : message
 }
 
@@ -141,7 +142,7 @@ function TurnErrorItem({ node, t, openModelsSettings }: {
       <div className={css.turnErrorCopy}>
         <span className={css.turnErrorTitle}>{node.code === 'ACCOUNT_SIGNED_OUT' ? t('message.accountStopped') : t('message.turnError')}</span>
         <span className={css.turnErrorMessage}>{failureMessage(node.message, node.code, t)}</span>
-        {(node.code === 'MISSING_CREDENTIAL' || node.code === 'SIGN_IN_REQUIRED') && openModelsSettings !== undefined && (
+        {(node.code === 'MISSING_CREDENTIAL' || node.code === 'SIGN_IN_REQUIRED' || node.code === 'MODEL_NOT_AVAILABLE') && openModelsSettings !== undefined && (
           <div className={css.turnErrorAction}>
             <Button size="sm" variant="outline" onClick={openModelsSettings}>{t('message.failure.configureModels')}</Button>
           </div>

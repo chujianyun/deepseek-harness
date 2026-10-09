@@ -142,6 +142,7 @@
     "tests/assistants.e2e.ts",
     "tests/assistant-knowledge.e2e.ts",
     "tests/generate-image.e2e.ts",
+    "tests/model-not-available.e2e.ts",
     "tests/models-account-sign-in.e2e.ts",
     "tests/models-custom-provider.e2e.ts",
     "tests/skills-market.e2e.ts",

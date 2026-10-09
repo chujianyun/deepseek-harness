@@ -2128,7 +2128,7 @@ describe('ChatView', () => {
   it('renders every terminal failure inline with neutral quota copy and no transient notice', () => {
     const h = makeHarness({ nodes: [
       user(1, 'try'), turnError(2, 'AUTH'), turnError(3), turnError(4, 'QUOTA'), turnError(5, 'ACCOUNT_QUOTA'),
-      turnError(6, 'MISSING_CREDENTIAL'), turnError(7, 'SIGN_IN_REQUIRED'),
+      turnError(6, 'MISSING_CREDENTIAL'), turnError(7, 'SIGN_IN_REQUIRED'), turnError(8, 'MODEL_NOT_AVAILABLE'),
     ] })
     const view = render(<h.ChatView {...h.props} />)
     const statuses = view.getAllByRole('status')
@@ -2139,6 +2139,7 @@ describe('ChatView', () => {
       '本轮运行失败当前请求的额度已用尽ACCOUNT_QUOTA',
       '本轮运行失败当前模型还没有配置 API Key。请打开「设置 → 模型」填写 Key，或添加其他模型提供商后重试。去配置模型MISSING_CREDENTIAL',
       '本轮运行失败当前模型的账号还没有登录。请打开「设置 → 模型」登录该账号后重试。去配置模型SIGN_IN_REQUIRED',
+      '本轮运行失败当前账号不能使用这个模型（套餐不包含，或需要另购额度）。请换一个模型，或到服务商处开通后重试。去配置模型MODEL_NOT_AVAILABLE',
     ])
     // The transient notice is the frame-wide host's job; the failure row keeps
     // neither a recharge affordance nor a toast of its own.
@@ -2147,16 +2148,16 @@ describe('ChatView', () => {
     expect(view.queryByRole('button', { name: '去充值' })).toBeNull()
   })
 
-  it('offers Configure models only on a missing key or sign-in and asks for Models settings', () => {
+  it('offers Configure models only on a missing key, sign-in, or model access and asks for Models settings', () => {
     const h = makeHarness({ nodes: [
       user(1, 'try'), turnError(2, 'MISSING_CREDENTIAL'), turnError(3, 'AUTH'), turnError(4, 'SIGN_IN_REQUIRED'),
+      turnError(5, 'MODEL_NOT_AVAILABLE'),
     ] })
     const view = render(<h.ChatView {...h.props} />)
     const buttons = view.getAllByRole('button', { name: '去配置模型' })
-    expect(buttons).toHaveLength(2)
-    fireEvent.click(buttons[0]!)
-    fireEvent.click(buttons[1]!)
-    expect(h.openModelsSettings).toHaveBeenCalledTimes(2)
+    expect(buttons).toHaveLength(3)
+    for (const button of buttons) fireEvent.click(button)
+    expect(h.openModelsSettings).toHaveBeenCalledTimes(3)
   })
 
   it('renders the max-tokens notice with localized guidance, distinct from turn errors', () => {
