@@ -5,7 +5,7 @@ import type { DesktopHubEnvironment } from './scripts/desktop-hub-environment.d.
 export interface DesktopElectronBuilderConfig {
   readonly appId: string
   readonly artifactName: string
-  readonly protocols: readonly [{ readonly name: 'DeepSeek Harness'; readonly schemes: readonly ['dsh'] }]
+  readonly protocols: readonly [{ readonly name: 'MO WorkAI'; readonly schemes: readonly ['dsh'] }]
   readonly directories: {
     readonly output: string
   }

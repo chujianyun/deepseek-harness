@@ -1,5 +1,5 @@
-DeepSeek Harness 无法使用
+MO WorkAI 无法使用
 应用无法启动或已意外停止。
 当前安装包没有配置公司用户中心，无法登录。请向管理员获取正式安装包；开发者可设置 DSH_HUB_ORIGIN 和 DSH_HUB_CLIENT_ID 后重新启动。
-诊断报告：C:\Users\someone\AppData\Roaming\DeepSeek Harness\logs\crash-2026-09-22T10-30-00-000Z-host.log
+诊断报告：C:\Users\someone\AppData\Roaming\MO WorkAI\logs\crash-2026-09-22T10-30-00-000Z-host.log
 退出

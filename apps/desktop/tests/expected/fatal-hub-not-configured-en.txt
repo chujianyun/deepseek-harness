@@ -1,5 +1,5 @@
-DeepSeek Harness is unavailable
+MO WorkAI is unavailable
 The application could not start or stopped unexpectedly.
 This copy of the app has no company user center to sign in to. Ask your administrator for the official installer. Developers can set DSH_HUB_ORIGIN and DSH_HUB_CLIENT_ID, then start the app again.
-Diagnostic report: C:\Users\someone\AppData\Roaming\DeepSeek Harness\logs\crash-2026-09-22T10-30-00-000Z-host.log
+Diagnostic report: C:\Users\someone\AppData\Roaming\MO WorkAI\logs\crash-2026-09-22T10-30-00-000Z-host.log
 Exit
