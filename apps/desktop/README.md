@@ -326,6 +326,10 @@ pnpm run package:desktop:win:x64:unsigned
 
 The command requires `DSH_DESKTOP_APP_ID` and the normal build dependencies, including Python and Visual C++ build tools for native modules. Set `PYTHON` to the Python executable when it is absent from `PATH`. It writes the installer to `.desktop-build/targets/win-x64/unsigned-artifacts/`, omits automatic-update configuration, strips signing credentials, and creates no release completion record. It does not require EV credentials or an update origin. The signed packaging and upload commands retain their release requirements.
 
+### Unsigned macOS package
+
+Without a Developer ID certificate, `pnpm run package:desktop:mac:arm64:unsigned` (or `:mac:x64:unsigned`) builds a DMG and ZIP named `-unsigned` in `.desktop-build/targets/<target>/unsigned-artifacts/`. The application is ad-hoc signed, which Apple Silicon requires to launch it, but carries no Developer ID signature, hardened runtime, or notarization, so Gatekeeper reports an unidentified developer on first open; the user opens it with Control-click → Open or allows it under System Settings → Privacy & Security. Like the unsigned Windows installer, it omits automatic-update configuration and creates no release completion record; it needs no signing keychain or notarization credentials.
+
 ### Windows installer interface
 
 The Windows installer uses native NSIS pages with light and dark palettes, system shadows, an editable installation directory, and a finish page whose launch checkbox is selected by default. Installation is restricted to the current user. Clicking Install or pressing Enter validates the current path; new destinations must be empty, and nonempty destinations must be registered installations. Running executables at the affected installation path produce a native prompt and remain running; same-named applications in other directories do not block installation. Silent updates wait up to ten seconds for the affected application to exit, then stop with exit code 2 if it is still running.
