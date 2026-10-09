@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it, onTestFinished } from 'vitest'
-import { PRIVATE_EXPERIMENTAL_PACKAGE_DIRECTORIES } from './experimental-package-policy.ts'
+import { UNPUBLISHED_PACKAGE_DIRECTORIES } from './repository-only-package-policy.ts'
 import { discoverNpmBaselineManifests } from './npm-baseline-packages.ts'
 
 function fixture(manifests: readonly string[]): string {
@@ -41,10 +41,13 @@ describe('npm baseline package discovery', () => {
     const allowed = 'packages/experimental/new-prototype/package.json'
     const root = fixture([
       allowed,
-      ...PRIVATE_EXPERIMENTAL_PACKAGE_DIRECTORIES.map(directory => `${directory}/package.json`),
+      ...UNPUBLISHED_PACKAGE_DIRECTORIES.map(directory => `${directory}/package.json`),
     ])
 
     expect(discoverNpmBaselineManifests(root)).toEqual([allowed])
+    // The Skill Hub packaging package is built and used only here, so npm never receives it.
+    expect(discoverNpmBaselineManifests(fixture(['packages/ecommerce/tmall-skills/package.json', 'packages/ecommerce/ecommerce-accounts/package.json'])))
+      .toEqual(['packages/ecommerce/ecommerce-accounts/package.json'])
   })
 
   it('excludes an exact configured directory without excluding nearby names', () => {

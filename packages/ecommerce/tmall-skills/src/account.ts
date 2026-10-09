@@ -1,6 +1,11 @@
-/** Take over a Tmall merchant account's signed-in Chrome through DSH's `dsh-ecommerce` command. */
+/**
+ * Take over a merchant account's signed-in Chrome, and read the company's publishing memory,
+ * through DSH's `dsh-ecommerce` command.
+ */
 
 import { execFile } from 'node:child_process'
+import type { CategoryMemory, PublishMemory } from '@deepseek-ai/dsh-ecommerce-accounts/src/memory.ts'
+import type { EcommercePlatform } from '@deepseek-ai/dsh-ecommerce-accounts/src/types.ts'
 import { EXIT, SkillError } from './errors.ts'
 
 /** The account `dsh-ecommerce browser` handed over. */
@@ -35,18 +40,26 @@ export function runDshEcommerce(args: readonly string[]): Promise<EcommerceComma
   })
 }
 
+/** The platforms a merchant skill works with, and their names for the user. */
+export const MERCHANT_PLATFORMS = { tmall: '天猫', pinduoduo: '拼多多', doudian: '抖店' } as const
+
+/** A platform a merchant skill works with. */
+export type MerchantPlatform = keyof typeof MERCHANT_PLATFORMS
+
 /**
- * Reserve a Tmall merchant account's browser for this bash call, as DSH checks it is still signed in.
+ * Reserve a merchant account's browser for this bash call, as DSH checks it is still signed in.
  * @param accountId - the account id from `dsh-ecommerce accounts`.
  * @param run - runs `dsh-ecommerce`.
+ * @param platform - the platform the skill works with.
  * @returns the account and its browser address.
  * @throws SkillError with what DSH said when it refuses, signed-out when the account is signed out,
- *   or when the account is not a Tmall merchant account.
+ *   or when the account is not a merchant account of that platform.
  */
-export async function takeOverMerchant(accountId: string, run = runDshEcommerce): Promise<MerchantBrowser> {
+export async function takeOverMerchant(accountId: string, run = runDshEcommerce, platform: MerchantPlatform = 'tmall'): Promise<MerchantBrowser> {
   const taken = await takeOver(['browser', accountId], run)
-  if (taken.platform !== 'tmall' || taken.kind !== 'merchant') {
-    throw new SkillError(`账号 ${accountId} 不是天猫商家账号（平台 ${taken.platform}，类型 ${taken.kind}），这个技能只能用天猫商家账号。`, EXIT.usage)
+  if (taken.platform !== platform || taken.kind !== 'merchant') {
+    const name = MERCHANT_PLATFORMS[platform]
+    throw new SkillError(`账号 ${accountId} 不是${name}商家账号（平台 ${taken.platform}，类型 ${taken.kind}），这个技能只能用${name}商家账号。`, EXIT.usage)
   }
   return { id: taken.id, store: taken.store ?? taken.account, account: taken.account, cdpUrl: taken.cdpUrl }
 }
@@ -110,4 +123,20 @@ export async function reportRisk(accountId: string, run = runDshEcommerce): Prom
   if (code !== 0) return `未能通知 DSH 让这个买家号冷却（${stderr.trim()}），请今天不要再用它。`
   const { account, cooldownUntil } = JSON.parse(stdout) as { account: string; cooldownUntil: string }
   return `DSH 已让买家号 ${account} 冷却到 ${cooldownUntil}，期间不会再被挑选。`
+}
+
+export type { CategoryMemory, EcommercePlatform, PublishMemory }
+
+/**
+ * Read the company's publishing memory: store information, categories of product lines, table headers,
+ * and confirmed declarations.
+ * @param run - runs `dsh-ecommerce`.
+ * @returns the memory.
+ * @throws SkillError with what DSH said when it cannot be read, such as outside a DSH shell call.
+ */
+export async function readPublishMemory(run = runDshEcommerce): Promise<PublishMemory> {
+  const { code, stdout, stderr } = await run(['memory'])
+  if (code === 127) throw new SkillError(`找不到 dsh-ecommerce 命令：读取发品记忆只能在已登录用户中心的 DSH 桌面版里运行。${stderr.trim()}`)
+  if (code !== 0) throw new SkillError(`读不到发品记忆：${stderr.trim()}`)
+  return JSON.parse(stdout) as PublishMemory
 }

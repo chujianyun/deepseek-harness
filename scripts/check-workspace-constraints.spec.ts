@@ -18,6 +18,7 @@ import {
   readWorkspaceManifests,
   type WorkspaceManifest,
 } from './check-workspace-constraints.ts'
+import { isRepositoryOnlyPackageDirectory } from './repository-only-package-policy.ts'
 
 const experimental = {
   dir: 'packages/experimental/prototype',
@@ -219,6 +220,30 @@ describe('experimental workspace constraints', () => {
     expect(checkExperimentalDependencyIsolation(manifests)).toEqual([
       '@deepseek-ai/dsh-python-runtime: dependencies.@deepseek-ai/dsh-experimental-prototype must not reference an experimental package',
     ])
+  })
+})
+
+describe('repository-only packages', () => {
+  const tool = { dir: 'packages/ecommerce/tmall-skills', manifest: { name: '@deepseek-ai/dsh-tmall-skills', private: true } } satisfies WorkspaceManifest
+
+  it('names exact directories only', () => {
+    expect(isRepositoryOnlyPackageDirectory(tool.dir)).toBe(true)
+    expect(isRepositoryOnlyPackageDirectory('packages/ecommerce/ecommerce-accounts')).toBe(false)
+    expect(isRepositoryOnlyPackageDirectory('packages/ecommerce/tmall-skills/src')).toBe(false)
+    expect(isRepositoryOnlyPackageDirectory('packages/x/y', ['packages/x/y'])).toBe(true)
+  })
+
+  it('requires it to stay private and leaves out the release and package-entry rules', () => {
+    // The shared-version rule is checked on its own above.
+    const ignoreVersion = (errors: string[]) => errors.filter(error => !error.includes('version must match'))
+    expect(ignoreVersion(checkWorkspaceManifest(tool))).toEqual([])
+    expect(ignoreVersion(checkWorkspaceManifest({ ...tool, manifest: { name: tool.manifest.name } })))
+      .toEqual([expect.stringContaining('@deepseek-ai/dsh-tmall-skills: package.json must set "private": true')])
+    // A package in an ordinary release directory still gets every release rule.
+    expect(checkWorkspaceManifest({ dir: 'packages/ecommerce/other', manifest: tool.manifest })).toEqual(expect.arrayContaining([
+      expect.stringContaining('@deepseek-ai/dsh-tmall-skills: release member must not set "private": true'),
+      expect.stringContaining('@deepseek-ai/dsh-tmall-skills: @deepseek-ai/cordis must be a peerDependency'),
+    ]))
   })
 })
 

@@ -133,6 +133,21 @@ describe('publint package runner', () => {
     expect(result.stdout).toContain('All good!')
   })
 
+  it('skips a repository-only package, whose publication view would not lint', async ({ signal }) => {
+    const root = fixture()
+    const skillsDir = join(root, 'packages/ecommerce/tmall-skills')
+    mkdirSync(join(skillsDir, 'lib'), { recursive: true })
+    // An export the publication view leaves out, which publint rejects in an ordinary package.
+    writeFileSync(join(skillsDir, 'package.json'), `${JSON.stringify({
+      name: '@deepseek-ai/dsh-tmall-skills', private: true, type: 'module', files: ['lib'], exports: { '.': { default: './unpublished.js' } },
+    })}\n`)
+    writeFileSync(join(skillsDir, 'lib/index.js'), 'export const probe = true\n')
+    writeFileSync(join(skillsDir, 'unpublished.js'), 'export const hidden = true\n')
+    const result = await run(root, signal)
+    expect(result.exitCode, result.stderr).toBe(0)
+    expect(result.stdout).toContain('linting 1 package(s)')
+  })
+
   it('rejects an export that exists in the workspace but is not published', async ({ signal }) => {
     const result = await run(fixture({ exportPath: './unpublished.js' }), signal)
     expect(result.exitCode).toBe(1)

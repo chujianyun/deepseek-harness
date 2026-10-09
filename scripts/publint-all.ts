@@ -12,6 +12,7 @@ import { parseArgs } from 'node:util'
 import { publint, type Message, type PackFile } from 'publint'
 import { formatMessage } from 'publint/utils'
 import ts from 'typescript'
+import { UNPUBLISHED_PACKAGE_DIRECTORIES } from './repository-only-package-policy.ts'
 
 const CONCURRENCY_ENV = 'DSH_PUBLINT_CONCURRENCY'
 const repositoryRoot = resolve(import.meta.dirname, '..')
@@ -50,7 +51,9 @@ type PublintResult =
   }
 
 function workspacePackages(): PackageTarget[] {
+  // A package npm never receives has no publication view to lint.
   return globSync('packages/*/*/package.json', { cwd: packagesRoot })
+    .filter(manifestPath => !UNPUBLISHED_PACKAGE_DIRECTORIES.includes(dirname(manifestPath).split(sep).join('/')))
     .sort()
     .map((manifestPath) => {
       const absoluteManifestPath = resolve(packagesRoot, manifestPath)

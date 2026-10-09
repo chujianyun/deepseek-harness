@@ -9,6 +9,8 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { Bridge } from '../src/bridge.ts'
+import { writeJsonAtomic } from '../src/files.ts'
+import { applyUpdate, DamagedMemory, EMPTY_MEMORY, readMemory } from '../src/memory.ts'
 import { SKILL_CONTENT } from '../src/skill.ts'
 import EcommerceAccountsService, {
   DOUDIAN, matchesCheckApi, mtopUserNick, parseJsonOrJsonp, PINDUODUO, PUBLIC_PAGE, RISK_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL,
@@ -333,6 +335,52 @@ describe('e-commerce accounts', () => {
     expect(await code(env.service.deleteAccount(accountId))).toBe('ecommerce-accounts/not-found')
   })
 
+  it('leaves a deleted account deleted when a check or sign-in waited behind the deletion', async () => {
+    const env = await setup()
+    const signedIn = async () => {
+      const { accountId } = await env.service.addAccount(merchant)
+      await env.service.startSignIn(accountId)
+      await env.signIn(accountId, '名流旗舰店:运营')
+      await env.settle(s => s.accounts.some(item => item.id === accountId && item.status === 'signed-in'))
+      return accountId
+    }
+    const browsers = () => readdir(join(env.home, 'ecommerce', 't-a', 'browsers'))
+    // The check that "I have signed in" asks for is queued at once, behind the deletion queued first.
+    const checked = await signedIn()
+    const record = await readRecord(env.browserDir(checked))
+    const deleted = env.service.deleteAccount(checked)
+    const confirmed = env.service.confirmSignIn(checked)
+    expect((await deleted).accounts).toEqual([])
+    expect((await confirmed).accounts).toEqual([])
+    expect(await alive(record!.port)).toBe(false)
+    expect(await browsers()).toEqual([])
+    // A sign-in queued behind the deletion opens nothing and says the account is gone.
+    const signing = await signedIn()
+    const removing = env.service.deleteAccount(signing)
+    const reopened = code(env.service.startSignIn(signing))
+    await removing
+    expect(await reopened).toBe('ecommerce-accounts/not-found')
+    expect(await browsers()).toEqual([])
+    expect((await env.service.getState()).accounts).toEqual([])
+  })
+
+  it('tells a task the account was deleted when its take-over waited behind the deletion', async () => {
+    // A Chrome that ignores Browser.close keeps the deletion closing it long enough for the take-over to queue behind.
+    process.env.FAKE_CHROME_STUBBORN = '1'
+    const env = await setup({ config: { chromeTimeoutMs: 3000 } })
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, '名流旗舰店:运营')
+    await env.settle(s => s.accounts[0]!.status === 'signed-in')
+    const deleted = env.service.deleteAccount(accountId)
+    const taken = await runCommand(env, varsOf(env, bashCall('c-gone')), 'browser', accountId)
+    await deleted
+    expect(taken.code).toBe(1)
+    expect(taken.stderr).toContain('was deleted in DSH Settings. Tell the user and stop')
+    expect((await env.service.getState()).accounts).toEqual([])
+    expect(await readdir(join(env.home, 'ecommerce', 't-a', 'browsers'))).toEqual([])
+  })
+
   it('streams the state on every change until the reader stops, and ignores a malformed ledger', async () => {
     const home = await tempDir()
     await mkdir(join(home, 'ecommerce', 't-a'), { recursive: true })
@@ -615,7 +663,8 @@ describe('e-commerce accounts for the model', () => {
       { id: expect.any(String) as string, platform: 'pinduoduo', store: '名流旗舰店', account: 'pdd', kind: 'merchant', status: 'signed-out' },
     ])
     expect(listed.stdout).not.toMatch(/cookie|user-data|ecommerce\//iu)
-    const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id>\n'
+    const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id>'
+      + ' | dsh-ecommerce memory | dsh-ecommerce remember <json-file>\n'
     expect(await runCommand(env, varsOf(env, exec))).toMatchObject({ code: 2, stderr: usage })
     expect(await runCommand(env, varsOf(env, exec), 'browser')).toMatchObject({ code: 2, stderr: usage })
     expect(await runCommand(env, varsOf(env, exec), 'risk')).toMatchObject({ code: 2, stderr: usage })
@@ -709,7 +758,7 @@ describe('e-commerce accounts for the model', () => {
 
   it('answers a command that fails instead of leaving the script waiting', async () => {
     const broken = () => Promise.reject(new Error('broken'))
-    const bridge = new Bridge({ accounts: broken, browser: broken, buyer: broken, risk: broken })
+    const bridge = new Bridge({ accounts: broken, browser: broken, buyer: broken, risk: broken, memory: broken, remember: broken })
     const stop = await bridge.start()
     try {
       const url = bridge.urlFor({ callId: 'c-1', tenantId: 't-a' })
@@ -914,5 +963,178 @@ describe('buyer accounts and risk protection', () => {
     const before = (await env.settle(s => s.accounts.every(account => account.status === 'signed-in'))).accounts
     const after = (await env.settle(s => s.accounts[1]!.checkedAt !== before[1]!.checkedAt && s.accounts[1]!.status === 'signed-in')).accounts
     expect(after[0]!.checkedAt).toBe(before[0]!.checkedAt)
+  })
+})
+
+describe('publishing memory', () => {
+  const write = async (dir: string, name: string, json: unknown): Promise<string> => {
+    const path = join(dir, name)
+    await writeFile(path, typeof json === 'string' ? json : JSON.stringify(json))
+    return path
+  }
+
+  it('remembers store information, categories, headers, and declarations for the company, and forgets on null', async () => {
+    const env = await setup()
+    const dir = await tempDir()
+    const run = (...args: string[]) => runCommand(env, varsOf(env, bashCall(`c-${String(Math.random())}`)), ...args)
+    expect(JSON.parse((await run('memory')).stdout)).toEqual({ stores: {}, categories: {}, columns: {}, declarations: {} })
+    const first = await run('remember', await write(dir, 'a.json', {
+      store: { name: '名流旗舰店', values: { 品牌: '名流', 产地: '大陆', 颜色: ['透明'] } },
+      category: { line: '水多多', platform: 'tmall', catId: '50024154', categoryPath: '计生用品 > 避孕套' },
+      columns: { 到手价: 'price', 上架名称: 'name' },
+      declarations: { store: '名流旗舰店', catId: '50024154', confirmed: [{ key: 'personalUseConfirm', text: '确认个人可自行使用。' }] },
+    }))
+    expect(first.code).toBe(0)
+    const memory = JSON.parse((await run('memory')).stdout) as {
+      stores: Record<string, { values: unknown; updatedAt: string }>
+      categories: Record<string, unknown>
+      columns: Record<string, unknown>
+      declarations: Record<string, Record<string, Record<string, { text: string; confirmedAt: string }>>>
+    }
+    expect(JSON.parse(first.stdout)).toEqual(memory)
+    expect(memory.stores['名流旗舰店']).toEqual({ values: { 品牌: '名流', 产地: '大陆', 颜色: ['透明'] }, updatedAt: expect.any(String) as string })
+    expect(memory.categories['水多多']).toEqual({ tmall: { catId: '50024154', categoryPath: '计生用品 > 避孕套', updatedAt: expect.any(String) as string } })
+    expect(memory.columns['到手价']).toEqual({ field: 'price', updatedAt: expect.any(String) as string })
+    expect(memory.declarations['名流旗舰店']!['50024154']!.personalUseConfirm!.text).toBe('确认个人可自行使用。')
+    // A change keeps the rest; null forgets one value, a whole store, or a header.
+    await run('remember', await write(dir, 'b.json', { store: { name: '名流旗舰店', values: { 产地: '香港进口', 颜色: null } }, columns: { 上架名称: null } }))
+    const changed = JSON.parse((await run('memory')).stdout) as typeof memory
+    expect(changed.stores['名流旗舰店']!.values).toEqual({ 品牌: '名流', 产地: '香港进口' })
+    expect(Object.keys(changed.columns)).toEqual(['到手价'])
+    await run('remember', await write(dir, 'c.json', { store: { name: '名流旗舰店', values: { 品牌: null, 产地: null } } }))
+    expect((JSON.parse((await run('memory')).stdout) as typeof memory).stores).toEqual({})
+    const saved = JSON.parse(await readFile(join(env.home, 'ecommerce', 't-a', 'publish-memory.json'), 'utf8')) as typeof memory
+    expect(saved.categories['水多多']).toBeDefined()
+    // The same product line keeps its category on each platform; remembering one platform again replaces only that one.
+    for (const [platform, catId] of [['pinduoduo', '18770'], ['doudian', '1000000638'], ['tmall', '50024155']]) {
+      await run('remember', await write(dir, 'd.json', { category: { line: '水多多', platform, catId } }))
+    }
+    const lines = (JSON.parse((await run('memory')).stdout) as typeof memory).categories['水多多'] as Record<string, { catId: string; categoryPath: string }>
+    expect(Object.fromEntries(Object.entries(lines).map(([platform, entry]) => [platform, entry.catId]))).toEqual({ tmall: '50024155', pinduoduo: '18770', doudian: '1000000638' })
+    expect(lines['tmall']!.categoryPath).toBe('')
+  })
+
+  it('reads a category remembered before categories were kept per platform as that platform\'s, and keeps it', async () => {
+    const env = await setup()
+    const dir = await tempDir()
+    const run = (...args: string[]) => runCommand(env, varsOf(env, bashCall(`c-${String(Math.random())}`)), ...args)
+    const path = join(env.home, 'ecommerce', 't-a', 'publish-memory.json')
+    await mkdir(join(path, '..'), { recursive: true })
+    // An older remember took any platform name; a later platform name in a line is kept too.
+    await writeFile(path, JSON.stringify({ categories: {
+      水多多: { platform: 'pinduoduo', catId: '18770', categoryPath: '成人用品 > 计生用品 > 避孕套', updatedAt: '2026-10-09T01:35:15.002Z' },
+      旧线: { platform: '淘宝', catId: '1', categoryPath: 'x', updatedAt: 't' },
+      新线: { jd: { catId: '2', categoryPath: 'y', updatedAt: 't' } },
+    } }))
+    const old = { pinduoduo: { catId: '18770', categoryPath: '成人用品 > 计生用品 > 避孕套', updatedAt: '2026-10-09T01:35:15.002Z' } }
+    expect(JSON.parse((await run('memory')).stdout)).toMatchObject({ categories: {
+      水多多: old, 旧线: { 淘宝: { catId: '1', categoryPath: 'x', updatedAt: 't' } }, 新线: { jd: { catId: '2', categoryPath: 'y', updatedAt: 't' } },
+    } })
+    await run('remember', await write(dir, 'a.json', { category: { line: '水多多', platform: 'doudian', catId: '1000000638' } }))
+    const saved = JSON.parse(await readFile(path, 'utf8')) as { categories: Record<string, Record<string, unknown>> }
+    expect(saved.categories['水多多']).toEqual({ ...old, doudian: { catId: '1000000638', categoryPath: '', updatedAt: expect.any(String) as string } })
+  })
+
+  it('forgets a remembered category and declarations, and leaves a damaged file as it is', async () => {
+    const env = await setup()
+    const dir = await tempDir()
+    const run = async (json: unknown) => runCommand(env, varsOf(env, bashCall(`c-${String(Math.random())}`)), 'remember', await write(dir, 'x.json', json))
+    const confirmed = (keys: string[]) => keys.map(key => ({ key, text: key }))
+    await run({
+      category: { line: '水多多', platform: 'tmall', catId: '50024154' },
+      declarations: { store: '名流', catId: '1', confirmed: confirmed(['a', 'b']) },
+    })
+    await run({ category: { line: '水多多', platform: 'doudian', catId: '1000000638' } })
+    await run({ category: { line: '颗粒', platform: 'tmall', catId: '1' } })
+    // One platform of a line is forgotten, the rest kept; forgetting its last platform forgets the line.
+    const onePlatform = JSON.parse((await run({ forget: { categories: [{ line: '水多多', platform: 'tmall' }, { line: '无', platform: 'tmall' }] } })).stdout) as { categories: object }
+    expect(onePlatform.categories).toEqual({ 水多多: { doudian: expect.any(Object) as object }, 颗粒: { tmall: expect.any(Object) as object } })
+    const lastPlatform = JSON.parse((await run({ forget: { categories: [{ line: '颗粒', platform: 'tmall' }] } })).stdout) as { categories: object }
+    expect(lastPlatform.categories).toEqual({ 水多多: { doudian: expect.any(Object) as object } })
+    // One remember that forgets a line and sets a platform of it keeps the new platform only.
+    const replaced = JSON.parse((await run({ category: { line: '水多多', platform: 'pinduoduo', catId: '18770' }, forget: { categories: ['水多多'] } })).stdout) as { categories: object }
+    expect(replaced.categories).toEqual({ 水多多: { pinduoduo: expect.objectContaining({ catId: '18770' }) as object } })
+    await run({ declarations: { store: '名流', catId: '2', confirmed: confirmed(['c']) } })
+    const forget = { categories: ['水多多', '无'], declarations: [{ store: '名流', catId: '1', keys: ['a'] }, { store: '别家', catId: '1' }] }
+    type Forgot = { categories: object; declarations: Record<string, Record<string, object>> }
+    const forgot = JSON.parse((await run({ forget })).stdout) as Forgot
+    expect(forgot.categories).toEqual({})
+    expect(Object.keys(forgot.declarations['名流']!['1']!)).toEqual(['b'])
+    const rest = JSON.parse((await run({ forget: { declarations: [{ store: '名流', catId: '1', keys: ['b'] }, { store: '名流', catId: '2' }] } })).stdout) as { declarations: object }
+    expect(rest.declarations).toEqual({})
+    const path = join(env.home, 'ecommerce', 't-a', 'publish-memory.json')
+    await writeFile(path, '{"stores": [')
+    const message = 'DSH: the publishing memory file is damaged'
+    expect((await runCommand(env, varsOf(env, bashCall('c-9')), 'memory')).stderr).toContain(message)
+    expect((await run({ columns: { 价: 'price' } })).stderr).toContain(message)
+    expect(await readFile(path, 'utf8')).toBe('{"stores": [')
+  })
+
+  it('refuses a remember that waited behind a switch of company', async () => {
+    const env = await setup()
+    const dir = await tempDir()
+    const started = varsOf(env, bashCall('c-1'))
+    const file = await write(dir, 'a.json', { columns: { 价: 'price' } })
+    env.hub.set('t-b')
+    expect(await runCommand(env, started, 'remember', file)).toMatchObject({ code: 1, stderr: 'DSH: DSH is signed out of the user center, so there are no e-commerce accounts.\n' })
+    env.hub.set('t-a')
+    await env.settle(s => s.tenantId === 't-a')
+    expect(JSON.parse((await runCommand(env, varsOf(env, bashCall('c-2')), 'memory')).stdout)).toMatchObject({ columns: {} })
+  })
+
+  it('keeps each company\'s memory to itself', async () => {
+    const env = await setup()
+    const dir = await tempDir()
+    const remember = await write(dir, 'a.json', { store: { name: '名流旗舰店', values: { 品牌: '名流' } } })
+    expect((await runCommand(env, varsOf(env, bashCall('c-1')), 'remember', remember)).code).toBe(0)
+    const started = varsOf(env, bashCall('c-2'))
+    env.hub.set('t-b')
+    await env.settle(s => s.tenantId === 't-b')
+    expect(await runCommand(env, started, 'memory')).toMatchObject({ code: 1, stderr: 'DSH: DSH is signed out of the user center, so there are no e-commerce accounts.\n' })
+    expect(await runCommand(env, started, 'remember', remember)).toMatchObject({ code: 1 })
+    expect(JSON.parse((await runCommand(env, varsOf(env, bashCall('c-3')), 'memory')).stdout)).toMatchObject({ stores: {} })
+    env.hub.set('t-a')
+    await env.settle(s => s.tenantId === 't-a')
+    expect(JSON.parse((await runCommand(env, varsOf(env, bashCall('c-4')), 'memory')).stdout)).toMatchObject({ stores: { 名流旗舰店: { values: { 品牌: '名流' } } } })
+  })
+
+  it('refuses a file that is not as described, and remembers nothing from it', async () => {
+    const env = await setup()
+    const dir = await tempDir()
+    const run = async (json: unknown) => runCommand(env, varsOf(env, bashCall(`c-${String(Math.random())}`)), 'remember', await write(dir, 'x.json', json))
+    expect((await run('not json')).stderr).toMatch(/^DSH: what to remember is not JSON: /u)
+    expect((await run({})).stderr).toBe('DSH: nothing was remembered, the file is not as described: (top level): nothing to remember\n')
+    expect((await run({ columns: { 价: 'money' } })).stderr).toContain('columns.价')
+    expect((await run({ category: { line: '水多多', platform: 'tmall', catId: 'abc' } })).stderr).toContain('category.catId')
+    expect((await run({ category: { line: '水多多', platform: 'jd', catId: '1' } })).stderr).toContain('category.platform')
+    expect((await run({ forget: { categories: [{ line: '水多多', platform: 'jd' }] } })).stderr).toContain('forget.categories')
+    expect((await run({ store: { name: '名流', values: { 品牌: '' } } })).stderr).toContain('store.values.品牌')
+    expect((await run({ declarations: { store: '名流', catId: '1', confirmed: [] } })).stderr).toContain('declarations.confirmed')
+    expect((await run({ shops: {} })).code).toBe(1)
+    expect(JSON.parse((await run('{"store":{"name":"名流","values":{"__proto__":"x"}}}')).stdout)).toMatchObject({ stores: {} })
+    expect((await run({ store: { name: 'prototype', values: { a: 'x' } } })).stderr).toContain('this name cannot be used')
+    expect((await run({ columns: { constructor: 'price' } })).stderr).toContain('columns.constructor')
+    expect(await runCommand(env, varsOf(env, bashCall('c-1')), 'remember')).toMatchObject({ code: 2 })
+    expect(await runCommand(env, varsOf(env, bashCall('c-1')), 'remember', join(dir, 'none.json'))).toMatchObject({ code: 2 })
+    const big = await write(dir, 'big.json', JSON.stringify({ store: { name: 'x', values: { a: 'y'.repeat(300 * 1024) } } }))
+    expect(await runCommand(env, varsOf(env, bashCall('c-2')), 'remember', big)).toMatchObject({ code: 1, stderr: 'DSH: what to remember is too large.\n' })
+    expect(JSON.parse((await runCommand(env, varsOf(env, bashCall('c-3')), 'memory')).stdout)).toEqual({ stores: {}, categories: {}, columns: {}, declarations: {} })
+  })
+
+  it('reads a missing memory as empty, refuses a damaged one, and fills in parts an older file lacks', async () => {
+    const dir = await tempDir()
+    expect(await readMemory(join(dir, 'none.json'))).toEqual(EMPTY_MEMORY)
+    await writeFile(join(dir, 'bad.json'), '{')
+    await expect(readMemory(join(dir, 'bad.json'))).rejects.toBeInstanceOf(DamagedMemory)
+    await writeFile(join(dir, 'shape.json'), '{"stores":null}')
+    await expect(readMemory(join(dir, 'shape.json'))).rejects.toThrow('stores')
+    await expect(readMemory(dir)).rejects.toBeInstanceOf(DamagedMemory)
+    await writeFile(join(dir, 'old.json'), '{"stores":{"a":{"values":{"b":"c"},"updatedAt":"t"}}}')
+    expect(await readMemory(join(dir, 'old.json'))).toEqual({ ...EMPTY_MEMORY, stores: { a: { values: { b: 'c' }, updatedAt: 't' } } })
+    const memory = applyUpdate(EMPTY_MEMORY, { declarations: { store: 's', catId: '1', confirmed: [{ key: 'k', text: 't' }] } }, 'now')
+    expect(applyUpdate(memory, { declarations: { store: 's', catId: '1', confirmed: [{ key: 'j', text: 'u' }] } }, 'later').declarations)
+      .toEqual({ s: { 1: { k: { text: 't', confirmedAt: 'now' }, j: { text: 'u', confirmedAt: 'later' } } } })
+    await writeJsonAtomic(join(dir, 'deep', 'm.json'), memory)
+    expect(await readMemory(join(dir, 'deep', 'm.json'))).toEqual(memory)
   })
 })

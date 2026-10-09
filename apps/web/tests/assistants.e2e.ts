@@ -3,7 +3,9 @@
 // the sidebar, finds the cards, and starts a chat with the default; the scripted model's request carries
 // the assistant's core files after the deployment persona, and an edit to a core file on disk reaches
 // the next request. A new session picks another assistant in the hero picker, and its first request
-// carries that assistant's identity instead. A second run manages assistants from their detail page:
+// carries that assistant's identity instead; an E-commerce Manager made in the wizard starts with the
+// e-commerce Skills (the installed ones ticked, the others marked gone), its core files guide publishing,
+// and its catalog lists only the installed e-commerce Skills. A second run manages assistants from their detail page:
 // a core file saved there reaches the next request of a session in progress, the default moves, a copy
 // keeps the core files, and a deleted assistant's session continues without them. A third run gives
 // an assistant only some Skills: its sessions' catalog lists only those, and the detail page marks one
@@ -18,7 +20,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { expect, it } from 'vitest'
-import type {} from '@deepseek-ai/dsh-assistants'
+import { ECOMMERCE_SKILLS, OFFICE_SKILLS } from '@deepseek-ai/dsh-assistants'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-hub-account'
 import { browse, startMockUserCenter } from '../../../packages/credentials/hub-account/tests/mock-user-center.ts'
@@ -98,7 +100,8 @@ async function launch() {
   ]))
   const tenantDir = join(harnessHome, 'assistants', 't-a')
   await writeShopKeeper(tenantDir)
-  for (const name of ['e2e-alpha', 'e2e-beta']) {
+  // Two of the e-commerce Skills the E-commerce Manager starts with are installed; the rest are not.
+  for (const name of ['e2e-alpha', 'e2e-beta', 'ecommerce-multi-publish', 'tmall-publish']) {
     await mkdir(join(harnessHome, 'skills', name), { recursive: true })
     await writeFile(join(harnessHome, 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${name} 测试用 Skill\n---\n\n# ${name}\n`)
   }
@@ -208,6 +211,18 @@ it('creates the default assistant, carries its core files into the chat, and let
     await wizard.getByRole('button', { name: '下一步' }).click()
     // The E-commerce Manager starts with only the Feishu connector.
     expect(await wizard.getByRole('group', { name: '连接器' }).getByRole('radio', { name: '仅选中' }).isChecked()).toBe(true)
+    // It starts with the e-commerce Skills, publishing among them: those installed are ticked, the others marked gone until installed.
+    const shopSkills = wizard.getByRole('group', { name: 'Skill' })
+    expect(await shopSkills.getByRole('radio', { name: '仅选中' }).isChecked()).toBe(true)
+    expect(await shopSkills.getByRole('checkbox', { name: 'ecommerce-multi-publish' }).isChecked()).toBe(true)
+    expect(await shopSkills.getByRole('checkbox', { name: 'tmall-publish', exact: true }).isChecked()).toBe(true)
+    expect(await shopSkills.getByRole('checkbox', { name: 'pdd-publish' }).isChecked()).toBe(true)
+    expect(await shopSkills.getByRole('checkbox', { name: 'e2e-alpha' }).isChecked()).toBe(false)
+    // This deployment composes no office Skills, so those are marked gone too.
+    expect(await shopSkills.getByText('已失效').count()).toBe(ECOMMERCE_SKILLS.length - 2 + OFFICE_SKILLS.length)
+    expect(await shopSkills.getByRole('checkbox', { name: 'office-xlsx' }).isChecked()).toBe(true)
+    const shots = process.env['DSH_E2E_SHOT_DIR']
+    if (shots !== undefined && shots !== '') await page.screenshot({ path: join(shots, 'wizard-ecommerce-skills.png'), fullPage: true })
     await wizard.getByRole('button', { name: '下一步' }).click()
     await wizard.getByRole('textbox', { name: '如何称呼你' }).fill('小明 USER_NAME')
     await wizard.getByRole('textbox', { name: '补充背景' }).fill('负责名流天猫旗舰店')
@@ -215,6 +230,7 @@ it('creates the default assistant, carries its core files into the chat, and let
     await wizard.waitFor({ state: 'detached' })
     const created = (await scaffold.ctx.assistants.getState()).assistants.find(item => item.name === '名流电商管家')!
     expect(created).toMatchObject({ templateId: 'ecommerce', model: { provider: 'acme-gateway', model: 'acme-pro' }, subsets: { connectors: ['feishu'] } })
+    expect(created.subsets?.skills).toEqual(expect.arrayContaining(['tmall-publish', 'pdd-publish', 'doudian-publish', 'ecommerce-multi-publish']))
     expect(created.avatar.kind).toBe('image')
     const card = page.locator(`li[data-assistant-id="${created.id}"]`)
     await card.locator('img[src^="data:image/webp"]').waitFor()
@@ -229,6 +245,12 @@ it('creates the default assistant, carries its core files into the chat, and let
     expect(shop.model).toBe('acme-pro')
     expect(systemPrompt(shop)).toContain('天猫、拼多多、抖店')
     expect(systemPrompt(shop)).toContain('小明 USER_NAME')
+    // Its core files guide publishing, and its Skill catalog lists the installed e-commerce Skills only.
+    expect(systemPrompt(shop)).toContain('素材文件夹的路径；目标店铺')
+    expect(systemPrompt(shop)).toContain('ecommerce-multi-publish')
+    const catalog = JSON.stringify(shop.messages)
+    expect(catalog).toContain('ecommerce-multi-publish 测试用 Skill')
+    expect(catalog).not.toContain('e2e-alpha 测试用 Skill')
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
     await saveFailureShot(page, 'assistants')

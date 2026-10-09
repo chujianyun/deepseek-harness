@@ -26,6 +26,12 @@ export const SKILLS: readonly TmallSkill[] = [
   { name: 'tmall-alimama-scene-report', scripts: { 'alimama-scene-report.mjs': 'alimama-report.ts' } },
   { name: 'tmall-sycm-core-daily', scripts: { 'sycm-core-daily.mjs': 'sycm-report.ts' } },
   { name: 'tmall-item-report', scripts: { 'item-report.mjs': 'item-report.ts' } },
+  { name: 'tmall-publish-category', scripts: { 'publish-category.mjs': 'publish-category-cli.ts' } },
+  { name: 'ecommerce-product-draft', scripts: { 'product-draft.mjs': 'product-draft-cli.ts' } },
+  { name: 'tmall-publish', scripts: { 'publish.mjs': 'publish-cli.ts' } },
+  { name: 'pdd-publish', scripts: { 'pdd-publish.mjs': 'pdd-cli.ts' } },
+  { name: 'doudian-publish', scripts: { 'doudian-publish.mjs': 'doudian-cli.ts' } },
+  { name: 'ecommerce-multi-publish', scripts: { 'multi-publish.mjs': 'multi-publish-cli.ts' } },
 ]
 
 const PACKAGE = fileURLToPath(new URL('..', import.meta.url))

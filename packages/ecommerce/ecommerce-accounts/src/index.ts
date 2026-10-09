@@ -3,8 +3,11 @@
  * namespace. An account is one platform account the user signs in to in the system Google Chrome,
  * on that account's own browser data; Chrome keeps the sign-in and DSH stores no password or
  * cookie. Accounts belong to the tenant of the current Hub sign-in and live under
- * `<dshHome>/ecommerce/<tenantId>/`: `accounts.json` lists them, and `browsers/<accountId>/` holds
- * each one's browser data and the record of its running Chrome.
+ * `<dshHome>/ecommerce/<tenantId>/`: `accounts.json` lists them, `browsers/<accountId>/` holds
+ * each one's browser data and the record of its running Chrome, and `publish-memory.json` holds what
+ * the company confirmed while publishing (store information, categories of product lines, table
+ * headers, and declarations), which the model reads and extends with `dsh-ecommerce memory` and
+ * `dsh-ecommerce remember`.
  *
  * Signing in opens the platform's sign-in page in the account's Chrome. DSH watches that tab and,
  * once it leaves the sign-in page or every half minute, opens the platform's business page in a
@@ -21,7 +24,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-hub-account'
@@ -34,10 +37,12 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Bridge, SCRIPT, type BridgeReply, type Grant } from './bridge.ts'
+import { writeJsonAtomic } from './files.ts'
+import { applyUpdate, DamagedMemory, MemoryUpdate, readMemory } from './memory.ts'
 import { Cdp, closeBlankTabs, hideWindows, pageTabs, probe, showSignIn, type ProbeResult } from './cdp.ts'
 import { alive, closeChrome, ensureTab, findChrome, launchChrome, profileHolder, readRecord, type ChromeInfo } from './chrome.ts'
 import { guardBrowser, type GuardRules } from './guard.ts'
-import { PUBLIC_PAGE, specOf, type PlatformSpec } from './platforms.ts'
+import { ECOMMERCE_PLATFORMS, PUBLIC_PAGE, specOf, type PlatformSpec } from './platforms.ts'
 import { SKILL_CONTENT, SKILL_DESCRIPTION, SKILL_NAME } from './skill.ts'
 import type {
   AddEcommerceAccountInput, AddEcommerceAccountResult, ChromeView, EcommerceAccountsState, EcommerceAccountStatus, EcommerceAccountView,
@@ -112,11 +117,17 @@ export const CHROME_DOWNLOAD_URL = 'https://www.google.com/chrome/'
 /** Which platforms and kinds can be added now, as `<platform>/<kind>`. */
 const ADDABLE: ReadonlySet<string> = new Set(['tmall/merchant', 'taobao/merchant', 'pinduoduo/merchant', 'doudian/merchant', 'tmall/buyer', 'taobao/buyer'])
 
-/** The outcome of one check: the platform's answer, or the account's browser data held by another Chrome. */
-type CheckResult = ProbeResult | { readonly kind: 'busy' }
+/** What asking about an account found: the platform's answer, or its browser data held by another Chrome. */
+type AccountAnswer = ProbeResult | { readonly kind: 'busy' }
+
+/**
+ * The outcome of one check: the answer, or `gone` when the account was deleted, or the tenant
+ * switched, while the check waited its turn.
+ */
+type CheckResult = AccountAnswer | { readonly kind: 'gone' }
 
 /** The problem each failed check shows. */
-const PROBLEMS = { 'no-response': 'timeout', 'network': 'network', 'busy': 'busy' } as const satisfies Record<Exclude<CheckResult['kind'], 'signed-in' | 'signed-out'>, EcommerceCheckProblem>
+const PROBLEMS = { 'no-response': 'timeout', 'network': 'network', 'busy': 'busy' } as const satisfies Record<Exclude<AccountAnswer['kind'], 'signed-in' | 'signed-out'>, EcommerceCheckProblem>
 
 /** The variable that gives a bash call the address of the e-commerce accounts. */
 const URL_KEY = 'DSH_ECOMMERCE_URL'
@@ -137,6 +148,15 @@ const today = (): string => new Date().toLocaleDateString('sv')
 /** A refusal the command prints to stderr. */
 const refused = (message: string): BridgeReply => ({ status: 409, body: message })
 
+/**
+ * The reply for a memory file that cannot be read, which DSH leaves as it is.
+ * @param error - what reading it threw, a {@link DamagedMemory}.
+ * @returns the refusal.
+ */
+function damaged(error: unknown): BridgeReply {
+  return refused(`DSH: the publishing memory file is damaged (${(error as DamagedMemory).message}), so nothing was read or changed. Tell the user; it is publish-memory.json beside the e-commerce accounts.`)
+}
+
 /** What makes two accounts the same: platform, kind, and account name. */
 const identity = (item: Pick<EcommerceAccountView, 'platform' | 'kind' | 'account'>): string => `${item.platform}/${item.kind}/${item.account}`
 
@@ -144,7 +164,7 @@ const ledgerSchema = z.object({
   version: z.literal(1),
   accounts: z.array(z.object({
     id: z.string().min(1),
-    platform: z.enum(['tmall', 'taobao', 'pinduoduo', 'doudian']),
+    platform: z.enum(ECOMMERCE_PLATFORMS),
     kind: z.enum(['merchant', 'buyer']),
     storeName: z.string(),
     account: z.string().min(1),
@@ -195,6 +215,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
     browser: (grant, id) => this.modelBrowser(grant, id),
     buyer: (grant, platform) => this.modelBuyer(grant, platform),
     risk: (grant, id) => this.modelRisk(grant, id),
+    memory: grant => this.modelMemory(grant),
+    remember: (grant, body) => this.modelRemember(grant, body),
   })
   /** Unregisters the Skill while a tenant is signed in. */
   private skill: (() => void) | undefined
@@ -328,18 +350,22 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const entry = this.find(accountId)
     this.requireIdle(entry)
     const chrome = await this.requireChrome()
-    if (await this.heldElsewhere(entry)) {
-      throw new RemoteError('ecommerce-accounts/browser-busy', 'Another Chrome is using this account\'s browser data', { accountId })
-    }
     this.signIns.get(entry.id)?.abort()
     const controller = new AbortController()
     this.signIns.set(entry.id, controller)
+    // Every listed account has a status (see view()).
+    const before = this.statuses.get(entry.id) as EcommerceAccountStatus
     this.setStatus(entry.id, 'signing-in')
     const spec = specOf(entry.platform, entry.kind)
     let tab: string
     try {
       tab = await this.queued(entry.id, async () => {
-        const port = await this.ensureChrome(entry, chrome, false, 'about:blank')
+        // The account as it is now, after whatever waited ahead of this in its queue, such as its deletion.
+        const current = this.find(accountId)
+        if (await this.heldElsewhere(current)) {
+          throw new RemoteError('ecommerce-accounts/browser-busy', 'Another Chrome is using this account\'s browser data', { accountId })
+        }
+        const port = await this.ensureChrome(current, chrome, false, 'about:blank')
         const cdp = await Cdp.connect(port, this.options.chromeTimeoutMs)
         try {
           return await showSignIn(cdp, spec.loginUrl)
@@ -349,6 +375,11 @@ export class EcommerceAccountsService extends TypertRemoteService {
       })
     } catch (error) {
       this.signIns.delete(entry.id)
+      // Deleted, signed out of the Hub, or held by another Chrome: nothing was opened.
+      if (error instanceof RemoteError) {
+        this.setStatus(entry.id, before)
+        throw error
+      }
       this.setStatus(entry.id, 'signed-out')
       throw new RemoteError('ecommerce-accounts/browser-failed', 'Chrome could not open the sign-in page', { accountId, reason: String(error) })
     }
@@ -367,6 +398,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const entry = this.find(accountId)
     const signingIn = this.signIns.get(entry.id)
     const result = await this.check(entry)
+    if (result.kind === 'gone') return this.getState()
     if (signingIn !== undefined && result.kind === 'signed-in') {
       signingIn.abort()
       this.signIns.delete(entry.id)
@@ -509,14 +541,18 @@ export class EcommerceAccountsService extends TypertRemoteService {
    * signed-in account's Chrome is minimized. A Chrome gone since an earlier sign-in is started
    * again minimized, restoring its last session; an account never signed in starts no Chrome. A
    * check that gets no answer, cannot reach the page, or finds the browser data held by another
-   * Chrome fails with that problem and keeps the last answer.
+   * Chrome fails with that problem and keeps the last answer. The check works on the account as it is
+   * once its turn comes: one deleted, or of another tenant, while it waited is `gone`, asks nothing,
+   * and starts no Chrome.
    */
   private check(entry: Entry): Promise<CheckResult> {
     this.setStatus(entry.id, 'checking')
     return this.queued(entry.id, async () => {
-      let result: CheckResult
+      const now = this.entries.find(item => item.id === entry.id)
+      if (now === undefined) return { kind: 'gone' }
+      let result: AccountAnswer
       try {
-        result = await this.probeAccount(entry)
+        result = await this.probeAccount(now)
       } catch (error) {
         this.ctx.logger.warn(`ecommerce-accounts: checking ${entry.id} failed: ${String(error)}`)
         result = { kind: 'no-response' }
@@ -552,7 +588,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     })
   }
 
-  private async probeAccount(entry: Entry): Promise<CheckResult> {
+  private async probeAccount(entry: Entry): Promise<AccountAnswer> {
     const dir = this.dirOf(entry.id)
     const record = await readRecord(dir)
     let port = record !== undefined && await alive(record.port) ? record.port : undefined
@@ -590,6 +626,51 @@ export class EcommerceAccountsService extends TypertRemoteService {
       }
     })
     return Promise.resolve({ status: 200, body: JSON.stringify(accounts, null, 2) })
+  }
+
+  /** Answer `dsh-ecommerce memory`: the tenant's publishing memory. */
+  private async modelMemory(grant: Grant): Promise<BridgeReply> {
+    if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
+    try {
+      return { status: 200, body: JSON.stringify(await readMemory(this.memoryPath(grant.tenantId)), null, 2) }
+    } catch (error) {
+      return damaged(error)
+    }
+  }
+
+  /**
+   * Answer `dsh-ecommerce remember <file>`: merge the file's entries into the tenant's publishing memory.
+   * @returns the memory after the change, or why the file was refused.
+   */
+  private modelRemember(grant: Grant, body: string): Promise<BridgeReply> {
+    // Checked in the queue, so a switch of tenant queued ahead of this write signs the call's tenant out.
+    return this.serialized(async () => {
+      if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
+      let json: unknown
+      try {
+        json = JSON.parse(body)
+      } catch (error) {
+        return refused(`DSH: what to remember is not JSON: ${(error as Error).message}`)
+      }
+      const update = MemoryUpdate.safeParse(json)
+      if (!update.success) {
+        const problems = update.error.issues.map(issue => `${issue.path.join('.') || '(top level)'}: ${issue.message}`)
+        return refused(`DSH: nothing was remembered, the file is not as described: ${problems.join('; ')}`)
+      }
+      const path = this.memoryPath(grant.tenantId)
+      let memory
+      try {
+        memory = applyUpdate(await readMemory(path), update.data, new Date().toISOString())
+      } catch (error) {
+        return damaged(error)
+      }
+      await writeJsonAtomic(path, memory)
+      return { status: 200, body: JSON.stringify(memory, null, 2) }
+    })
+  }
+
+  private memoryPath(tenantId: string): string {
+    return join(this.root, tenantId, 'publish-memory.json')
   }
 
   /** Answer `dsh-ecommerce browser <id>`: take over that account's browser for the call. */
@@ -651,6 +732,11 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const result = await this.check(entry)
     // The tenant switched while the platform was asked: the account is not this tenant's any more.
     if (grant.tenantId !== this.tenantId) return { refusal: SIGNED_OUT_OF_HUB.slice('DSH: '.length) }
+    if (result.kind === 'gone') {
+      this.leases.delete(entry.id)
+      this.changed()
+      return { refusal: `the ${name} was deleted in DSH Settings. Tell the user and stop; do not switch to another account.` }
+    }
     if (result.kind !== 'signed-in') {
       if (lease === undefined) this.leases.delete(entry.id)
       this.changed()
@@ -769,6 +855,11 @@ export class EcommerceAccountsService extends TypertRemoteService {
     return await profileHolder(dir) !== undefined
   }
 
+  /** Whether the signed-in tenant still has the account. */
+  private listed(accountId: string): boolean {
+    return this.entries.some(item => item.id === accountId)
+  }
+
   /** Reattach to the account's running Chrome, or start one; returns its port. */
   private async ensureChrome(entry: Entry, chrome: ChromeInfo, hidden: boolean, url: string): Promise<number> {
     const dir = this.dirOf(entry.id)
@@ -862,15 +953,13 @@ export class EcommerceAccountsService extends TypertRemoteService {
   }
 
   private async saveLedger(tenantId: string): Promise<void> {
-    const path = join(this.root, tenantId, 'accounts.json')
-    await mkdir(join(this.root, tenantId), { recursive: true })
     const ledger = { version: 1, accounts: this.entries, ...this.dailyPages === undefined ? {} : { buyerDailyPages: this.dailyPages } }
-    await writeFile(`${path}.tmp`, `${JSON.stringify(ledger, null, 2)}\n`)
-    await rename(`${path}.tmp`, path)
+    await writeJsonAtomic(join(this.root, tenantId, 'accounts.json'), ledger)
   }
 
   private setStatus(accountId: string, status: EcommerceAccountStatus): void {
-    if (this.statuses.get(accountId) === status) return
+    // A deleted account keeps no status.
+    if (!this.listed(accountId) || this.statuses.get(accountId) === status) return
     this.statuses.set(accountId, status)
     this.changed()
   }
