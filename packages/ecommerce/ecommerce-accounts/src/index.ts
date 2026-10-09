@@ -117,11 +117,17 @@ export const CHROME_DOWNLOAD_URL = 'https://www.google.com/chrome/'
 /** Which platforms and kinds can be added now, as `<platform>/<kind>`. */
 const ADDABLE: ReadonlySet<string> = new Set(['tmall/merchant', 'taobao/merchant', 'pinduoduo/merchant', 'doudian/merchant', 'tmall/buyer', 'taobao/buyer'])
 
-/** The outcome of one check: the platform's answer, or the account's browser data held by another Chrome. */
-type CheckResult = ProbeResult | { readonly kind: 'busy' }
+/** What asking about an account found: the platform's answer, or its browser data held by another Chrome. */
+type AccountAnswer = ProbeResult | { readonly kind: 'busy' }
+
+/**
+ * The outcome of one check: the answer, or `gone` when the account was deleted, or the tenant
+ * switched, while the check waited its turn.
+ */
+type CheckResult = AccountAnswer | { readonly kind: 'gone' }
 
 /** The problem each failed check shows. */
-const PROBLEMS = { 'no-response': 'timeout', 'network': 'network', 'busy': 'busy' } as const satisfies Record<Exclude<CheckResult['kind'], 'signed-in' | 'signed-out'>, EcommerceCheckProblem>
+const PROBLEMS = { 'no-response': 'timeout', 'network': 'network', 'busy': 'busy' } as const satisfies Record<Exclude<AccountAnswer['kind'], 'signed-in' | 'signed-out'>, EcommerceCheckProblem>
 
 /** The variable that gives a bash call the address of the e-commerce accounts. */
 const URL_KEY = 'DSH_ECOMMERCE_URL'
@@ -344,18 +350,22 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const entry = this.find(accountId)
     this.requireIdle(entry)
     const chrome = await this.requireChrome()
-    if (await this.heldElsewhere(entry)) {
-      throw new RemoteError('ecommerce-accounts/browser-busy', 'Another Chrome is using this account\'s browser data', { accountId })
-    }
     this.signIns.get(entry.id)?.abort()
     const controller = new AbortController()
     this.signIns.set(entry.id, controller)
+    // Every listed account has a status (see view()).
+    const before = this.statuses.get(entry.id) as EcommerceAccountStatus
     this.setStatus(entry.id, 'signing-in')
     const spec = specOf(entry.platform, entry.kind)
     let tab: string
     try {
       tab = await this.queued(entry.id, async () => {
-        const port = await this.ensureChrome(entry, chrome, false, 'about:blank')
+        // The account as it is now, after whatever waited ahead of this in its queue, such as its deletion.
+        const current = this.find(accountId)
+        if (await this.heldElsewhere(current)) {
+          throw new RemoteError('ecommerce-accounts/browser-busy', 'Another Chrome is using this account\'s browser data', { accountId })
+        }
+        const port = await this.ensureChrome(current, chrome, false, 'about:blank')
         const cdp = await Cdp.connect(port, this.options.chromeTimeoutMs)
         try {
           return await showSignIn(cdp, spec.loginUrl)
@@ -365,8 +375,11 @@ export class EcommerceAccountsService extends TypertRemoteService {
       })
     } catch (error) {
       this.signIns.delete(entry.id)
-      // Deleted while the sign-in waited for it: nothing was opened.
-      if (!this.listed(entry.id)) throw new RemoteError('ecommerce-accounts/not-found', 'This account no longer exists', { accountId })
+      // Deleted, signed out of the Hub, or held by another Chrome: nothing was opened.
+      if (error instanceof RemoteError) {
+        this.setStatus(entry.id, before)
+        throw error
+      }
       this.setStatus(entry.id, 'signed-out')
       throw new RemoteError('ecommerce-accounts/browser-failed', 'Chrome could not open the sign-in page', { accountId, reason: String(error) })
     }
@@ -385,6 +398,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const entry = this.find(accountId)
     const signingIn = this.signIns.get(entry.id)
     const result = await this.check(entry)
+    if (result.kind === 'gone') return this.getState()
     if (signingIn !== undefined && result.kind === 'signed-in') {
       signingIn.abort()
       this.signIns.delete(entry.id)
@@ -527,16 +541,18 @@ export class EcommerceAccountsService extends TypertRemoteService {
    * signed-in account's Chrome is minimized. A Chrome gone since an earlier sign-in is started
    * again minimized, restoring its last session; an account never signed in starts no Chrome. A
    * check that gets no answer, cannot reach the page, or finds the browser data held by another
-   * Chrome fails with that problem and keeps the last answer. A check that waited behind the
-   * account's deletion, or a switch of tenant, asks nothing and starts no Chrome.
+   * Chrome fails with that problem and keeps the last answer. The check works on the account as it is
+   * once its turn comes: one deleted, or of another tenant, while it waited is `gone`, asks nothing,
+   * and starts no Chrome.
    */
   private check(entry: Entry): Promise<CheckResult> {
     this.setStatus(entry.id, 'checking')
     return this.queued(entry.id, async () => {
-      if (!this.listed(entry.id)) return { kind: 'signed-out' }
-      let result: CheckResult
+      const now = this.entries.find(item => item.id === entry.id)
+      if (now === undefined) return { kind: 'gone' }
+      let result: AccountAnswer
       try {
-        result = await this.probeAccount(entry)
+        result = await this.probeAccount(now)
       } catch (error) {
         this.ctx.logger.warn(`ecommerce-accounts: checking ${entry.id} failed: ${String(error)}`)
         result = { kind: 'no-response' }
@@ -572,7 +588,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     })
   }
 
-  private async probeAccount(entry: Entry): Promise<CheckResult> {
+  private async probeAccount(entry: Entry): Promise<AccountAnswer> {
     const dir = this.dirOf(entry.id)
     const record = await readRecord(dir)
     let port = record !== undefined && await alive(record.port) ? record.port : undefined
@@ -716,6 +732,11 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const result = await this.check(entry)
     // The tenant switched while the platform was asked: the account is not this tenant's any more.
     if (grant.tenantId !== this.tenantId) return { refusal: SIGNED_OUT_OF_HUB.slice('DSH: '.length) }
+    if (result.kind === 'gone') {
+      this.leases.delete(entry.id)
+      this.changed()
+      return { refusal: `the ${name} was deleted in DSH Settings. Tell the user and stop; do not switch to another account.` }
+    }
     if (result.kind !== 'signed-in') {
       if (lease === undefined) this.leases.delete(entry.id)
       this.changed()
@@ -839,12 +860,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
     return this.entries.some(item => item.id === accountId)
   }
 
-  /**
-   * Reattach to the account's running Chrome, or start one; returns its port.
-   * @throws Error when the account is no longer listed, so a deleted account's browser data is never made again.
-   */
+  /** Reattach to the account's running Chrome, or start one; returns its port. */
   private async ensureChrome(entry: Entry, chrome: ChromeInfo, hidden: boolean, url: string): Promise<number> {
-    if (!this.listed(entry.id)) throw new Error(`account ${entry.id} is no longer listed`)
     const dir = this.dirOf(entry.id)
     const record = await readRecord(dir)
     if (record !== undefined && await alive(record.port)) return record.port
