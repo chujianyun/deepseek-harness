@@ -8,7 +8,7 @@
 
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, relative, resolve, sep } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { zipSync } from 'fflate'
 import { build } from 'tsdown'
@@ -61,7 +61,7 @@ export async function packSkills(outDir: string): Promise<string[]> {
         })
       }
       const files: Record<string, Uint8Array> = {}
-      for (const path of await walk(folder)) files[zipEntryName(skill.name, relative(folder, path))] = await readFile(path)
+      for (const { path, entry } of await walk(folder, skill.name)) files[entry] = await readFile(path)
       const zip = join(out, `${skill.name}.zip`)
       await writeFile(zip, zipSync(files))
       zips.push(zip)
@@ -72,22 +72,13 @@ export async function packSkills(outDir: string): Promise<string[]> {
   return zips
 }
 
-/**
- * Name of a skill file inside its upload package: ZIP entries separate directories with `/` on every platform.
- * @param skillName - the skill folder that roots every entry.
- * @param relativePath - the file's path under that folder, as `path.relative` returns it.
- * @param separator - the platform separator `relativePath` uses.
- * @returns `<skillName>/<segments joined by '/'>`.
- */
-export function zipEntryName(skillName: string, relativePath: string, separator: string = sep): string {
-  return [skillName, ...relativePath.split(separator)].join('/')
-}
-
-async function walk(dir: string): Promise<string[]> {
-  const found: string[] = []
+/** Files under `dir`, each with its ZIP entry name: `prefix` and the folder names joined by `/` on every platform. */
+async function walk(dir: string, prefix: string): Promise<Array<{ path: string; entry: string }>> {
+  const found: Array<{ path: string; entry: string }> = []
   for (const item of await readdir(dir, { withFileTypes: true })) {
     const path = join(dir, item.name)
-    found.push(...item.isDirectory() ? await walk(path) : [path])
+    const entry = `${prefix}/${item.name}`
+    found.push(...item.isDirectory() ? await walk(path, entry) : [{ path, entry }])
   }
-  return found.sort()
+  return found.sort((a, b) => a.entry.localeCompare(b.entry))
 }

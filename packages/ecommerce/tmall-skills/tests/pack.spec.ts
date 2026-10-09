@@ -6,7 +6,7 @@ import { promisify } from 'node:util'
 import { strFromU8, unzipSync } from 'fflate'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ECOMMERCE_SKILLS } from '@deepseek-ai/dsh-assistants'
-import { packSkills, SKILLS, zipEntryName } from '../src/index.ts'
+import { packSkills, SKILLS } from '../src/index.ts'
 import { tempDir } from './support.ts'
 
 let out: string
@@ -29,16 +29,6 @@ async function runScript(path: string, args: string[], env: NodeJS.ProcessEnv = 
     return { code: failed.code, stderr: failed.stderr }
   }
 }
-
-describe('zipEntryName', () => {
-  it('joins Windows path segments with forward slashes', () => {
-    expect(zipEntryName('tmall-item-report', 'scripts\\item-report.mjs', '\\')).toBe('tmall-item-report/scripts/item-report.mjs')
-  })
-
-  it('keeps POSIX relative paths unchanged', () => {
-    expect(zipEntryName('tmall-item-report', 'scripts/item-report.mjs', '/')).toBe('tmall-item-report/scripts/item-report.mjs')
-  })
-})
 
 describe('packSkills', () => {
   it('builds every Skill the e-commerce manager template starts with', () => {
