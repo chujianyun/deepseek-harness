@@ -34,7 +34,7 @@ Chrome 的生命周期长于 DSH。之后启动的 DSH 会重新连上记录中�
 
 ## 发品
 
-[`@deepseek-ai/dsh-tmall-skills`](../../packages/ecommerce/tmall-skills/README.zh.md) 里的发品技能把新品存进店铺，但不上架：`ecommerce-product-draft` 把任意结构的素材文件夹整理成商品草稿；`tmall-publish` 存进天猫仓库，`pdd-publish` 存进拼多多草稿箱，`doudian-publish` 以「下架」状态存进抖店草稿箱，各自用店铺的商家账号实时读取类目和表单；`ecommerce-multi-publish` 把一份素材一家一家发到多个店铺，并汇总每家店的结果。每家店的草稿只有在用户于该店的确认卡片里认可后才保存；店铺资料、列名对应、已确认的声明以及产品线在各平台的类目按公司记住。保存前先查店里，同一商品不会存两次；保存失败或结果不明时不重试。电商管家[智能体模板](assistants.zh.md)预选这些技能，并会先问清素材文件夹和目标店铺。已知限制：暂不支持淘宝店；不直接上架、不修改在售商品；每个表单只填一种销售属性、详情只有图片；页面接口会随平台改版而变。各技能的限制见[包 README](../../packages/ecommerce/tmall-skills/README.zh.md#known-limitations-and-deferred-work)。
+[`@deepseek-ai/dsh-tmall-skills`](../../packages/ecommerce/tmall-skills/README.zh.md) 里的发品技能把新品存进店铺，但不上架：`ecommerce-product-draft` 把任意结构的素材文件夹整理成商品草稿；`tmall-publish` 存进天猫仓库，`pdd-publish` 存进拼多多草稿箱，`doudian-publish` 以「下架」状态存进抖店草稿箱，各自用店铺的商家账号实时读取类目和表单；`ecommerce-multi-publish` 把一份素材一家一家发到多个店铺，并汇总每家店的结果。每家店的草稿只有在用户于该店的确认卡片里认可后才保存；店铺资料、列名对应、已确认的声明以及产品线在各平台的类目按公司记住。保存前先查店里，同一商品不会存两次；保存失败或结果不明时不重试。电商管家[智能体模板](assistants.zh.md)预选这些技能和办公文档技能，并会先问清素材文件夹和目标店铺。已知限制：暂不支持淘宝店；不直接上架、不修改在售商品；每个表单只填一种销售属性、详情只有图片；页面接口会随平台改版而变。各技能的限制见[包 README](../../packages/ecommerce/tmall-skills/README.zh.md#known-limitations-and-deferred-work)。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

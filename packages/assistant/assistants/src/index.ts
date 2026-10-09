@@ -48,7 +48,7 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
-export { BLANK_FILES, CORE_FILE_NAMES, DAILY_ASSISTANT, ECOMMERCE_MANAGER, ECOMMERCE_SKILLS, TEMPLATES, type AssistantTemplate, type CoreFiles } from './templates.ts'
+export { BLANK_FILES, CORE_FILE_NAMES, DAILY_ASSISTANT, ECOMMERCE_MANAGER, ECOMMERCE_SKILLS, OFFICE_SKILLS, TEMPLATES, type AssistantTemplate, type CoreFiles } from './templates.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

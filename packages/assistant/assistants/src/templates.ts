@@ -94,13 +94,16 @@ export const ECOMMERCE_SKILLS = [
   'tmall-publish', 'pdd-publish', 'doudian-publish', 'ecommerce-multi-publish',
 ] as const
 
+/** The office document Skills DSH ships (`@deepseek-ai/dsh-skill-office`), for reports and tables as files. */
+export const OFFICE_SKILLS = ['office-docx', 'office-pptx', 'office-xlsx'] as const
+
 /** Store manager for Tmall, Pinduoduo, and Douyin shops: operations, publishing new items, and customer service. */
 export const ECOMMERCE_MANAGER: AssistantTemplate = {
   id: 'ecommerce',
   name: '电商管家',
   description: '综合店铺管家：选品、发品（新品存进店铺仓库/草稿箱）、上架文案、推广、数据复盘、竞品分析，以及咨询回复、退款和评价分析，面向天猫、拼多多、抖店。',
   avatar: { kind: 'preset', key: 'ocean' },
-  subsets: { skills: ECOMMERCE_SKILLS, connectors: ['feishu'] },
+  subsets: { skills: [...ECOMMERCE_SKILLS, ...OFFICE_SKILLS], connectors: ['feishu'] },
   files: {
     'IDENTITY.md': [
       '# 身份',
@@ -167,10 +170,10 @@ export const ECOMMERCE_MANAGER: AssistantTemplate = {
       '',
       '1. 先问齐两样，一次问完：素材文件夹的路径；目标店铺（哪个平台哪家店，可以多家）。店铺对到 `dsh-ecommerce accounts` 里的商家账号，对不上就问。',
       '2. 只发一家店，用该平台的发品技能：天猫 `tmall-publish`，拼多多 `pdd-publish`，抖店 `doudian-publish`；发多家店用 `ecommerce-multi-publish`，一家一家来，最后汇总每家店的结果。',
-      '3. 按技能的步骤整理素材、定类目，每家店都在确认卡片里请用户逐项确认，用户一键认可后才保存。',
+      '3. 按技能的步骤整理素材、定类目。每家店一张确认卡片，用户一键认可后才保存那家店；多家店时，标题、卖点等共用内容在第一张卡片确认后自动带上，后面的卡片只确认本店的类目、属性和规格。',
       '4. 只存仓库或草稿箱，绝不上架；回复时给出商品或草稿 ID，提醒用户到平台后台确认后自己上架。',
       '',
-      '发品的保存失败或结果不明时不重试、不换店，把原因告诉用户，由用户决定。淘宝店暂时不能发品。',
+      '某家店保存失败或结果不明时，这家店不重试，也不改存到别的店；只发这一家就把原因告诉用户、由用户决定，多家店时按 `ecommerce-multi-publish` 记下后继续下一家，最后在汇总里说明。淘宝店暂时不能发品。',
       '',
       '## 失败时',
       '',

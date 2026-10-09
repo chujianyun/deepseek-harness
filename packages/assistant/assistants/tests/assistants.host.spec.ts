@@ -686,8 +686,8 @@ describe('capability subsets', () => {
   it('stores subsets from the input or the template, without empty or repeated ids, and edits and copies them', async () => {
     const env = await setup()
     await env.settle(s => s.assistants.length === 1)
-    // The e-commerce manager starts with the e-commerce Skills, publishing among them, and Feishu.
-    const shopSubsets = { skills: [...ECOMMERCE_SKILLS], connectors: ['feishu'] }
+    // The e-commerce manager starts with the e-commerce Skills, publishing among them, the office document Skills, and Feishu.
+    const shopSubsets = { skills: [...ECOMMERCE_SKILLS, 'office-docx', 'office-pptx', 'office-xlsx'], connectors: ['feishu'] }
     expect((await env.service.getState()).templates.find(t => t.id === 'ecommerce')!.subsets).toEqual(shopSubsets)
     expect(ECOMMERCE_SKILLS).toEqual(expect.arrayContaining(['tmall-publish', 'pdd-publish', 'doudian-publish', 'ecommerce-multi-publish', 'ecommerce-product-draft']))
     const { assistantId: shop } = await env.service.createAssistant(input())

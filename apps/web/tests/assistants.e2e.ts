@@ -20,7 +20,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { expect, it } from 'vitest'
-import type {} from '@deepseek-ai/dsh-assistants'
+import { ECOMMERCE_SKILLS, OFFICE_SKILLS } from '@deepseek-ai/dsh-assistants'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-hub-account'
 import { browse, startMockUserCenter } from '../../../packages/credentials/hub-account/tests/mock-user-center.ts'
@@ -218,7 +218,9 @@ it('creates the default assistant, carries its core files into the chat, and let
     expect(await shopSkills.getByRole('checkbox', { name: 'tmall-publish', exact: true }).isChecked()).toBe(true)
     expect(await shopSkills.getByRole('checkbox', { name: 'pdd-publish' }).isChecked()).toBe(true)
     expect(await shopSkills.getByRole('checkbox', { name: 'e2e-alpha' }).isChecked()).toBe(false)
-    expect(await shopSkills.getByText('已失效').count()).toBe(7)
+    // This deployment composes no office Skills, so those are marked gone too.
+    expect(await shopSkills.getByText('已失效').count()).toBe(ECOMMERCE_SKILLS.length - 2 + OFFICE_SKILLS.length)
+    expect(await shopSkills.getByRole('checkbox', { name: 'office-xlsx' }).isChecked()).toBe(true)
     const shots = process.env['DSH_E2E_SHOT_DIR']
     if (shots !== undefined && shots !== '') await page.screenshot({ path: join(shots, 'wizard-ecommerce-skills.png'), fullPage: true })
     await wizard.getByRole('button', { name: '下一步' }).click()
