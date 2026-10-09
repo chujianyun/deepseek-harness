@@ -25,7 +25,7 @@ The ecommerce family links Desktop to the e-commerce platforms a company sells o
 | Package | Role | ctx key |
 |---|---|---|
 | [`ecommerce-accounts/`](ecommerce-accounts/README.md) | The tenant's e-commerce accounts and their Chrome sign-ins, over the `ecommerceAccounts` Remote | `ctx.ecommerceAccounts` |
-| [`tmall-skills/`](tmall-skills/README.md) | Tmall skills (merchant reports, publish categories and field rules, the buyer item report, and product drafts from material folders) uploaded to the Skill Hub for the tenants that need them, and their packaging | — |
+| [`tmall-skills/`](tmall-skills/README.md) | Tmall skills (merchant reports, publish categories and field rules, the buyer item report, product drafts from material folders, and publishing them to Tmall warehouses and Pinduoduo and Douyin shop 草稿箱, one store or several) uploaded to the Skill Hub for the tenants that need them, and their packaging | — |
 
 -----
 

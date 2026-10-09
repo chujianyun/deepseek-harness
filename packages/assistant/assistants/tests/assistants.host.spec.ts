@@ -14,7 +14,8 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import AssistantsService, {
-  ASSISTANT_SECTION, assistantProjectionDefinition, CORE_FILES_WITHDRAWN, ECOMMERCE_MANAGER, renderInstructions, renderUser, withName,
+  ASSISTANT_SECTION, assistantProjectionDefinition, CORE_FILES_WITHDRAWN, ECOMMERCE_MANAGER, ECOMMERCE_SKILLS, renderInstructions,
+  renderUser, withName,
 } from '../src/index.ts'
 import type { CreateAssistantInput } from '../src/types.ts'
 import { hubStub } from '../../../connector/connectors/tests/support.ts'
@@ -685,13 +686,16 @@ describe('capability subsets', () => {
   it('stores subsets from the input or the template, without empty or repeated ids, and edits and copies them', async () => {
     const env = await setup()
     await env.settle(s => s.assistants.length === 1)
-    expect((await env.service.getState()).templates.find(t => t.id === 'ecommerce')!.subsets).toEqual({ connectors: ['feishu'] })
+    // The e-commerce manager starts with the e-commerce Skills, publishing among them, and Feishu.
+    const shopSubsets = { skills: [...ECOMMERCE_SKILLS], connectors: ['feishu'] }
+    expect((await env.service.getState()).templates.find(t => t.id === 'ecommerce')!.subsets).toEqual(shopSubsets)
+    expect(ECOMMERCE_SKILLS).toEqual(expect.arrayContaining(['tmall-publish', 'pdd-publish', 'doudian-publish', 'ecommerce-multi-publish', 'ecommerce-product-draft']))
     const { assistantId: shop } = await env.service.createAssistant(input())
     const { assistantId: chosen } = await env.service.createAssistant(input({ subsets: { skills: ['a', 'a', ''], knowledgeBases: [] } }))
     const { assistantId: blank } = await env.service.createAssistant(input({ templateId: null, name: '空白' }))
     let state = await env.service.getState()
     const view = (id: string) => state.assistants.find(item => item.id === id)!
-    expect(view(shop).subsets).toEqual({ connectors: ['feishu'] })
+    expect(view(shop).subsets).toEqual(shopSubsets)
     expect(view(chosen).subsets).toEqual({ skills: ['a'], knowledgeBases: [] })
     expect(view(blank)).not.toHaveProperty('subsets')
     const again = await setup({ home: env.home })

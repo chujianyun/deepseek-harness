@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { strFromU8, unzipSync } from 'fflate'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { ECOMMERCE_SKILLS } from '../../../assistant/assistants/src/templates.ts'
 import { packSkills, SKILLS } from '../src/index.ts'
 import { tempDir } from './support.ts'
 
@@ -30,6 +31,10 @@ async function runScript(path: string, args: string[], env: NodeJS.ProcessEnv = 
 }
 
 describe('packSkills', () => {
+  it('builds exactly the Skills the e-commerce manager template starts with', () => {
+    expect(SKILLS.map(skill => skill.name).sort()).toEqual([...ECOMMERCE_SKILLS].sort())
+  })
+
   it('zips each skill as <name>/SKILL.md with its self-contained scripts', async () => {
     expect(zips).toEqual(SKILLS.map(skill => join(out, `${skill.name}.zip`)))
     for (const skill of SKILLS) {

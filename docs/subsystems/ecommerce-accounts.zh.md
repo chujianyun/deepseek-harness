@@ -32,6 +32,10 @@ Chrome 的生命周期长于 DSH。之后启动的 DSH 会重新连上记录中�
 
 使用这些账号的技能不随 DSH 发布：[`@deepseek-ai/dsh-tmall-skills`](../../packages/ecommerce/tmall-skills/README.zh.md) 把 `tmall-alimama-scene-report`（万相台某一天各营销场景的数据）和 `tmall-sycm-core-daily`（生意参谋「店铺经营核心日报」，并把其中的推广花费与万相台核对）打成 Skill Hub 上传包，由租户管理员只发布给本租户。每个技能的脚本用 `dsh-ecommerce browser` 接管天猫商家账号，调用平台页面自己调用的接口，并用 `load_workspace_dependencies` 返回的 Node 运行；平台还没算完当天数据时不写任何文件。第三个技能 `tmall-item-report` 改用 `dsh-ecommerce buyer`：用 DSH 挑选的买家号为每个商品打开 1 个公开商品页，通过页面自己的接口读取商品、问大家和评价，遇到第一次风控或买家号当天页数用完就停止，并保留此前读到的全部内容。通过平台接口遇到的风控不会加载页面，脚本用 `dsh-ecommerce risk <id>` 报告，让本次 bash 调用接管的买家号休息。第四个技能 `tmall-publish-category` 只读地接管商家账号，找出新品该放的类目并读取该类目发布表单的字段。第五个技能 `ecommerce-product-draft` 不用账号：把任意结构的素材文件夹整理成商品草稿，并按这些字段规则检查。第六个技能 `tmall-publish` 会写入：用户在确认卡片里认可草稿后，它接管商家账号，把图片传到店铺图片空间，通过发布页自己的请求方法把商品存进仓库，绝不上架；保存前先查仓库，同一商品不会存两次。第七个技能 `pdd-publish` 对拼多多商家账号做同样的事：定类目、读字段规则供整理草稿，并带上商家后台页面自己的风控参数，把用户确认的草稿存进店铺草稿箱，不提交发布。第八个技能 `doudian-publish` 对抖店做同样的事：资质从店铺资质库里选，通过发品页自己的保存草稿以「下架」状态存进草稿箱。第九个技能 `ecommerce-multi-publish` 自己不用账号：它为一份素材发到多个这样的店铺建计划，一家一家交给模型处理、每家一张确认卡片，把用户在第一张卡片认可的内容带到后面的草稿，失败的店不再交出，并从各发品技能的记录汇总每家店的结果。
 
+## 发品
+
+[`@deepseek-ai/dsh-tmall-skills`](../../packages/ecommerce/tmall-skills/README.zh.md) 里的发品技能把新品存进店铺，但不上架：`ecommerce-product-draft` 把任意结构的素材文件夹整理成商品草稿；`tmall-publish` 存进天猫仓库，`pdd-publish` 存进拼多多草稿箱，`doudian-publish` 以「下架」状态存进抖店草稿箱，各自用店铺的商家账号实时读取类目和表单；`ecommerce-multi-publish` 把一份素材一家一家发到多个店铺，并汇总每家店的结果。每家店的草稿只有在用户于该店的确认卡片里认可后才保存；店铺资料、列名对应、已确认的声明以及产品线在各平台的类目按公司记住。保存前先查店里，同一商品不会存两次；保存失败或结果不明时不重试。电商管家[智能体模板](assistants.zh.md)预选这些技能，并会先问清素材文件夹和目标店铺。已知限制：暂不支持淘宝店；不直接上架、不修改在售商品；每个表单只填一种销售属性、详情只有图片；页面接口会随平台改版而变。各技能的限制见[包 README](../../packages/ecommerce/tmall-skills/README.zh.md#known-limitations-and-deferred-work)。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
