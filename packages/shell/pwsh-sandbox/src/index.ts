@@ -49,6 +49,10 @@ export type Config = LocalConfig
  * renders.
  */
 /* jscpd:ignore-start -- deliberate call-for-call mirror of bash-sandbox's executor (pwsh-tool-and-executor Agent Note) */
+
+/** STATUS_DLL_INIT_FAILED: Windows could not initialize the confined process, so its command did not run. */
+const STATUS_DLL_INIT_FAILED = 0xC0000142
+
 export class SandboxPwshExecutor extends PwshLocalExecutor {
   static override inject = ['subprocess', 'sandbox', 'sandboxPolicy']
 
@@ -177,6 +181,10 @@ export class SandboxPwshExecutor extends PwshLocalExecutor {
         denied: !runnerFailed && matchesSignature(proc.exitCode, stderr, facts.denialSignatures),
         enforcement: facts.enforcement,
         ...(runnerFailed ? { runnerFailed } : {}),
+      }
+      // The windows-acl runner already started this command a second time; keep the facts for whoever investigates.
+      if (proc.exitCode === STATUS_DLL_INIT_FAILED) {
+        this.ctx.logger.warn(`pwsh-sandbox: confined PowerShell failed to start twice (0xC0000142) mode=${facts.mode} workdir=${facts.workdir}`)
       }
     }
     super.onProcessDone(proc, stderr, providerRejected, providerError)

@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
@@ -120,5 +120,28 @@ describe.skipIf(!isWin32 || !pwshAvailable())('pwsh-sandbox real ACL confinement
     expect(privateTemp?.startsWith(tmpdir())).toBe(true)
     expect(existsSync(privateTemp ?? '')).toBe(false)
     expect(result.sandbox).toEqual({ mode: 'workspace-write', denied: false, enforcement: 'partial' })
+  }, 60_000)
+
+  it('starts a command once more when Windows could not initialize it (0xC0000142), and explains a second failure', async () => {
+    const policy: SandboxExecutionPolicy = { mode: 'workspace-write', workspaceRoot: writableDir }
+    // `exit -1073741502` ends PowerShell with 0xC0000142, as a process that failed DLL initialization does.
+    const marker = join(writableDir, 'dll-init-once.txt')
+    const once = await run(executor, executor.resolve({
+      command: `if (Test-Path '${marker}') { 'SECOND-START' } else { New-Item -ItemType File '${marker}' | Out-Null; exit -1073741502 }`,
+      sandboxPolicy: policy,
+    }))
+    expect(once.exitCode, `stderr: ${once.stderr.text}`).toBe(0)
+    expect(once.stdout.text).toContain('SECOND-START')
+
+    const warn = vi.spyOn(executor.ctx.logger, 'warn')
+    try {
+      const twice = await run(executor, executor.resolve({ command: 'exit -1073741502', sandboxPolicy: policy }))
+      expect(twice.exitCode).toBe(0xC0000142)
+      expect(twice.stderr.text).toContain('windows-acl-run: the confined process failed to start twice (0xC0000142, STATUS_DLL_INIT_FAILED); the command did not run.')
+      expect(twice.sandbox).toEqual({ mode: 'workspace-write', denied: false, enforcement: 'partial' })
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('confined PowerShell failed to start twice (0xC0000142) mode=workspace-write'))
+    } finally {
+      warn.mockRestore()
+    }
   }, 60_000)
 })
