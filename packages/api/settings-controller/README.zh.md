@@ -1,5 +1,5 @@
 ---
-description: "settings 与凭据配置界面的 Host Remote owner，涵盖脱敏读取、写入、凭据引用与原生文档打开。"
+description: "settings 与凭据配置界面的 Host Remote owner，涵盖脱敏读取、写入、凭据引用、账号登录与原生文档打开。"
 kind: "package-reference"
 ---
 # Settings Controller
@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-api-settings-controller` 为浏览器配置界面提供生成的 `ctx.remote.settings` 与 `ctx.remote.credentials` namespace。它返回脱敏的 settings 与凭据元数据，支持 settings 与凭据写入而不返回机密值，并在 Host 桌面打开由提供方持有的 settings 或 Agent preset 位置。提供方缺失时，namespace 仍会注册，并返回可操作的配置错误。
+`@deepseek-ai/dsh-api-settings-controller` 为浏览器配置界面提供生成的 `ctx.remote.settings`、`ctx.remote.credentials` 与 `ctx.remote.authorization` namespace。它返回脱敏的 settings 与凭据元数据，支持 settings 与凭据写入而不返回机密值，把账号登录流程一直运行到凭据存储完成，并在 Host 桌面打开由提供方持有的 settings 或 Agent preset 位置。提供方缺失时，namespace 仍会注册，并返回可操作的配置错误。
 
 ## 目录
 
@@ -23,9 +23,11 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-请把本包作为 Loader entry 挂载到提供浏览器配置的 profile 中。本 entry 不依赖提供方是否存在而注册两个 namespace，因此缺少提供方会在调用时产生具名配置错误。它生成的 descriptor 进入严格 Typert 注册表，而 settings 与凭据 Definition 仍是普通 Cordis 服务，自身不承担任何 wire 义务。
+请把本包作为 Loader entry 挂载到提供浏览器配置的 profile 中。本 entry 不依赖提供方是否存在而注册全部三个 namespace，因此缺少提供方会在调用时产生具名配置错误。它生成的 descriptor 进入严格 Typert 注册表，而 settings 与凭据 Definition 仍是普通 Cordis 服务，自身不承担任何 wire 义务。
 
 `describe(refs)` 以请求的名字为键返回一份 map，因此设置页描述其各行携带的全部引用时，这些行会一起落定。单次调用最多接受 64 个名字，无效名字或空写入值报告为 `bad-request`，并逐字段复制每个答案——提供方返回超出 `CredentialInfo` 声明的内容也无法扩大跨越 wire 的字段。有效的 `set(ref, value)` 与 `unset(ref)` 调用把提供方拒绝报告为 `credential-rejected`，携带提供方的消息，details 中只有该引用。机密值只在这个方向跨越 wire：这里没有任何方法会返回它。
+
+`authorization.list()` 描述注册在 `ctx.authorization` 上的每个 flow：凭据记录键、标签、登录方法、是否已存储凭据，以及从这里发起的最近一次尝试。`begin(key, method?)` 发起一次尝试，或返回该键正在运行的尝试，因此两个打开的页面共享同一次尝试；没有 flow 认领的键、flow 不提供的方法、与正在运行的尝试不同的方法，或另一个界面正在运行的尝试，都以 `authorization-rejected` 拒绝，格式错误的参数以 `bad-request` 拒绝。尝试保留 flow 的 notice（需要打开的页面与设备码）和尚未回答的问题；`answer(attemptId, promptId, value)` 与 `decline(attemptId, promptId)` 了结一个问题，`cancel(attemptId)` 撤回尝试，已失效的尝试或问题以 `authorization-not-found` 拒绝。失败的尝试只显示固定文案：flow 自身的错误可能引用令牌服务器的响应，因此只有内嵌 JSON 之前的文字会写入 Host 日志。`signOut(key)` 取消正在运行的尝试并等待它结束——已在提交中的尝试会完成写入——然后删除已存储的记录。`watch()` 先推送每个 flow 的当前视图，之后每次变化再推送；答案（包括 `secret` 答案）永远不会出现在视图中。
 
 `settings.describe()` 返回部署信息，以及在 `redactSecrets: true` 下读取的所有 namespace。`settings.update`、`settings.replace` 与 `settings.mutate` 暴露 settings 服务的三种写入操作，并返回该 namespace 的新脱敏视图；陈旧写入使用 `settings-conflict`，其他提供方拒绝使用 `settings-rejected`。
 
@@ -46,7 +48,7 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-无，因为 settings 与凭据配置属于浏览器和 Host 状态，并且不注册提示词、工具或会话事件。
+无，因为 settings、凭据与登录配置属于浏览器和 Host 状态，并且不注册提示词、工具或会话事件。
 
 #### KV Cache 影响
 
@@ -57,6 +59,8 @@ kind: "package-reference"
 <a id="known-limitations-and-deferred-work"></a>
 
 - 批量上限固定为 64 个引用，不是可按部署配置的字段。
+- 每次尝试保留最近 20 条 notice；该上限与批量上限一样是固定值。
+- 登录尝试只存在于 Host 进程中：重启 Host 会放弃它；`watch()` 打开后才注册的 flow 要等下一次变化才会出现。
 
 <a id="dev-note"></a>
 ### 开发备注

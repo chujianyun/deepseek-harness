@@ -134,6 +134,74 @@ async begin(request: AuthorizationRequest): Promise<AuthorizationOutcome>
 
 Source: [`packages/credentials/authorization/src/index.ts`](../../packages/credentials/authorization/src/index.ts)
 
+<a id="ctxauthorizationcontroller--authorizationcontroller"></a>
+
+### `ctx.authorizationController` — `AuthorizationController`
+
+Host service backing the generated `ctx.remote.authorization` namespace. It starts one attempt per credential at a time; a second `begin` for the same credential returns the running attempt, so two open pages share it. Answers cross in one direction only: no view carries what a `secret` prompt received.
+
+```ts cordis-catalog
+/**
+ * Describe every credential a sign-in can be started for.
+ * @returns one view per registered flow, in registration order.
+ * @throws RemoteError when no authorization or credential service is mounted.
+ */
+@Remote async list(): Promise<AuthorizationFlowView[]>
+
+/**
+ * Start signing in to one credential, or join the attempt already running for it.
+ * @param key - credential record key (`<scope>/<id>`) the flow writes.
+ * @param method - flow method to run; the flow's first method when omitted.
+ * @returns the flow's view with the attempt.
+ * @throws RemoteError `authorization/rejected` when no flow claims the key or it offers no such method.
+ */
+@Remote async begin(key: string, method?: string): Promise<AuthorizationFlowView>
+
+/**
+ * Answer one question a running attempt is waiting on.
+ * @param attemptId - the attempt asking.
+ * @param promptId - the question.
+ * @param answer - typed text, a secret, or the chosen option's id.
+ * @throws RemoteError `authorization/not-found` when the attempt or question is no longer waiting.
+ */
+@Remote answer(attemptId: AuthorizationAttemptId, promptId: AuthorizationPromptId, answer: string): void
+
+/**
+ * Decline one question; the flow treats it as the human saying no.
+ * @param attemptId - the attempt asking.
+ * @param promptId - the question.
+ * @throws RemoteError `authorization/not-found` when the attempt or question is no longer waiting.
+ */
+@Remote decline(attemptId: AuthorizationAttemptId, promptId: AuthorizationPromptId): void
+
+/**
+ * Cancel a running attempt. Cancelling one that already finished does nothing.
+ * @param attemptId - the attempt to cancel.
+ * @throws RemoteError `authorization/not-found` when this namespace never started that attempt.
+ */
+@Remote cancel(attemptId: AuthorizationAttemptId): void
+
+/**
+ * Forget the stored credential for one key. A running attempt is cancelled
+ * and awaited first: one already committing finishes its write, which the
+ * deletion then removes.
+ * @param key - credential record key whose flow is registered.
+ * @returns the flow's view after sign-out.
+ * @throws RemoteError `authorization/rejected` when no flow claims the key.
+ */
+@Remote async signOut(key: string): Promise<AuthorizationFlowView>
+
+/**
+ * Stream every flow's view: the current views, then again after each change.
+ * A flow registered while watching appears with the next change.
+ * @param signal - stream lifetime.
+ * @returns the views, re-read after every change.
+ */
+@Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<AuthorizationFlowView[]>
+```
+
+Source: [`packages/api/settings-controller/src/authorization.ts`](../../packages/api/settings-controller/src/authorization.ts)
+
 <a id="ctxcredentials--credentialprovider-abstract-seam"></a>
 
 ### `ctx.credentials` — `CredentialProvider` (abstract seam)

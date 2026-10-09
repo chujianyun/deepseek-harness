@@ -1249,6 +1249,22 @@ describe('configurable-provider directory', () => {
       settingsNs: 'llm-pi-ai',
       settingsPath: ['providers', 'openai-codex'],
       declared: false,
+      signIn: { key: 'llm-pi-ai/openai-codex', method: 'oauth', acceptsApiKey: false },
     })
+  })
+
+  it('declares which routes sign in to an account, and whether they also take a key', async () => {
+    const server = await mockServer([])
+    const ctx = await harness(gateway(`${server.url}/v1`))
+    const signIn = (provider: string) =>
+      ctx.llm.listConfigurableProviders().find(entry => entry.provider === provider)?.signIn
+
+    // Codex has no api-key method, so signing in is the only way in.
+    expect(signIn('openai-codex')).toEqual({ key: 'llm-pi-ai/openai-codex', method: 'oauth', acceptsApiKey: false })
+    // Anthropic offers a subscription sign-in beside its API key.
+    expect(signIn('anthropic')).toEqual({ key: 'llm-pi-ai/anthropic', method: 'oauth', acceptsApiKey: true })
+    // OpenAI's only login is the interactive key prompt, and a declared gateway has no catalog provider.
+    expect(signIn('openai')).toBeUndefined()
+    expect(signIn('acme-gateway')).toBeUndefined()
   })
 })

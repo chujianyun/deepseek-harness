@@ -629,6 +629,58 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'authorizationController',
+    summary: 'Host service backing the generated `ctx.remote.authorization` namespace.',
+    description: 'Host service backing the generated `ctx.remote.authorization` namespace. It starts one attempt per credential at a time; a second `begin` for the same credential returns the running attempt, so two open pages share it. Answers cross in one direction only: no view carries what a `secret` prompt received.',
+    methods: [
+      {
+        signature: '@Remote async list(): Promise<AuthorizationFlowView[]>',
+        description: 'Describe every credential a sign-in can be started for.',
+        parameters: [],
+        returns: 'one view per registered flow, in registration order.',
+        throws: ['RemoteError when no authorization or credential service is mounted.'],
+      },
+      {
+        signature: '@Remote async begin(key: string, method?: string): Promise<AuthorizationFlowView>',
+        description: 'Start signing in to one credential, or join the attempt already running for it.',
+        parameters: [{ name: 'key', description: 'credential record key (`<scope>/<id>`) the flow writes.' }, { name: 'method', description: 'flow method to run; the flow\'s first method when omitted.' }],
+        returns: 'the flow\'s view with the attempt.',
+        throws: ['RemoteError `authorization/rejected` when no flow claims the key or it offers no such method.'],
+      },
+      {
+        signature: '@Remote answer(attemptId: AuthorizationAttemptId, promptId: AuthorizationPromptId, answer: string): void',
+        description: 'Answer one question a running attempt is waiting on.',
+        parameters: [{ name: 'attemptId', description: 'the attempt asking.' }, { name: 'promptId', description: 'the question.' }, { name: 'answer', description: 'typed text, a secret, or the chosen option\'s id.' }],
+        throws: ['RemoteError `authorization/not-found` when the attempt or question is no longer waiting.'],
+      },
+      {
+        signature: '@Remote decline(attemptId: AuthorizationAttemptId, promptId: AuthorizationPromptId): void',
+        description: 'Decline one question; the flow treats it as the human saying no.',
+        parameters: [{ name: 'attemptId', description: 'the attempt asking.' }, { name: 'promptId', description: 'the question.' }],
+        throws: ['RemoteError `authorization/not-found` when the attempt or question is no longer waiting.'],
+      },
+      {
+        signature: '@Remote cancel(attemptId: AuthorizationAttemptId): void',
+        description: 'Cancel a running attempt. Cancelling one that already finished does nothing.',
+        parameters: [{ name: 'attemptId', description: 'the attempt to cancel.' }],
+        throws: ['RemoteError `authorization/not-found` when this namespace never started that attempt.'],
+      },
+      {
+        signature: '@Remote async signOut(key: string): Promise<AuthorizationFlowView>',
+        description: 'Forget the stored credential for one key. A running attempt is cancelled and awaited first: one already committing finishes its write, which the deletion then removes.',
+        parameters: [{ name: 'key', description: 'credential record key whose flow is registered.' }],
+        returns: 'the flow\'s view after sign-out.',
+        throws: ['RemoteError `authorization/rejected` when no flow claims the key.'],
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<AuthorizationFlowView[]>',
+        description: 'Stream every flow\'s view: the current views, then again after each change. A flow registered while watching appears with the next change.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the views, re-read after every change.',
+      },
+    ],
+  },
+  {
     key: 'browserUse',
     summary: 'Owns one optional provider registration in the shared browser-use service.',
     description: 'Owns one optional provider registration in the shared browser-use service.',
@@ -5457,12 +5509,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
   },
   {
+    name: 'AuthorizationAttemptId',
+    declaration: 'export type AuthorizationAttemptId = Branded<\'AuthorizationAttemptId\'>;',
+  },
+  {
+    name: 'AuthorizationAttemptPhase',
+    declaration: 'export type AuthorizationAttemptPhase = \'running\' | \'authorized\' | \'cancelled\' | \'failed\';',
+  },
+  {
+    name: 'AuthorizationAttemptView',
+    declaration: 'export interface AuthorizationAttemptView {\n    readonly id: AuthorizationAttemptId;\n    readonly method: string;\n    readonly phase: AuthorizationAttemptPhase;\n    readonly notices: readonly AuthorizationNotice[];\n    readonly prompts: readonly AuthorizationPromptView[];\n    readonly error?: string;\n}',
+  },
+  {
     name: 'AuthorizationEntry',
     declaration: 'export interface AuthorizationEntry {\n    key: CredentialKey;\n    label: string;\n    methods: readonly AuthorizationMethod[];\n    inFlight: boolean;\n}',
   },
   {
     name: 'AuthorizationFlow',
     declaration: 'export interface AuthorizationFlow {\n    readonly key: CredentialKey;\n    readonly label: string;\n    readonly methods: readonly [\n        AuthorizationMethod,\n        ...AuthorizationMethod[]\n    ];\n    run(session: AuthorizationSession): Promise<void>;\n}',
+  },
+  {
+    name: 'AuthorizationFlowView',
+    declaration: 'export interface AuthorizationFlowView {\n    readonly key: string;\n    readonly label: string;\n    readonly methods: readonly AuthorizationMethod[];\n    readonly signedIn: boolean;\n    readonly attempt: AuthorizationAttemptView | null;\n}',
   },
   {
     name: 'AuthorizationInteraction',
@@ -5485,8 +5553,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AuthorizationPrompt = {\n    signal?: AbortSignal;\n} & ({\n    kind: \'text\';\n    message: string;\n    placeholder?: string;\n} | {\n    kind: \'secret\';\n    message: string;\n    placeholder?: string;\n} | {\n    kind: \'select\';\n    message: string;\n    options: readonly AuthorizationPromptOption[];\n});',
   },
   {
+    name: 'AuthorizationPromptId',
+    declaration: 'export type AuthorizationPromptId = Branded<\'AuthorizationPromptId\'>;',
+  },
+  {
     name: 'AuthorizationPromptOption',
     declaration: 'export interface AuthorizationPromptOption {\n    id: string;\n    label: string;\n    description?: string;\n}',
+  },
+  {
+    name: 'AuthorizationPromptView',
+    declaration: 'export type AuthorizationPromptView = {\n    readonly id: AuthorizationPromptId;\n    readonly message: string;\n} & ({\n    readonly kind: \'text\' | \'secret\';\n    readonly placeholder?: string;\n} | {\n    readonly kind: \'select\';\n    readonly options: readonly AuthorizationPromptOption[];\n});',
   },
   {
     name: 'AuthorizationRequest',
@@ -6662,7 +6738,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmConfigurableProvider',
-    declaration: 'export interface LlmConfigurableProvider {\n    provider: string;\n    displayName: string;\n    settingsNs: string;\n    settingsPath: readonly string[];\n    declared?: boolean;\n    error?: string;\n}',
+    declaration: 'export interface LlmConfigurableProvider {\n    provider: string;\n    displayName: string;\n    settingsNs: string;\n    settingsPath: readonly string[];\n    declared?: boolean;\n    signIn?: LlmProviderSignIn;\n    error?: string;\n}',
   },
   {
     name: 'LlmDiscoveredModel',
@@ -6699,6 +6775,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LlmProviderInfo',
     declaration: 'export interface LlmProviderInfo {\n    id: string;\n    name: string;\n}',
+  },
+  {
+    name: 'LlmProviderSignIn',
+    declaration: 'export interface LlmProviderSignIn {\n    key: string;\n    method: string;\n    acceptsApiKey: boolean;\n}',
   },
   {
     name: 'LlmReasoningEffortInfo',

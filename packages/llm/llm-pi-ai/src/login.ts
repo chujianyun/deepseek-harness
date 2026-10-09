@@ -10,6 +10,7 @@
 import type { AuthEvent, AuthPrompt, AuthType, Provider } from '@earendil-works/pi-ai'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AuthorizationMethod, AuthorizationPrompt, AuthorizationSession } from '@deepseek-ai/dsh-authorization'
+import type { LlmProviderSignIn } from '@deepseek-ai/dsh-llm'
 import { isCredentialKeySegment } from '@deepseek-ai/dsh-credentials'
 import { catalogProvider, catalogProviderIds } from './catalog.ts'
 import { recordKeyFor } from './auth.ts'
@@ -33,6 +34,23 @@ function loginMethods(provider: Provider | undefined): AuthorizationMethod[] {
   const apiKey = provider?.auth.apiKey
   if (apiKey?.login !== undefined) methods.push({ id: 'api-key', label: apiKey.name })
   return methods
+}
+
+/**
+ * How a configuration surface signs into one catalog route's account: the
+ * record its flow writes, the flow method to start, and whether the route also
+ * takes an API key. Only an OAuth login counts — the interactive key prompt
+ * every installed provider also ships asks for what the settings form's key
+ * field already collects. A route {@link registerPiAiFlows} skips declares
+ * nothing; every other declared sign-in has a flow behind it once the
+ * composition mounts the authorization service, as every shipped profile does.
+ * @param providerId - a catalog provider id.
+ * @returns the declaration, or undefined when the route offers no account sign-in.
+ */
+export function signInFor(providerId: string): LlmProviderSignIn | undefined {
+  const provider = catalogProvider(providerId)
+  if (provider?.auth.oauth === undefined || !isCredentialKeySegment(providerId)) return undefined
+  return { key: recordKeyFor(providerId), method: 'oauth', acceptsApiKey: provider.auth.apiKey !== undefined }
 }
 
 /**
