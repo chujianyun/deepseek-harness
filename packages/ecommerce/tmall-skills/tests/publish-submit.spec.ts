@@ -417,6 +417,7 @@ describe('tmall-publish script', () => {
     expect(await main(argv, again)).toBe(0)
     expect(again.out.join('')).toContain('没有重复保存：店铺 名流旗舰店（主账号） 里已有「名流水多多玻尿酸3合1避孕套」，商品 ID 1088292691011（2026-10-08 11:00（北京时间）DSH 已存过，仍在店里）。')
     expect(store.submits).toHaveLength(1)
+    expect((await records(out)).at(-1)).toMatchObject({ status: 'exists', itemId: '1088292691011', message: '2026-10-08 11:00（北京时间）DSH 已存过，仍在店里' })
     const checked = fakeDeps(new FakePage(store.routes()))
     expect(await main(['check', '--account', 'a1', '--draft', draft, '--out', out], checked)).toBe(0)
     expect(checked.out.join('')).toContain('里已有「名流水多多玻尿酸3合1避孕套」：商品 ID 1088292691011（2026-10-08 11:00（北京时间）DSH 已存过，仍在店里）')

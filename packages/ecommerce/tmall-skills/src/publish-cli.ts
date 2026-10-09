@@ -107,8 +107,12 @@ async function save(page: Page, account: MerchantBrowser, draft: DraftFile, opti
   const title = titleOf(draft)
   const recordPath = join(resolve(options.out), '发品记录.json')
   const records = sameProduct(await readRecords(recordPath), account.store, draft)
+  const record = { store: account.store, title, catId: rules.catId, codes: codesOf(draft) }
   const found = await alreadySaved(page, records, title)
-  if (found !== undefined) return `没有重复保存：店铺 ${account.store} 里已有「${title}」，商品 ID ${found.itemId}（${found.how}）。\n${links(found.itemId)}`
+  if (found !== undefined) {
+    await writeRecord(recordPath, { ...record, status: 'exists', itemId: found.itemId, at: deps.now().toISOString(), message: found.how })
+    return `没有重复保存：店铺 ${account.store} 里已有「${title}」，商品 ID ${found.itemId}（${found.how}）。\n${links(found.itemId)}`
+  }
   const open = unsettled(records)
   if (open !== undefined && !options.unknownChecked) {
     throw new SkillError([
@@ -116,7 +120,6 @@ async function save(page: Page, account: MerchantBrowser, draft: DraftFile, opti
       '请用户到千牛「仓库中」和「出售中」确认没有这件商品；用户确认没有后，才能加 --unknown-checked 再保存。',
     ].join('\n'), EXIT.usage)
   }
-  const record = { store: account.store, title, catId: rules.catId, codes: codesOf(draft) }
   const progress = (step: string) => { deps.stderr(`[${beijingTime(deps.now())}] ${step}\n`) }
   await writeRecord(recordPath, { ...record, status: 'submitting', at: deps.now().toISOString() })
   let base: PageBase

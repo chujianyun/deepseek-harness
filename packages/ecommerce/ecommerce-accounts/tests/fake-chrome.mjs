@@ -20,7 +20,7 @@
 // page also answers its image space folders and uploads and saves what its request helper submits to the
 // warehouse, which the item manager lists under in_stock and all. Pinduoduo's seller pages answer the
 // backend calls the pdd-publish skill makes: the 避孕套 category and its template, image uploads, and a
-// 草稿箱 that a save adds to. A Douyin shop's new-item page has a form store DSH finds, its 避孕套 form,
+// 草稿箱 that a save adds to, except a store whose user name has 拒, which refuses the save. A Douyin shop's new-item page has a form store DSH finds, its 避孕套 form,
 // a draft save that adds a 下架 draft, and the category, list, and upload calls the doudian-publish skill
 // makes. Its tabs are
 // kept in `<user-data-dir>/fake-tabs.json` and come back with --restore-last-session. As in Chrome, a
@@ -236,6 +236,7 @@ const pddApi = (expression) => {
     case 'POST /glide/v2/mms/query/spec/by/name': return ok(31406958000 + data.name.length)
     case 'POST /glide/v2/mms/query/commit/detail': return ok({ goods_id: data.goods_commit_id - 203110000 + 1013940000, check_status: 9, cost_template_id: 1, groups: {} })
     case 'POST /glide/mms/goodsCommit/action/edit':
+      if (signedInAs()?.includes('拒')) return { success: false, error_code: 30001, error_msg: '测试店铺拒收这件商品' }
       mall.drafts.unshift({ id: Number(data.goods_commit_id), goods_id: data.goods_id, goods_name: data.goods_name, check_status: 0 })
       return ok(true)
     case 'POST /glide/v2/mms/query/commit/list': return ok({ total: mall.drafts.length, list: mall.drafts.slice(data.start, data.start + data.length) })

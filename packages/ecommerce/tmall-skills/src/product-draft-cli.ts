@@ -6,7 +6,8 @@
  * - `inventory --folder <dir>` lists and sorts the folder's images, tables, documents, and videos.
  * - `draft --folder <dir> [--answers <json>] [--rules <字段规则 json>] [--store <店铺>]` builds the draft with the
  *   model's answers and, given rules, checks it field by field; with a store, the company's publishing
- *   memory for it (store information, table headers, confirmed declarations) fills what the answers leave out.
+ *   memory for it (store information, table headers, confirmed declarations) fills what the answers leave out;
+ *   with `--plan <发品计划 json>`, the content the user confirmed on an earlier store's card is taken as confirmed.
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -17,12 +18,13 @@ import { beijingTime } from './dates.ts'
 import { buildDraft, checkDraft, generatedLabels, parseAnswers, withMemory, type Answers, type Confirmed, type Draft, type FieldCheck, type FieldStatus } from './draft.ts'
 import { EXIT, SkillError } from './errors.ts'
 import { KIND_LABEL, SKU_FIELD_LABEL, takeInventory, type ImageKind, type Inventory } from './materials.ts'
+import { parsePlan, withShared, type PublishPlan } from './multi-publish.ts'
 import type { PublishRules } from './publish-rules.ts'
 
 const USAGE = [
   '用法：',
   '  inventory --folder <素材文件夹> [--out 目录]',
-  '  draft --folder <素材文件夹> [--answers <答案 json>] [--rules <字段规则 json>] [--store <店铺名>] [--out 目录]',
+  '  draft --folder <素材文件夹> [--answers <答案 json>] [--rules <字段规则 json>] [--store <店铺名>] [--plan <发品计划 json>] [--out 目录]',
 ].join('\n')
 
 /** A command line, read. */
@@ -34,6 +36,8 @@ export interface ProductDraftOptions {
   readonly rules?: string
   /** The store whose remembered information applies. */
   readonly store?: string
+  /** The multi-store plan whose confirmed shared content applies. */
+  readonly plan?: string
 }
 
 /**
@@ -46,7 +50,10 @@ export function parseProductDraftOptions(argv: readonly string[]): ProductDraftO
   let parsed: ReturnType<typeof parse>
   const parse = (args: string[]) => parseArgs({
     args, allowPositionals: true,
-    options: { folder: { type: 'string' }, out: { type: 'string' }, answers: { type: 'string' }, rules: { type: 'string' }, store: { type: 'string' } },
+    options: {
+      folder: { type: 'string' }, out: { type: 'string' }, answers: { type: 'string' }, rules: { type: 'string' }, store: { type: 'string' },
+      plan: { type: 'string' },
+    },
   })
   try {
     parsed = parse([...argv])
@@ -61,6 +68,7 @@ export function parseProductDraftOptions(argv: readonly string[]): ProductDraftO
     command, folder: values.folder, out: values.out ?? '发品草稿',
     ...values.answers === undefined ? {} : { answers: values.answers }, ...values.rules === undefined ? {} : { rules: values.rules },
     ...values.store === undefined || values.store === '' ? {} : { store: values.store },
+    ...values.plan === undefined || values.plan === '' ? {} : { plan: values.plan },
   }
 }
 
@@ -203,6 +211,17 @@ export async function main(argv: readonly string[], deps: Pick<Deps, 'stdout' | 
     }
     let confirmed: Confirmed = {}
     const remembered: string[] = []
+    if (options.plan !== undefined) {
+      let plan: PublishPlan
+      try {
+        plan = parsePlan(await readInput(options.plan, '发品计划文件'))
+      } catch (error) {
+        throw error instanceof SkillError ? error : new SkillError(`发品计划文件 ${options.plan} 有误：${(error as Error).message}`, EXIT.usage)
+      }
+      const applied = withShared(answers, plan.shared)
+      answers = applied.answers
+      remembered.push(...applied.notes)
+    }
     if (options.store !== undefined) {
       const merged = withMemory(answers, await deps.memory(), options.store, rules)
       const headers = inventory.tables.flatMap(table => table.columns.map(column => column.header))

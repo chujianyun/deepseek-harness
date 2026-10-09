@@ -3,20 +3,20 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/ecommerce/tmall-skills/README.md
 /:
-  en: 5d37177912e59381
-  zh: 8647f6a358ad96e5
+  en: 2051d84aba1a2ea7
+  zh: 48eb65272f01ab7b
 /tmall-data-skills:
   en: 90ef060b8f33004e
   zh: 217d6bdc3252002a
 /tmall-data-skills/summary:
-  en: ea2102fb8a31cb3e
-  zh: c27ca1cea7165524
+  en: 0e146a96927fe5d1
+  zh: b3f0c667676a8daa
 /tmall-data-skills/table-of-contents:
   en: 4e53164159b5ce41
   zh: 1e7d2e37b6eba4ea
 /tmall-data-skills/use-this-package:
-  en: c288ad8623553763
-  zh: 987cce482431fe4a
+  en: fd93bd43a3f797fc
+  zh: a9eabb46a6b255be
 /tmall-data-skills/model-experience:
   en: b5d9770f2090921d
   zh: 0c3a9bca6d8350c1
@@ -24,8 +24,8 @@
   en: fab5fb362529e603
   zh: a1d6cc1e2d710f7a
 /tmall-data-skills/known-limitations-and-deferred-work:
-  en: d1f8f2e6bec07766
-  zh: 6a7c33dcd4b53f9e
+  en: d1ef9c1b3a048fa0
+  zh: 5d86b69d0d6e7a33
 /tmall-data-skills/known-limitations-and-deferred-work/dev-note:
   en: a21d0a47e19f6b07
   zh: 3aa26c125ac95099

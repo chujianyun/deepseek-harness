@@ -87,7 +87,7 @@ class Shop {
   readonly rendered: number[] = []
   readonly saves: { first: Record<string, unknown>; second: Record<string, unknown> }[] = []
   /** What the page's own save does. */
-  saving: 'drafts' | 'on-sale' | 'not-draft' | 'no-detail' | 'nowhere' | 'refused' | 'silent' | 'lost' | 'not-off-sale' | 'needs-weight' | 'dropped' = 'drafts'
+  saving: 'drafts' | 'on-sale' | 'not-draft' | 'no-detail' | 'nowhere' | 'refused' | 'silent' | 'lost' | 'not-off-sale' | 'needs-weight' | 'dropped' | 'not-ready' = 'drafts'
   signedOut = false
   hasStore = true
   /** Polls a prediction takes. */
@@ -116,6 +116,7 @@ class Shop {
           case 'no-detail': return { dropped: 'description' }
           case 'needs-weight': return { needsWeight: true }
           case 'dropped': return { dropped: 'reference_price' }
+          case 'not-ready': return { notReady: 'form is not ready' }
           case 'refused': return { refused: '设置参考价时须提供相关凭证' }
           case 'silent': return {}
           case 'lost': return new Error('Network Error')
@@ -515,6 +516,7 @@ describe('doudian-publish script', () => {
     const again = await run(shop, save(setup))
     expect(again.out).toContain('没有重复保存：店铺 名流欣屹专卖店 里已有「名流水多多三合一玻尿酸避孕套」，商品 ID 3847100000000000001（2026-10-08 11:00（北京时间）DSH 存过，仍在店里）。')
     expect(shop.saves).toHaveLength(1)
+    expect((await records(setup.out)).at(-1)).toMatchObject({ status: 'exists', itemId: '3847100000000000001', message: '2026-10-08 11:00（北京时间）DSH 存过，仍在店里' })
     expect((await run(shop, ['check', '--account', 'a', '--draft', setup.path, '--out', setup.out])).out).toContain('DSH 存过，仍在店里')
   })
 
@@ -581,7 +583,7 @@ describe('doudian-publish script', () => {
     for (const [saving, message] of [
       ['refused', '抖店没有保存草稿，原因：设置参考价时须提供相关凭证'], ['not-off-sale', '表单的商品状态不是「下架」，没有保存。'],
       ['needs-weight', '选的运费模板要按重量计费'], ['dropped', '抖店发品页没有接受 reference_price 的值'], ['silent', '抖店没有保存草稿，原因：无应答'],
-      ['no-detail', '抖店发品页没有接受 description 的值'],
+      ['no-detail', '抖店发品页没有接受 description 的值'], ['not-ready', '抖店发品页的表单写不进去（form is not ready），没有保存。'],
     ] as const) {
       shop.saving = saving
       expect((await run(shop, save(setup))).err).toContain(message)

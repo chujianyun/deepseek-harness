@@ -459,6 +459,7 @@ describe('pdd-publish script', () => {
     const again = await run(mall, save(setup))
     expect(again.out).toContain('没有重复保存：店铺 名流保健用品官方旗舰店 里已有「名流水多多玻尿酸三合一避孕套」，ID 203110000（2026-10-08 11:00（北京时间）DSH 存过，仍在草稿箱）。')
     expect(mall.saves).toHaveLength(1)
+    expect((await records(setup.out)).at(-1)).toMatchObject({ status: 'exists', draftId: '203110000', message: '2026-10-08 11:00（北京时间）DSH 存过，仍在草稿箱' })
     const checked = await run(mall, ['check', '--account', 'a', '--draft', setup.path, '--out', setup.out])
     expect(checked.out).toContain('ID 203110000（2026-10-08 11:00（北京时间）DSH 存过，仍在草稿箱）')
   })
@@ -477,6 +478,9 @@ describe('pdd-publish script', () => {
     await writeFile(join(setup.out, '发品记录.json'), JSON.stringify([earlier]))
     mall.goods = [{ goodsId: '77', title: '旧标题' }]
     expect((await run(mall, ['check', '--account', 'a', '--draft', setup.path, '--out', setup.out])).out).toContain('ID 77（商品列表里已有这件商品）')
+    // A save that finds the item among the goods records it by its goods id.
+    expect((await run(mall, save(setup))).out).toContain('没有重复保存：店铺 名流保健用品官方旗舰店 里已有「名流水多多玻尿酸三合一避孕套」，ID 77（商品列表里已有这件商品）')
+    expect((await records(setup.out)).at(-1)).toMatchObject({ status: 'exists', itemId: '77', message: '商品列表里已有这件商品' })
     const untitled = await sampleDraft({ values: {} })
     expect((await run(mall, ['check', '--account', 'a', '--draft', untitled.path])).code).toBe(EXIT.usage)
   })

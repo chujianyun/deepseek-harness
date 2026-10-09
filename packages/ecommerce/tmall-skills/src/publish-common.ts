@@ -82,9 +82,10 @@ export interface PublishRecord {
   /**
    * `submitting` until the answer came; `unknown` when it never did or the store did not show the item;
    * `on-sale` when the platform put the item on sale instead of keeping it; `not-draft` when it left the
-   * 草稿箱 another way, such as into review.
+   * 草稿箱 another way, such as into review; `exists` when a save found the same product already in the
+   * store and saved nothing.
    */
-  readonly status: 'submitting' | 'saved' | 'failed' | 'unknown' | 'on-sale' | 'not-draft'
+  readonly status: 'submitting' | 'saved' | 'failed' | 'unknown' | 'on-sale' | 'not-draft' | 'exists'
   /** The item: Tmall's item id, or Pinduoduo's goods id. */
   readonly itemId?: string
   /** Pinduoduo's draft (goods commit) id. */

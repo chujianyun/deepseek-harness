@@ -12,7 +12,7 @@ import type { FieldRule, PublishRules } from './publish-rules.ts'
 import { KIND_LABEL, SKU_FIELD_LABEL, type ImageEntry, type ImageKind, type Inventory, type SkuField, type TableEntry } from './materials.ts'
 
 /** Where a value came from. */
-export type Source = '素材原值' | '店铺资料' | '沿用旧商品' | '模型生成' | '发品规则' | '店铺确认'
+export type Source = '素材原值' | '店铺资料' | '沿用旧商品' | '模型生成' | '发品规则' | '店铺确认' | '用户确认'
 
 /** The sources the model may give for a value. */
 export const ANSWER_SOURCES: readonly Source[] = ['素材原值', '店铺资料', '沿用旧商品', '模型生成']
@@ -378,7 +378,7 @@ function checkPrice(base: Pick<FieldCheck, 'key' | 'label' | 'required'>, draft:
 /** A field filled from a sourced value, its options normalized. */
 function fromValue(base: Pick<FieldCheck, 'key' | 'label' | 'required'>, field: FieldRule, entry: SourcedValue | undefined, needed?: string): FieldCheck {
   if (entry === undefined) return { ...base, status: '缺失', ...needed === undefined ? {} : { note: `需要${needed}` } }
-  const status: FieldStatus = entry.source === '模型生成' ? '待确认' : '已填'
+  const status: FieldStatus = entry.source === '模型生成' ? '待确认' : entry.source === '用户确认' ? '已确认' : '已填'
   const values = (typeof entry.value === 'string' ? [entry.value] : entry.value).map(value => value.replace(/\s+/gu, ' ').trim())
   const notes: string[] = []
   const normalized = values.map((value) => {

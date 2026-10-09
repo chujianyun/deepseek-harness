@@ -155,19 +155,19 @@ const DRAFT_LINK = `- 草稿箱：${PDD_GOODS_URL}（商品列表 →「草稿�
  */
 async function alreadySaved(
   page: Page, records: readonly PublishRecord[], title: string,
-): Promise<{ id: string; how: string } | undefined> {
+): Promise<{ id: string; how: string; draft: boolean } | undefined> {
   const drafts = await listDrafts(page)
   for (const record of [...records].reverse()) {
     if (record.draftId !== undefined && drafts.some(row => row.draftId === record.draftId)) {
-      return { id: record.draftId, how: `${beijingTime(new Date(record.at))}（北京时间）DSH 存过，仍在草稿箱` }
+      return { id: record.draftId, how: `${beijingTime(new Date(record.at))}（北京时间）DSH 存过，仍在草稿箱`, draft: true }
     }
   }
   const draft = drafts.find(row => row.title === title)
-  if (draft !== undefined) return { id: draft.draftId, how: '草稿箱里已有同名草稿' }
+  if (draft !== undefined) return { id: draft.draftId, how: '草稿箱里已有同名草稿', draft: true }
   const goodsIds = new Set(records.flatMap(record => record.itemId === undefined ? [] : [record.itemId]))
   for (const keyword of new Set([title, ...records.map(record => record.title)])) {
     const item = (await listGoods(page, keyword)).find(row => row.title === title || goodsIds.has(row.goodsId))
-    if (item !== undefined) return { id: item.goodsId, how: '商品列表里已有这件商品' }
+    if (item !== undefined) return { id: item.goodsId, how: '商品列表里已有这件商品', draft: false }
   }
   return undefined
 }
@@ -198,8 +198,13 @@ async function save(page: Page, account: MerchantBrowser, draft: DraftFile, opti
   const title = titleOf(draft)
   const recordPath = join(resolve(options.out), '发品记录.json')
   const records = sameProduct(await readRecords(recordPath), account.store, draft)
+  const record = { store: account.store, title, catId: rules.catId, codes: codesOf(draft) }
   const found = await alreadySaved(page, records, title)
-  if (found !== undefined) return `没有重复保存：店铺 ${account.store} 里已有「${title}」，ID ${found.id}（${found.how}）。\n${DRAFT_LINK}`
+  if (found !== undefined) {
+    const id = found.draft ? { draftId: found.id } : { itemId: found.id }
+    await writeRecord(recordPath, { ...record, ...id, status: 'exists', at: deps.now().toISOString(), message: found.how })
+    return `没有重复保存：店铺 ${account.store} 里已有「${title}」，ID ${found.id}（${found.how}）。\n${DRAFT_LINK}`
+  }
   const open = unsettled(records)
   if (open !== undefined && !options.unknownChecked) {
     throw new SkillError([
@@ -207,7 +212,6 @@ async function save(page: Page, account: MerchantBrowser, draft: DraftFile, opti
       '请用户到拼多多后台的草稿箱和商品列表确认没有这件商品；用户确认没有后，才能加 --unknown-checked 再保存。',
     ].join('\n'), EXIT.usage)
   }
-  const record = { store: account.store, title, catId: rules.catId, codes: codesOf(draft) }
   const progress = (step: string) => { deps.stderr(`[${beijingTime(deps.now())}] ${step}\n`) }
   await writeRecord(recordPath, { ...record, status: 'submitting', at: deps.now().toISOString() })
   let form: Record<string, unknown>
