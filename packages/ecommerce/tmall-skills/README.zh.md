@@ -93,4 +93,6 @@ node --input-type=module -e "import { packSkills } from './packages/ecommerce/tm
 
 脚本复用 `@deepseek-ai/dsh-ecommerce-accounts` 的 `Cdp`，因此 `ws` 被打包进每个脚本；打包结果除 Node 内置模块外不得有其他 import，`tests/pack.spec.ts` 会检查这一点。
 
+本包只在仓库内使用（[`scripts/repository-only-package-policy.ts`](../../../scripts/repository-only-package-policy.ts)）：`packSkills` 直接从本包的 `src/` 和 `skills/` 构建，租户拿到的是打包出的 zip，所以本包保持私有，不是发布成员，publint 也不检查它。
+
 </details>

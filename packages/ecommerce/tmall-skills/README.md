@@ -93,4 +93,6 @@ No direct effect; installing or removing a skill changes the skill catalog the w
 
 The scripts reuse `Cdp` from `@deepseek-ai/dsh-ecommerce-accounts`, so `ws` is bundled into each script; the bundle must stay free of imports other than Node built-ins, which `tests/pack.spec.ts` checks.
 
+The package is repository-only ([`scripts/repository-only-package-policy.ts`](../../../scripts/repository-only-package-policy.ts)): `packSkills` builds from its own `src/` and `skills/`, and tenants receive the zips, so it stays private, is no release member, and publint does not lint it.
+
 </details>

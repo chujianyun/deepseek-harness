@@ -130,7 +130,7 @@ export function blockers(draft: DraftFile, rules: PublishRules, options: Pick<Pu
  */
 export async function readRecords(path: string): Promise<PublishRecord[]> {
   try {
-    const records = JSON.parse(await readFile(path, 'utf8')) as unknown
+    const records: unknown = JSON.parse(await readFile(path, 'utf8'))
     return Array.isArray(records) ? records as PublishRecord[] : []
   } catch {
     // No attempt was made yet, or the file was damaged: the store is asked either way.

@@ -7,9 +7,12 @@ import { execFile } from 'node:child_process'
 import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type { PreToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
-import { setup } from './support.ts'
+import { cleanups, setup } from './support.ts'
 
 const runs = it.skipIf(process.platform === 'win32')
 
@@ -20,10 +23,15 @@ function bash(command: string, id = 'call-1', agent?: ToolExecution['agent']): T
   }
 }
 
-/** An agent whose session records what is appended to it. */
-function auditedAgent() {
-  const appended: { type: string; data: unknown }[] = []
-  const agent = { session: { append: (type: string, data: unknown) => { appended.push({ type, data }) } } } as unknown as NonNullable<ToolExecution['agent']>
+/** A production agent in a context of its own, and the connector events its session recorded. */
+async function auditedAgent() {
+  const ctx = new Context()
+  cleanups.push(() => ctx.fiber.dispose())
+  await mountAgentLoopTestDependencies(ctx)
+  const agent = await (await mountAgentLoopTestHarness(ctx)).create(SessionId(`audited-${String(cleanups.length)}`))
+  const appended = () => agent.session.ownEvents()
+    .filter(event => event.type === 'connectors/always-allowed')
+    .map(event => ({ type: event.type, data: event.data }))
   return { agent, appended }
 }
 
@@ -110,7 +118,7 @@ describe('confirming connector writes', () => {
 describe('always allowing connector writes', () => {
   runs('offers to remember a plain write, then runs it unasked for the tenant with an audit record', async () => {
     const t = await connected()
-    const { agent, appended } = auditedAgent()
+    const { agent, appended } = await auditedAgent()
     const asked = await t.gate(bash('lark-cli im +messages-send --text hi', 'call-1', agent))
     expect(asked).toMatchObject({ kind: 'ask' })
     remember(asked)
@@ -118,7 +126,7 @@ describe('always allowing connector writes', () => {
     expect(view.alwaysAllowed).toEqual(['im +messages-send'])
     // Other arguments, same command path: no question, and the session records why.
     expect(await t.gate(bash('lark-cli im +messages-send --text bye --chat-id oc_2', 'call-2', agent))).toEqual({ kind: 'allow' })
-    expect(appended).toEqual([{ type: 'connectors/always-allowed', data: { callId: 'call-2', commands: ['lark-cli im +messages-send'] } }])
+    expect(appended()).toEqual([{ type: 'connectors/always-allowed', data: { callId: 'call-2', commands: ['lark-cli im +messages-send'] } }])
     // A read beside it changes nothing; a write that is not remembered still asks.
     expect(await t.gate(bash('lark-cli calendar +agenda && lark-cli im +messages-send', 'call-3', agent))).toEqual({ kind: 'allow' })
     expect(await t.gate(bash('lark-cli im +messages-send; lark-cli im +messages-reply', 'call-4', agent))).toMatchObject({ kind: 'ask' })
@@ -137,7 +145,7 @@ describe('always allowing connector writes', () => {
 
   runs('revokes a grant, keeps grants per tenant, and clears them on disconnect and Hub sign-out', async () => {
     const t = await connected()
-    const { agent } = auditedAgent()
+    const { agent } = await auditedAgent()
     const send = (id: string) => t.gate(bash('lark-cli im +messages-send', id, agent))
     remember(await send('call-1'))
     await t.until(item => item.alwaysAllowed.length === 1)
@@ -163,7 +171,7 @@ describe('always allowing connector writes', () => {
 
   runs('clears every tenant\'s grants when the connector is uninstalled', async () => {
     const t = await connected()
-    const { agent } = auditedAgent()
+    const { agent } = await auditedAgent()
     remember(await t.gate(bash('lark-cli im +messages-send', 'call-1', agent)))
     await t.until(item => item.alwaysAllowed.length === 1)
     await t.service.uninstallConnector('feishu')
