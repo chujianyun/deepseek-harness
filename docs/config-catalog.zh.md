@@ -1838,6 +1838,8 @@ export interface Config {
   dshHome?: string
   /** Largest file accepted, in bytes. */
   maxFileBytes?: number
+  /** Most data rows read from one Excel workbook; later rows are left out and its text says so. */
+  maxWorkbookRows?: number
   /** Chunk size of a new knowledge base, in estimated tokens. */
   chunkSize?: number
   /** Tokens a new knowledge base's chunks carry over from the previous chunk. */
