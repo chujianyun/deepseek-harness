@@ -406,9 +406,9 @@ describe('tmall-publish script', () => {
     expect(page.visited).toEqual([MANAGER_URL, publishUrl('50024154'), MANAGER_URL])
     expect(store.submits[0]?.form).toMatchObject({ shelfTime: { type: 2 }, mainImagesGroup: { images: [{ url: 'https://img/old.png' }, { url: 'https://img.alicdn.com/2.jpg' }] } })
     expect(await records(out)).toEqual([
-      { store: '名流旗舰店（主账号）', title: '名流水多多玻尿酸3合1避孕套', catId: '50024154', codes: ['mldx238a', 'mldx238b'], status: 'submitting', at: '2026-10-08T03:00:00.000Z' },
+      { store: '名流旗舰店（主账号）', account: 'a1', title: '名流水多多玻尿酸3合1避孕套', catId: '50024154', codes: ['mldx238a', 'mldx238b'], status: 'submitting', at: '2026-10-08T03:00:00.000Z' },
       {
-        store: '名流旗舰店（主账号）', title: '名流水多多玻尿酸3合1避孕套', catId: '50024154', codes: ['mldx238a', 'mldx238b'], status: 'saved', itemId: '1088292691011',
+        store: '名流旗舰店（主账号）', account: 'a1', title: '名流水多多玻尿酸3合1避孕套', catId: '50024154', codes: ['mldx238a', 'mldx238b'], status: 'saved', itemId: '1088292691011',
         at: '2026-10-08T03:00:00.000Z',
       },
     ])
@@ -461,7 +461,7 @@ describe('tmall-publish script', () => {
     expect(none.out.join('')).toBe('店铺 名流旗舰店（主账号） 的仓库和出售中都没有「名流水多多玻尿酸3合1避孕套」，DSH 也没有存过它。\n')
     store.items = [{ itemId: '961117235837', title: '名流水多多玻尿酸3合1避孕套', tab: 'on_sale' }]
     await mkdir(out, { recursive: true })
-    const gone: PublishRecord = { store: '名流旗舰店（主账号）', title: '名流水多多玻尿酸3合1避孕套', catId: '50024154', status: 'saved', itemId: '1', at: '2026-10-01T00:00:00Z' }
+    const gone: PublishRecord = { store: '名流旗舰店（主账号）', account: 'a1', title: '名流水多多玻尿酸3合1避孕套', catId: '50024154', status: 'saved', itemId: '1', at: '2026-10-01T00:00:00Z' }
     await writeFile(join(out, '发品记录.json'), JSON.stringify([gone, { ...gone, store: '别家', itemId: '961117235837' }]))
     const found = fakeDeps(new FakePage(store.routes()))
     expect(await main(['check', '--account', 'a1', '--draft', draft, '--out', out], found)).toBe(0)

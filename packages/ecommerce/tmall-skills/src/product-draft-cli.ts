@@ -218,7 +218,7 @@ export async function main(argv: readonly string[], deps: Pick<Deps, 'stdout' | 
       } catch (error) {
         throw error instanceof SkillError ? error : new SkillError(`发品计划文件 ${options.plan} 有误：${(error as Error).message}`, EXIT.usage)
       }
-      const applied = withShared(answers, plan.shared)
+      const applied = withShared(answers, plan.shared, generatedLabels(rules))
       answers = applied.answers
       remembered.push(...applied.notes)
     }

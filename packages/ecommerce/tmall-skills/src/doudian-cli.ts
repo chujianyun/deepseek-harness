@@ -207,7 +207,7 @@ async function save(page: Page, account: MerchantBrowser, draft: DraftFile, opti
   const title = titleOf(draft)
   const recordPath = join(resolve(options.out), '发品记录.json')
   const records = sameProduct(await readRecords(recordPath), account.store, draft)
-  const record = { store: account.store, title, catId: rules.catId, codes: codesOf(draft) }
+  const record = { store: account.store, account: account.id, title, catId: rules.catId, codes: codesOf(draft) }
   const found = await alreadySaved(page, records, title)
   if (found !== undefined) {
     await writeRecord(recordPath, { ...record, status: 'exists', itemId: found.id, at: deps.now().toISOString(), message: found.how })

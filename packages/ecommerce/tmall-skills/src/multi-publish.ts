@@ -6,7 +6,7 @@
 
 import type { MerchantPlatform } from './account.ts'
 import { beijingTime } from './dates.ts'
-import type { Answers, Draft, SourcedValue } from './draft.ts'
+import { GENERATED_LABELS, type Answers, type Draft, type SourcedValue } from './draft.ts'
 import type { PublishRecord } from './publish-common.ts'
 
 /** A platform's name for the user, its publish skill, and its directory. */
@@ -58,6 +58,8 @@ export interface PublishPlan {
   readonly marks: readonly PlanMark[]
   /** Field label → the confirmed value. */
   readonly shared: Readonly<Record<string, SharedValue>>
+  /** The accounts whose card the user confirmed, in order. */
+  readonly confirmed: readonly string[]
 }
 
 /** A store's result in the summary. */
@@ -105,7 +107,8 @@ function recordOutcome(record: PublishRecord): Outcome {
 }
 
 /**
- * A store's result: the latest of its records and marks since the plan began.
+ * A store's result: the latest of its records and marks since the plan began. A record names its store by
+ * the account that saved it; an older record without one, by the store name.
  * @param plan - the plan.
  * @param target - the store.
  * @param records - every record of the target's platform.
@@ -113,7 +116,8 @@ function recordOutcome(record: PublishRecord): Outcome {
  */
 export function outcomeOf(plan: PublishPlan, target: PlanTarget, records: readonly PublishRecord[]): Outcome {
   const events = [
-    ...records.filter(record => record.store === target.store && record.at >= plan.createdAt)
+    ...records.filter(record => record.at >= plan.createdAt
+      && (record.account === undefined ? record.store === target.store : record.account === target.account))
       .map(record => ({ at: record.at, outcome: () => recordOutcome(record) })),
     ...plan.marks.filter(mark => mark.account === target.account).map(mark => ({ at: mark.at, outcome: (): Outcome => markOutcome(mark) })),
   ].sort((a, b) => a.at.localeCompare(b.at))
@@ -144,8 +148,9 @@ export function nextTarget(
 }
 
 /**
- * The values a confirmed draft adds to the shared content: those the model wrote, which the user just
- * confirmed, and those taken from an earlier card.
+ * The values a confirmed draft adds to the shared content: the title, selling point, and guide title the
+ * model wrote, which the user just confirmed. A label already shared keeps the first card's value, so a
+ * store's own variant never replaces it.
  * @param shared - the shared content so far.
  * @param draft - the draft the user confirmed.
  * @param store - the store whose card it was.
@@ -158,7 +163,7 @@ export function confirmShared(
   const next: Record<string, SharedValue> = { ...shared }
   const labels: string[] = []
   for (const [label, entry] of Object.entries(draft.values)) {
-    if (entry.source !== '模型生成') continue
+    if (entry.source !== '模型生成' || !(GENERATED_LABELS as readonly string[]).includes(label) || shared[label] !== undefined) continue
     next[label] = { value: entry.value, store, confirmedAt: at }
     labels.push(label)
   }
@@ -170,16 +175,21 @@ const same = (a: SourcedValue['value'], b: SourcedValue['value']): boolean => [a
 
 /**
  * Apply the shared content under the model's answers: a value the answers leave out or repeat counts as
- * the user's; one the answers changed for this store stays the model's, for this store's card.
+ * the user's; one the answers changed for this store stays the model's, for this store's card. Only the
+ * labels this store's form has are applied.
  * @param answers - the model's answers for this store.
  * @param shared - the shared content.
+ * @param labels - the labels this store's form has, such as `generatedLabels(rules)`.
  * @returns the answers and what to tell the user.
  */
-export function withShared(answers: Answers, shared: PublishPlan['shared']): { readonly answers: Answers; readonly notes: readonly string[] } {
+export function withShared(
+  answers: Answers, shared: PublishPlan['shared'], labels: readonly string[],
+): { readonly answers: Answers; readonly notes: readonly string[] } {
   const values: Record<string, SourcedValue> = { ...answers.values }
   const taken: string[] = []
   const changed: string[] = []
   for (const [label, entry] of Object.entries(shared)) {
+    if (!labels.includes(label)) continue
     const given = values[label]
     if (given !== undefined && !same(given.value, entry.value)) { changed.push(`${label}（${entry.store} 确认的是「${[entry.value].flat().join('、')}」）`); continue }
     values[label] = { value: entry.value, source: '用户确认' }
@@ -224,5 +234,22 @@ export function parsePlan(text: string): PublishPlan {
   if (typeof plan.createdAt !== 'string' || typeof plan.folder !== 'string' || !Array.isArray(plan.targets)) {
     throw new Error('不是多店发品计划文件（缺 createdAt、folder 或 targets）')
   }
-  return { createdAt: plan.createdAt, folder: plan.folder, targets: plan.targets, marks: plan.marks ?? [], shared: plan.shared ?? {} }
+  const filled = (value: unknown) => typeof value === 'string' && value !== ''
+  plan.targets.forEach((target: Partial<PlanTarget>, at) => {
+    const known = Object.hasOwn(PLATFORM_SKILLS, String(target.platform))
+    if (!filled(target.account) || !filled(target.store) || !filled(target.records) || !known) {
+      throw new Error(`第 ${String(at + 1)} 家店缺 account、platform、store 或 records`)
+    }
+  })
+  const marks = plan.marks ?? []
+  marks.forEach((mark: Partial<PlanMark>, at) => {
+    const status = ['failed', 'pending', 'cancelled'].includes(String(mark.status))
+    if (!filled(mark.account) || !filled(mark.at) || typeof mark.note !== 'string' || !status) {
+      throw new Error(`第 ${String(at + 1)} 条标记缺 account、status、note 或 at`)
+    }
+  })
+  return {
+    createdAt: plan.createdAt, folder: plan.folder, targets: plan.targets, marks,
+    shared: plan.shared ?? {}, confirmed: plan.confirmed ?? [],
+  }
 }

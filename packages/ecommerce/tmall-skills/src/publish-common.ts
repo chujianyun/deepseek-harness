@@ -75,6 +75,8 @@ export interface DraftFile extends Draft {
 /** One attempt to save an item, as recorded. */
 export interface PublishRecord {
   readonly store: string
+  /** The e-commerce account that saved, which tells apart stores of the same name. */
+  readonly account?: string
   readonly title: string
   readonly catId: string
   /** The draft's SKU codes, sorted, which name the product when its title changed. */

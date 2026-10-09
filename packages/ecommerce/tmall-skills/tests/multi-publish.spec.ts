@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { EXIT } from '../src/errors.ts'
-import { listAccounts, main, parseMultiPublishOptions, type ListedAccount, type MultiPublishDeps } from '../src/multi-publish-cli.ts'
+import { listAccounts, main, parseMultiPublishOptions, shellWord, type ListedAccount, type MultiPublishDeps } from '../src/multi-publish-cli.ts'
 import { confirmShared, nextTarget, outcomeOf, parsePlan, summaryText, withShared, type PlanTarget, type PublishPlan } from '../src/multi-publish.ts'
 import { main as draftMain } from '../src/product-draft-cli.ts'
 import type { PublishRecord } from '../src/publish-common.ts'
@@ -46,7 +46,7 @@ function deps(cwd: string, overrides: Partial<MultiPublishDeps> = {}): MultiPubl
 
 const target = (overrides: Partial<PlanTarget> = {}): PlanTarget => ({ account: 'tm', platform: 'tmall', store: '名流旗舰店', records: '/w/天猫发品/发品记录.json', ...overrides })
 
-const PLAN: PublishPlan = { createdAt: '2026-10-08T03:00:00.000Z', folder: '/w/素材', targets: [target()], marks: [], shared: {} }
+const PLAN: PublishPlan = { createdAt: '2026-10-08T03:00:00.000Z', folder: '/w/素材', targets: [target()], marks: [], shared: {}, confirmed: [] }
 
 const record = (status: PublishRecord['status'], at: string, more: Partial<PublishRecord> = {}): PublishRecord => ({
   store: '名流旗舰店', title: '名流水多多', catId: '1', status, at, ...more,
@@ -71,6 +71,12 @@ describe('multi-publish command line', () => {
     ]) {
       expect(() => parseMultiPublishOptions(argv), argv.join(' ')).toThrow(expect.objectContaining({ exitCode: EXIT.usage }) as Error)
     }
+  })
+
+  it('quotes a word for bash only when it needs it', () => {
+    expect(shellWord('发品草稿/天猫-名流旗舰店')).toBe('发品草稿/天猫-名流旗舰店')
+    expect(shellWord('ML Store')).toBe("'ML Store'")
+    expect(shellWord("it's")).toBe("'it'\\''s'")
   })
 
   it('lists the accounts through dsh-ecommerce', async () => {
@@ -110,8 +116,24 @@ describe('results', () => {
   it('hands out a store without records first, and reads a plan without marks or shared content', () => {
     expect(nextTarget(PLAN, new Map())).toEqual({ target: target(), index: 0 })
     expect(summaryText(PLAN, new Map())).toContain('| 天猫 | 名流旗舰店 | 未执行 |  | 还没有开始 |')
-    const { marks: _marks, shared: _shared, ...bare } = PLAN
+    const { marks: _marks, shared: _shared, confirmed: _confirmed, ...bare } = PLAN
     expect(parsePlan(JSON.stringify(bare))).toEqual(PLAN)
+    expect(() => parsePlan(JSON.stringify({ ...PLAN, targets: [{ ...target(), platform: 'taobao' }] }))).toThrow('第 1 家店缺 account、platform、store 或 records')
+    expect(() => parsePlan(JSON.stringify({ ...PLAN, targets: [{ ...target(), records: '' }] }))).toThrow('第 1 家店缺')
+    const mark = { account: 'tm', status: 'failed', note: 'x', at: 't' }
+    expect(parsePlan(JSON.stringify({ ...PLAN, marks: [mark] })).marks).toEqual([mark])
+    for (const wrong of [{ ...mark, status: 'saved' }, { ...mark, note: 1 }, { ...mark, at: '' }]) {
+      expect(() => parsePlan(JSON.stringify({ ...PLAN, marks: [mark, wrong] }))).toThrow('第 2 条标记缺 account、status、note 或 at')
+    }
+  })
+
+  it('reads a store\'s records by the account that saved, and older records by the store name', () => {
+    const plan: PublishPlan = { ...PLAN, targets: [target(), target({ account: 'tm2' })] }
+    const records = [record('saved', '2026-10-08T03:05:00.000Z', { account: 'tm', itemId: '1' })]
+    expect(outcomeOf(plan, target(), records).result).toBe('成功')
+    // Another account with the same store name is not saved by that record.
+    expect(outcomeOf(plan, target({ account: 'tm2' }), records).result).toBe('未执行')
+    expect(outcomeOf(plan, target({ account: 'tm2' }), [record('saved', '2026-10-08T03:05:00.000Z')]).result).toBe('成功')
   })
 
   it('sums up every store, and says what follows a failure or an unknown result', () => {
@@ -137,36 +159,41 @@ describe('results', () => {
 })
 
 describe('shared content', () => {
-  it('keeps the values the model wrote once the user confirmed them', () => {
+  it('keeps the title, selling point, and guide title the model wrote once the user confirmed them, the first card winning', () => {
     const draft = { values: {
-      商品标题: { value: '名流水多多', source: '模型生成' as const }, 卖点: { value: ['润滑', '超薄'], source: '模型生成' as const },
-      品牌: { value: '名流', source: '店铺资料' as const }, 导购标题: { value: '水多多', source: '用户确认' as const },
+      商品标题: { value: '名流水多多', source: '模型生成' as const }, 商品卖点: { value: ['润滑', '超薄'], source: '模型生成' as const },
+      导购标题: { value: '水多多短', source: '模型生成' as const }, 品牌: { value: '名流', source: '店铺资料' as const },
+      产地: { value: '大陆', source: '模型生成' as const },
     } }
     const before = { 导购标题: { value: '水多多', store: '名流旗舰店', confirmedAt: 't0' } }
+    // A store attribute the model wrote stays with its store's card; the first card's guide title stays.
     expect(confirmShared(before, draft, '拼', 't1')).toEqual({
-      shared: { ...before, 商品标题: { value: '名流水多多', store: '拼', confirmedAt: 't1' }, 卖点: { value: ['润滑', '超薄'], store: '拼', confirmedAt: 't1' } },
-      labels: ['商品标题', '卖点'],
+      shared: { ...before, 商品标题: { value: '名流水多多', store: '拼', confirmedAt: 't1' }, 商品卖点: { value: ['润滑', '超薄'], store: '拼', confirmedAt: 't1' } },
+      labels: ['商品标题', '商品卖点'],
     })
   })
 
   it('takes a shared value the answers leave out or repeat, and leaves one they changed to this store\'s card', () => {
     const shared = {
       商品标题: { value: '名流水多多', store: '名流旗舰店', confirmedAt: '2026-10-08T03:00:00.000Z' },
-      卖点: { value: ['润滑', '超薄'], store: '名流旗舰店', confirmedAt: '2026-10-08T03:00:00.000Z' },
+      商品卖点: { value: ['润滑', '超薄'], store: '名流旗舰店', confirmedAt: '2026-10-08T03:00:00.000Z' },
       导购标题: { value: '水多多', store: '名流旗舰店', confirmedAt: '2026-10-08T03:00:00.000Z' },
     }
+    const all = ['商品标题', '商品卖点', '导购标题']
     const applied = withShared({ columns: { 到手价: 'price' }, values: {
-      卖点: { value: ['润滑', '超薄'], source: '模型生成' }, 导购标题: { value: '名流水多多', source: '模型生成' }, 品牌: { value: '名流', source: '店铺资料' },
-    } }, shared)
+      商品卖点: { value: ['润滑', '超薄'], source: '模型生成' }, 导购标题: { value: '名流水多多', source: '模型生成' }, 品牌: { value: '名流', source: '店铺资料' },
+    } }, shared, all)
     expect(applied.answers).toEqual({ columns: { 到手价: 'price' }, values: {
-      商品标题: { value: '名流水多多', source: '用户确认' }, 卖点: { value: ['润滑', '超薄'], source: '用户确认' },
+      商品标题: { value: '名流水多多', source: '用户确认' }, 商品卖点: { value: ['润滑', '超薄'], source: '用户确认' },
       导购标题: { value: '名流水多多', source: '模型生成' }, 品牌: { value: '名流', source: '店铺资料' },
     } })
     expect(applied.notes).toEqual([
-      '共用内容已在前面的确认卡片确认，自动带上：商品标题（名流旗舰店，2026-10-08 11:00 北京时间）、卖点（名流旗舰店，2026-10-08 11:00 北京时间）',
+      '共用内容已在前面的确认卡片确认，自动带上：商品标题（名流旗舰店，2026-10-08 11:00 北京时间）、商品卖点（名流旗舰店，2026-10-08 11:00 北京时间）',
       '这家店改了共用内容，要在本店卡片里确认：导购标题（名流旗舰店 确认的是「水多多」）',
     ])
-    expect(withShared({}, {})).toEqual({ answers: { values: {} }, notes: [] })
+    // A store whose form has only a title takes only the title.
+    expect(Object.keys(withShared({}, shared, ['商品标题']).answers.values ?? {})).toEqual(['商品标题'])
+    expect(withShared({}, {}, all)).toEqual({ answers: { values: {} }, notes: [] })
   })
 
   it('marks the shared values confirmed in a draft built with --plan', async () => {
@@ -216,7 +243,7 @@ describe('multi-publish script', () => {
     ].join('\n'))
     const saved = JSON.parse(await readFile(plan, 'utf8')) as PublishPlan
     expect(saved).toEqual({
-      createdAt: '2026-10-08T03:00:00.000Z', folder: materials, marks: [], shared: {},
+      createdAt: '2026-10-08T03:00:00.000Z', folder: materials, marks: [], shared: {}, confirmed: [],
       targets: [
         { account: 'tm', platform: 'tmall', store: '名流旗舰店', records: join(cwd, '天猫发品', '发品记录.json') },
         { account: 'pdd', platform: 'pinduoduo', store: '名流保健用品官方旗舰店', records: join(cwd, '拼多多发品', '发品记录.json') },
@@ -228,26 +255,31 @@ describe('multi-publish script', () => {
     expect(first.out).toBe([
       '下一家：第 1/3 家，天猫「名流旗舰店」（账号 tm），用 tmall-publish 技能。',
       `- 字段规则写到 ${join('天猫发品', '名流旗舰店')}（tmall-publish-category 的 rules 加 --out ${join('天猫发品', '名流旗舰店')}）。`,
-      `- 商品草稿写到 ${join('发品草稿', '名流旗舰店')}（product-draft draft 加 --out ${join('发品草稿', '名流旗舰店')} --store 名流旗舰店 --plan ${plan}）。`,
+      `- 商品草稿写到 ${join('发品草稿', '天猫-名流旗舰店')}（product-draft draft 加 --out ${join('发品草稿', '天猫-名流旗舰店')} --store 名流旗舰店 --plan ${plan}）。`,
       '- 保存时不加 --out，保存记录留在 天猫发品/发品记录.json，汇总从那里读结果。',
       '- 这是第一张确认卡片：用户一键认可后、保存前，运行 confirm 记下用户认可的内容，后面的店自动带上。', '',
     ].join('\n'))
 
     // The user confirms the first card; the shared content is kept, and the Tmall store saves.
-    const draft = join(cwd, '发品草稿', '名流旗舰店', '商品草稿.json')
+    const draft = join(cwd, '发品草稿', '天猫-名流旗舰店', '商品草稿.json')
     await mkdir(join(draft, '..'), { recursive: true })
     await writeFile(draft, JSON.stringify({ values: { 商品标题: { value: '名流水多多', source: '模型生成' } } }))
+    // A draft from another store's directory is refused.
+    const elsewhere = await run(d, ['confirm', '--account', 'tm', '--draft', join(cwd, 'draft.json'), '--plan', plan])
+    expect(elsewhere.err).toBe(`「名流旗舰店」的商品草稿应在 ${join(cwd, '发品草稿', '天猫-名流旗舰店')}，不是 ${join(cwd, 'draft.json')}。\n`)
     expect((await run(d, ['confirm', '--account', 'tm', '--draft', draft, '--plan', plan])).out)
       .toBe('已记下「名流旗舰店」卡片里用户认可的共用内容：商品标题。后面的店生成草稿时加 --plan 自动带上。\n')
     await mkdir(join(cwd, '天猫发品'))
     await writeFile(join(cwd, '天猫发品', '发品记录.json'), JSON.stringify([
       record('submitting', '2026-10-08T03:05:00.000Z'), record('saved', '2026-10-08T03:06:00.000Z', { itemId: '1088' }),
     ]))
+    // A store already dealt with takes no confirmation.
+    expect((await run(d, ['confirm', '--account', 'tm', '--draft', draft, '--plan', plan])).err).toBe('「名流旗舰店」已经处理过了（保存、失败、等待或取消），不能再确认它的卡片。\n')
 
     const second = await run(d, ['next', '--plan', plan])
     expect(second.out).toContain('下一家：第 2/3 家，拼多多「名流保健用品官方旗舰店」（账号 pdd），用 pdd-publish 技能。')
     expect(second.out).toContain(`（pdd-publish 的 rules 加 --out ${join('拼多多发品', '名流保健用品官方旗舰店')}）`)
-    expect(second.out).toContain('- 共用内容已在前面的卡片确认（商品标题：名流旗舰店），草稿里标「已确认」；这家店的卡片仍要用户一键认可才保存。')
+    expect(second.out).toContain('- 共用内容已在前面的卡片确认（商品标题：名流旗舰店），草稿里标「已确认」；这家店的卡片仍要用户一键认可才保存，认可后同样运行 confirm。')
 
     // Pinduoduo stops before a save: it is marked and never handed out again; the Douyin shop is next.
     expect((await run(d, ['mark', '--account', 'pdd', '--status', 'failed', '--note', '账号需要重新登录', '--plan', plan])).out)
@@ -297,9 +329,15 @@ describe('multi-publish script', () => {
     expect((await run(d, ['summary', '--plan', plan])).err).toBe(`发品计划 ${plan} 有误：不是多店发品计划文件（缺 createdAt、folder 或 targets）\n`)
     expect((await run(d, ['plan', '--folder', materials, '--account', 'tm', '--plan', plan, '--replace'])).code).toBe(0)
     expect((await run(d, ['mark', '--account', 'pdd', '--status', 'failed', '--note', 'x', '--plan', plan])).err).toBe('账号 pdd 不在这次的发品计划里。\n')
-    expect((await run(d, ['confirm', '--account', 'tm', '--draft', join(cwd, 'none.json'), '--plan', plan])).err).toContain('读不到商品草稿 ')
-    await writeFile(join(cwd, 'draft.json'), JSON.stringify({ values: { 品牌: { value: '名流', source: '店铺资料' } } }))
-    expect((await run(d, ['confirm', '--account', 'tm', '--draft', join(cwd, 'draft.json'), '--plan', plan])).out).toBe('「名流旗舰店」的草稿里没有模型生成的值，共用内容没有变化。\n')
+    const dir = join(cwd, '发品草稿', '天猫-名流旗舰店')
+    await mkdir(dir, { recursive: true })
+    expect((await run(d, ['confirm', '--account', 'tm', '--draft', join(dir, 'none.json'), '--plan', plan])).err).toContain('读不到商品草稿 ')
+    await writeFile(join(dir, 'draft.json'), JSON.stringify({ values: { 品牌: { value: '名流', source: '店铺资料' } } }))
+    expect((await run(d, ['confirm', '--account', 'tm', '--draft', join(dir, 'draft.json'), '--plan', plan])).out)
+      .toBe('已记下「名流旗舰店」的卡片已确认；没有新的共用内容（标题、卖点、导购标题已共用或不是模型生成的）。\n')
+    // A later store is no longer the first card, though nothing was shared.
+    expect((JSON.parse(await readFile(plan, 'utf8')) as PublishPlan).confirmed).toEqual(['tm'])
+    expect((await run(d, ['next', '--plan', plan])).out).toContain('- 共用内容已在前面的卡片确认（没有模型生成的标题或卖点）')
     expect((await run(d, ['mark', '--account', 'tm', '--status', 'pending', '--note', '缺参考价', '--plan', plan])).out).toContain('已记下「名流旗舰店」：待确认（缺参考价）')
     const odd = deps(cwd, { now: () => { throw new Error('clock') } })
     expect(await run(odd, ['mark', '--account', 'tm', '--status', 'pending', '--note', 'x', '--plan', plan])).toEqual({ code: EXIT.failed, out: '', err: '失败：clock\n' })

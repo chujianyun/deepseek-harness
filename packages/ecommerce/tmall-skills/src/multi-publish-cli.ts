@@ -165,8 +165,17 @@ function targetOf(plan: PublishPlan, account: string): PlanTarget {
 }
 
 /** Where a store's draft and rules go, so stores never share a file. */
-const draftDir = (target: PlanTarget) => join('发品草稿', fileSafe(target.store))
+const draftDir = (target: PlanTarget) => join('发品草稿', `${PLATFORM_SKILLS[target.platform].name}-${fileSafe(target.store)}`)
 const rulesDir = (target: PlanTarget) => join(PLATFORM_SKILLS[target.platform].dir, fileSafe(target.store))
+
+/**
+ * A word for a bash command line, quoted when it holds anything but plain characters.
+ * @param word - the word.
+ * @returns the word, safe to paste.
+ */
+export function shellWord(word: string): string {
+  return /^[\p{L}\p{N}_./:@%+=-]+$/u.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`
+}
 
 async function plan(options: Extract<MultiPublishOptions, { command: 'plan' }>, deps: MultiPublishDeps): Promise<string> {
   const path = resolve(options.plan)
@@ -189,7 +198,7 @@ async function plan(options: Extract<MultiPublishOptions, { command: 'plan' }>, 
     const platform = account.platform as MerchantPlatform
     targets.push({ account: id, platform, store: account.store ?? account.account, records: resolve(cwd, PLATFORM_SKILLS[platform].dir, '发品记录.json') })
   }
-  await writePlan(path, { createdAt: deps.now().toISOString(), folder, targets, marks: [], shared: {} })
+  await writePlan(path, { createdAt: deps.now().toISOString(), folder, targets, marks: [], shared: {}, confirmed: [] })
   return [
     `已建多店发品计划（${String(targets.length)} 家店）：${path}`,
     ...targets.map((target, at) => `${String(at + 1)}. ${PLATFORM_SKILLS[target.platform].name}「${target.store}」（账号 ${target.account}）—— 用 ${PLATFORM_SKILLS[target.platform].skill} 技能`),
@@ -204,14 +213,17 @@ async function next(path: string): Promise<string> {
   const { target, index } = found
   const { name, skill, dir } = PLATFORM_SKILLS[target.platform]
   const shared = Object.entries(current.shared)
+  const first = current.confirmed.length === 0
+  const rules = shellWord(rulesDir(target))
+  const drafts = shellWord(draftDir(target))
   return [
     `下一家：第 ${String(index + 1)}/${String(current.targets.length)} 家，${name}「${target.store}」（账号 ${target.account}），用 ${skill} 技能。`,
-    `- 字段规则写到 ${rulesDir(target)}（${skill === 'tmall-publish' ? 'tmall-publish-category' : skill} 的 rules 加 --out ${rulesDir(target)}）。`,
-    `- 商品草稿写到 ${draftDir(target)}（product-draft draft 加 --out ${draftDir(target)} --store ${target.store} --plan ${path}）。`,
+    `- 字段规则写到 ${rulesDir(target)}（${skill === 'tmall-publish' ? 'tmall-publish-category' : skill} 的 rules 加 --out ${rules}）。`,
+    `- 商品草稿写到 ${draftDir(target)}（product-draft draft 加 --out ${drafts} --store ${shellWord(target.store)} --plan ${shellWord(path)}）。`,
     `- 保存时不加 --out，保存记录留在 ${dir}/发品记录.json，汇总从那里读结果。`,
-    shared.length === 0
+    first
       ? '- 这是第一张确认卡片：用户一键认可后、保存前，运行 confirm 记下用户认可的内容，后面的店自动带上。'
-      : `- 共用内容已在前面的卡片确认（${shared.map(([label, entry]) => `${label}：${entry.store}`).join('、')}），草稿里标「已确认」；这家店的卡片仍要用户一键认可才保存。`,
+      : `- 共用内容已在前面的卡片确认（${shared.length === 0 ? '没有模型生成的标题或卖点' : shared.map(([label, entry]) => `${label}：${entry.store}`).join('、')}），草稿里标「已确认」；这家店的卡片仍要用户一键认可才保存，认可后同样运行 confirm。`,
   ].join('\n')
 }
 
@@ -219,15 +231,22 @@ async function confirm(options: Extract<MultiPublishOptions, { command: 'confirm
   const path = resolve(options.plan)
   const current = await readPlan(path)
   const target = targetOf(current, options.account)
+  if (outcomeOf(current, target, await readRecords(target.records)).started) {
+    throw new SkillError(`「${target.store}」已经处理过了（保存、失败、等待或取消），不能再确认它的卡片。`, EXIT.usage)
+  }
+  const expected = resolve(deps.cwd(), draftDir(target))
+  if (resolve(deps.cwd(), options.draft, '..') !== expected) {
+    throw new SkillError(`「${target.store}」的商品草稿应在 ${expected}，不是 ${resolve(deps.cwd(), options.draft)}。`, EXIT.usage)
+  }
   let draft: Pick<Draft, 'values'>
   try {
-    draft = JSON.parse(await readFile(options.draft, 'utf8')) as Pick<Draft, 'values'>
+    draft = JSON.parse(await readFile(resolve(deps.cwd(), options.draft), 'utf8')) as Pick<Draft, 'values'>
   } catch (error) {
     throw new SkillError(`读不到商品草稿 ${options.draft}：${(error as Error).message}`, EXIT.usage)
   }
   const { shared, labels } = confirmShared(current.shared, draft, target.store, deps.now().toISOString())
-  await writePlan(path, { ...current, shared })
-  if (labels.length === 0) return `「${target.store}」的草稿里没有模型生成的值，共用内容没有变化。`
+  await writePlan(path, { ...current, shared, confirmed: [...current.confirmed, target.account] })
+  if (labels.length === 0) return `已记下「${target.store}」的卡片已确认；没有新的共用内容（标题、卖点、导购标题已共用或不是模型生成的）。`
   return `已记下「${target.store}」卡片里用户认可的共用内容：${labels.join('、')}。后面的店生成草稿时加 --plan 自动带上。`
 }
 

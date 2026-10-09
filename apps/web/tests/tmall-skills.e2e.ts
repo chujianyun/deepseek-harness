@@ -168,7 +168,7 @@ function streamChat(res: ServerResponse, request: ChatRequest, skillsDir: string
   const plan = '多店发品/发品计划.json'
   const storeDraft = (store: string, platform: string, cat: string, answers: object) => [
     `printf '%s' '${JSON.stringify(answers)}' > 发品草稿/答案_${store}.json`,
-    `${draft} draft --folder 素材 --answers 发品草稿/答案_${store}.json --rules ${platform}/${store}/字段规则_${cat}.json --store ${store} --plan ${plan} --out 发品草稿/${store}`,
+    `${draft} draft --folder 素材 --answers 发品草稿/答案_${store}.json --rules ${platform}/${store}/字段规则_${cat}.json --store ${store} --plan ${plan} --out 发品草稿/${platform.slice(0, -2)}-${store}`,
   ].join(' && ')
   const multiSteps = [
     () => 'dsh-ecommerce accounts',
@@ -176,16 +176,16 @@ function streamChat(res: ServerResponse, request: ChatRequest, skillsDir: string
     () => `${multiScript} next`,
     () => `${publish} rules --account ${idOf('tmall')} --cat 50024154 --out 天猫发品/名流旗舰店`,
     () => `printf '%s' '${JSON.stringify(REMEMBERED)}' > 发品草稿/记忆.json && dsh-ecommerce remember 发品草稿/记忆.json >/dev/null && ${storeDraft('名流旗舰店', '天猫发品', '50024154', DRAFT_ANSWERS)}`,
-    () => `${multiScript} confirm --account ${idOf('tmall')} --draft 发品草稿/名流旗舰店/商品草稿.json`,
-    () => `${store} save --account ${idOf('tmall')} --draft 发品草稿/名流旗舰店/商品草稿.json --rules 天猫发品/名流旗舰店/字段规则_50024154.json --confirmed --stock 1000`,
+    () => `${multiScript} confirm --account ${idOf('tmall')} --draft 发品草稿/天猫-名流旗舰店/商品草稿.json`,
+    () => `${store} save --account ${idOf('tmall')} --draft 发品草稿/天猫-名流旗舰店/商品草稿.json --rules 天猫发品/名流旗舰店/字段规则_50024154.json --confirmed --stock 1000`,
     () => `${multiScript} next`,
     () => `${pddScript} rules --account ${idOf('pinduoduo')} --cat 18770 --out 拼多多发品/拼多多拒店`,
     () => storeDraft('拼多多拒店', '拼多多发品', '18770', PDD_ANSWERS),
-    () => `${pddScript} save --account ${idOf('pinduoduo')} --draft 发品草稿/拼多多拒店/商品草稿.json --rules 拼多多发品/拼多多拒店/字段规则_18770.json --confirmed --stock 1000`,
+    () => `${pddScript} save --account ${idOf('pinduoduo')} --draft 发品草稿/拼多多-拼多多拒店/商品草稿.json --rules 拼多多发品/拼多多拒店/字段规则_18770.json --confirmed --stock 1000`,
     () => `${multiScript} next`,
     () => `${dyScript} rules --account ${idOf('doudian')} --cat 1000000638 --out 抖店发品/抖店小店`,
     () => storeDraft('抖店小店', '抖店发品', '1000000638', DOUDIAN_ANSWERS),
-    () => `${dyScript} save --account ${idOf('doudian')} --draft 发品草稿/抖店小店/商品草稿.json --rules 抖店发品/抖店小店/字段规则_1000000638.json --confirmed --stock 1000`,
+    () => `${dyScript} save --account ${idOf('doudian')} --draft 发品草稿/抖店-抖店小店/商品草稿.json --rules 抖店发品/抖店小店/字段规则_1000000638.json --confirmed --stock 1000`,
     () => `${multiScript} next`,
     () => `${multiScript} summary`,
   ]
