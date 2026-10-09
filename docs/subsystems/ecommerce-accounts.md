@@ -122,7 +122,7 @@ Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote name
  * @param accountId - the account.
  * @returns the state without it.
  * @throws RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`, or `ecommerce-accounts/delete-failed`
- *   when the browser data cannot be removed; the account then stays.
+ *   when the browser data cannot be removed; the account then stays, signed out.
  */
 @Remote async deleteAccount(accountId: string): Promise<EcommerceAccountsState>
 ```

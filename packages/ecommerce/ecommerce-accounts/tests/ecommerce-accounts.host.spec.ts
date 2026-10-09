@@ -346,7 +346,8 @@ describe('e-commerce accounts', () => {
     expect(await readdir(join(env.home, 'ecommerce', 't-a', 'browsers'))).toEqual([])
   })
 
-  it('keeps the account and says its browser data could not be removed when the deletion fails', async () => {
+  // A directory without write permission stops the removal only for a user other than root, and not on Windows.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('keeps the account, signed out, and says its browser data could not be removed when the deletion fails', async () => {
     const env = await setup()
     const { accountId } = await env.service.addAccount(merchant)
     await env.service.startSignIn(accountId)
@@ -357,7 +358,7 @@ describe('e-commerce accounts', () => {
     } finally {
       await chmod(browsers, 0o700)
     }
-    expect((await env.service.getState()).accounts.map(account => account.id)).toEqual([accountId])
+    expect((await env.service.getState()).accounts.map(account => [account.id, account.status])).toEqual([[accountId, 'signed-out']])
   })
 
   it('leaves a deleted account deleted when a check or sign-in waited behind the deletion', async () => {
