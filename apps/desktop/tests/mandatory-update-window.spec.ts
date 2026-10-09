@@ -35,19 +35,22 @@ function setup(platform: NodeJS.Platform = 'darwin') {
   if (platform === 'win32') window.webContents.mainFrame.url = 'dsh-app://app/'
   let policy: DesktopPolicyState = { blocking: true, checking: false, page: 'https://downloads.example.com/desktop' }
   let update: DesktopUpdateState = { phase: 'ready', version: '1.0.1-nightly.1' }
+  let source = true
   const install = vi.fn(async () => update)
   const createOverlay = (): WindowFixture => window
   const parent = createOverlay as () => BrowserWindow
   ui = new DesktopMandatoryUpdateWindow({ overlays: { create: parent }, preload: 'owned', locale: resolveDesktopLocale('zh'),
     allowedPageOrigins: ['https://downloads.example.com'], parent,
-    policy: () => policy, update: () => update, refresh: async () => {}, download: async () => update, install })
+    policy: () => policy, update: () => update, hasUpdateSource: () => source,
+    refresh: async () => {}, download: async () => update, install })
   ui.sync()
   const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
   const view = () => native.handlers.get(MANDATORY_IPC.status)!(event) as MandatoryUpdateView
   const action = (name: string, version: string = '1.0.1-nightly.1', revision = view().confirmation?.revision) =>
     native.handlers.get(MANDATORY_IPC.action)!(event, name, version, revision)
   return { view, action, install, policy(next: DesktopPolicyState) { policy = next; ui!.sync() },
-    update(next: DesktopUpdateState) { update = next; ui!.sync() } }
+    update(next: DesktopUpdateState) { update = next; ui!.sync() },
+    source: (next: boolean) => { source = next; ui!.sync() } }
 }
 
 it('releases IPC after the Windows main window has already been destroyed', () => {
@@ -211,4 +214,11 @@ it.each(['darwin', 'win32'] as const)('includes the installation wait notice onl
   expect(f.view().locale.messages.mandatoryReadyDetail).toBe(platform === 'win32'
     ? '更新期间应用将暂时关闭，完成后会自动打开。\n\n更新可能需要一些时间，请耐心等待，期间请勿重复启动应用。'
     : '更新期间应用将暂时关闭，完成后会自动打开。')
+})
+
+it('tells the page whether the installation can update itself', () => {
+  const { view, source } = setup()
+  expect(view().manualOnly).toBe(false)
+  source(false)
+  expect(view().manualOnly).toBe(true)
 })

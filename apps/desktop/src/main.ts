@@ -1314,7 +1314,7 @@ async function main(): Promise<void> {
       overlays: updateOverlays,
       preload: fileURLToPath(new URL('./preload-mandatory.cjs', import.meta.url)), locale,
       allowedPageOrigins: policyConfig.allowedPageOrigins, parent: () => mainWindow,
-      policy: () => policy.state, update: () => updates.state,
+      policy: () => policy.state, update: () => updates.state, hasUpdateSource: () => updates.hasUpdateSource,
       refresh: async () => { await Promise.all([checkPolicyManually(), updateSchedule.check(true)]) },
       download: downloadUpdate, install: version => updates.install(version),
     })

@@ -22,12 +22,14 @@ function render(view) {
     'tasks-changed': messages.updateTasksChanged,
     'tasks-unavailable': messages.updateTasksUnavailable,
   }
-  const fallback = failed || update.phase === 'idle' || view.error !== undefined
+  // Without an update source the download page is the only way to update, so updater states are not shown.
+  const manual = view.manualOnly === true
+  const fallback = manual || failed || update.phase === 'idle' || view.error !== undefined
   let title = policy.title ?? messages.mandatoryTitle
   let detail = policy.detail ?? messages.mandatoryDetail
   let primary = '', action = '', status = ''
-  if (downloadable) { primary = failed ? messages.updateRetry : messages.updateDownload; action = 'download' }
-  if (ready) { primary = view.deferred ? messages.mandatoryContinue : messages.updateRetry; action = 'install' }
+  if (downloadable && !manual) { primary = failed ? messages.updateRetry : messages.updateDownload; action = 'download' }
+  if (ready && !manual) { primary = view.deferred ? messages.mandatoryContinue : messages.updateRetry; action = 'install' }
   if (view.deferred) { title = messages.mandatoryReady; detail = messages.mandatoryDeferred }
   if (update.phase === 'downloading') status = format(messages.updateDownloading, { percent: String(Math.floor(update.percent ?? 0)) })
   if (update.phase === 'verifying') status = messages.updateVerifying
@@ -44,13 +46,13 @@ function render(view) {
     detail = view.restart === 'stopping-tasks' ? messages.mandatoryStopping : messages.mandatoryRestarting
     status = ''; primary = ''; action = ''
   }
-  const error = localError ?? view.error ?? (authenticationRequired ? messages.policyLoginRequired : failed
+  const error = localError ?? view.error ?? (authenticationRequired ? messages.policyLoginRequired : manual ? undefined : failed
     ? update.failedOperation === 'download' ? messages.mandatoryDownloadFailed
       : update.failedOperation === 'install'
         ? preparationMessages[update.preparationFailure] ?? messages.mandatoryInstallFailed
         : messages.mandatoryUnavailable
     : update.phase === 'idle' && !policy.checking ? messages.mandatoryNoRelease : undefined)
-  const technicalDetails = failed ? update.technicalDetails ?? update.message ?? '' : ''
+  const technicalDetails = failed && !manual ? update.technicalDetails ?? update.message ?? '' : ''
   document.documentElement.lang = id
   document.title = messages.mandatoryTitle
   element('title').textContent = title
@@ -73,7 +75,7 @@ function render(view) {
   element('later').textContent = messages.updateLater
   element('later').hidden = !confirmation?.active
   element('refresh').textContent = authenticationRequired ? messages.policyLogin : messages.mandatoryRefresh
-  element('refresh').hidden = confirming || view.restart !== undefined || (!authenticationRequired && (!!primary || !fallback))
+  element('refresh').hidden = confirming || view.restart !== undefined || (!authenticationRequired && (manual || !!primary || !fallback))
   element('refresh').disabled = busy || policy.checking
   element('page').textContent = navigation ? messages.mandatoryReopen : messages.mandatoryPage
   element('page').hidden = !fallback || confirming || policy.page === undefined
