@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-knowledge-base` 以 Host 服务 `ctx.knowledgeBases` 和 `knowledgeBases` Remote 命名空间的形式，提供当前登录租户的[知识库](../../../docs/glossary.zh.md#knowledge-base)。用户基于某个[嵌入模型](../../llm/embedding/README.zh.md)创建知识库，向其中加入 Word（`.docx`）、PDF、Markdown 与文本文件、包含这些文件的文件夹、网页和笔记，由一个处理器读取、分块、向量化并建立索引。Host 中的使用方通过 `search(id, query, options)` 检索知识库。存储与检索见[知识库子系统参考](../../../docs/subsystems/knowledge.zh.md)。
+`@deepseek-ai/dsh-knowledge-base` 以 Host 服务 `ctx.knowledgeBases` 和 `knowledgeBases` Remote 命名空间的形式，提供当前登录租户的[知识库](../../../docs/glossary.zh.md#knowledge-base)。用户基于某个[嵌入模型](../../llm/embedding/README.zh.md)创建知识库，向其中加入 Word（`.docx`）、PDF、Excel（`.xlsx`）、Markdown 与文本文件、包含这些文件的文件夹、网页和笔记，由一个处理器读取、分块、向量化并建立索引。Host 中的使用方通过 `search(id, query, options)` 检索知识库。存储与检索见[知识库子系统参考](../../../docs/subsystems/knowledge.zh.md)。
 
 ## 目录
 
@@ -27,7 +27,7 @@ kind: "package-reference"
 
 知识库属于当前 Hub 登录所在的租户：未登录时没有知识库，登录另一个租户时看到的是那个租户的。`createBase(name, embeddingModelId)` 要求名称为 1 到 50 个字且在租户内唯一，嵌入模型必须是「设置 → 嵌入模型」提供的（本地模型，除非本平台无法运行；或已添加的 API 模型）。`renameBase()` 与 `deleteBase()` 修改知识库；删除会移除其目录。
 
-`addFiles(id, paths)` 接收本机文件的绝对路径（Desktop 渲染器从拖入或选中的文件读取）。扩展名不受支持、大于 `maxFileBytes` 或无法读取的文件会被拒绝并说明原因；其余文件复制进知识库并作为 `pending` 条目排队。处理器逐个处理当前登录租户的待处理条目：读取文本（Word 用 mammoth，PDF 用 pdf.js 读取文本层，并做 NFKC 规范化），切分为最多 `chunkSize` 个估算 token 的分块（每块开头最多重复前一块末尾 `chunkOverlap` 个 token），按每批 `embedBatch` 个向量化，并在一个事务中替换该条目的分块。文件无法解析时条目以 `unreadable` 失败，没有文字（扫描版 PDF）时以 `empty` 失败，嵌入模型拒绝、出错或返回的向量数量不对时以 `embedding` 失败，索引拒绝写入分块时以 `storage` 失败；之后处理器继续处理下一个条目。`reprocessItem()` 从保存的副本重新排队一个条目，`deleteItem()` 删除条目及其副本与分块；两者都会先停止正在处理的该条目。条目的分块在新的处理结果替换前始终可检索，与其状态无关。
+`addFiles(id, paths)` 接收本机文件的绝对路径（Desktop 渲染器从拖入或选中的文件读取）。扩展名不受支持、大于 `maxFileBytes` 或无法读取的文件会被拒绝并说明原因；其余文件复制进知识库并作为 `pending` 条目排队。处理器逐个处理当前登录租户的待处理条目：读取文本（Word 用 mammoth，PDF 用 pdf.js 读取文本层，Excel 工作簿用 ExcelJS，并做 NFKC 规范化；工作簿中每个工作表第一行非空行作为表头，其后每行写成 `<工作表> 第 <n> 行: <表头>=<值>; …`，使分块带有工作表和行号；公式取上次计算的值，合并单元格取左上角单元格，只有表头的工作表写出列名，空工作表跳过），切分为最多 `chunkSize` 个估算 token 的分块（每块开头最多重复前一块末尾 `chunkOverlap` 个 token），按每批 `embedBatch` 个向量化，并在一个事务中替换该条目的分块。文件无法解析时条目以 `unreadable` 失败，没有文字（扫描版 PDF）时以 `empty` 失败，嵌入模型拒绝、出错或返回的向量数量不对时以 `embedding` 失败，索引拒绝写入分块时以 `storage` 失败；之后处理器继续处理下一个条目。`reprocessItem()` 从保存的副本重新排队一个条目，`deleteItem()` 删除条目及其副本与分块；两者都会先停止正在处理的该条目。条目的分块在新的处理结果替换前始终可检索，与其状态无关。
 
 `addFolder(id, path)` 遍历文件夹及其子文件夹，跳过名称以点开头的条目和符号链接。每个受支持的文件（按路径顺序，最多 `maxFolderFiles` 个）复制进来，成为 `file` 条目，其 `parentId` 指向 `folder` 条目，`source` 为相对文件夹的路径；不支持的文件和超出上限的文件计入文件夹的 `skippedCount`，其中前 500 个列在 `skipped` 中。不会监听文件夹：对文件夹调用 `reprocessItem()` 时重新扫描，加入新文件、移除已删除的文件，并重新复制、排队已变化（大小或修改时间不同）或失败的文件。文件夹不存在时以 `folder-missing` 失败，其中的文件保持不变。文件夹本身不参与处理；其视图的进度、大小与分块数取自其中的文件，删除文件夹会一并删除这些文件。
 

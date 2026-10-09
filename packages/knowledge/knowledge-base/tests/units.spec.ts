@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { chunkText, estimateTokens, unescapeSeparator } from '../src/chunk.ts'
 import { MAX_LISTED_SKIPPED, scanFolder } from '../src/folder.ts'
 import { pageToMarkdown } from '../src/page.ts'
+import ExcelJS from 'exceljs'
 import { isSupported, readDocument } from '../src/readers.ts'
 import { BaseStore } from '../src/store.ts'
 import { matchExpression, terms } from '../src/terms.ts'
@@ -104,9 +105,43 @@ describe('readers', () => {
     await expect(readDocument(join(dir, 'broken.pdf'))).rejects.toThrow()
   })
 
+  it('reads a workbook row by row, each row with its sheet, row number, and column headers', async () => {
+    const dir = await temp()
+    const path = join(dir, '商品 规格.xlsx')
+    const book = new ExcelJS.Workbook()
+    const spec = book.addWorksheet('规格')
+    spec.addRow(['型号', '容量', '单价'])
+    spec.addRow(['名流 500mg', '12 只', 39.9])
+    spec.addRow(['名流 超薄', { formula: 'B2', result: '12 只' }, { formula: 'C2*2', result: 79.8 }])
+    spec.mergeCells('A5:B5')
+    spec.getCell('A5').value = '合并单元格的说明'
+    spec.getCell('C6').value = new Date(Date.UTC(2026, 9, 1))
+    spec.getCell('D6').value = { richText: [{ text: '无表头' }, { text: '的列' }] }
+    book.addWorksheet('空表')
+    book.addWorksheet('只有表头').addRow(['日期', '渠道'])
+    await book.xlsx.writeFile(path)
+    expect(await readDocument(path)).toBe([
+      '# 工作表: 规格',
+      '规格 第 2 行: 型号=名流 500mg; 容量=12 只; 单价=39.9',
+      '规格 第 3 行: 型号=名流 超薄; 容量=12 只; 单价=79.8',
+      '规格 第 5 行: 型号=合并单元格的说明',
+      '规格 第 6 行: 单价=2026-10-01; D=无表头的列',
+      '',
+      '# 工作表: 只有表头',
+      '列: 日期、渠道',
+    ].join('\n'))
+    // A workbook without any cell reads as no text; a file that is no workbook does not read.
+    const empty = new ExcelJS.Workbook()
+    empty.addWorksheet('Sheet1')
+    await empty.xlsx.writeFile(join(dir, 'empty.xlsx'))
+    expect(await readDocument(join(dir, 'empty.xlsx'))).toBe('')
+    await writeFile(join(dir, 'broken.xlsx'), 'not a workbook')
+    await expect(readDocument(join(dir, 'broken.xlsx'))).rejects.toThrow()
+  })
+
   it('accepts only the supported extensions, case-insensitively', () => {
-    expect(['a.DOCX', 'b.pdf', 'c.md', 'd.markdown', 'e.txt'].every(isSupported)).toBe(true)
-    expect(['f.doc', 'g.png', 'h'].some(isSupported)).toBe(false)
+    expect(['a.DOCX', 'b.pdf', 'c.md', 'd.markdown', 'e.txt', 'f.XLSX'].every(isSupported)).toBe(true)
+    expect(['f.doc', 'g.png', 'h', 'i.xls'].some(isSupported)).toBe(false)
   })
 })
 

@@ -10,6 +10,7 @@ vi.mock('@deepseek-ai/dsh-native-command', () => ({
   openNativeAssociatedPath: (path: string) => { opened.paths.push(path); return Promise.resolve() },
 }))
 import { Context } from '@deepseek-ai/cordis'
+import ExcelJS from 'exceljs'
 import type { EmbeddingState } from '@deepseek-ai/dsh-embedding'
 import { RemoteError, remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import KnowledgeBaseService, { type Config, type KnowledgeState } from '../src/index.ts'
@@ -182,6 +183,29 @@ describe('knowledge bases', () => {
       dimensions: 64,
       settings: { chunkStrategy: 'structured', chunkSeparator: '\\n\\n', chunkSize: 1024, chunkOverlap: 200, documentCount: 6, threshold: 0 },
     })
+  })
+
+  it('indexes a workbook\'s rows so recall finds a row with its sheet and row number, and fails an empty one as empty', async () => {
+    const { service, until } = await boot()
+    const { id } = (await service.createBase('商品库', LOCAL)).bases[0]!
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-knowledge-xlsx-'))
+    const book = new ExcelJS.Workbook()
+    const sheet = book.addWorksheet('规格')
+    sheet.addRow(['型号', '容量', '单价'])
+    sheet.addRow(['名流 500mg', '12 只', 39.9])
+    sheet.addRow(['名流 超薄', '10 只', 29.9])
+    await book.xlsx.writeFile(join(dir, '商品 规格.xlsx'))
+    const empty = new ExcelJS.Workbook()
+    empty.addWorksheet('Sheet1')
+    await empty.xlsx.writeFile(join(dir, '空表.xlsx'))
+    await service.addFiles(id, [join(dir, '商品 规格.xlsx'), join(dir, '空表.xlsx')])
+    const state = await until(next => next.bases[0]!.items.length === 2 && settled(next))
+    expect(state.bases[0]!.items.map(item => [item.name, item.status, item.error])).toEqual([
+      ['商品 规格.xlsx', 'completed', null], ['空表.xlsx', 'failed', 'empty'],
+    ])
+    const { hits } = await service.recall(id, '名流 500mg 单价')
+    expect(hits[0]).toMatchObject({ itemName: '商品 规格.xlsx' })
+    expect(hits[0]!.text).toContain('规格 第 2 行: 型号=名流 500mg; 容量=12 只; 单价=39.9')
   })
 
   it('validates settings, and the recall test follows the retrieval settings', async () => {
