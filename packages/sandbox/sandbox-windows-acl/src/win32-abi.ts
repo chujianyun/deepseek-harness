@@ -38,6 +38,14 @@ export const WRITE_RESTRICTED = 0x8
 export const WinWorldSid = 1
 /** TOKEN_INFORMATION_CLASS value for token groups. */
 export const TokenGroups = 2
+/** TOKEN_INFORMATION_CLASS TokenUser: the token's user as one SID_AND_ATTRIBUTES. */
+export const TokenUser = 1
+/** Standard right to change an object's owner, and with it its mandatory label. */
+export const WRITE_OWNER = 0x00080000
+/** Inheritance of an ACE that applies to the directory alone. */
+export const NO_INHERITANCE = 0
+/** Win32 ERROR_ACCESS_DENIED. */
+export const ERROR_ACCESS_DENIED = 5
 /** TOKEN_INFORMATION_CLASS value for the token default DACL. */
 export const TokenDefaultDacl = 6
 /** SECURITY_INFORMATION flag selecting the DACL. */

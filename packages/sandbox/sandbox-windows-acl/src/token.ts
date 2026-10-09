@@ -7,39 +7,12 @@
  * @module @deepseek-ai/dsh-sandbox-windows-acl/token
  */
 
-import { allocBytes, allocPtrSlot, allocUint32, decodePtr, decodePtrAt, decodeUint32, encodeUint32, isNullPtr, ptrAddress, throwLastError, throwWin32 } from './ffi.ts'
+import { allocBytes, allocPtrSlot, allocUint32, decodePtr, decodePtrAt, decodeUint32, encodeUint32, ptrAddress, throwLastError, throwWin32 } from './ffi.ts'
 import type { NativePtr, Win32Bindings } from './ffi.ts'
 import { buildExplicitAccess } from './acl.ts'
 import * as abi from './win32-abi.ts'
 
-/**
- * Open the current process's access token with the rights
- * CreateRestrictedToken requires (the POC's OpenProcessToken call; the token
- * handle is obtained through a real OpenProcess handle because the
- * GetCurrentProcess() pseudo-handle is not addressable through koffi).
- * @param api - the binding table.
- * @returns the opened token handle.
- */
-export function openCurrentProcessToken(api: Win32Bindings): NativePtr {
-  const processHandle = api.openProcess(abi.PROCESS_QUERY_INFORMATION, 0, process.pid)
-  if (isNullPtr(processHandle)) throwLastError(api, 'OpenProcess', `pid ${process.pid}`)
-
-  const tokenSlot = allocPtrSlot()
-  const opened = api.openProcessToken(
-    processHandle,
-    abi.TOKEN_QUERY | abi.TOKEN_DUPLICATE | abi.TOKEN_ADJUST_DEFAULT | abi.TOKEN_ASSIGN_PRIMARY,
-    tokenSlot,
-  )
-  if (opened === 0) {
-    const win32Code = api.getLastError()
-    api.closeHandle(processHandle) // best-effort on the error path
-    throwWin32(api, 'OpenProcessToken', win32Code, `pid ${process.pid}`)
-  }
-  if (api.closeHandle(processHandle) === 0) throwLastError(api, 'CloseHandle', 'OpenProcess process handle')
-  const token = decodePtr(tokenSlot)
-  if (token === null) throwWin32(api, 'OpenProcessToken', api.getLastError(), 'null token handle')
-  return token
-}
+export { openCurrentProcessToken } from './process-token.ts'
 
 /**
  * Find and copy the token's logon session SID (S-1-5-5-x-y, attribute

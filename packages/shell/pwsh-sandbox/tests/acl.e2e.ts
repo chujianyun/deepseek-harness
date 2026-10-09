@@ -17,6 +17,7 @@ import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 import { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { SandboxPwshExecutor } from '../src/index.ts'
 import type { ShellExecSpec, ShellExecution, ShellRunResult } from '@deepseek-ai/dsh-shell'
@@ -54,6 +55,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('pwsh-sandbox real ACL confinement
     escapeFile = join(scratchRoot, 'escaped.txt')
 
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(LocalSandboxProvider, {})
     await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: writableDir })
     await ctx.plugin(LocalSubprocessRuntime)
@@ -120,5 +122,22 @@ describe.skipIf(!isWin32 || !pwshAvailable())('pwsh-sandbox real ACL confinement
     expect(privateTemp?.startsWith(tmpdir())).toBe(true)
     expect(existsSync(privateTemp ?? '')).toBe(false)
     expect(result.sandbox).toEqual({ mode: 'workspace-write', denied: false, enforcement: 'partial' })
+  }, 60_000)
+  it('workspace-write: a workspace the user created under the drive root, granting users only Modify, is writable', async () => {
+    // Folders under C:\\ inherit Authenticated Users: Modify and give their owner no WRITE_OWNER.
+    const driveRoot = mkdtempSync(join(`${process.env.SystemDrive ?? 'C:'}\\`, 'dsh-pwsh-sandbox-root-'))
+    try {
+      const policy: SandboxExecutionPolicy = { mode: 'workspace-write', workspaceRoot: driveRoot }
+      const result = await run(executor, executor.resolve({
+        command: `Set-Content -Path '${driveRoot}\\root-write.txt' -Value ok; 'ROOT-WRITE: OK'`,
+        workdir: driveRoot,
+        sandboxPolicy: policy,
+      }))
+      expect(result.exitCode, `stderr: ${result.stderr.text}`).toBe(0)
+      expect(result.stdout.text).toContain('ROOT-WRITE: OK')
+      expect(existsSync(join(driveRoot, 'root-write.txt'))).toBe(true)
+    } finally {
+      rmSync(driveRoot, { recursive: true, force: true })
+    }
   }, 60_000)
 })
