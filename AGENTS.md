@@ -179,3 +179,17 @@ Docs accompany every code change: update affected README and JSDoc contracts tog
 ## Vendoring policy
 
 `vendor/` packages are pinned source copies (manifest with upstream SHAs in [vendor/README.md](vendor/README.md)). Update via the sync procedure there; re-apply or retire the logged local modifications; rerun `pnpm run test && pnpm run build`.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues: `chujianyun/deepseek-harness`; [rules](docs/agents/issue-tracker.md).
+
+### Triage labels
+
+Default labels: [mapping](docs/agents/triage-labels.md).
+
+### Domain docs
+
+Single-context; see [layout](docs/agents/domain.md).
