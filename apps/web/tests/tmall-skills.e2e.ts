@@ -710,7 +710,7 @@ it.skipIf(process.platform === 'win32')('publishes one material folder to a Tmal
     expect(pddTried.map(record => record.status)).toEqual(['submitting', 'failed'])
     await page.getByText('成功 2、失败 1').first().waitFor()
     const shots = process.env['DSH_E2E_SHOT_DIR']
-    if (shots !== undefined) await page.screenshot({ path: join(shots, 'multi-publish-chat.png'), fullPage: true })
+    if (shots !== undefined && shots !== '') await page.screenshot({ path: join(shots, 'multi-publish-chat.png'), fullPage: true })
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
     if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-multi-publish')
