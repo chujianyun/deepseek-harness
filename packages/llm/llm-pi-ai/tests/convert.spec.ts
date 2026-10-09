@@ -945,14 +945,23 @@ describe('mapStopReason / mapUsage', () => {
       kind: 'error',
       failure: { code: MODEL_NOT_AVAILABLE_CODE, message: 'This account cannot use the selected model: Usage credits are required for this model.' },
     })
-    const codex = "Codex error: The 'gpt-5.3-codex-spark' model is not supported when using Codex with a ChatGPT account."
-    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: codex }))).toEqual({
-      kind: 'error',
-      failure: {
-        code: MODEL_NOT_AVAILABLE_CODE,
-        message: "This account cannot use the selected model: The 'gpt-5.3-codex-spark' model is not supported when using Codex with a ChatGPT account.",
-      },
-    })
+    const sentence = "The 'gpt-5.3-codex-spark' model is not supported when using Codex with a ChatGPT account."
+    // In-stream error, HTTP 400 detail body, and a sentence followed by more text.
+    for (const errorMessage of [`Codex error: ${sentence}`, JSON.stringify({ detail: sentence }), `${sentence} Upgrade your plan.`]) {
+      expect(mapStopReason(assistant({ stopReason: 'error', errorMessage }))).toEqual({
+        kind: 'error',
+        failure: { code: MODEL_NOT_AVAILABLE_CODE, message: `This account cannot use the selected model: ${sentence}` },
+      })
+    }
+    // credits_required decides on its own; the provider's message is optional.
+    for (const errorMessage of ['429 {"error":{"details":{"error_code":"credits_required"}}}',
+      '429 {"error":{"message":7,"details":{"error_code":"credits_required"}}}',
+      '429 {"error":{"message":"","details":{"error_code":"credits_required"}}}']) {
+      expect(mapStopReason(assistant({ stopReason: 'error', errorMessage }))).toEqual({
+        kind: 'error',
+        failure: { code: MODEL_NOT_AVAILABLE_CODE, message: 'This account cannot use the selected model: Usage credits are required for this model.' },
+      })
+    }
   })
 
   it('keeps other 429 refusals retryable rate limits', () => {
@@ -965,8 +974,6 @@ describe('mapStopReason / mapUsage', () => {
       '429 {"error":{"message":"Usage credits are required for this model."}}',
       '429 {"error":{"message":"m","details":null}}',
       '429 {"error":{"message":"m","details":{"reason":"credits_required"}}}',
-      '429 {"error":{"message":7,"details":{"error_code":"credits_required"}}}',
-      '429 {"error":{"details":{"error_code":"credits_required"}}}',
       '429 null',
       '429 {"type":"error"}',
     ]) {

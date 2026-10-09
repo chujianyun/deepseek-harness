@@ -9,6 +9,7 @@
  */
 
 import { brandString } from '@deepseek-ai/dsh-brand'
+import z from '@deepseek-ai/schemastery'
 import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWindowExceededError, isQuotaExceededError, LlmError, MODEL_NOT_AVAILABLE_CODE, QUOTA_EXCEEDED_CODE, SIGN_IN_REQUIRED_CODE } from '@deepseek-ai/dsh-llm'
 import type { FinishReason, StreamChunk, TokenUsage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
@@ -92,19 +93,31 @@ function signedOutFailure(text: string): string | undefined {
   return `The "${providerId}" account is not signed in. Sign in to it under Settings → Models, then send the message again.`
 }
 
-/** Codex's refusal of a model the signed-in ChatGPT plan does not include. */
-const CODEX_MODEL_REFUSED = /^Codex error: (The '[^']+' model is not supported when using Codex with a ChatGPT account\.)$/u
+/**
+ * Codex's refusal of a model the signed-in ChatGPT plan does not include. It arrives either as an
+ * in-stream error (`Codex error: <sentence>`) or as an HTTP 400 body (`{"detail":"<sentence>"}`), so the
+ * sentence is matched wherever it sits in the text.
+ */
+const CODEX_MODEL_REFUSED = /The '[^']+' model is not supported when using Codex with a ChatGPT account\.?/u
+
+/** Anthropic's refusal of a model that needs credits the account has not bought; any `message` is kept as text. */
+const CREDITS_REQUIRED = z.object({
+  error: z.object({
+    message: z.any(),
+    details: z.object({ error_code: z.const('credits_required').required() }).required(),
+  }).required(),
+})
 
 /**
  * The provider's own reason when it refuses the selected model for this
  * account. pi-ai flattens the HTTP body into the error text, so Anthropic's
  * refusal arrives as `429 <JSON>` whose `error.details.error_code` is
- * `credits_required`; Codex's arrives as fixed wording.
+ * `credits_required`.
  * @param text - the failure text pi-ai reported.
  * @returns the provider's reason, or undefined for any other failure.
  */
 function modelRefusal(text: string): string | undefined {
-  const codex = CODEX_MODEL_REFUSED.exec(text)?.[1]
+  const codex = CODEX_MODEL_REFUSED.exec(text)?.[0]
   if (codex !== undefined) return codex
   if (!text.startsWith('429 {')) return undefined
   let body: unknown
@@ -112,11 +125,14 @@ function modelRefusal(text: string): string | undefined {
     // A truncated or non-JSON body is an ordinary rate limit as far as this check knows.
     return undefined
   }
-  const error = typeof body === 'object' && body !== null && 'error' in body ? body.error : undefined
-  if (typeof error !== 'object' || error === null || !('details' in error) || !('message' in error)) return undefined
-  const { details, message } = error
-  return typeof details === 'object' && details !== null && 'error_code' in details
-    && details.error_code === 'credits_required' && typeof message === 'string' ? message : undefined
+  let refusal: ReturnType<typeof CREDITS_REQUIRED>
+  // The schema checks the untyped body; its parameter type describes valid input only.
+  try { refusal = CREDITS_REQUIRED(body as never) } catch (_otherRateLimit) {
+    // Any other 429 body is an ordinary rate limit.
+    return undefined
+  }
+  const message: unknown = refusal.error.message
+  return typeof message === 'string' && message !== '' ? message : 'Usage credits are required for this model.'
 }
 
 /**

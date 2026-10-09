@@ -1,5 +1,6 @@
 // A model the signed-in account may not use: ChatGPT (Codex) refuses a model its plan lacks with a stream error, and
-// Anthropic refuses a model that needs bought credits with HTTP 429 `credits_required`. Both endpoints are loopback
+// Anthropic refuses a model that needs bought credits with HTTP 429 `credits_required`. Codex is answered in both
+// refusal formats it uses: an in-stream error and an HTTP 400 detail body. Both endpoints are loopback
 // stand-ins answering in the providers' wire formats; the refusal must end the turn at once with a localized row,
 // not retry as a rate limit or show the raw JSON.
 import { createServer, type IncomingMessage } from 'node:http'
@@ -30,16 +31,21 @@ async function startRefusingProviders() {
     req.on('end', () => {
       if (req.method === 'POST' && req.url === '/codex/responses') {
         counts.codex += 1
-        // Codex refuses inside the event stream, as the real service does for a model the plan lacks.
-        const refusal = { type: 'error', message: "The 'gpt-5.3-codex-spark' model is not supported when using Codex with a ChatGPT account." }
-        res.writeHead(200, { 'content-type': 'text/event-stream' })
-        res.end(`event: error\ndata: ${JSON.stringify(refusal)}\n\n`)
+        const sentence = "The 'gpt-5.3-codex-spark' model is not supported when using Codex with a ChatGPT account."
+        if (counts.codex === 1) {
+          // The real service has refused inside the event stream...
+          res.writeHead(200, { 'content-type': 'text/event-stream' })
+          res.end(`event: error\ndata: ${JSON.stringify({ type: 'error', message: sentence })}\n\n`)
+        } else {
+          // ...and can refuse with an HTTP 400 detail body.
+          res.writeHead(400, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ detail: sentence }))
+        }
         return
       }
       if (req.method === 'POST' && req.url?.split('?')[0] === '/v1/messages') {
         counts.anthropic += 1
-        // The SDK's own retry is turned off by the header, so every count is a harness attempt.
-        res.writeHead(429, { 'content-type': 'application/json', 'x-should-retry': 'false' })
+        res.writeHead(429, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ type: 'error', error: {
           type: 'rate_limit_error', message: 'Usage credits are required for this model.',
           details: { error_code: 'credits_required', can_user_purchase_credits: true, model: 'claude-fable-5' },
@@ -109,6 +115,9 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: a model the account ma
       expect(await codexRow.textContent()).toContain(ROW)
       expect(await codexRow.getByRole('button', { name: '去配置模型' }).isVisible()).toBe(true)
       expect(providers.counts.codex).toBe(1)
+      const codexHttpRow = await sendWith(page, 'GPT-5.3 Codex Spark', '换个说法')
+      expect(await codexHttpRow.textContent()).toContain(ROW)
+      expect(providers.counts.codex).toBe(2)
 
       const claudeRow = await sendWith(page, 'Claude Fable 5', '再试一次')
       expect(await claudeRow.textContent()).toContain(ROW)
