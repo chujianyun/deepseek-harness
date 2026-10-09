@@ -6,6 +6,7 @@ import {
 } from '@deepseek-ai/dsh-client-modules/client'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { assertEntriesActive, bootClient, type EntryStateLabel } from '../src/boot-client.ts'
+import { isThirdPartyEntry } from '../src/boot.ts'
 import { FIBER_STATE } from '../src/loader-status.ts'
 
 const BOOTSTRAP_ID = '@deepseek-ai/dsh-client-modules'
@@ -93,6 +94,25 @@ describe('bootClient', () => {
     expect(error).toHaveBeenCalledOnce()
     expect(error.mock.calls[0]?.[0]).toHaveProperty('message', expect.stringContaining('client-modules: cannot resolve'))
   })
+
+  it('warns about an optional row whose apply throws and still activates the others', async () => {
+    const graph = graphOf(['@deepseek-ai/shipped', '@vendor/plugin'])
+    const { modules } = modulesOf(graph, {
+      '@deepseek-ai/shipped': { apply: () => {} },
+      '@vendor/plugin': { apply: () => { throw new Error('vendor plugin needs a missing service') } },
+    })
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    onTestFinished(() => { vi.restoreAllMocks() })
+    const sink = stateSink()
+
+    await bootClient({ ctx, modules, manifest: modules.manifest, optional: isThirdPartyEntry, onEntryState: sink.onEntryState })
+
+    expect(sink.states.get('@deepseek-ai/shipped')?.at(-1)).toBe('active')
+    expect(warn).toHaveBeenCalledExactlyOnceWith('web boot: 1 optional entry did not activate\n@vendor/plugin: failed')
+  })
 })
 
 describe('assertEntriesActive', () => {
@@ -145,5 +165,29 @@ describe('assertEntriesActive', () => {
       'lost: import failed: client-modules: could not load "lost": plugins/??lost/client.js&rev=0: bundle script failed to load',
       'quiet: import failed (see console for the import error)',
     ].join('\n'))
+  })
+
+  it('warns about optional entries and throws only for required ones', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    onTestFinished(() => { warn.mockRestore() })
+    const ctx = auditCtx([
+      { name: '@vendor/a', fiber: { state: FIBER_STATE.FAILED, inject: {} } },
+      { name: '@vendor/b' },
+      { name: '@deepseek-ai/core', fiber: { state: FIBER_STATE.FAILED, inject: {} } },
+    ])
+
+    expect(() => { assertEntriesActive(ctx, silent, isThirdPartyEntry) }).toThrow('web boot: 1 entry did not activate\n@deepseek-ai/core: failed')
+    expect(warn).toHaveBeenCalledExactlyOnceWith([
+      'web boot: 2 optional entries did not activate',
+      '@vendor/a: failed',
+      '@vendor/b: import failed (see console for the import error)',
+    ].join('\n'))
+  })
+
+  it('passes with only a warning when every inactive entry is optional', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    onTestFinished(() => { warn.mockRestore() })
+    expect(() => { assertEntriesActive(auditCtx([{ name: '@vendor/a' }]), silent, isThirdPartyEntry) }).not.toThrow()
+    expect(warn).toHaveBeenCalledOnce()
   })
 })
