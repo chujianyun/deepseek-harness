@@ -947,7 +947,7 @@ describe('publishing memory', () => {
     }
     expect(JSON.parse(first.stdout)).toEqual(memory)
     expect(memory.stores['名流旗舰店']).toEqual({ values: { 品牌: '名流', 产地: '大陆', 颜色: ['透明'] }, updatedAt: expect.any(String) as string })
-    expect(memory.categories['水多多']).toEqual({ platform: 'tmall', catId: '50024154', categoryPath: '计生用品 > 避孕套', updatedAt: expect.any(String) as string })
+    expect(memory.categories['水多多']).toEqual({ tmall: { catId: '50024154', categoryPath: '计生用品 > 避孕套', updatedAt: expect.any(String) as string } })
     expect(memory.columns['到手价']).toEqual({ field: 'price', updatedAt: expect.any(String) as string })
     expect(memory.declarations['名流旗舰店']!['50024154']!.personalUseConfirm!.text).toBe('确认个人可自行使用。')
     // A change keeps the rest; null forgets one value, a whole store, or a header.
@@ -959,6 +959,27 @@ describe('publishing memory', () => {
     expect((JSON.parse((await run('memory')).stdout) as typeof memory).stores).toEqual({})
     const saved = JSON.parse(await readFile(join(env.home, 'ecommerce', 't-a', 'publish-memory.json'), 'utf8')) as typeof memory
     expect(saved.categories['水多多']).toBeDefined()
+    // The same product line keeps its category on each platform; remembering one platform again replaces only that one.
+    for (const [platform, catId] of [['pinduoduo', '18770'], ['doudian', '1000000638'], ['tmall', '50024155']]) {
+      await run('remember', await write(dir, 'd.json', { category: { line: '水多多', platform, catId } }))
+    }
+    const lines = (JSON.parse((await run('memory')).stdout) as typeof memory).categories['水多多'] as Record<string, { catId: string; categoryPath: string }>
+    expect(Object.fromEntries(Object.entries(lines).map(([platform, entry]) => [platform, entry.catId]))).toEqual({ tmall: '50024155', pinduoduo: '18770', doudian: '1000000638' })
+    expect(lines['tmall']!.categoryPath).toBe('')
+  })
+
+  it('reads a category remembered before categories were kept per platform as that platform\'s, and keeps it', async () => {
+    const env = await setup()
+    const dir = await tempDir()
+    const run = (...args: string[]) => runCommand(env, varsOf(env, bashCall(`c-${String(Math.random())}`)), ...args)
+    const path = join(env.home, 'ecommerce', 't-a', 'publish-memory.json')
+    await mkdir(join(path, '..'), { recursive: true })
+    await writeFile(path, JSON.stringify({ categories: { 水多多: { platform: 'pinduoduo', catId: '18770', categoryPath: '成人用品 > 计生用品 > 避孕套', updatedAt: '2026-10-09T01:35:15.002Z' } } }))
+    const old = { pinduoduo: { catId: '18770', categoryPath: '成人用品 > 计生用品 > 避孕套', updatedAt: '2026-10-09T01:35:15.002Z' } }
+    expect(JSON.parse((await run('memory')).stdout)).toMatchObject({ categories: { 水多多: old } })
+    await run('remember', await write(dir, 'a.json', { category: { line: '水多多', platform: 'doudian', catId: '1000000638' } }))
+    const saved = JSON.parse(await readFile(path, 'utf8')) as { categories: Record<string, Record<string, unknown>> }
+    expect(saved.categories['水多多']).toEqual({ ...old, doudian: { catId: '1000000638', categoryPath: '', updatedAt: expect.any(String) as string } })
   })
 
   it('forgets a remembered category and declarations, and leaves a damaged file as it is', async () => {
@@ -970,6 +991,13 @@ describe('publishing memory', () => {
       category: { line: '水多多', platform: 'tmall', catId: '50024154' },
       declarations: { store: '名流', catId: '1', confirmed: confirmed(['a', 'b']) },
     })
+    await run({ category: { line: '水多多', platform: 'doudian', catId: '1000000638' } })
+    await run({ category: { line: '颗粒', platform: 'tmall', catId: '1' } })
+    // One platform of a line is forgotten, the rest kept; forgetting its last platform forgets the line.
+    const onePlatform = JSON.parse((await run({ forget: { categories: [{ line: '水多多', platform: 'tmall' }, { line: '无', platform: 'tmall' }] } })).stdout) as { categories: object }
+    expect(onePlatform.categories).toEqual({ 水多多: { doudian: expect.any(Object) as object }, 颗粒: { tmall: expect.any(Object) as object } })
+    const lastPlatform = JSON.parse((await run({ forget: { categories: [{ line: '颗粒', platform: 'tmall' }] } })).stdout) as { categories: object }
+    expect(lastPlatform.categories).toEqual({ 水多多: { doudian: expect.any(Object) as object } })
     await run({ declarations: { store: '名流', catId: '2', confirmed: confirmed(['c']) } })
     const forget = { categories: ['水多多', '无'], declarations: [{ store: '名流', catId: '1', keys: ['a'] }, { store: '别家', catId: '1' }] }
     type Forgot = { categories: object; declarations: Record<string, Record<string, object>> }
@@ -1022,6 +1050,8 @@ describe('publishing memory', () => {
     expect((await run({})).stderr).toBe('DSH: nothing was remembered, the file is not as described: (top level): nothing to remember\n')
     expect((await run({ columns: { 价: 'money' } })).stderr).toContain('columns.价')
     expect((await run({ category: { line: '水多多', platform: 'tmall', catId: 'abc' } })).stderr).toContain('category.catId')
+    expect((await run({ category: { line: '水多多', platform: 'jd', catId: '1' } })).stderr).toContain('category.platform')
+    expect((await run({ forget: { categories: [{ line: '水多多', platform: 'jd' }] } })).stderr).toContain('forget.categories')
     expect((await run({ store: { name: '名流', values: { 品牌: '' } } })).stderr).toContain('store.values.品牌')
     expect((await run({ declarations: { store: '名流', catId: '1', confirmed: [] } })).stderr).toContain('declarations.confirmed')
     expect((await run({ shops: {} })).code).toBe(1)

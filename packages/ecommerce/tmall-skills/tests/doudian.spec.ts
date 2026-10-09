@@ -453,11 +453,14 @@ describe('doudian-publish script', () => {
     expect((await run(shop, ['resolve', '--account', 'a', '--cat', '1000000638'])).out).toContain('—— 用户指定的类目')
     const memory = {
       stores: {}, columns: {}, declarations: {},
-      categories: { 水多多: { platform: 'doudian', catId: '1000000638', categoryPath: 'x', updatedAt: '2026-10-08T14:00:00Z' }, 拼团: { platform: 'pinduoduo', catId: '18770', categoryPath: 'y', updatedAt: 't' } },
+      categories: {
+        水多多: { pinduoduo: { catId: '18770', categoryPath: 'y', updatedAt: 't' }, doudian: { catId: '1000000638', categoryPath: 'x', updatedAt: '2026-10-08T14:00:00Z' } },
+        拼团: { pinduoduo: { catId: '18770', categoryPath: 'y', updatedAt: 't' }, taobao: { catId: '50024154', categoryPath: 'w', updatedAt: 't' } },
+      },
     }
     const remembered = { memory: () => Promise.resolve(memory) }
     expect((await run(shop, ['resolve', '--account', 'a', '--line', '水多多'], remembered)).out).toContain('（2026-10-08 22:00 北京时间保存）')
-    expect((await run(shop, ['resolve', '--account', 'a', '--line', '拼团'], remembered)).out).toBe('记住的产品线「拼团」类目在 pinduoduo（18770），不是抖店的。\n')
+    expect((await run(shop, ['resolve', '--account', 'a', '--line', '拼团'], remembered)).out).toBe('DSH 记住了产品线「拼团」在拼多多、淘宝的类目，还没有记住抖店的；按商品名或主图找抖店类目，用户确认后再记下。\n')
     expect((await run(shop, ['resolve', '--account', 'a', '--line', '无'], remembered)).out).toBe('DSH 里还没有记住产品线「无」的类目。\n')
     const image = join(dir, 'main.png')
     await writeFile(image, png(4, 4))

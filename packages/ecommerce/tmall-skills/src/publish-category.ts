@@ -11,6 +11,7 @@ import { beijingTime } from './dates.ts'
 import { EXIT, SkillError } from './errors.ts'
 import { itemIdOf } from './item.ts'
 import { fetchJson, signedOut, sleep, type Page } from './page.ts'
+import { rememberedCategory } from './publish-common.ts'
 
 /** Tmall's publish entry, whose page serves the category endpoints. */
 export const ENTRY_URL = 'https://sell.publish.tmall.com/tmall/ai/category.htm'
@@ -308,11 +309,8 @@ export async function resolveCategory(page: Page, source: CategorySource, contex
         : { source, candidates, note: `本店标题含「${source.keyword}」的商品还有 ${String(lost.length)} 个类目现在不能发布（可能授权已变化）：${lost.join('、')}` }
     }
     case 'line': {
-      const remembered = (await context.memory()).categories[source.line]
-      if (remembered === undefined) return { source, candidates: [], note: `DSH 里还没有记住产品线「${source.line}」的类目。` }
-      if (remembered.platform !== 'tmall') {
-        return { source, candidates: [], note: `记住的产品线「${source.line}」类目在 ${remembered.platform}（${remembered.catId}），不是天猫的。` }
-      }
+      const remembered = rememberedCategory(await context.memory(), source.line, 'tmall')
+      if (typeof remembered === 'string') return { source, candidates: [], note: remembered }
       const category = (await context.categories([remembered.catId])).find(c => c.id === remembered.catId)
       return category === undefined
         ? { source, candidates: [], note: `记住的产品线「${source.line}」类目 ${remembered.catId} 现在不能在这家店发布（可能授权已变化）。` }

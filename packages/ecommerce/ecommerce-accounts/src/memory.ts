@@ -1,7 +1,7 @@
 /**
  * A company's publishing memory: what the user confirmed once while publishing and wants applied next
  * time. Store information (brand, registration numbers, origin, shipping …) is kept per store; a product
- * line remembers its category; table headers remember the SKU field they hold; declarations remember
+ * line remembers its category on each platform; table headers remember the SKU field they hold; declarations remember
  * when the store confirmed them, per store and category. The memory lives with the company's accounts
  * at `<dshHome>/ecommerce/<tenantId>/publish-memory.json`, so one company never sees another's.
  */
@@ -19,9 +19,14 @@ export interface StoreMemory {
   readonly updatedAt: string
 }
 
-/** The category a product line is published in. */
+/** The platforms a category is remembered for, as the accounts name them. */
+export const CATEGORY_PLATFORMS = ['tmall', 'taobao', 'pinduoduo', 'doudian'] as const
+
+/** A platform a category is remembered for. */
+export type CategoryPlatform = typeof CATEGORY_PLATFORMS[number]
+
+/** The category a product line is published in on one platform. */
 export interface CategoryMemory {
-  readonly platform: string
   readonly catId: string
   readonly categoryPath: string
   readonly updatedAt: string
@@ -38,8 +43,8 @@ export interface DeclarationMemory {
 export interface PublishMemory {
   /** Store name → its information. */
   readonly stores: Readonly<Record<string, StoreMemory>>
-  /** Product line → its category. */
-  readonly categories: Readonly<Record<string, CategoryMemory>>
+  /** Product line → platform → its category there. */
+  readonly categories: Readonly<Record<string, Readonly<Partial<Record<CategoryPlatform, CategoryMemory>>>>>
   /** Table header → SKU field, such as 到手价 → price. */
   readonly columns: Readonly<Record<string, { readonly field: string; readonly updatedAt: string }>>
   /** Store name → category id → declaration key → its confirmation. */
@@ -62,17 +67,18 @@ const catId = z.string().regex(/^\d+$/u)
 
 /**
  * What `dsh-ecommerce remember` accepts: any of these parts. In `store.values` and `columns` a null value
- * forgets that entry; `forget` removes remembered categories and declarations.
+ * forgets that entry; `forget` removes remembered categories — a product line on every platform, or
+ * `{line, platform}` on one — and declarations.
  */
 export const MemoryUpdate = z.object({
   store: z.object({ name: key, values: z.record(key, value.nullable()) }).strict().optional(),
-  category: z.object({ line: key, platform: text, catId, categoryPath: z.string().max(500).default('') }).strict().optional(),
+  category: z.object({ line: key, platform: z.enum(CATEGORY_PLATFORMS), catId, categoryPath: z.string().max(500).default('') }).strict().optional(),
   columns: z.record(key, z.enum(SKU_FIELDS).nullable()).optional(),
   declarations: z.object({
     store: key, catId, confirmed: z.array(z.object({ key, text: z.string().max(2000) }).strict()).min(1),
   }).strict().optional(),
   forget: z.object({
-    categories: z.array(key).min(1).optional(),
+    categories: z.array(z.union([key, z.object({ line: key, platform: z.enum(CATEGORY_PLATFORMS) }).strict()])).min(1).optional(),
     /** Declarations of a store and category; without keys, all of them. */
     declarations: z.array(z.object({ store: key, catId, keys: z.array(key).min(1).optional() }).strict()).min(1).optional(),
   }).strict().optional(),
@@ -83,9 +89,15 @@ export type MemoryUpdate = z.infer<typeof MemoryUpdate>
 
 /** The memory file, as written. */
 const byName = <T extends z.ZodType>(entry: T) => z.record(z.string(), entry)
+const category = z.object({ catId: z.string(), categoryPath: z.string(), updatedAt: z.string() })
+/** A product line's categories; a line written before they were kept per platform holds one, which is read as that platform's. */
+const lineCategories = z.union([
+  category.extend({ platform: z.enum(CATEGORY_PLATFORMS) }).strict().transform(({ platform, ...entry }) => ({ [platform]: entry })),
+  z.partialRecord(z.enum(CATEGORY_PLATFORMS), category),
+])
 const MemoryFile = z.object({
   stores: byName(z.object({ values: byName(value), updatedAt: z.string() })).default({}),
-  categories: byName(z.object({ platform: z.string(), catId: z.string(), categoryPath: z.string(), updatedAt: z.string() })).default({}),
+  categories: byName(lineCategories).default({}),
   columns: byName(z.object({ field: z.string(), updatedAt: z.string() })).default({}),
   declarations: byName(byName(byName(z.object({ text: z.string(), confirmedAt: z.string() })))).default({}),
 })
@@ -108,12 +120,19 @@ export function applyUpdate(memory: PublishMemory, update: MemoryUpdate, now: st
     if (Object.keys(values).length === 0) Reflect.deleteProperty(stores, update.store.name)
     else stores[update.store.name] = { values, updatedAt: now }
   }
-  const categories = { ...memory.categories }
+  const categories: Record<string, Partial<Record<CategoryPlatform, CategoryMemory>>> = {}
+  for (const [line, byPlatform] of Object.entries(memory.categories)) categories[line] = { ...byPlatform }
   if (update.category !== undefined) {
-    const { line, ...category } = update.category
-    categories[line] = { ...category, updatedAt: now }
+    const { line, platform, ...entry } = update.category
+    categories[line] = { ...categories[line], [platform]: { ...entry, updatedAt: now } }
   }
-  for (const line of update.forget?.categories ?? []) Reflect.deleteProperty(categories, line)
+  for (const forgotten of update.forget?.categories ?? []) {
+    if (typeof forgotten === 'string') { Reflect.deleteProperty(categories, forgotten); continue }
+    const byPlatform = categories[forgotten.line]
+    if (byPlatform === undefined) continue
+    Reflect.deleteProperty(byPlatform, forgotten.platform)
+    if (Object.keys(byPlatform).length === 0) Reflect.deleteProperty(categories, forgotten.line)
+  }
   const columns = { ...memory.columns }
   for (const [header, field] of Object.entries(update.columns ?? {})) {
     if (field === null) Reflect.deleteProperty(columns, header)

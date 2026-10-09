@@ -174,9 +174,14 @@ describe('categories', () => {
 const MEMORY = {
   stores: {}, columns: {}, declarations: {},
   categories: {
-    水多多: { platform: 'tmall', catId: '50024154', categoryPath: '计生用品 > 避孕套', updatedAt: '2026-10-08T11:00:00.000Z' },
-    颗粒: { platform: 'tmall', catId: '126198864', categoryPath: 'x', updatedAt: 't' },
-    拼团: { platform: 'pinduoduo', catId: '18770', categoryPath: 'y', updatedAt: 't' },
+    // One product line keeps a category on each platform.
+    水多多: {
+      pinduoduo: { catId: '18770', categoryPath: 'y', updatedAt: 't' },
+      tmall: { catId: '50024154', categoryPath: '计生用品 > 避孕套', updatedAt: '2026-10-08T11:00:00.000Z' },
+      doudian: { catId: '1000000638', categoryPath: 'z', updatedAt: 't' },
+    },
+    颗粒: { tmall: { catId: '126198864', categoryPath: 'x', updatedAt: 't' } },
+    拼团: { pinduoduo: { catId: '18770', categoryPath: 'y', updatedAt: 't' }, doudian: { catId: '1000000638', categoryPath: 'z', updatedAt: 't' } },
   },
 }
 
@@ -188,7 +193,8 @@ describe('resolveCategory', () => {
     expect((await line('水多多')).candidates).toEqual([{ category: CONDOMS, reason: '记住的产品线「水多多」类目（2026-10-08 19:00 北京时间保存）' }])
     expect((await line('无')).note).toBe('DSH 里还没有记住产品线「无」的类目。')
     expect((await line('颗粒')).note).toBe('记住的产品线「颗粒」类目 126198864 现在不能在这家店发布（可能授权已变化）。')
-    expect((await line('拼团')).note).toBe('记住的产品线「拼团」类目在 pinduoduo（18770），不是天猫的。')
+    // Another platform's category id never stands in for Tmall's.
+    expect((await line('拼团')).note).toBe('DSH 记住了产品线「拼团」在拼多多、抖店的类目，还没有记住天猫的；按商品名或主图找天猫类目，用户确认后再记下。')
   })
 
   it('takes only the requested item from the manager answer', async () => {

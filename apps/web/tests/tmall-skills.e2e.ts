@@ -20,6 +20,9 @@
 // accounts, the multi-publish skill plans one material folder for the three stores and hands them out one
 // at a time: the Tmall card's confirmed title is taken by the later drafts, the Pinduoduo store's refusal
 // stops only that store, the Douyin shop still saves, and the summary counts two saved and one failed.
+// With a Pinduoduo and a Douyin shop account, a company memory written before categories were kept per
+// platform reads as that platform's, one product line keeps a category on each platform, each skill's
+// --line takes its own platform's, and forgetting one platform leaves the others.
 import { once } from 'node:events'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
@@ -93,7 +96,7 @@ function streamChat(res: ServerResponse, request: ChatRequest, skillsDir: string
   })}\n\n`
   // The employee's requests are short; the skill catalog the harness adds as a user message names the same words.
   const asks = (message: ChatRequest['messages'][number]) => message.role === 'user' && JSON.stringify(message.content ?? '').length < 300
-  const lastAsk = request.messages.findLastIndex(message => asks(message) && /2026-10-06 的|采集商品|定天猫类目|整理素材|记住店铺资料|确认卡片里一键认可|拼多多草稿箱|抖店草稿箱|多店发品/u.test(JSON.stringify(message.content ?? '')))
+  const lastAsk = request.messages.findLastIndex(message => asks(message) && /2026-10-06 的|采集商品|定天猫类目|整理素材|记住店铺资料|确认卡片里一键认可|拼多多草稿箱|抖店草稿箱|多店发品|分平台记类目/u.test(JSON.stringify(message.content ?? '')))
   const asked = JSON.stringify(request.messages[lastAsk]?.content ?? '')
   const results = request.messages.slice(lastAsk + 1).filter(message => message.role === 'tool').map(message => JSON.stringify(message.content))
   const catalog = JSON.stringify(request.messages.map(message => message.content ?? ''))
@@ -191,6 +194,20 @@ function streamChat(res: ServerResponse, request: ChatRequest, skillsDir: string
   ]
   const multiStep = multiSteps[results.length]
   if (multi && multiStep !== undefined) { bash(multiStep()); return }
+  const lines = asked.includes('分平台记类目')
+  const remember = (category: object) => `printf '%s' '${JSON.stringify(category)}' > 记忆.json && dsh-ecommerce remember 记忆.json`
+  const lineSteps = [
+    () => 'dsh-ecommerce accounts',
+    () => 'dsh-ecommerce memory',
+    () => remember({ category: { line: '水多多', platform: 'pinduoduo', catId: '18770', categoryPath: '成人用品 > 计生用品 > 避孕套' } }),
+    () => remember({ category: { line: '水多多', platform: 'doudian', catId: '1000000638', categoryPath: '医疗器械及保健用品 > 计生用品 > 避孕套' } }),
+    () => `${pddScript} resolve --account ${idOf('pinduoduo')} --line 水多多`,
+    () => `${dyScript} resolve --account ${idOf('doudian')} --line 水多多`,
+    () => remember({ forget: { categories: [{ line: '水多多', platform: 'doudian' }] } }),
+    () => `${dyScript} resolve --account ${idOf('doudian')} --line 水多多`,
+  ]
+  const lineStep = lineSteps[results.length]
+  if (lines && lineStep !== undefined) { bash(lineStep()); return }
   if (skill !== undefined && results.length === 1 && id !== undefined) {
     bash(`"${process.execPath}" "${join(skillsDir, skill, 'scripts', SCRIPTS[skill] as string)}" --account ${id} --date 2026-10-06`)
     return
@@ -729,3 +746,86 @@ it.skipIf(process.platform === 'win32')('publishes one material folder to a Tmal
     Reflect.deleteProperty(process.env, 'DSH_E2E_CHAT_API')
   }
 }, 300_000)
+
+it.skipIf(process.platform === 'win32')('remembers a product line\'s category on each platform, reading an older memory as its platform\'s', async () => {
+  const harnessHome = await mkdtemp(join(tmpdir(), 'dsh-category-memory-home-'))
+  const skillsDir = join(harnessHome, 'skills')
+  await packSkills(skillsDir)
+  const chat = await startChat(skillsDir)
+  const center = await startMockUserCenter()
+  Object.assign(process.env, { DSH_E2E_HUB_ORIGIN: center.origin, DSH_E2E_CHAT_API: chat.baseURL })
+  await mkdir(join(harnessHome, 'profiles', 'scaffold'), { recursive: true })
+  await writeFile(join(harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), JSON.stringify([{
+    id: 'ecommerce-accounts', config: { dshHome: harnessHome, chromePath: FAKE_CHROME, signInPollMs: 200, chromeTimeoutMs: 5000, checkTimeoutMs: 3000 },
+  }]))
+  const scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAYS, harnessHome })
+  const browser = await chromium.launch()
+  let failurePage: Page | undefined
+  const accountDirs: string[] = []
+  try {
+    await scaffold.ctx.hubAccount.signIn()
+    await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).attempt?.authorizeUrl).toBeDefined()
+    await browse((await scaffold.ctx.hubAccount.getState()).attempt!.authorizeUrl!)
+    await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).status).toBe('signed-in')
+    await scaffold.ctx.credentials.set(credentialRef('DSH_E2E_ACME_KEY'), 'sk-acme-e2e')
+    const accounts = scaffold.ctx.ecommerceAccounts
+    const tenantId = (await scaffold.ctx.hubAccount.getState()).profile!.tenantId!
+    for (const [platform, storeName, account, nick] of [['pinduoduo', '拼多多小店', 'pdd:运营', '拼多多小'], ['doudian', '抖店小店', 'dy:运营', '抖店小']] as const) {
+      const { accountId } = await accounts.addAccount({ platform, kind: 'merchant', storeName, account })
+      await accounts.startSignIn(accountId)
+      const accountDir = join(harnessHome, 'ecommerce', tenantId, 'browsers', accountId)
+      accountDirs.push(accountDir)
+      await expect.poll(() => readFile(join(accountDir, 'chrome.json'), 'utf8').then(() => true, () => false), { timeout: 10_000 }).toBe(true)
+      await writeFile(join(accountDir, 'user-data', 'fake-signed-in'), nick)
+      await expect.poll(async () => (await accounts.getState()).accounts.find(item => item.id === accountId)!.status, { timeout: 15_000 }).toBe('signed-in')
+    }
+    // The company remembered the line's Tmall category before categories were kept per platform.
+    const memoryFile = join(harnessHome, 'ecommerce', tenantId, 'publish-memory.json')
+    await writeFile(memoryFile, JSON.stringify({ categories: { 水多多: { platform: 'tmall', catId: '50024154', categoryPath: '计生用品 > 避孕套', updatedAt: '2026-10-08T14:13:11.641Z' } } }))
+
+    const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
+    failurePage = page
+    await page.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+    const tripwire = watchConsole(page)
+    await page.goto(scaffold.authenticatedUrl)
+    await connectFreshWorkspaceZh(page, scaffold.workspaceCwd, 'category-memory')
+    await page.getByRole('button', { name: /^选择模型/ }).click()
+    await page.getByRole('menuitem', { name: /^模型/ }).click()
+    await page.getByRole('menuitemradio', { name: 'acme-chat' }).click()
+    const input = page.locator('[data-composer-input][contenteditable="true"]').first()
+    await writeComposerDraft(page, input, '请把水多多的类目分平台记类目：拼多多和抖店各记一个')
+    await page.keyboard.press('Enter')
+    await page.getByText(ANSWER).first().waitFor({ timeout: 90_000 })
+    const steps = chat.chats.at(-1)!.messages.filter(message => message.role === 'tool').map(message => JSON.stringify(message.content))
+    // The older memory reads as the Tmall category; each platform's category is kept beside it.
+    expect(steps[1]).toMatch(/\\"tmall\\": \{\\n\s*\\"catId\\": \\"50024154\\"/u)
+    expect(steps[3]).toContain('\\"doudian\\": {')
+    expect(steps[3]).toContain('\\"pinduoduo\\": {')
+    expect(steps[3]).toContain('\\"tmall\\": {')
+    expect(steps[4]).toContain('1. 成人用品 > 计生用品 > 避孕套（类目 id 18770）—— 记住的产品线「水多多」类目')
+    expect(steps[5]).toContain('1. 医疗器械及保健用品 > 计生用品 > 避孕套（类目 id 1000000638）—— 记住的产品线「水多多」类目')
+    // Forgetting the Douyin category leaves Tmall and Pinduoduo, and the Douyin shop then finds none of its own.
+    expect(steps[7]).toContain('DSH 记住了产品线「水多多」在天猫、拼多多的类目，还没有记住抖店的；按商品名或主图找抖店类目，用户确认后再记下。')
+    const saved = JSON.parse(await readFile(memoryFile, 'utf8')) as { categories: Record<string, Record<string, { catId: string }>> }
+    expect(Object.fromEntries(Object.entries(saved.categories['水多多']!).map(([platform, entry]) => [platform, entry.catId]))).toEqual({ tmall: '50024154', pinduoduo: '18770' })
+    await page.getByText(ANSWER).first().waitFor()
+    const shots = process.env['DSH_E2E_SHOT_DIR']
+    if (shots !== undefined && shots !== '') await page.screenshot({ path: join(shots, 'category-memory-chat.png'), fullPage: true })
+    expect(tripwire.pageErrors).toEqual([])
+  } catch (error) {
+    if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-category-memory')
+    throw error
+  } finally {
+    await browser.close()
+    for (const accountDir of accountDirs) {
+      const record = await readFile(join(accountDir, 'chrome.json'), 'utf8').catch(() => undefined)
+      if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
+    }
+    await scaffold.close()
+    await chat.close()
+    await center.close()
+    await rm(harnessHome, { recursive: true, force: true })
+    Reflect.deleteProperty(process.env, 'DSH_E2E_HUB_ORIGIN')
+    Reflect.deleteProperty(process.env, 'DSH_E2E_CHAT_API')
+  }
+}, 240_000)

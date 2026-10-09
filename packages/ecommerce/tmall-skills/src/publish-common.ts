@@ -6,6 +6,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import type { CategoryMemory, CategoryPlatform } from '@deepseek-ai/dsh-ecommerce-accounts/src/memory.ts'
+import type { PublishMemory } from './account.ts'
 import type { Draft, FieldCheck } from './draft.ts'
 import { EXIT, SkillError } from './errors.ts'
 import type { PublishRules } from './publish-rules.ts'
@@ -227,4 +229,26 @@ export function categoriesText(categories: readonly CandidateCategory[], reason:
     lines.length === 0 ? '这家店都不能用这些类目。' : lines.join('\n'),
     ...refused.length === 0 ? [] : [`这家店不能用（${why}）：${refused.slice(0, 5).join('；')}${more}`],
   ].join('\n')
+}
+
+/** The platforms' names for the user. */
+const CATEGORY_PLATFORM_NAMES: Readonly<Record<CategoryPlatform, string>> = { tmall: '天猫', taobao: '淘宝', pinduoduo: '拼多多', doudian: '抖店' }
+
+/**
+ * The category the company remembered for a product line on one platform. A line remembered only on
+ * other platforms gives none: another platform's category id never stands in.
+ * @param memory - the company's publishing memory.
+ * @param line - the product line.
+ * @param platform - the platform being published to.
+ * @returns the category, or what to tell the model when there is none.
+ */
+export function rememberedCategory(memory: PublishMemory, line: string, platform: CategoryPlatform): CategoryMemory | string {
+  const byPlatform = memory.categories[line] ?? {}
+  const entry = byPlatform[platform]
+  if (entry !== undefined) return entry
+  const others = (Object.keys(byPlatform) as CategoryPlatform[]).map(other => CATEGORY_PLATFORM_NAMES[other])
+  const name = CATEGORY_PLATFORM_NAMES[platform]
+  return others.length === 0
+    ? `DSH 里还没有记住产品线「${line}」的类目。`
+    : `DSH 记住了产品线「${line}」在${others.join('、')}的类目，还没有记住${name}的；按商品名或主图找${name}类目，用户确认后再记下。`
 }

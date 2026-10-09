@@ -33,7 +33,9 @@ import { readImage } from './images.ts'
 import type { Page } from './page.ts'
 import { parseRulesFile } from './product-draft-cli.ts'
 import {
-  blockers, categoriesText as listCategories, codesOf, parsePublishOptions, readRecords, sameProduct, titleOf, unsettled, writeRecord,
+  blockers, categoriesText as listCategories, codesOf, parsePublishOptions, readRecords, rememberedCategory, sameProduct, titleOf,
+  unsettled,
+  writeRecord,
   type CandidateCategory, type DraftFile, type PublishOptions,
   type PublishRecord,
 } from './publish-common.ts'
@@ -112,9 +114,8 @@ async function resolveCategory(page: Page, source: DoudianSource, deps: Deps): P
     case 'keyword': return categoriesText(await searchCategories(page, source.keyword), `抖店类目搜索「${source.keyword}」`)
     case 'id': return categoriesText([await categoryById(page, source.id)], '用户指定的类目')
     case 'line': {
-      const remembered = (await deps.memory()).categories[source.line]
-      if (remembered === undefined) return `DSH 里还没有记住产品线「${source.line}」的类目。`
-      if (remembered.platform !== 'doudian') return `记住的产品线「${source.line}」类目在 ${remembered.platform}（${remembered.catId}），不是抖店的。`
+      const remembered = rememberedCategory(await deps.memory(), source.line, 'doudian')
+      if (typeof remembered === 'string') return remembered
       return categoriesText([await categoryById(page, remembered.catId)], `记住的产品线「${source.line}」类目（${beijingTime(new Date(remembered.updatedAt))} 北京时间保存）`)
     }
     case 'image': {

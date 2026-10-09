@@ -401,11 +401,14 @@ describe('pdd-publish script', () => {
     expect((await run(mall, ['resolve', '--account', 'a', '--cat', '18770'])).out).toContain('（类目 id 18770）—— 用户指定的类目')
     const memory = {
       stores: {}, columns: {}, declarations: {},
-      categories: { 水多多: { platform: 'pinduoduo', catId: '18770', categoryPath: 'x', updatedAt: '2026-10-08T14:00:00Z' }, 天猫线: { platform: 'tmall', catId: '1', categoryPath: 'y', updatedAt: 't' } },
+      categories: {
+        水多多: { tmall: { catId: '50024154', categoryPath: 'y', updatedAt: 't' }, pinduoduo: { catId: '18770', categoryPath: 'x', updatedAt: '2026-10-08T14:00:00Z' } },
+        天猫线: { tmall: { catId: '1', categoryPath: 'y', updatedAt: 't' } },
+      },
     }
     const remembered = { memory: () => Promise.resolve(memory) }
     expect((await run(mall, ['resolve', '--account', 'a', '--line', '水多多'], remembered)).out).toContain('记住的产品线「水多多」类目（2026-10-08 22:00 北京时间保存）')
-    expect((await run(mall, ['resolve', '--account', 'a', '--line', '天猫线'], remembered)).out).toBe('记住的产品线「天猫线」类目在 tmall（1），不是拼多多的。\n')
+    expect((await run(mall, ['resolve', '--account', 'a', '--line', '天猫线'], remembered)).out).toBe('DSH 记住了产品线「天猫线」在天猫的类目，还没有记住拼多多的；按商品名或主图找拼多多类目，用户确认后再记下。\n')
     expect((await run(mall, ['resolve', '--account', 'a', '--line', '无'], remembered)).out).toBe('DSH 里还没有记住产品线「无」的类目。\n')
     const image = join(dir, 'main.png')
     await writeFile(image, png(4, 4))
