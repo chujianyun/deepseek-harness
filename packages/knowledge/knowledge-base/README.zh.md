@@ -31,7 +31,7 @@ kind: "package-reference"
 
 `addFolder(id, path)` 遍历文件夹及其子文件夹，跳过名称以点开头的条目和符号链接。每个受支持的文件（按路径顺序，最多 `maxFolderFiles` 个）复制进来，成为 `file` 条目，其 `parentId` 指向 `folder` 条目，`source` 为相对文件夹的路径；不支持的文件和超出上限的文件计入文件夹的 `skippedCount`，其中前 500 个列在 `skipped` 中。不会监听文件夹：对文件夹调用 `reprocessItem()` 时重新扫描，加入新文件、移除已删除的文件，并重新复制、排队已变化（大小或修改时间不同）或失败的文件。文件夹不存在时以 `folder-missing` 失败，其中的文件保持不变。文件夹本身不参与处理；其视图的进度、大小与分块数取自其中的文件，删除文件夹会一并删除这些文件。
 
-`addUrl(id, url)` 把一个 http 或 https 网页排队。处理时通过 `ctx.web.fetch`（本地抓取 provider，带地址、大小与超时限制）抓取，用 Mozilla Readability 在 linkedom 文档上提取正文，用 turndown 写成 Markdown，并以网页标题命名条目；只读取这一页。重新处理会再次抓取。网页无法抓取时（出错、非 2xx 状态码，或没有 `web` 服务），重新索引上次抓取的副本并以 `unreachable` 失败，这样原有内容仍可检索。
+`addUrl(id, url)` 把一个 http 或 https 网页排队。处理时通过 `ctx.web.fetch`（本地抓取 provider，带地址、大小与超时限制）抓取，用 Mozilla Readability 在 linkedom 文档上提取正文，用 turndown 写成 Markdown，并以网页标题命名条目；只读取这一页。重新处理会再次抓取。网页无法抓取时（出错、非 2xx 状态码，或没有 `web` 服务），重新索引上次抓取的副本并以 `unreachable` 失败（web 服务按策略拒绝该地址时，即 `WEB_BLOCKED_URL`，以 `blocked` 失败），这样原有内容仍可检索。
 
 `createNote(id, title, content)` 与 `updateNote(id, itemId, title, content)` 保存笔记：标题 1 到 `maxNoteTitleLength` 个字符，Markdown 正文最多 `maxNoteChars` 个字符，超出时以 `knowledge/invalid-note` 拒绝；保存后只把这一条排队。`getNote()` 读回一条笔记。笔记以标题作为一级标题一起建立索引。
 
@@ -97,7 +97,7 @@ kind: "package-reference"
 - **只有内置解析** — 设置中的文档处理只有一个选项；OCR 与 MinerU 处理服务延后提供。
 - **不监听文件夹** — 只有重新处理时，知识库中的文件夹才会变化。
 - **每个网址只读一页** — 不跟随链接；需要脚本才能显示正文的网页能提取到的内容很少。
-- **只能抓取公网网页** — 本地抓取 provider 拒绝内网和本机地址，内网网页会以 `unreachable` 失败。
+- **只能抓取公网网页** — 本地抓取 provider 拒绝内网和本机地址，内网网页会以 `blocked` 失败。
 - **估算 token** — 分块大小为估算值（每个汉字算一个 token，其他字符每四个算一个），不使用嵌入模型的分词器计数。
 - **只读取文本层** — 扫描版 PDF 没有文本层，会以 `empty` 失败；OCR 延后提供。
 - **全量比对相似度** — 检索时在 SQLite 中把查询与每个分块向量逐一比较；超大知识库需要 sqlite-vec 等向量索引。

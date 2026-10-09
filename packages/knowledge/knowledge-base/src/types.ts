@@ -50,8 +50,10 @@ export type KnowledgeItemStatus = 'pending' | 'processing' | 'completed' | 'fail
  * - `storage`: the chunks could not be written to the base's index.
  * - `folder-missing`: a folder's path is gone or no longer a folder; its files stay as they were.
  * - `unreachable`: a page could not be fetched; the last fetched content stays.
+ * - `blocked`: the web service refused the page's address by policy (`WEB_BLOCKED_URL`), such as an intranet or
+ *   loopback address or one carrying a user name; the last fetched content stays.
  */
-export type KnowledgeItemError = 'unreadable' | 'empty' | 'embedding' | 'interrupted' | 'storage' | 'folder-missing' | 'unreachable'
+export type KnowledgeItemError = 'unreadable' | 'empty' | 'embedding' | 'interrupted' | 'storage' | 'folder-missing' | 'unreachable' | 'blocked'
 
 /**
  * What a knowledge item is.

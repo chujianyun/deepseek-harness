@@ -31,7 +31,7 @@ Knowledge bases belong to the tenant of the current Hub sign-in: signed out ther
 
 `addFolder(id, path)` walks a folder and its subfolders, leaving out entries whose names start with a dot and symbolic links. Each supported file, up to `maxFolderFiles` in path order, is copied in as a `file` item whose `parentId` is the `folder` item and whose `source` is its path relative to the folder; unsupported files and those past the limit are counted in the folder's `skippedCount`, and the first 500 listed in its `skipped`. The folder is not watched: `reprocessItem()` on it scans it again, adding new files, removing gone ones, and copying and queuing changed (by size or modification time) or failed ones. A folder that is gone fails as `folder-missing` and keeps its files. A folder is never processed itself; its view takes its progress, size, and chunk count from its files, and deleting it deletes them.
 
-`addUrl(id, url)` queues an http or https page. Processing fetches it through `ctx.web.fetch` — the local fetch provider, with its address, size, and time limits — extracts the article with Mozilla Readability over a linkedom document, writes it as Markdown with turndown, and names the item after the page title; only that page is read. Reprocessing fetches it again. When the page cannot be fetched (an error, a non-2xx status, or no `web` service), its last fetched copy is indexed again and the item fails as `unreachable`, so that content stays searchable.
+`addUrl(id, url)` queues an http or https page. Processing fetches it through `ctx.web.fetch` — the local fetch provider, with its address, size, and time limits — extracts the article with Mozilla Readability over a linkedom document, writes it as Markdown with turndown, and names the item after the page title; only that page is read. Reprocessing fetches it again. When the page cannot be fetched (an error, a non-2xx status, or no `web` service), its last fetched copy is indexed again and the item fails as `unreachable`, or as `blocked` when the web service refused the address by policy (`WEB_BLOCKED_URL`), so that content stays searchable.
 
 `createNote(id, title, content)` and `updateNote(id, itemId, title, content)` save a note — a title of 1 to `maxNoteTitleLength` characters and a Markdown body of at most `maxNoteChars` — refusing anything longer with `knowledge/invalid-note`; saving queues only that note. `getNote()` reads one back. A note is indexed with its title as a heading.
 
@@ -97,7 +97,7 @@ No effect.
 - **Built-in parsing only** — the settings' file-processing choice has one entry; OCR and MinerU processors are deferred.
 - **Folders are not watched** — a folder changes in a knowledge base only when it is reprocessed.
 - **One page per address** — links are not followed, and pages that need scripts to show their text yield little.
-- **Public pages only** — the local fetch provider refuses private and loopback addresses, so intranet pages fail as `unreachable`.
+- **Public pages only** — the local fetch provider refuses private and loopback addresses, so intranet pages fail as `blocked`.
 - **Estimated tokens** — chunk sizes are estimated (one token per Han character, one per four other characters), not counted with the embedding model's tokenizer.
 - **Text layers only** — a scanned PDF has no text layer and fails as `empty`; OCR is deferred.
 - **Whole-index similarity** — search compares the query with every chunk vector in SQLite; very large knowledge bases would need a vector index such as sqlite-vec.

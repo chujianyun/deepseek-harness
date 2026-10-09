@@ -937,11 +937,13 @@ export class KnowledgeBaseService extends TypertRemoteService {
     // A page that cannot be fetched again is indexed from its last fetched copy, then marked failed.
     let unreachable: unknown
     if (item.kind === 'url') unreachable = await this.fetchPage(base, item, signal)
+    // The web service refuses some addresses, such as intranet ones, by policy rather than by the network.
+    const pageError = (unreachable as { code?: unknown } | undefined)?.code === 'WEB_BLOCKED_URL' ? 'blocked' : 'unreachable'
     let text: string
     try {
       text = await readDocument(this.copyPath(base, item))
     } catch (error) {
-      fail(unreachable === undefined ? 'unreadable' : 'unreachable', unreachable ?? error)
+      fail(unreachable === undefined ? 'unreadable' : pageError, unreachable ?? error)
       return
     }
     // A note's title is part of what it says.
@@ -968,7 +970,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
       return
     }
     base.store.complete(itemId, embedded)
-    if (unreachable !== undefined) fail('unreachable', unreachable)
+    if (unreachable !== undefined) fail(pageError, unreachable)
   }
 
   /**

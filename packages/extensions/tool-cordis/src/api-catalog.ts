@@ -6654,7 +6654,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KnowledgeItemError',
-    declaration: 'export type KnowledgeItemError = \'unreadable\' | \'empty\' | \'embedding\' | \'interrupted\' | \'storage\' | \'folder-missing\' | \'unreachable\';',
+    declaration: 'export type KnowledgeItemError = \'unreadable\' | \'empty\' | \'embedding\' | \'interrupted\' | \'storage\' | \'folder-missing\' | \'unreachable\' | \'blocked\';',
   },
   {
     name: 'KnowledgeItemKind',

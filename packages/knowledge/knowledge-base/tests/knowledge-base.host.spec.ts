@@ -729,6 +729,16 @@ describe('knowledge bases', () => {
     }
   })
 
+  it('fails a page the web service blocks, such as an intranet address, as blocked rather than unreachable', async () => {
+    const { service, until, web } = await boot()
+    const { id } = (await service.createBase('网页库', LOCAL)).bases[0]!
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const url = 'http://127.0.0.1:5181/page.html'
+    web.pages.set(url, Object.assign(new Error('URL hostname "127.0.0.1" resolves to a non-public IP address'), { code: 'WEB_BLOCKED_URL' }))
+    await service.addUrl(id, url)
+    expect((await until(next => settled(next) && next.bases[0]!.items.length === 1)).bases[0]!.items[0]).toMatchObject({ status: 'failed', error: 'blocked' })
+  })
+
   it('fails a page as unreachable when this Host cannot fetch the web', async () => {
     const { service, until } = await boot({ web: false })
     const { id } = (await service.createBase('网页库', LOCAL)).bases[0]!
