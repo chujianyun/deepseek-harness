@@ -56,7 +56,7 @@ describe('desktop welcome presentation', () => {
     await act(async () => { await view.api.branding.mock.results[0]!.value })
     expect(view.document.querySelector('main')!.classList.contains('pending')).toBe(false)
     expect(view.document.documentElement.lang).toBe(language)
-    expect(view.document.querySelector('img')).toBeNull()
+    expect(view.document.querySelector('img')?.getAttribute('src')).toBe('assets/mo-logo.png')
     expect(view.document.querySelector('h1#welcome-heading')).toBeNull()
     expect(view.document.querySelector('input')).toBeNull()
     await expect(view.copy()).toMatchFileSnapshot(`./expected/welcome/${language}.expected.txt`)
@@ -71,18 +71,19 @@ describe('desktop welcome presentation', () => {
   ] as const)('shows the cached tenant branding: %s', async (name, cached) => {
     const view = mount('en', undefined, vi.fn<() => Promise<HubBrandingView | null>>().mockResolvedValue(cached))
     await act(async () => { await view.api.branding.mock.results[0]!.value })
-    expect(view.document.querySelector('img')?.getAttribute('src') ?? null).toBe(cached.logo)
+    // Without a tenant logo the bundled MO WorkAI logo stands in.
+    expect(view.document.querySelector('img')?.getAttribute('src')).toBe(cached.logo ?? 'assets/mo-logo.png')
     // The title is shown as written whatever the UI language.
     expect(view.document.querySelector('#welcome-heading')?.textContent ?? null).toBe(cached.title)
     await expect(view.copy()).toMatchFileSnapshot(`./expected/welcome/branding-${name.replaceAll(' ', '-')}.expected.txt`)
   })
 
-  it('shows the unbranded page when the branding cannot be read', async () => {
+  it('shows the MO WorkAI logo when the branding cannot be read', async () => {
     const refused = Promise.reject(new Error('closed'))
     const view = mount('zh-CN', undefined, vi.fn<() => Promise<HubBrandingView | null>>().mockReturnValue(refused))
     await act(async () => { await refused.catch((_closed: unknown) => undefined) })
     expect(view.document.querySelector('main')!.classList.contains('pending')).toBe(false)
-    expect(view.document.querySelector('img')).toBeNull()
+    expect(view.document.querySelector('img')?.getAttribute('src')).toBe('assets/mo-logo.png')
   })
 
   it('reads the branding again when the Host reports a sign-out', async () => {

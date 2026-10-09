@@ -7,11 +7,14 @@ import type { WelcomeApi } from '../welcome-api.ts'
 
 type Page = 'entry' | 'account'
 
+/** Product logo shown when no tenant branding is cached; `renderer/welcome.html` loads from `renderer/`. */
+const MO_LOGO = 'assets/mo-logo.png'
+
 /**
  * Render the standalone welcome flow: the workspace opens only after a user-center sign-in.
  * Clearing or cancelling the attempt returns the sign-in status page to the entry page. The logo
- * and welcome title are the last-signed-in tenant's cached branding; without it the page shows
- * neither, only the sign-in prompt.
+ * and welcome title are the last-signed-in tenant's cached branding; without it the page shows the
+ * bundled MO WorkAI logo and no title. The entry page stacks logo, prompt, and sign-in button in the centre.
  * @param props.api - isolated preload API; no tokens reach the renderer.
  * @returns welcome pages with fixed bottom actions.
  */
@@ -139,13 +142,13 @@ export function Welcome({ api }: { api: WelcomeApi }) {
               : attempt?.error === 'storage' ? m.welcomeAuthStorage : m.welcomeAuthFailed
 
   const heading = branding?.title ?? null
-  const logo = branding?.logo ?? null
+  const logo = branding?.logo ?? MO_LOGO
   return <>
     {expiryNotice && <Toast text={m.welcomeSessionExpired} onDone={() => { setExpiryNotice(false) }} />}
     <div className="titlebar" aria-hidden="true" />
-    <main className={branding === undefined ? 'welcome pending' : 'welcome'}
+    <main className={['welcome', page === 'entry' ? 'entry' : '', branding === undefined ? 'pending' : ''].filter(Boolean).join(' ')}
       aria-labelledby={page !== 'entry' ? 'auth-status' : heading === null ? 'welcome-description' : 'welcome-heading'}>
-      {logo !== null && <img className="brand" src={logo} alt={m.welcomeLogo} draggable={false} />}
+      <img className="brand" src={logo} alt={m.welcomeLogo} draggable={false} />
       <div id="tagline" className="tagline" hidden={page !== 'entry'}>
         {heading !== null && <h1 id="welcome-heading">{heading}</h1>}
         <p id="welcome-description">{m.welcomeDescription}</p>

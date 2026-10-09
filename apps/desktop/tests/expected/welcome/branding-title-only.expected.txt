@@ -1,4 +1,5 @@
 Sign in
+[logo: Logo]
 Acme Copilot
-Sign in with your company account.
-Sign in with company account
+MO WorkAI, here to help
+Sign in

@@ -1,3 +1,4 @@
 Sign in
-Sign in with your company account.
-Sign in with company account
+[logo: Logo]
+MO WorkAI, here to help
+Sign in
