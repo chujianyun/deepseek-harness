@@ -365,6 +365,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
       })
     } catch (error) {
       this.signIns.delete(entry.id)
+      // Deleted while the sign-in waited for it: nothing was opened.
+      if (!this.listed(entry.id)) throw new RemoteError('ecommerce-accounts/not-found', 'This account no longer exists', { accountId })
       this.setStatus(entry.id, 'signed-out')
       throw new RemoteError('ecommerce-accounts/browser-failed', 'Chrome could not open the sign-in page', { accountId, reason: String(error) })
     }
@@ -525,11 +527,13 @@ export class EcommerceAccountsService extends TypertRemoteService {
    * signed-in account's Chrome is minimized. A Chrome gone since an earlier sign-in is started
    * again minimized, restoring its last session; an account never signed in starts no Chrome. A
    * check that gets no answer, cannot reach the page, or finds the browser data held by another
-   * Chrome fails with that problem and keeps the last answer.
+   * Chrome fails with that problem and keeps the last answer. A check that waited behind the
+   * account's deletion, or a switch of tenant, asks nothing and starts no Chrome.
    */
   private check(entry: Entry): Promise<CheckResult> {
     this.setStatus(entry.id, 'checking')
     return this.queued(entry.id, async () => {
+      if (!this.listed(entry.id)) return { kind: 'signed-out' }
       let result: CheckResult
       try {
         result = await this.probeAccount(entry)
@@ -830,8 +834,17 @@ export class EcommerceAccountsService extends TypertRemoteService {
     return await profileHolder(dir) !== undefined
   }
 
-  /** Reattach to the account's running Chrome, or start one; returns its port. */
+  /** Whether the signed-in tenant still has the account. */
+  private listed(accountId: string): boolean {
+    return this.entries.some(item => item.id === accountId)
+  }
+
+  /**
+   * Reattach to the account's running Chrome, or start one; returns its port.
+   * @throws Error when the account is no longer listed, so a deleted account's browser data is never made again.
+   */
   private async ensureChrome(entry: Entry, chrome: ChromeInfo, hidden: boolean, url: string): Promise<number> {
+    if (!this.listed(entry.id)) throw new Error(`account ${entry.id} is no longer listed`)
     const dir = this.dirOf(entry.id)
     const record = await readRecord(dir)
     if (record !== undefined && await alive(record.port)) return record.port
@@ -928,7 +941,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
   }
 
   private setStatus(accountId: string, status: EcommerceAccountStatus): void {
-    if (this.statuses.get(accountId) === status) return
+    // A deleted account keeps no status.
+    if (!this.listed(accountId) || this.statuses.get(accountId) === status) return
     this.statuses.set(accountId, status)
     this.changed()
   }

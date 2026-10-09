@@ -335,6 +335,31 @@ describe('e-commerce accounts', () => {
     expect(await code(env.service.deleteAccount(accountId))).toBe('ecommerce-accounts/not-found')
   })
 
+  it('leaves a deleted account deleted when a check was queued behind the deletion', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, '名流旗舰店:运营')
+    await env.settle(s => s.accounts[0]!.status === 'signed-in')
+    const record = await readRecord(env.browserDir(accountId))
+    // The check waits for the deletion; it must not start the deleted account's Chrome again.
+    const deleted = env.service.deleteAccount(accountId)
+    const refreshed = env.service.refresh()
+    expect((await deleted).accounts).toEqual([])
+    expect((await refreshed).accounts).toEqual([])
+    expect(await alive(record!.port)).toBe(false)
+    expect(await readdir(join(env.home, 'ecommerce', 't-a', 'browsers'))).toEqual([])
+    expect((await env.service.getState()).accounts).toEqual([])
+    // A sign-in started while another account's deletion is queued ahead of it opens nothing for it.
+    const other = await env.service.addAccount(merchant)
+    await env.service.startSignIn(other.accountId)
+    const removing = env.service.deleteAccount(other.accountId)
+    const signingIn = code(env.service.startSignIn(other.accountId))
+    await removing
+    expect(await signingIn).toBe('ecommerce-accounts/not-found')
+    expect(await readdir(join(env.home, 'ecommerce', 't-a', 'browsers'))).toEqual([])
+  })
+
   it('streams the state on every change until the reader stops, and ignores a malformed ledger', async () => {
     const home = await tempDir()
     await mkdir(join(home, 'ecommerce', 't-a'), { recursive: true })
