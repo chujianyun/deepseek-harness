@@ -8,7 +8,7 @@
 
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, relative, resolve } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { zipSync } from 'fflate'
 import { build } from 'tsdown'
@@ -61,7 +61,7 @@ export async function packSkills(outDir: string): Promise<string[]> {
         })
       }
       const files: Record<string, Uint8Array> = {}
-      for (const path of await walk(folder)) files[`${skill.name}/${relative(folder, path)}`] = await readFile(path)
+      for (const path of await walk(folder)) files[zipEntryName(skill.name, relative(folder, path))] = await readFile(path)
       const zip = join(out, `${skill.name}.zip`)
       await writeFile(zip, zipSync(files))
       zips.push(zip)
@@ -70,6 +70,17 @@ export async function packSkills(outDir: string): Promise<string[]> {
     await rm(entries, { recursive: true, force: true })
   }
   return zips
+}
+
+/**
+ * Name of a skill file inside its upload package: ZIP entries separate directories with `/` on every platform.
+ * @param skillName - the skill folder that roots every entry.
+ * @param relativePath - the file's path under that folder, as `path.relative` returns it.
+ * @param separator - the platform separator `relativePath` uses.
+ * @returns `<skillName>/<segments joined by '/'>`.
+ */
+export function zipEntryName(skillName: string, relativePath: string, separator: string = sep): string {
+  return [skillName, ...relativePath.split(separator)].join('/')
 }
 
 async function walk(dir: string): Promise<string[]> {
