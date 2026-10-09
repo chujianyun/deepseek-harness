@@ -13,6 +13,7 @@ import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWindowExcee
 import type { FinishReason, StreamChunk, TokenUsage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import type { AssistantMessage, AssistantMessageEvent, Usage as PiUsage } from '@earendil-works/pi-ai'
+import { signedOutFailure } from './login.ts'
 import { toPiReplayState } from './replay.ts'
 
 /**
@@ -73,7 +74,9 @@ function classifyPiAiError(message: string): string {
  * @param contextWindow - resolved catalog capacity for usage-based overflow detection.
  * @returns the mapped harness reason. Recognized error text, `stop` usage above
  *   `contextWindow`, and zero-output `length` usage that fills the window map
- *   to `CONTEXT_WINDOW_EXCEEDED`; a `stop` with no content blocks maps to an
+ *   to `CONTEXT_WINDOW_EXCEEDED`; pi-ai's no-credential refusal on a route
+ *   with account sign-in maps to `SIGN_IN_REQUIRED` with sign-in instructions; a `stop`
+ *   with no content blocks maps to an
  *   `EMPTY_RESPONSE` error, while terminal `pending` and `deferred` states map
  *   to non-retryable `PI_AI_ERROR` failures.
  */
@@ -122,6 +125,8 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
     }
     case 'error': {
       const text = message.errorMessage ?? 'pi-ai stream error'
+      const signedOut = signedOutFailure(text)
+      if (signedOut !== undefined) return { kind: 'error', failure: { message: signedOut, code: 'SIGN_IN_REQUIRED' } }
       return { kind: 'error', failure: { message: text, code: classifyPiAiError(text) } }
     }
   }

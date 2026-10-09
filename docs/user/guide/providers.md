@@ -192,6 +192,7 @@ Every switch, its accepted values, and the protocols that take it are listed und
 ## Troubleshooting
 
 - **`MISSING_CREDENTIAL`** — Store the provider key through the Models page or supply the referenced environment variable.
+- **`SIGN_IN_REQUIRED`** — The model's provider is used through an account sign-in that is not stored (for example after signing out of ChatGPT Codex). Sign in again on its card in the Models page.
 - **`UNKNOWN_MODEL`** — Select a configured model or add the missing model to the custom provider.
 - **Fetching available models returns 401** — Check the key. Model discovery calls the OpenAI-compatible `GET /models` endpoint; enter models manually for endpoints that do not provide it.
 - **Fetching available models reports neither a `data` array nor a `models` object** — The endpoint's listing is in a format discovery does not read. Enter the models by hand.

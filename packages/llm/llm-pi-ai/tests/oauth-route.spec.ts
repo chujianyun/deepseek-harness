@@ -85,3 +85,50 @@ it('authenticates a keyless OAuth-only route with the signed-in grant', async ()
   expect(endpoint.requests[0]?.headers.authorization).toBe(`Bearer ${access}`)
   expect(endpoint.requests[0]?.headers['chatgpt-account-id']).toBe('acct-123')
 })
+
+it('tells a signed-out OAuth route to sign in again before any request goes out', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-pi-oauth-'))
+  dirs.push(dir)
+  const endpoint = await codexEndpoint()
+  const ctx = new Context()
+  roots.push(ctx)
+  await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
+  await ctx.plugin(LlmRuntime)
+  await ctx.plugin(LlmPiAi, { providers: { 'openai-codex': { baseURL: endpoint.url, retryPolicy: { mode: 'normal', maxRetries: 0 } } } })
+
+  const result = await assemble(ctx, {
+    provider: 'openai-codex',
+    model: 'gpt-5.5',
+    messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'oauth-route-test' } })],
+  })
+
+  expect(result.finish).toMatchObject({
+    kind: 'error',
+    failure: {
+      code: 'SIGN_IN_REQUIRED',
+      message: 'The "openai-codex" account is not signed in. Sign in to it under Settings → Models, then send the message again.',
+    },
+  })
+  expect(endpoint.requests).toHaveLength(0)
+})
+
+it('names the API key alternative when a signed-out route also takes one', async () => {
+  const ctx = new Context()
+  roots.push(ctx)
+  await ctx.plugin(LlmRuntime)
+  await ctx.plugin(LlmPiAi, { providers: { anthropic: { retryPolicy: { mode: 'normal', maxRetries: 0 } } } })
+
+  const result = await assemble(ctx, {
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-5',
+    messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'oauth-route-test' } })],
+  })
+
+  expect(result.finish).toMatchObject({
+    kind: 'error',
+    failure: {
+      code: 'SIGN_IN_REQUIRED',
+      message: 'The "anthropic" account is not signed in and no API key is set. Sign in or add a key under Settings → Models, then send the message again.',
+    },
+  })
+})

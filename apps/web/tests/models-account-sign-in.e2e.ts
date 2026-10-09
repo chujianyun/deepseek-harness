@@ -187,6 +187,16 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: account sign-in on the
       await expect.poll(() => settings.getByRole('group', { name: '账号登录' }).getByRole('status').textContent()).toBe('未登录')
       await settings.getByRole('listitem').filter({ hasText: 'openai-codex' }).getByRole('img', { name: '未登录' }).waitFor({ timeout: 10_000 })
       expect(await scaffold.ctx.credentials.readRecord('llm-pi-ai/openai-codex' as never)).toBeUndefined()
+
+      // The next turn on the signed-out route asks for a sign-in before anything reaches Codex.
+      const sent = codex.requests.length
+      await settings.getByRole('button', { name: '关闭' }).last().click()
+      await writeComposerDraft(page, chat, '再介绍一次')
+      await page.keyboard.press('Enter')
+      const failure = page.getByRole('status').filter({ hasText: 'SIGN_IN_REQUIRED' })
+      await failure.waitFor({ timeout: 30_000 })
+      expect(await failure.textContent()).toContain('当前模型的账号还没有登录。请打开「设置 → 模型」登录该账号后重试。')
+      expect(codex.requests).toHaveLength(sent)
       expect(tripwire.warnings).toEqual([])
       expect(tripwire.pageErrors).toEqual([])
     } catch (error) {
