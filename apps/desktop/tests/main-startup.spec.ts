@@ -9,6 +9,7 @@ import { DESKTOP_IPC, type DesktopUpdateState } from '../src/ipc.ts'
 import { MANDATORY_IPC } from '../src/mandatory-update-ipc.ts'
 import { DesktopHostFatalError, DesktopHostUncleanExitError } from '../src/host-process.ts'
 import { en, zh } from '../src/locale.ts'
+import { HUB_NOT_CONFIGURED } from '../src/hub-config.ts'
 import { DesktopUpdatePreparationError } from '../src/update-error.ts'
 import { writeCrashReport } from '../src/crash-report.ts'
 
@@ -414,6 +415,7 @@ beforeEach(() => {
   vi.stubGlobal('process', { ...process, platform: 'win32', arch: 'x64', resourcesPath: 'desktop-test-resources' })
   vi.stubEnv('DSH_DESKTOP_HOST_INSPECT_PORT', undefined)
   vi.stubEnv('DSH_HUB_ORIGIN', undefined)
+  vi.stubEnv('DSH_HUB_CLIENT_ID', undefined)
   vi.stubEnv('DSH_DESKTOP_DEV_PROJECT_DIR', undefined)
   vi.stubEnv('DSH_DESKTOP_MANDATORY_UPDATE_CONFIG', undefined)
   vi.stubEnv('DSH_DESKTOP_UPDATE_JOURNAL_DIR', undefined)
@@ -442,6 +444,7 @@ describe('desktop main startup', () => {
     vi.spyOn(harness.app, 'getAppPath').mockReturnValue(root)
     // The development manifest at `root` bundles no user center.
     vi.stubEnv('DSH_HUB_ORIGIN', 'https://hub.example.com')
+    vi.stubEnv('DSH_HUB_CLIENT_ID', 'dsh_local')
     const web = await import('../src/web-document.ts')
     const actual = await vi.importActual<typeof import('../src/web-document.ts')>('../src/web-document.ts')
     vi.mocked(web.serveWebDocument).mockImplementation(actual.serveWebDocument)
@@ -2104,7 +2107,7 @@ describe('desktop main startup', () => {
     const boot = invoke(DESKTOP_IPC.boot) as Promise<unknown>
     harness.prepared.resolve()
     const failure = await boot.then(() => undefined, (error: unknown) => error)
-    expect(String(failure)).toContain('desktop: no user center is configured')
+    expect(String(failure)).toContain(HUB_NOT_CONFIGURED)
     // The renderer reports a rejected boot as its startup failure.
     const window = harness.windows[0]!
     const frame = { url: 'dsh-app://app/' }

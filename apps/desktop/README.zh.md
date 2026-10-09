@@ -421,7 +421,7 @@ Windows 下载完成后的更新确认说明应用会在安装期间关闭、完
 
 ### 用户中心设置
 
-打包要求从 `.env.windows` 或 `.env.macos` 读取 `DSH_DESKTOP_HUB_ORIGIN`（公司用户中心的 HTTPS 源站，不含凭据、路径、查询或片段）和 `DSH_DESKTOP_HUB_CLIENT_ID`（在其中登记的公共 DSH 客户端），未签名和仅准备构建同样要求；两者都不会回退到父环境。打包把两者作为 `dshHub` 嵌入应用清单。每次启动 Host 前，除非启动环境（包括登录 shell 读取的结果）已设置 `DSH_HUB_ORIGIN`，Desktop 把它们作为 `DSH_HUB_ORIGIN` 与 `DSH_HUB_CLIENT_ID` 传给 Host；未打包的开发清单不含 `dshHub`，因此开发启动需自行设置这些变量。用户中心超级管理员把该客户端登记为 `public` 客户端，回调地址为 `http://127.0.0.1/callback`，权限为 `profile`、`skills:read` 和 `skills:write`。
+打包要求从 `.env.windows` 或 `.env.macos` 读取 `DSH_DESKTOP_HUB_ORIGIN`（公司用户中心的 HTTPS 源站，不含凭据、路径、查询或片段）和 `DSH_DESKTOP_HUB_CLIENT_ID`（在其中登记的公共 DSH 客户端），未签名和仅准备构建同样要求；两者都不会回退到父环境。打包把两者作为 `dshHub` 嵌入应用清单。每次启动 Host 前，除非启动环境（包括登录 shell 读取的结果）设置了 `DSH_HUB_ORIGIN` 或 `DSH_HUB_CLIENT_ID`（此时必须两者都设置，并以这一对替换内置值），Desktop 把它们作为 `DSH_HUB_ORIGIN` 与 `DSH_HUB_CLIENT_ID` 传给 Host；格式错误的 `dshHub`，或启动环境只设置了其中一项，都会得到与未配置用户中心相同的启动对话框；未打包的开发清单不含 `dshHub`，因此开发启动需自行设置这些变量。用户中心超级管理员把该客户端登记为 `public` 客户端，回调地址为 `http://127.0.0.1/callback`，权限为 `profile`、`skills:read` 和 `skills:write`。
 
 ### 强制更新策略
 

@@ -322,12 +322,16 @@ async function main(): Promise<void> {
     for (const failure of result.failures) console.warn(`desktop login shell: ${failure.shell} failed (${failure.reason})`)
     return result.environment
   })
-  // A packaged manifest carries the release's user center; a development manifest carries none.
-  const bundledHub = readFile(join(app.getAppPath(), 'package.json'), 'utf8')
-    .then(text => resolveDesktopHubConfig((JSON.parse(text) as { dshHub?: unknown }).dshHub))
+  // One read serves the user center here and the update policy below. A packaged manifest carries the
+  // release's user center; a development manifest carries none.
+  const applicationManifest = readFile(join(app.getAppPath(), 'package.json'), 'utf8').then(text => JSON.parse(text) as unknown)
+  const bundledHub = applicationManifest.then(resolveDesktopHubConfig)
+  // Host preparation awaits it later; a failure meanwhile must not surface as an unhandled rejection.
+  void bundledHub.catch(() => undefined)
   let hostEnvironment: NodeJS.ProcessEnv = process.env
   const prepareHostEnvironment = async (): Promise<void> => {
-    hostEnvironment = desktopHubEnvironment(await loginShell, await bundledHub)
+    const [environment, bundled] = await Promise.all([loginShell, bundledHub])
+    hostEnvironment = desktopHubEnvironment(environment, bundled)
   }
   let quitting = false
   let startup: Promise<void> | undefined
@@ -1277,7 +1281,7 @@ async function main(): Promise<void> {
   })
 
   mainWindow = createMainWindow()
-  const manifest: unknown = JSON.parse(await readFile(join(app.getAppPath(), 'package.json'), 'utf8'))
+  const manifest = await applicationManifest
   if (typeof manifest !== 'object' || manifest === null) throw new Error('desktop policy: invalid application manifest')
   const developmentPolicy = app.isPackaged ? undefined : process.env.DSH_DESKTOP_MANDATORY_UPDATE_CONFIG
   const policyInput: unknown = app.isPackaged

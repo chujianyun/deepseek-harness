@@ -3,6 +3,7 @@ import type { MessageBoxOptions } from 'electron'
 import { CRASH_REPORT_WAIT_MS, DesktopFatalRecovery } from '../src/fatal-recovery.ts'
 import type { CrashReportSource } from '../src/crash-report.ts'
 import { resolveDesktopLocale } from '../src/locale.ts'
+import { HUB_NOT_CONFIGURED } from '../src/hub-config.ts'
 
 function fixture(
   locale = 'en',
@@ -242,7 +243,7 @@ it('writes the report once for the first fatal failure and not for the recovery-
 
 it.each(['en', 'zh-CN'])('states the missing user center and offers only exit in %s', async (locale) => {
   const { operations, choice, stopped, recovery } = fixture(locale, async () => REPORT_PATH)
-  const pending = recovery.report(new Error('desktop: no user center is configured (DSH_HUB_ORIGIN and DSH_HUB_CLIENT_ID)'), 'main')
+  const pending = recovery.report(new Error(`${HUB_NOT_CONFIGURED} (DSH_HUB_ORIGIN and DSH_HUB_CLIENT_ID)`), 'main')
   await shown(operations)
   const options = operations.show.mock.calls[0]![0]
   expect(options.buttons).toEqual([operations.messages().exitApplication])
