@@ -328,6 +328,10 @@ pnpm run package:desktop:win:x64:unsigned
 
 该命令要求设置 `DSH_DESKTOP_APP_ID` 并具备常规构建依赖，包括编译原生模块所需的 Python 和 Visual C++ 构建工具。Python 不在 `PATH` 中时，将 `PYTHON` 设置为其可执行文件路径。命令将安装包写入 `.desktop-build/targets/win-x64/unsigned-artifacts/`，省略自动更新配置，清除签名凭据，且不生成发布完成记录。它不需要 EV 凭据或更新源地址。签名打包和上传命令仍遵循正式发布要求。
 
+### 未签名 macOS 安装包
+
+没有 Developer ID 证书时，`pnpm run package:desktop:mac:arm64:unsigned`（或 `:mac:x64:unsigned`）在 `.desktop-build/targets/<目标>/unsigned-artifacts/` 生成名称带 `-unsigned` 的 DMG 和 ZIP。应用只做 Apple Silicon 启动所必需的 ad-hoc 签名，没有 Developer ID 签名、hardened runtime 或公证，因此首次打开时 Gatekeeper 会提示无法验证开发者；用户按住 Control 点按 → 打开，或在「系统设置 → 隐私与安全性」中允许。与未签名 Windows 安装包一样，它省略自动更新配置，不生成发布完成记录，也不需要签名钥匙串或公证凭据。
+
 ### Windows 安装界面
 
 Windows 安装程序使用原生 NSIS 页面，提供亮暗配色、系统阴影、可编辑的安装目录，以及默认勾选立即启动的完成页。安装仅面向当前用户。点击安装或按 Enter 均校验当前路径；新安装位置必须为空，非空位置必须是已登记的安装目录。受影响安装路径中的程序运行时显示系统提示，并保持应用运行；其他目录中的同名应用不阻止安装。静默更新最多等待受影响应用退出十秒，若仍在运行则以退出码 2 结束。

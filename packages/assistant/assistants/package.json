@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-assistants",
   "description": "Desktop assistants: named roles with their own core files, kept per tenant and bound to sessions",
-  "version": "0.2.1-alpha.1",
+  "version": "1.0.0",
   "publishConfig": {
     "access": "public"
   },

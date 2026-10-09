@@ -53,6 +53,9 @@
 /deepseek-harness-desktop/package/unsigned-windows-test-installer:
   en: cfd5780dd26a8e46
   zh: f7a16b1ede793b7b
+/deepseek-harness-desktop/package/unsigned-macos-package:
+  en: 22d9918093ad52f8
+  zh: 4e98282399407a98
 /deepseek-harness-desktop/package/windows-installer-interface:
   en: 94ddb11f514d8dea
   zh: 15021ae8e3bc8a9c

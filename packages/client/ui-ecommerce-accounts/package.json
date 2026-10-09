@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-ecommerce-accounts",
   "description": "E-commerce accounts for the dsh Desktop client: the Settings section that adds platform accounts and signs them in through the system Google Chrome",
-  "version": "0.2.1-alpha.1",
+  "version": "1.0.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

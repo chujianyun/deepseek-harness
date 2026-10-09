@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-root",
-  "version": "0.2.1-alpha.1",
+  "version": "1.0.0",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -35,6 +35,8 @@
     "package:desktop:mac:arm64:dir": "pnpm --filter @deepseek-ai/dsh-desktop run package:mac:arm64:dir",
     "package:desktop:mac:x64": "pnpm --filter @deepseek-ai/dsh-desktop run package:mac:x64",
     "package:desktop:mac:x64:dir": "pnpm --filter @deepseek-ai/dsh-desktop run package:mac:x64:dir",
+    "package:desktop:mac:arm64:unsigned": "pnpm --filter @deepseek-ai/dsh-desktop run package:mac:arm64:unsigned",
+    "package:desktop:mac:x64:unsigned": "pnpm --filter @deepseek-ai/dsh-desktop run package:mac:x64:unsigned",
     "package:desktop:win:x64": "pnpm --filter @deepseek-ai/dsh-desktop run package:win:x64",
     "package:desktop:win:x64:unsigned": "pnpm --filter @deepseek-ai/dsh-desktop run package:win:x64:unsigned",
     "package:desktop:win:x64:dir": "pnpm --filter @deepseek-ai/dsh-desktop run package:win:x64:dir",
