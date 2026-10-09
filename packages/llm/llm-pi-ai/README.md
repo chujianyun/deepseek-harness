@@ -98,7 +98,7 @@ The configurable-provider directory marks each catalog route with an OAuth login
 
 ### Generate images through the ChatGPT sign-in
 
-The `@deepseek-ai/dsh-llm-pi-ai/image-tool` entry (`llm-pi-ai-image-tool` in the base bundle) registers `generate_image` while a ChatGPT (Codex) sign-in is stored at `llm-pi-ai/openai-codex`, and withdraws it when the record goes. A call resolves the account's token through pi-ai (refreshing it under the store's lock), posts to `<baseURL>/codex/responses` with OpenAI's hosted `image_generation` tool forced, stores the returned image through `ctx.attachments`, and returns it as an image block beside a short summary. `model` (default `gpt-5.6-sol`), `baseURL` (default `https://chatgpt.com/backend-api`), and `timeoutMs` (default 300000) are its configuration. A missing or refused sign-in, an HTTP refusal, a failed generation, and an unstorable image each fail the call with a message naming what to do; a service response is never echoed into the model's context.
+When `ctx.tools`, `ctx.attachments`, and `ctx.credentials` are mounted, the plugin registers `generate_image` while `imageGeneration.enabled` is on (the default) and a ChatGPT (Codex) sign-in is stored at `llm-pi-ai/openai-codex`, and withdraws it when either changes; the Models page's ChatGPT Codex card carries the switch. A call resolves the account's token through pi-ai (refreshing it under the store's lock), posts to the `openai-codex` route's `<baseURL>/codex/responses` (the profile's `baseURL`, otherwise `https://chatgpt.com/backend-api`) with OpenAI's hosted `image_generation` tool forced, reads the stream within `imageGeneration.maxResponseBytes`, and stores the image through `ctx.attachments`. The image reaches the model only when the calling route declares image input; the conversation shows it either way from the result's presentation metadata. `imageGeneration.model` (default `gpt-5.6-sol`) and `imageGeneration.timeoutMs` (default 300000) complete the settings. A missing or refused sign-in, an HTTP refusal, a timeout, an unreachable service, a failed generation, and an unstorable image each fail the call with a message naming what to do; a service response is never echoed into the model's context.
 
 ### Resolve the model catalog
 
@@ -205,15 +205,15 @@ Conversion preserves logical request order, while image handles and offload plac
 
 #### What the model sees
 
-While a ChatGPT (Codex) account is signed in, the tool list carries `generate_image` with a required `prompt` and optional `size` (1024x1024, 1536x1024, 1024x1536), `quality` (low, medium, high), and `background` (auto, opaque, transparent). Its result is one text line naming the stored image's size and media type, a `Revised prompt:` line when the service rewrote the prompt, and the image itself; a model without image input receives the image as the harness's text projection instead.
+While a ChatGPT (Codex) account is signed in, the tool list carries `generate_image` with a required `prompt` and optional `size` (1024x1024, 1536x1024, 1024x1536), `quality` (low, medium, high), and `background` (auto, opaque, transparent). Its result is one text line naming the stored image's size and media type, a `Revised prompt:` line when the service rewrote the prompt, and the image itself — or, on a route that does not declare image input, a line saying the model cannot view it in place of the image.
 
 #### Token effect
 
-The tool schema adds a fixed definition while the account is signed in. Each result adds its text lines plus the image's visual tokens, or the text projection on a text-only route.
+The tool schema adds a fixed definition while the account is signed in. Each result adds its text lines plus, on an image-capable route, the image's visual tokens.
 
 #### KV Cache effect
 
-Signing in or out changes the tool list, so the next request's reusable prefix ends before the tool definitions. A recorded result appends to later requests without invalidating their earlier prefix.
+Signing in or out, or flipping the switch, changes the tool list, so the next request's reusable prefix ends before the tool definitions. A recorded result appends to later requests without invalidating their earlier prefix.
 
 ### Provider response
 

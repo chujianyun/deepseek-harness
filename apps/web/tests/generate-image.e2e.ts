@@ -1,8 +1,8 @@
 // Desktop-composed image generation over the real composition: with a ChatGPT (Codex) sign-in stored, the model is
 // offered `generate_image`; a GPT turn calls it, the tool generates through the Codex endpoint, and the image shows
-// below its row in the conversation. Signing out withdraws the tool. The OpenAI side is a loopback Codex server: the
-// chat route's base URL points at it, and the tool's request to chatgpt.com is forwarded to it in-process (the Host
-// runs in this process). The account sign-in UI itself is covered by models-account-sign-in.e2e.ts.
+// under the answer. The Models page switch withdraws the tool, and signing out does too. The OpenAI side is a loopback
+// Codex server the openai-codex route's base URL points at; chat and image requests both follow it. The account
+// sign-in UI itself is covered by models-account-sign-in.e2e.ts.
 import { createServer, type IncomingMessage } from 'node:http'
 import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
@@ -12,10 +12,9 @@ import { describe, expect, it } from 'vitest'
 import type {} from '@deepseek-ai/dsh-hub-account'
 import { browse, startMockUserCenter } from '../../../packages/credentials/hub-account/tests/mock-user-center.ts'
 import { launchWebScaffold, watchConsole, webSnapshotMode } from './scaffold.ts'
-import { connectFreshWorkspaceZh, saveFailureShot, writeComposerDraft, ZH_BROWSER_LOCALE } from './support.ts'
+import { connectFreshWorkspaceZh, openSettings, saveFailureShot, writeComposerDraft, ZH_BROWSER_LOCALE } from './support.ts'
 
 const OVERLAY = fileURLToPath(new URL('./hub-account.overlay.yml', import.meta.url))
-const CODEX_IMAGE_URL = 'https://chatgpt.com/backend-api/codex/responses'
 const PROMPT = '一只橘猫在窗台上晒太阳'
 const REPLY = 'GENERATE_IMAGE_REPLY_OK'
 
@@ -127,23 +126,12 @@ async function startCodexServer(png: Buffer) {
   }
 }
 
-/** Forward the tool's request to chatgpt.com to the loopback server; every other request goes out unchanged. */
-function forwardImageRequests(origin: string) {
-  const original = globalThis.fetch
-  globalThis.fetch = async (input, init) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-    return original(url === CODEX_IMAGE_URL ? `${origin}/codex/responses` : input, init)
-  }
-  return { restore: () => { globalThis.fetch = original } }
-}
-
 // The keyless lane masks DEEPSEEK_API_KEY, which record mode needs; the scenario records no Session.
 describe.skipIf(webSnapshotMode() === 'record')('web e2e: generate_image through the ChatGPT (Codex) sign-in', () => {
   it('offers generate_image while signed in, shows the generated image in the conversation, and withdraws it on sign-out', async () => {
     const center = await startMockUserCenter()
     const png = gradientPng()
     const codex = await startCodexServer(png)
-    const forward = forwardImageRequests(codex.origin)
     process.env.DSH_E2E_HUB_ORIGIN = center.origin
     const scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY, deepSeekMissingCredential: true })
     const browser = await chromium.launch()
@@ -199,6 +187,19 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: generate_image through
         input: [{ role: 'user', content: [{ type: 'input_text', text: PROMPT }] }],
       })
 
+      // The Models page switch withdraws the tool, and turning it back on offers it again.
+      await openSettings(page, 'zh')
+      const settings = page.getByRole('dialog', { name: '设置' })
+      await settings.getByRole('button', { name: '模型', exact: true }).click()
+      await settings.getByRole('button', { name: '编辑 openai-codex' }).click()
+      const imageSwitch = settings.getByRole('switch', { name: '允许模型用此账号生成图片' })
+      expect(await imageSwitch.getAttribute('aria-checked')).toBe('true')
+      await imageSwitch.click()
+      await expect.poll(() => scaffold.ctx.tools.get('generate_image'), { timeout: 10_000 }).toBeUndefined()
+      await expect.poll(() => imageSwitch.getAttribute('aria-checked')).toBe('false')
+      await imageSwitch.click()
+      await expect.poll(() => scaffold.ctx.tools.get('generate_image') !== undefined, { timeout: 10_000 }).toBe(true)
+
       // Signing out withdraws the tool.
       await scaffold.ctx.credentials.deleteRecord('llm-pi-ai/openai-codex' as never)
       await expect.poll(() => scaffold.ctx.tools.get('generate_image'), { timeout: 10_000 }).toBeUndefined()
@@ -210,7 +211,6 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: generate_image through
     } finally {
       await browser.close()
       await scaffold.close()
-      forward.restore()
       await codex.close()
       await center.close()
       Reflect.deleteProperty(process.env, 'DSH_E2E_HUB_ORIGIN')

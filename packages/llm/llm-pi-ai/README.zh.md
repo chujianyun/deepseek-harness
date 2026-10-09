@@ -98,7 +98,7 @@ pi-ai 提供登录的提供方可以通过 harness 授权 seam 登录：流程�
 
 ### 通过 ChatGPT 登录生成图片
 
-`@deepseek-ai/dsh-llm-pi-ai/image-tool` 入口（base bundle 中为 `llm-pi-ai-image-tool`）在 `llm-pi-ai/openai-codex` 存有 ChatGPT（Codex）登录时注册 `generate_image`，记录删除后撤下。一次调用经 pi-ai 取得该账号的令牌（在存储锁下续期），向 `<baseURL>/codex/responses` 发送强制调用 OpenAI 托管 `image_generation` 工具的请求，经 `ctx.attachments` 存储返回的图片，并以一段简短说明加图片块返回。配置项为 `model`（默认 `gpt-5.6-sol`）、`baseURL`（默认 `https://chatgpt.com/backend-api`）与 `timeoutMs`（默认 300000）。未登录或登录被拒、HTTP 拒绝、生成失败、图片无法存储时，调用都以说明下一步该做什么的消息失败；服务端响应绝不会回显进模型上下文。
+挂载了 `ctx.tools`、`ctx.attachments` 与 `ctx.credentials` 时，插件在 `imageGeneration.enabled` 打开（默认）且 `llm-pi-ai/openai-codex` 存有 ChatGPT（Codex）登录期间注册 `generate_image`，任一条件变化即撤下；模型设置页的 ChatGPT Codex 卡片提供该开关。一次调用经 pi-ai 取得该账号的令牌（在存储锁下续期），向 `openai-codex` 路由的 `<baseURL>/codex/responses`（profile 的 `baseURL`，未设置时为 `https://chatgpt.com/backend-api`）发送强制调用 OpenAI 托管 `image_generation` 工具的请求，在 `imageGeneration.maxResponseBytes` 之内读取事件流，并经 `ctx.attachments` 存储图片。只有调用方路由声明图片输入时图片才会交给模型；无论如何对话都会从结果的展示元数据显示图片。`imageGeneration.model`（默认 `gpt-5.6-sol`）与 `imageGeneration.timeoutMs`（默认 300000）是其余设置。未登录或登录被拒、HTTP 拒绝、超时、服务无法连接、生成失败、图片无法存储时，调用都以说明下一步该做什么的消息失败；服务端响应绝不会回显进模型上下文。
 
 ### 解析模型目录
 
@@ -205,15 +205,15 @@ Config 更新严格验证发生变化的 provider。初始加载将已存储的�
 
 #### 模型看到的内容
 
-登录 ChatGPT（Codex）账号期间，工具列表包含 `generate_image`：必填 `prompt`，可选 `size`（1024x1024、1536x1024、1024x1536）、`quality`（low、medium、high）与 `background`（auto、opaque、transparent）。结果是一行说明已存储图片尺寸与媒体类型的文字、服务改写提示词时的一行 `Revised prompt:`，以及图片本身；不支持图片输入的模型收到的是 harness 的文字投影。
+登录 ChatGPT（Codex）账号期间，工具列表包含 `generate_image`：必填 `prompt`，可选 `size`（1024x1024、1536x1024、1024x1536）、`quality`（low、medium、high）与 `background`（auto、opaque、transparent）。结果是一行说明已存储图片尺寸与媒体类型的文字、服务改写提示词时的一行 `Revised prompt:`，以及图片本身——在未声明图片输入的路由上，图片换成一行说明当前模型无法查看图片的文字。
 
 #### Token 影响
 
-登录期间工具 schema 增加一段固定定义。每次结果增加上述文字行与图片的视觉 token，纯文本路由上则是文字投影。
+登录期间工具 schema 增加一段固定定义。每次结果增加上述文字行，以及在支持图片的路由上增加图片的视觉 token。
 
 #### KV Cache 影响
 
-登录或退出会改变工具列表，因此下一次请求的可复用前缀止于工具定义之前。已记录的结果追加到后续请求，不会使其更早的前缀失效。
+登录、退出或切换开关会改变工具列表，因此下一次请求的可复用前缀止于工具定义之前。已记录的结果追加到后续请求，不会使其更早的前缀失效。
 
 ### 提供方响应
 

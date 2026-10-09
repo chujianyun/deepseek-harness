@@ -45,7 +45,7 @@ API 密钥输入框初始为空，并通过 `autocomplete="new-password"` 请求
 
 ### 账号登录
 
-目录条目声明了 `signIn` 的提供商（pi-ai 的 OAuth 登录：ChatGPT Codex、Claude、GitHub Copilot 等）会在卡片上显示账号登录区。点登录后经 `authorization` Remote namespace 发起该条目的 flow；登录区随后按提供商原文显示 flow 的消息、它报告的页面链接、设备码以及提问——登录方式选择显示为按钮，粘贴授权码或回调地址显示为遮掩输入框。在 Desktop 上，本窗口发起的登录会自动在系统浏览器中打开它报告的第一个页面；在 Web 上由用户点链接打开，因为不是点击触发的弹窗会被浏览器拦截。不接受 API 密钥的路由（`acceptsApiKey: false`，如 ChatGPT Codex）用登录区取代密钥输入框，只有登录后才算可用，行上的圆点也改标「已登录 / 未登录」而非密钥状态。每个登录区都提示：订阅账号登录使用的是提供商非公开的客户端接口。登录只写凭据记录，因此 settings 只读时登录仍可用。页面首次加载后跟随该 namespace 的 `watch` 流，Host 结束该流时会重新打开；各行的登录状态读自这条流并在变化时刷新；已经报告过某次尝试的流帧优先于描述该尝试刚开始时状态的 `begin` 返回值。
+目录条目声明了 `signIn` 的提供商（pi-ai 的 OAuth 登录：ChatGPT Codex、Claude、GitHub Copilot 等）会在卡片上显示账号登录区。点登录后经 `authorization` Remote namespace 发起该条目的 flow；登录区随后按提供商原文显示 flow 的消息、它报告的页面链接、设备码以及提问——登录方式选择显示为按钮，粘贴授权码或回调地址显示为遮掩输入框。在 Desktop 上，本窗口发起的登录会自动在系统浏览器中打开它报告的第一个页面；在 Web 上由用户点链接打开，因为不是点击触发的弹窗会被浏览器拦截。不接受 API 密钥的路由（`acceptsApiKey: false`，如 ChatGPT Codex）用登录区取代密钥输入框，只有登录后才算可用，行上的圆点也改标「已登录 / 未登录」而非密钥状态。每个登录区都提示：订阅账号登录使用的是提供商非公开的客户端接口。ChatGPT Codex 卡片另有生图开关，切换即写入 `llm-pi-ai` 段的 `imageGeneration.enabled`，并推进卡片的 revision，使卡片自己的保存仍受版本保护。登录只写凭据记录，因此 settings 只读时登录仍可用。页面首次加载后跟随该 namespace 的 `watch` 流，Host 结束该流时会重新打开；各行的登录状态读自这条流并在变化时刷新；已经报告过某次尝试的流帧优先于描述该尝试刚开始时状态的 `begin` 返回值。
 
 ### 编辑提供商
 

@@ -129,6 +129,8 @@ export const en = {
   signInCancelled: 'Sign-in was cancelled.',
   signInRisk: 'Signing in uses your subscription account through the provider\'s non-public client interface. The provider may change it or restrict accounts that use it from other apps.',
   signInOnly: 'This provider is used by signing in to an account; it takes no API key.',
+  imageGeneration: 'Let models generate images with this account',
+  imageGenerationHint: 'Offers the generate_image tool while this account is signed in; each image uses your ChatGPT subscription quota.',
 }
 
 /** The settings.models namespace key union. */
@@ -263,4 +265,6 @@ export const zh: { [Key in keyof typeof en]: string } = {
   signInCancelled: '登录已取消。',
   signInRisk: '账号登录通过服务商非公开的客户端接口使用你的订阅账号。服务商可能随时调整，也可能限制在其他应用中这样使用的账号。',
   signInOnly: '该服务商通过登录账号使用，不需要 API 密钥。',
+  imageGeneration: '允许模型用此账号生成图片',
+  imageGenerationHint: '登录期间向模型提供 generate_image 工具；每张图片消耗你的 ChatGPT 订阅额度。',
 }

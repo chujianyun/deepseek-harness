@@ -130,11 +130,6 @@
     - id: llm-pi-ai
       name: '@deepseek-ai/dsh-llm-pi-ai'
 
-    # generate_image through the ChatGPT (Codex) sign-in: offered to the model
-    # only while that account is signed in on the Models page.
-    - id: llm-pi-ai-image-tool
-      name: '@deepseek-ai/dsh-llm-pi-ai/image-tool'
-
     - id: session-persistence-jsonl
       name: '@deepseek-ai/dsh-session-persistence-jsonl'
       config:

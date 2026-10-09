@@ -96,8 +96,10 @@ const event = (seq: number, type: string, data: unknown) =>
   ({ seq, time: seq, type, data, ...type === 'tool/result' ? { surfaceOp: 'append' } : {} }) as never
 const update = (value: SessionEvent): ConversationMatch => ({ event: value, role: 'update', location: { kind: 'unresolved' } })
 const callEvent = (seq: number, callId: string, name = 'generate_image') => event(seq, 'tool/call', { turn: 1, step: 1, callId, name, arguments: ARGS })
-const resultEvent = (seq: number, callId: string, content: unknown[], isError = false) =>
-  event(seq, 'tool/result', { turn: 1, step: 1, message: { role: 'tool', source: { kind: 'tool', callId }, content, isError } })
+const resultEvent = (seq: number, callId: string, content: unknown[], isError = false, meta?: unknown) =>
+  event(seq, 'tool/result', {
+    turn: 1, step: 1, message: { role: 'tool', source: { kind: 'tool', callId }, content, isError }, ...meta === undefined ? {} : { meta },
+  })
 
 describe('generatedImagesDefinition', () => {
   const start = (): ConversationStartMatch => ({
@@ -126,12 +128,14 @@ describe('generatedImagesDefinition', () => {
 
   it('collects the images of successful generate_image results, in order', () => {
     const state = fold([
-      callEvent(2, 'c1'), resultEvent(3, 'c1', [{ type: 'text', text: TEXT }, { type: 'image', attachment: image }]),
-      // A failed generation, a result of another tool, and a result without an image add nothing.
-      callEvent(4, 'c2'), resultEvent(5, 'c2', [{ type: 'text', text: 'refused' }], true),
-      resultEvent(6, 'other', [{ type: 'image', attachment: image }]),
-      callEvent(7, 'c3'), resultEvent(8, 'c3', [{ type: 'text', text: 'no image' }]),
-      event(9, 'turn/end', { turn: 1 }),
+      callEvent(2, 'c1'), resultEvent(3, 'c1', [{ type: 'text', text: TEXT }], false, { image }),
+      // A failed generation, a result of another tool, and results without a usable image add nothing.
+      callEvent(4, 'c2'), resultEvent(5, 'c2', [{ type: 'text', text: 'refused' }], true, { image }),
+      resultEvent(6, 'other', [], false, { image }),
+      callEvent(7, 'c3'), resultEvent(8, 'c3', [{ type: 'image', attachment: image }]),
+      callEvent(9, 'c4'), resultEvent(10, 'c4', [], false, ['not', 'an', 'object']),
+      callEvent(11, 'c5'), resultEvent(12, 'c5', [], false, { image: { attachmentId: '' } }),
+      event(13, 'turn/end', { turn: 1 }),
     ])
     expect(state.images).toEqual([{ seq: 3, attachment: image }])
   })
@@ -139,7 +143,7 @@ describe('generatedImagesDefinition', () => {
   it('publishes Turn data only for a Turn that generated images, reusing an unchanged publication', () => {
     const empty = fold([])
     expect(generatedImagesDefinition.buildLocationData!({ state: empty } as never, 'turn', null)).toBeNull()
-    const state = fold([callEvent(2, 'c1'), resultEvent(3, 'c1', [{ type: 'image', attachment: image }])])
+    const state = fold([callEvent(2, 'c1'), resultEvent(3, 'c1', [], false, { image })])
     const published = generatedImagesDefinition.buildLocationData!({ state } as never, 'turn', null)
     expect(published).toEqual({ kind: 'turn', turn: 1, key: 'generated-images', value: { images: state.images } })
     expect(generatedImagesDefinition.buildLocationData!({ state } as never, 'turn', published)).toBe(published)

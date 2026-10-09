@@ -55,7 +55,11 @@ export const generatedImagesDefinition: ConversationNodeDefinition<GeneratedImag
     }
     if (event.type !== 'tool/result' || event.data.message.isError === true) return context.state
     if (!context.state.calls.has(String(event.data.message.source.callId))) return context.state
-    const refs = imageReferences(event.data.message.content)
+    // The image reference rides the result's presentation metadata: the model-facing content
+    // omits the image on a route that cannot view it, but the conversation shows it either way.
+    const meta = event.data.meta
+    const image = typeof meta === 'object' && meta !== null && !Array.isArray(meta) ? meta['image'] : undefined
+    const refs = imageReferences([{ type: 'image', attachment: image }])
     if (refs === null) return context.state
     return { ...context.state, images: [...context.state.images, ...refs.map(attachment => ({ seq: event.seq, attachment }))] }
   },

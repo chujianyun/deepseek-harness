@@ -1907,6 +1907,8 @@ export interface Config {
    * and registers them the moment a settings section supplies profiles.
    */
   providers: Volatile<Record<string, PiAiProviderProfile>>
+  /** `generate_image` through the ChatGPT (Codex) sign-in; read live, so turning it off withdraws the tool at once. */
+  imageGeneration: Volatile<ImageGenerationConfig>
 }
 
 /** Configuration for one pi-ai provider route; the `providers` dict key IS the route. */
@@ -2001,6 +2003,18 @@ export interface PiAiProviderProfile {
   requestImageMaxBytes?: number
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
+}
+
+/** Settings of the `generate_image` tool. */
+export interface ImageGenerationConfig {
+  /** Offer the tool while a ChatGPT (Codex) account is signed in. */
+  enabled: boolean
+  /** Codex model that runs the hosted image generation call. */
+  model: string
+  /** Upper bound of one generation, in milliseconds. */
+  timeoutMs: number
+  /** Most bytes accepted from one generation's event stream. */
+  maxResponseBytes: number
 }
 
 /** One configured model entry: an id plus the catalog fields it overrides. */

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /** Account sign-in on the Models page: the sign-in block, the provider card around it, and the row it marks. */
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Schema from '@deepseek-ai/schemastery'
 import { Context } from '@deepseek-ai/cordis'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
   AuthorizationAttemptId, AuthorizationAttemptView, AuthorizationFlowView, AuthorizationPromptId,
   LlmProviderSignIn, SettingsNamespaceView,
@@ -151,6 +151,7 @@ const PiAiConfig = Schema.object({
     baseURL: Schema.string(),
     models: Schema.array(Schema.object({ id: Schema.string().required() })),
   })),
+  imageGeneration: Schema.object({ enabled: Schema.boolean() }),
 })
 
 function piAi(value: JsonValue = { providers: { 'openai-codex': {} } }): SettingsNamespaceView {
@@ -168,13 +169,20 @@ function piAi(value: JsonValue = { providers: { 'openai-codex': {} } }): Setting
 const okay = <T,>(value: T) => Promise.resolve({ ok: true as const, value })
 
 describe('ProviderEditor with account sign-in', () => {
-  function editor(signIn: LlmProviderSignIn | undefined, extra: { credentialOnly?: boolean } = {}) {
-    const face = { credentials: { describe: () => okay({}) }, llm: { discoverModels: () => okay([]) } }
+  function editor(
+    signIn: LlmProviderSignIn | undefined,
+    extra: { credentialOnly?: boolean } = {},
+    mutate = vi.fn((_ns: string, _ops: unknown, _revision: number | undefined) => okay({ ...piAi(), revision: 7 })),
+    value: JsonValue = { providers: { 'openai-codex': {} } },
+  ) {
+    const face = {
+      credentials: { describe: () => okay({}) }, llm: { discoverModels: () => okay([]) }, settings: { mutate },
+    }
     const ctx = Object.assign(new Context(), { remote: face }) as never
     render(<ProviderEditor
       provider={signIn === ANTHROPIC ? 'anthropic' : 'openai-codex'}
       displayName="ChatGPT"
-      namespace={piAi()}
+      namespace={piAi(value)}
       schema={settingsSchema}
       settingsPath={['providers', 'openai-codex']}
       operations={createModelsOperations(ctx)}
@@ -198,6 +206,34 @@ describe('ProviderEditor with account sign-in', () => {
     editor(ANTHROPIC)
     expect(screen.getByRole('group', { name: en.accountSignIn })).toBeTruthy()
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
+  })
+
+  it('offers the image-generation switch on the ChatGPT Codex card only, writing it at once', async () => {
+    const mutate = vi.fn((_ns: string, _ops: unknown, _revision: number | undefined) => okay({ ...piAi(), revision: 7 }))
+    editor(CODEX, {}, mutate)
+    const toggle = screen.getByRole('switch', { name: en.imageGeneration })
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByText(en.imageGenerationHint)).toBeTruthy()
+    fireEvent.click(toggle)
+    await waitFor(() => { expect(mutate).toHaveBeenCalledWith('llm-pi-ai', [{ op: 'set', path: ['imageGeneration', 'enabled'], value: false }], undefined) })
+    // The card's own Save is then fenced at the revision that write produced.
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://relay.example/backend-api' } })
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(2) })
+    expect(mutate.mock.calls[1]![2]).toBe(7)
+    cleanup()
+    editor(ANTHROPIC)
+    expect(screen.queryByRole('switch', { name: en.imageGeneration })).toBeNull()
+  })
+
+  it('reads a stored off, and shows a refused write', async () => {
+    const mutate = vi.fn(() => Promise.resolve({ ok: false as const, error: new RemoteError('settings/rejected', 'settings are read-only', { ns: 'llm-pi-ai' }) }))
+    editor(CODEX, {}, mutate as never, { providers: { 'openai-codex': {} }, imageGeneration: { enabled: false } })
+    const toggle = screen.getByRole('switch', { name: en.imageGeneration })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(toggle)
+    expect((await screen.findByRole('alert')).textContent).toBe('settings are read-only')
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
   })
 
   it('shows only the key field without a sign-in, or on a credential-only form', () => {

@@ -10,8 +10,10 @@ import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import * as ImageTool from '../src/image-tool.ts'
-import { chatgptAccountId, NOT_SIGNED_IN, readImageStream } from '../src/image-tool.ts'
+import LlmRuntime from '@deepseek-ai/dsh-llm'
+import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
+import { chatgptAccountId, NOT_SIGNED_IN, readImageStream, resolveImageRequest } from '../src/image-tool.ts'
+import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
 import { recordKeyFor } from '../src/auth.ts'
 
 const KEY = recordKeyFor('openai-codex')
@@ -46,7 +48,7 @@ const imageEvents = (item: Record<string, unknown> = {}): string =>
   + 'data: [DONE]\n\n'
 
 /** A Codex endpoint stand-in answering each request with the next scripted reply. */
-async function codexEndpoint(replies: { status?: number; body: string }[]) {
+async function codexEndpoint(replies: { status?: number; body: string; hang?: boolean }[]) {
   const requests: { path: string; headers: IncomingHttpHeaders; body: Record<string, unknown> }[] = []
   const server = createServer((req, res) => {
     let raw = ''
@@ -55,17 +57,23 @@ async function codexEndpoint(replies: { status?: number; body: string }[]) {
       requests.push({ path: req.url ?? '', headers: req.headers, body: JSON.parse(raw) as Record<string, unknown> })
       const reply = replies.shift() ?? { status: 500, body: 'script exhausted' }
       res.writeHead(reply.status ?? 200, { 'content-type': 'text/event-stream' })
-      res.end(reply.body)
+      // A hanging reply sends its headers and then nothing, as a stalled generation does.
+      if (reply.hang === true) res.write(reply.body)
+      else res.end(reply.body)
     })
   })
   servers.push(server)
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('no port')
-  return { url: `http://127.0.0.1:${String(address.port)}/backend-api/`, requests }
+  return { url: `http://127.0.0.1:${String(address.port)}/backend-api/`, requests, replies }
 }
 
-async function boot(baseURL = 'http://127.0.0.1:9/backend-api') {
+/** The live plugin entry of each context, so a case can update or unload it. */
+const plugins = new WeakMap<Context, Awaited<ReturnType<typeof liveConfig>>>()
+
+/** Boot llm-pi-ai through the loader, with the Codex route pointed at `baseURL` when one is given. */
+async function boot(baseURL?: string, imageGeneration: Record<string, unknown> = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-image-tool-'))
   dirs.push(dir)
   const ctx = new Context()
@@ -74,13 +82,13 @@ async function boot(baseURL = 'http://127.0.0.1:9/backend-api') {
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime, { mode: 'native' })
   await ctx.plugin(LocalAttachmentStore, { dshHome: dir })
-  const plugin = ctx.plugin(ImageTool, { baseURL })
-  await plugin
-  images.set(ctx, plugin)
+  await ctx.plugin(LlmRuntime)
+  plugins.set(ctx, await liveConfig(ctx, LlmPiAi, {
+    providers: baseURL === undefined ? {} : { 'openai-codex': { baseURL } },
+    imageGeneration,
+  }))
   return ctx
 }
-/** Each context's image-tool plugin, so a case can unload it alone. */
-const images = new WeakMap<Context, { dispose: () => unknown }>()
 
 async function signIn(ctx: Context, access = ACCESS): Promise<void> {
   await ctx.credentials.modifyRecord(KEY, () => Promise.resolve({
@@ -90,9 +98,17 @@ async function signIn(ctx: Context, access = ACCESS): Promise<void> {
 
 const offered = (ctx: Context): boolean => ctx.tools.get('generate_image') !== undefined
 
+/** A calling agent routed to a Codex model, which takes image input. */
+const VISION_AGENT = { options: { provider: 'openai-codex', model: 'gpt-5.5' }, session: { requestHeader: () => undefined } }
+/** A calling agent whose route cannot be resolved, which is treated as text-only. */
+const TEXT_AGENT = { options: { provider: 'openai-codex', model: 'no-such-model' }, session: { requestHeader: () => undefined } }
+
 let calls = 0
-function generate(ctx: Context, args: Record<string, unknown>) {
-  return ctx.tools.execute({ signal: new AbortController().signal, callId: ToolCallId(`gen-${String(++calls)}`), name: 'generate_image', arguments: args })
+function generate(ctx: Context, args: Record<string, unknown>, agent: object | null = VISION_AGENT, signal = new AbortController().signal) {
+  return ctx.tools.execute({
+    signal, callId: ToolCallId(`gen-${String(++calls)}`), name: 'generate_image', arguments: args,
+    ...agent === null ? {} : { agent: agent as never },
+  })
 }
 const text = (result: { content: { type: string; text?: string }[] }): string =>
   result.content.filter(block => block.type === 'text').map(block => block.text).join('')
@@ -110,7 +126,7 @@ describe('generate_image registration', () => {
     await vi.waitFor(() => { expect(offered(ctx)).toBe(false) })
     await signIn(ctx)
     await vi.waitFor(() => { expect(offered(ctx)).toBe(true) })
-    await images.get(ctx)!.dispose()
+    await plugins.get(ctx)!.fiber.dispose()
     expect(offered(ctx)).toBe(false)
   })
 
@@ -151,6 +167,8 @@ describe('generate_image execution', () => {
     expect(request!.path).toBe('/backend-api/codex/responses')
     expect(request!.headers.authorization).toBe(`Bearer ${ACCESS}`)
     expect(request!.headers['chatgpt-account-id']).toBe('acct-img')
+    expect(request!.headers['originator']).toBe('pi')
+    expect(request!.headers['user-agent']).toMatch(/^pi \(/u)
     expect(request!.body).toMatchObject({
       model: 'gpt-5.6-sol',
       input: [{ role: 'user', content: [{ type: 'input_text', text: 'a red square' }] }],
@@ -196,9 +214,9 @@ describe('generate_image execution', () => {
   })
 
   it.each([
-    [{ status: 401, body: 'denied' }, 'ChatGPT refused the signed-in account'],
-    [{ status: 403, body: 'denied' }, 'ChatGPT refused the signed-in account'],
-    [{ status: 500, body: 'boom' }, 'answered HTTP 500'],
+    [{ status: 401, body: 'denied' }, 'ChatGPT no longer accepts the signed-in account'],
+    [{ status: 403, body: 'denied' }, 'refused the request (HTTP 403)'],
+    [{ status: 500, body: 'boom' }, 'refused the request (HTTP 500)'],
     [{ body: event({ type: 'response.failed', response: { error: { message: 'content policy' } } }) }, 'Image generation failed: content policy'],
     [{ body: event({ type: 'response.failed', response: {} }) }, 'the image service reported a failure'],
     [{ body: event({ type: 'error', message: 'rate limited' }) }, 'Image generation failed: rate limited'],
@@ -244,7 +262,88 @@ describe('generate_image execution', () => {
   })
 })
 
+describe('generate_image settings and transport', () => {
+  it('follows the setting live: off withdraws the tool, on offers it again', async () => {
+    const ctx = await boot()
+    await signIn(ctx)
+    await vi.waitFor(() => { expect(offered(ctx)).toBe(true) })
+    await plugins.get(ctx)!.update({ imageGeneration: { enabled: false } })
+    await vi.waitFor(() => { expect(offered(ctx)).toBe(false) })
+    await plugins.get(ctx)!.update({ imageGeneration: { enabled: true } })
+    await vi.waitFor(() => { expect(offered(ctx)).toBe(true) })
+  })
+
+  it('does not register after the plugin is gone, even when a check was in flight', async () => {
+    const ctx = await boot()
+    let release!: () => void
+    vi.spyOn(ctx.credentials, 'describeRecord').mockImplementationOnce(() => new Promise((resolve) => {
+      release = () => { resolve({ configured: true, writable: true }) }
+    }))
+    await signIn(ctx)
+    await vi.waitFor(() => { expect(release).toBeDefined() })
+    await plugins.get(ctx)!.fiber.dispose()
+    release()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(offered(ctx)).toBe(false)
+  })
+
+  it('keeps the image from a text-only route and says so, while the conversation still gets it', async () => {
+    const endpoint = await codexEndpoint([{ body: imageEvents() }])
+    const ctx = await boot(endpoint.url)
+    await signIn(ctx)
+    await vi.waitFor(() => { expect(offered(ctx)).toBe(true) })
+    for (const agent of [TEXT_AGENT, null]) {
+      endpoint.requests.length = 0
+      endpoint.replies.push({ body: imageEvents() })
+      const result = await generate(ctx, { prompt: 'a square' }, agent)
+      expect(result.content.some(block => block.type === 'image')).toBe(false)
+      expect(text(result)).toContain('The current model cannot view images')
+      expect(result.meta).toMatchObject({ image: { mediaType: 'image/png', width: 2, height: 2 } })
+    }
+  })
+
+  it('posts to the catalog Codex endpoint when the route sets no base URL', async () => {
+    const ctx = await boot()
+    await signIn(ctx)
+    await vi.waitFor(() => { expect(offered(ctx)).toBe(true) })
+    const fetched = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('', { status: 503 }))
+    expect(text(await generate(ctx, { prompt: 'a square' }))).toContain('HTTP 503')
+    expect(fetched.mock.calls[0]![0]).toBe('https://chatgpt.com/backend-api/codex/responses')
+    fetched.mockRestore()
+  })
+
+  it('words a timeout, an unreachable service, an oversized stream, and passes a cancellation through', async () => {
+    const hanging = await codexEndpoint([{ body: ': waiting\n\n', hang: true }, { body: ': waiting\n\n', hang: true }])
+    const slow = await boot(hanging.url, { timeoutMs: 50 })
+    await signIn(slow)
+    await vi.waitFor(() => { expect(offered(slow)).toBe(true) })
+    expect(text(await generate(slow, { prompt: 'a square' }))).toContain('no image arrived within 0 seconds')
+    const cancel = new AbortController()
+    const cancelled = generate(slow, { prompt: 'a square' }, VISION_AGENT, cancel.signal)
+    await vi.waitFor(() => { expect(hanging.requests).toHaveLength(2) })
+    cancel.abort()
+    expect((await cancelled).isError).toBe(true)
+
+    const unreachable = await boot('http://127.0.0.1:9')
+    await signIn(unreachable)
+    await vi.waitFor(() => { expect(offered(unreachable)).toBe(true) })
+    expect(text(await generate(unreachable, { prompt: 'a square' }))).toContain('could not be reached')
+
+    const big = await codexEndpoint([{ body: imageEvents() }])
+    const bounded = await boot(big.url, { maxResponseBytes: 100 })
+    await signIn(bounded)
+    await vi.waitFor(() => { expect(offered(bounded)).toBe(true) })
+    expect(text(await generate(bounded, { prompt: 'a square' }))).toContain('sent more than 100 bytes')
+  })
+})
+
 describe('Codex image helpers', () => {
+  it('fills the schema\'s defaults in one place', () => {
+    expect(resolveImageRequest({ prompt: '  cat  ' })).toEqual({ prompt: 'cat', size: '1024x1024', quality: 'medium', background: 'auto' })
+    expect(resolveImageRequest({ prompt: 'cat', size: '1536x1024', quality: 'high', background: 'opaque' }))
+      .toEqual({ prompt: 'cat', size: '1536x1024', quality: 'high', background: 'opaque' })
+  })
+
   it('reads the account id only from a JWT that names one', () => {
     expect(chatgptAccountId(ACCESS)).toBe('acct-img')
     expect(chatgptAccountId('opaque')).toBeUndefined()
