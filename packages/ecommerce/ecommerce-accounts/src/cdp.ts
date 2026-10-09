@@ -188,13 +188,19 @@ export async function pageTabs(cdp: Cdp): Promise<{ readonly targetId: string; r
 }
 
 /**
- * Open the sign-in page in a new tab and bring its window on screen, in front.
+ * Open the sign-in page in a new tab, close the blank tabs beside it, and bring its window on screen, in front.
  * @param cdp - the browser connection.
  * @param url - the sign-in page.
  * @returns the tab id.
  */
 export async function showSignIn(cdp: Cdp, url: string): Promise<string> {
   const { targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', { url })
+  // Chrome may still list the new tab as about:blank until its page commits, so it is kept by id.
+  for (const tab of await pageTabs(cdp)) {
+    if (tab.url !== 'about:blank' || tab.targetId === targetId) continue
+    // A tab that closed meanwhile is already gone.
+    await cdp.send('Target.closeTarget', { targetId: tab.targetId }).catch(() => undefined)
+  }
   const { windowId } = await cdp.send<{ windowId: number }>('Browser.getWindowForTarget', { targetId })
   await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } })
   await cdp.send('Browser.setWindowBounds', { windowId, bounds: { left: 80, top: 80, width: 1280, height: 880 } })

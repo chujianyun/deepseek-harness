@@ -26,7 +26,7 @@ const FAKE = fileURLToPath(new URL('./fake-chrome.mjs', import.meta.url))
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
-  for (const key of ['FAKE_CHROME_VERSION', 'FAKE_CHROME_SILENT', 'FAKE_CHROME_BASE64', 'FAKE_CHROME_STUBBORN', 'FAKE_CHROME_NO_BODY', 'FAKE_CHROME_NO_CLOSE', 'FAKE_CHROME_OFFLINE', 'FAKE_CHROME_NO_STORE', 'FAKE_CHROME_NO_STORE_BODY']) {
+  for (const key of ['FAKE_CHROME_VERSION', 'FAKE_CHROME_SILENT', 'FAKE_CHROME_BASE64', 'FAKE_CHROME_STUBBORN', 'FAKE_CHROME_NO_BODY', 'FAKE_CHROME_NO_CLOSE', 'FAKE_CHROME_LATE_COMMIT', 'FAKE_CHROME_OFFLINE', 'FAKE_CHROME_NO_STORE', 'FAKE_CHROME_NO_STORE_BODY']) {
     Reflect.deleteProperty(process.env, key)
   }
 })
@@ -217,6 +217,10 @@ describe('e-commerce accounts', () => {
     const args = JSON.parse(await readFile(join(env.browserDir(accountId), 'user-data', 'fake-args.json'), 'utf8')) as string[]
     expect(args).toContain('--window-position=80,80')
     expect(JSON.parse(await readFile(join(env.browserDir(accountId), 'user-data', 'fake-window.json'), 'utf8'))).toMatchObject({ left: 80, top: 80 })
+    // Chrome started on a blank page; only the sign-in page is left once it opens.
+    const tabs = JSON.parse(await readFile(join(env.browserDir(accountId), 'user-data', 'fake-tabs.json'), 'utf8')) as string[]
+    expect(tabs).toHaveLength(1)
+    expect(tabs[0]).not.toBe('about:blank')
     // The user scans the code: the sign-in tab moves on and the platform names the account.
     await env.signIn(accountId, '名流旗舰店:运营')
     const signedIn = await env.settle(s => s.accounts[0]!.status === 'signed-in')
@@ -225,6 +229,17 @@ describe('e-commerce accounts', () => {
     const ledger = JSON.parse(await readFile(join(env.home, 'ecommerce', 't-a', 'accounts.json'), 'utf8')) as { accounts: object[] }
     expect(ledger.accounts[0]).toMatchObject({ signedInAs: '名流旗舰店:运营', everSignedIn: true })
     expect(await readdir(join(env.browserDir(accountId), 'user-data'))).not.toContain('cookies.json')
+  })
+
+  it('keeps the sign-in tab that Chrome still lists as blank, and closes only the page it started on', async () => {
+    process.env.FAKE_CHROME_LATE_COMMIT = '1'
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    await new Promise(resolve => setTimeout(resolve, 500))
+    const tabs = JSON.parse(await readFile(join(env.browserDir(accountId), 'user-data', 'fake-tabs.json'), 'utf8')) as string[]
+    expect(tabs).toHaveLength(1)
+    expect(tabs[0]).not.toBe('about:blank')
   })
 
   it('checks at once when the user says the sign-in is done, and keeps waiting while it is not', async () => {
