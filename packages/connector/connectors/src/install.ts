@@ -18,7 +18,32 @@ export class InstallError extends Error {
    * @param code - which step failed.
    * @param message - detail for logs.
    */
-  constructor(readonly code: 'network' | 'verification' | 'storage' | 'launch', message: string) { super(message) }
+  constructor(readonly code: 'network' | 'verification' | 'storage' | 'busy' | 'launch', message: string) { super(message) }
+}
+
+/** Waits between attempts to move files that another process still holds, about 4.5 s in all. */
+const HELD_RETRY_DELAYS_MS = [100, 200, 400, 800, 1000, 1000, 1000]
+
+/**
+ * Whether a file operation failed because another process holds the files, as Windows reports for a CLI
+ * that just exited or a file a scanner is reading; elsewhere EPERM and EACCES mean missing permission.
+ */
+function held(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code
+  return code === 'EBUSY' || (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES'))
+}
+
+/** Run a file operation, retrying it while another process holds the files. */
+async function retryHeld(operation: () => Promise<void>): Promise<void> {
+  for (const delay of [...HELD_RETRY_DELAYS_MS, undefined]) {
+    try {
+      await operation()
+      return
+    } catch (error) {
+      if (delay === undefined || !held(error)) throw error
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
+  }
 }
 
 /** Longest wait for the unpacked CLI to report its version. */
@@ -137,11 +162,11 @@ export async function installCli(
     throw new InstallError('launch', `${name} --version: ${String(error)}`)
   }
   try {
-    await rm(target, { recursive: true, force: true })
-    await rename(staging, target)
+    await retryHeld(() => rm(target, { recursive: true, force: true }))
+    await retryHeld(() => rename(staging, target))
   } catch (error) {
-    await rm(staging, { recursive: true, force: true })
-    throw new InstallError('storage', `${target}: ${String(error)}`)
+    await rm(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+    throw new InstallError(held(error) ? 'busy' : 'storage', `${target}: ${String(error)}`)
   }
   await rm(archivePath, { force: true })
   if (skillsPath !== undefined) await rm(skillsPath, { force: true })

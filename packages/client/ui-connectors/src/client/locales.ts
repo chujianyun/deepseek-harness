@@ -63,6 +63,7 @@ export const zh = {
   'error.network': '{cli} 下载失败：无法连接下载源，请检查网络后点 + 重试。',
   'error.verification': '下载的 {cli} 校验不通过，请点 + 重试。',
   'error.storage': '无法写入 {cli} 的安装目录，请检查磁盘空间和权限后点 + 重试。',
+  'error.busy': '{cli} 的安装文件暂时被其他程序占用（例如杀毒软件正在扫描），请稍等片刻后点 + 重试。',
   'error.launch': '{cli} 安装后无法运行，请点 + 重试。',
   actionFailed: '操作失败：{message}',
 }
@@ -133,6 +134,7 @@ export const en = {
   'error.network': '{cli} could not be downloaded: no download source was reachable. Check the network and select + to retry.',
   'error.verification': 'The downloaded {cli} did not pass verification. Select + to retry.',
   'error.storage': '{cli} could not be written to its install folder. Check disk space and permissions, then select + to retry.',
+  'error.busy': '{cli}\'s install files are in use by another program, such as a virus scanner. Wait a moment, then select + to retry.',
   'error.launch': '{cli} does not run after installing. Select + to retry.',
   actionFailed: 'Action failed: {message}',
 } satisfies Record<ConnectorsLocaleKey, string>

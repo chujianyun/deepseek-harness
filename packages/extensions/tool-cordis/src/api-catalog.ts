@@ -5794,7 +5794,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectorInstallError',
-    declaration: 'export type ConnectorInstallError = \'network\' | \'verification\' | \'storage\' | \'launch\';',
+    declaration: 'export type ConnectorInstallError = \'network\' | \'verification\' | \'storage\' | \'busy\' | \'launch\';',
   },
   {
     name: 'ConnectorLoginError',

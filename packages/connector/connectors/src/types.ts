@@ -78,9 +78,10 @@ export interface ConnectorLoginError {
  * - `network`: no mirror served the CLI archive.
  * - `verification`: the archive did not match its pinned size and sha256.
  * - `storage`: the CLI could not be written or unpacked.
+ * - `busy`: the CLI could not be moved into place because another process still held its files, after retries.
  * - `launch`: the unpacked CLI did not run or did not report its pinned version.
  */
-export type ConnectorInstallError = 'network' | 'verification' | 'storage' | 'launch'
+export type ConnectorInstallError = 'network' | 'verification' | 'storage' | 'busy' | 'launch'
 
 /** One connector card. */
 export interface ConnectorView {

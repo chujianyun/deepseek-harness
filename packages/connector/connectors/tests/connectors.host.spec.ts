@@ -15,13 +15,24 @@ import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
 import { hubStub } from './support.ts'
 import ConnectorsService, { type CliSpec, type ConnectorsState } from '../src/index.ts'
 
-/** A rename into this path fails, as a full or read-only disk would refuse it. */
-const refusedRename = vi.hoisted(() => ({ target: undefined as string | undefined }))
+/**
+ * A rename into `target` fails: without `code`, as a full or read-only disk refuses it; with one, `times`
+ * times with that error code, as Windows refuses one while another process still holds the files.
+ */
+const refusedRename = vi.hoisted(() => ({
+  target: undefined as string | undefined, code: undefined as string | undefined, times: 0, calls: 0,
+}))
 vi.mock('node:fs/promises', async (original) => {
   const fs = await original<typeof import('node:fs/promises')>()
   return {
     ...fs,
-    rename: (from: string, to: string) => to === refusedRename.target ? Promise.reject(new Error('EROFS')) : fs.rename(from, to),
+    rename: (from: string, to: string) => {
+      if (to !== refusedRename.target) return fs.rename(from, to)
+      refusedRename.calls++
+      if (refusedRename.code === undefined) return Promise.reject(new Error('EROFS'))
+      if (refusedRename.calls > refusedRename.times) return fs.rename(from, to)
+      return Promise.reject(Object.assign(new Error(`${refusedRename.code}: operation not permitted, rename`), { code: refusedRename.code }))
+    },
   }
 })
 
@@ -250,11 +261,35 @@ describe('connectors', () => {
   runs('reports storage when the checked CLI cannot be moved into place', async () => {
     const home = await scratch('dsh-connectors-home-')
     const mirror = await startMirror()
-    refusedRename.target = join(home, 'connectors', 'feishu', VERSION)
-    cleanups.push(async () => { refusedRename.target = undefined })
+    Object.assign(refusedRename, { target: join(home, 'connectors', 'feishu', VERSION), code: undefined, times: 0, calls: 0 })
+    cleanups.push(async () => { Object.assign(refusedRename, { target: undefined, code: undefined, times: 0, calls: 0 }) })
     const { service, until } = await boot(home, spec(mirror, await archive('tar.gz')))
     await service.installConnector('feishu')
     expect(feishu(await until(state => feishu(state).status === 'not-installed')).error).toBe('storage')
+    expect(refusedRename.calls).toBe(1)
+    expect(await readdir(join(home, 'connectors', 'feishu'))).toEqual(['downloads'])
+  })
+
+  runs('retries moving the checked CLI into place while its files are held, and installs it', async () => {
+    const home = await scratch('dsh-connectors-home-')
+    const mirror = await startMirror()
+    Object.assign(refusedRename, { target: join(home, 'connectors', 'feishu', VERSION), code: 'EBUSY', times: 3, calls: 0 })
+    cleanups.push(async () => { Object.assign(refusedRename, { target: undefined, code: undefined, times: 0, calls: 0 }) })
+    const { service, until } = await boot(home, spec(mirror, await archive('tar.gz')))
+    await service.installConnector('feishu')
+    expect(feishu(await until(state => feishu(state).status !== 'installing')).error).toBeNull()
+    expect(refusedRename.calls).toBe(4)
+    expect(await readdir(join(home, 'connectors', 'feishu'))).toContain(VERSION)
+  })
+
+  runs('reports busy when the checked CLI\'s files stay held, leaving nothing installed', async () => {
+    const home = await scratch('dsh-connectors-home-')
+    const mirror = await startMirror()
+    Object.assign(refusedRename, { target: join(home, 'connectors', 'feishu', VERSION), code: 'EBUSY', times: Number.POSITIVE_INFINITY, calls: 0 })
+    cleanups.push(async () => { Object.assign(refusedRename, { target: undefined, code: undefined, times: 0, calls: 0 }) })
+    const { service, until } = await boot(home, spec(mirror, await archive('tar.gz')))
+    await service.installConnector('feishu')
+    expect(feishu(await until(state => feishu(state).status === 'not-installed')).error).toBe('busy')
     expect(await readdir(join(home, 'connectors', 'feishu'))).toEqual(['downloads'])
   })
 
