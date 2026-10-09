@@ -293,6 +293,20 @@ describe('connectors', () => {
     expect(await readdir(join(home, 'connectors', 'feishu'))).toEqual(['downloads'])
   })
 
+  runs('stops an install waiting for its held files at once when it is uninstalled', async () => {
+    const home = await scratch('dsh-connectors-home-')
+    const mirror = await startMirror()
+    Object.assign(refusedRename, { target: join(home, 'connectors', 'feishu', VERSION), code: 'EBUSY', times: Number.POSITIVE_INFINITY, calls: 0 })
+    cleanups.push(async () => { Object.assign(refusedRename, { target: undefined, code: undefined, times: 0, calls: 0 }) })
+    const { service } = await boot(home, spec(mirror, await archive('tar.gz')))
+    await service.installConnector('feishu')
+    await expect.poll(() => refusedRename.calls).toBeGreaterThan(1)
+    // Uninstalling waits for the install to stop; the remaining retries would take about 3 s.
+    const started = Date.now()
+    expect(feishu(await service.uninstallConnector('feishu'))).toMatchObject({ status: 'not-installed', error: null })
+    expect(Date.now() - started).toBeLessThan(1500)
+  })
+
   runs('uninstalls an installed CLI, and stops and removes a running install', async () => {
     const home = await scratch('dsh-connectors-home-')
     const mirror = await startMirror()

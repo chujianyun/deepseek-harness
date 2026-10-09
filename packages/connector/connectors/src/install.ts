@@ -21,28 +21,46 @@ export class InstallError extends Error {
   constructor(readonly code: 'network' | 'verification' | 'storage' | 'busy' | 'launch', message: string) { super(message) }
 }
 
-/** Waits between attempts to move files that another process still holds, about 4.5 s in all. */
-const HELD_RETRY_DELAYS_MS = [100, 200, 400, 800, 1000, 1000, 1000]
+/** Waits between attempts to move a directory that another process still holds, about 3 s in all. */
+const HELD_RETRY_DELAYS_MS = [100, 200, 400, 800, 800, 800]
 
 /**
- * Whether a file operation failed because another process holds the files, as Windows reports for a CLI
- * that just exited or a file a scanner is reading; elsewhere EPERM and EACCES mean missing permission.
+ * Whether a file operation may succeed when tried again: `EBUSY`, and on Windows `EPERM` and `EACCES`,
+ * which it also reports while another process, such as a virus scanner, holds the files.
  */
-function held(error: unknown): boolean {
+function transient(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException).code
   return code === 'EBUSY' || (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES'))
 }
 
-/** Run a file operation, retrying it while another process holds the files. */
-async function retryHeld(operation: () => Promise<void>): Promise<void> {
+/** Rename a directory, retrying while another process holds its files; the abort reason ends the wait. */
+async function renameRetrying(from: string, to: string, signal: AbortSignal): Promise<void> {
   for (const delay of [...HELD_RETRY_DELAYS_MS, undefined]) {
     try {
-      await operation()
+      await rename(from, to)
       return
     } catch (error) {
-      if (delay === undefined || !held(error)) throw error
+      if (delay === undefined || !transient(error)) throw error
       await new Promise(resolve => setTimeout(resolve, delay))
+      signal.throwIfAborted()
     }
+  }
+}
+
+/**
+ * Why files under a writable `root` could not be moved: Windows reports a held file and a missing
+ * permission with the same codes, so a directory that takes a new file is taken to be held.
+ */
+async function blockedBy(root: string, error: unknown): Promise<'busy' | 'storage'> {
+  if (!transient(error)) return 'storage'
+  const probe = join(root, '.write-check')
+  try {
+    await writeFile(probe, '')
+    await rm(probe, { force: true })
+    return 'busy'
+  } catch {
+    // The connector's directory takes no file: a permission or disk problem.
+    return 'storage'
   }
 }
 
@@ -150,23 +168,26 @@ export async function installCli(
     await unpack(archivePath, archive.file, name, staging)
     if (skillsPath !== undefined) await unpackSkills(skillsPath, join(staging, SKILLS_DIR))
   } catch (error) {
-    await rm(staging, { recursive: true, force: true })
+    await rm(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }).catch(() => undefined)
     throw new InstallError('storage', `${archive.file}: ${String(error)}`)
   }
+  // The version check runs from the final directory: renaming a directory right after its executable ran
+  // fails on Windows while the exited process or a virus scanner still holds the file.
   try {
-    const { stdout } = await runNativeCommand(join(staging, name), ['--version'], AbortSignal.any([signal, AbortSignal.timeout(LAUNCH_TIMEOUT_MS)]), 'hidden')
-    if (!stdout.includes(spec.version)) throw new Error(`reported ${JSON.stringify(stdout.trim())}`)
+    await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 })
+    await renameRetrying(staging, target, signal)
   } catch (error) {
-    await rm(staging, { recursive: true, force: true })
+    await rm(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }).catch(() => undefined)
     signal.throwIfAborted()
-    throw new InstallError('launch', `${name} --version: ${String(error)}`)
+    throw new InstallError(await blockedBy(root, error), `${target}: ${String(error)}`)
   }
   try {
-    await retryHeld(() => rm(target, { recursive: true, force: true }))
-    await retryHeld(() => rename(staging, target))
+    const { stdout } = await runNativeCommand(join(target, name), ['--version'], AbortSignal.any([signal, AbortSignal.timeout(LAUNCH_TIMEOUT_MS)]), 'hidden')
+    if (!stdout.includes(spec.version)) throw new Error(`reported ${JSON.stringify(stdout.trim())}`)
   } catch (error) {
-    await rm(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
-    throw new InstallError(held(error) ? 'busy' : 'storage', `${target}: ${String(error)}`)
+    await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }).catch(() => undefined)
+    signal.throwIfAborted()
+    throw new InstallError('launch', `${name} --version: ${String(error)}`)
   }
   await rm(archivePath, { force: true })
   if (skillsPath !== undefined) await rm(skillsPath, { force: true })
