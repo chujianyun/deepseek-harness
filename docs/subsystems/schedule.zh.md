@@ -522,6 +522,15 @@ Shared management service; reads, deletion, and timing edits never activate a Se
 async create( sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal, window?: ScheduleWindowInput, ): Promise<ScheduleRecord>
 
 /**
+ * Check a creation request as `create` would, without storing anything: the same name,
+ * instruction, selector, timing, and effective-date rules, at the current clock.
+ * @param request - Selector, required title, and reminder content.
+ * @param window - Optional effective dates.
+ * @throws ScheduleInputError for the first rule the request breaks.
+ */
+validate(request: ScheduleCreateRequest, window?: ScheduleWindowInput): void
+
+/**
  * Read the selected Session's active tasks without resuming its Agent.
  * @param request - Session whose task list is requested.
  * @returns Persisted reminders in storage order.

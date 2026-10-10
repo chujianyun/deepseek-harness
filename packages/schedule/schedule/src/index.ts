@@ -11,6 +11,7 @@ import { ScheduleRuntime } from './runtime.ts'
 import { scheduleDomain } from './storage.ts'
 import { deliveryHistoryPage } from './delivery-history.ts'
 import { resolveScheduleUpdate } from './update.ts'
+export { timingRequest } from './update.ts'
 import {
   foldScheduleEvents, ScheduleInputError, ScheduleLogError, ScheduleId, createAfterScheduleRecord, createAtScheduleRecord,
   createEveryScheduleRecord, createDailyScheduleRecord, createWeeklyScheduleRecord, createCronScheduleRecord,
@@ -19,7 +20,7 @@ import {
 import type {
   DeliveryRetentionBounds, ScheduleCatalogEntry, ScheduleCreateRequest, ScheduleDeleteRequest, ScheduleDeleteResult,
   ScheduleDeliveryHistoryRequest, ScheduleDeliveryHistoryResult, ScheduleListRequest, ScheduleRecord,
-  ScheduleUpdateRequest, ScheduleUpdateResult, ScheduleWindowInput, SubagentSessionError,
+  ScheduleUpdateRequest, ScheduleUpdateResult, ScheduleWindow, ScheduleWindowInput, SubagentSessionError,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -234,6 +235,39 @@ export class ScheduleService extends TypertRemoteService {
   async create(
     sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal, window?: ScheduleWindowInput,
   ): Promise<ScheduleRecord> {
+    const { record, effective } = this.build(request, window)
+    const id = record.id
+    return this.serialize(async () => {
+      const refusal = this.reminderTargetRefusal(sessionId)
+      if (refusal !== undefined) throw new ScheduleInputError('subagent_session', refusal.message)
+      const domain = await this.getDomain()
+      signal?.throwIfAborted()
+      await domain.table('tasks').put(id, {
+        sessionId, record, status: 'active', deliveryHistory: { records: [], earlierRecordsUnavailable: false },
+        ...(effective === undefined ? {} : { window: effective }),
+      })
+      this.emitChanged()
+      this.runtime?.requestDrive()
+      return record
+    })
+  }
+
+  /**
+   * Check a creation request as `create` would, without storing anything: the same name,
+   * instruction, selector, timing, and effective-date rules, at the current clock.
+   * @param request - Selector, required title, and reminder content.
+   * @param window - Optional effective dates.
+   * @throws ScheduleInputError for the first rule the request breaks.
+   */
+  validate(request: ScheduleCreateRequest, window?: ScheduleWindowInput): void {
+    this.build(request, window)
+  }
+
+  /** Build the record a creation request describes, placed in its window, from the current clock. */
+  private build(request: ScheduleCreateRequest, window: ScheduleWindowInput | undefined): {
+    record: ScheduleRecord
+    effective: ScheduleWindow | undefined
+  } {
     if (Number(request.at !== undefined) + Number(request.after_seconds !== undefined)
       + Number(request.every_seconds !== undefined) + Number(request.daily !== undefined)
       + Number(request.weekly !== undefined) + Number(request.cron !== undefined) > 1) {
@@ -257,20 +291,7 @@ export class ScheduleService extends TypertRemoteService {
     else if (request.cron !== undefined) record = createCronScheduleRecord(id, request.prompt, request.cron, now, title)
     else throw new ScheduleInputError('invalid_selector', 'Exactly one reminder selector is required.')
     const effective = window === undefined ? undefined : parseWindowInput(window)
-    record = requireInWindow(record, effective)
-    return this.serialize(async () => {
-      const refusal = this.reminderTargetRefusal(sessionId)
-      if (refusal !== undefined) throw new ScheduleInputError('subagent_session', refusal.message)
-      const domain = await this.getDomain()
-      signal?.throwIfAborted()
-      await domain.table('tasks').put(id, {
-        sessionId, record, status: 'active', deliveryHistory: { records: [], earlierRecordsUnavailable: false },
-        ...(effective === undefined ? {} : { window: effective }),
-      })
-      this.emitChanged()
-      this.runtime?.requestDrive()
-      return record
-    })
+    return { record: requireInWindow(record, effective), effective }
   }
 
   /**

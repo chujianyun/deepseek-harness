@@ -2489,6 +2489,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The durably stored schedule. Cancellation does not roll back an in-flight write.',
       },
       {
+        signature: 'validate(request: ScheduleCreateRequest, window?: ScheduleWindowInput): void',
+        description: 'Check a creation request as `create` would, without storing anything: the same name, instruction, selector, timing, and effective-date rules, at the current clock.',
+        parameters: [{ name: 'request', description: 'Selector, required title, and reminder content.' }, { name: 'window', description: 'Optional effective dates.' }],
+        throws: ['ScheduleInputError for the first rule the request breaks.'],
+      },
+      {
         signature: '@Remote(\'list\') async list(request: ScheduleListRequest): Promise<ScheduleRecord[]>',
         description: 'Read the selected Session\'s active tasks without resuming its Agent.',
         parameters: [{ name: 'request', description: 'Session whose task list is requested.' }],
@@ -5593,7 +5599,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AutomationTaskCreateRequest',
-    declaration: 'export interface AutomationTaskCreateRequest {\n    readonly title: string;\n    readonly prompt: string;\n    readonly workspaceId?: WorkspaceId;\n    readonly assistantId?: string;\n    readonly model?: ModelSelection;\n    readonly permission?: string;\n    readonly connectors?: readonly string[];\n    readonly timing: ScheduleTimingChange;\n    readonly window?: ScheduleWindowInput;\n}',
+    declaration: 'export interface AutomationTaskCreateRequest {\n    readonly title: string;\n    readonly prompt: string;\n    readonly workspaceId: WorkspaceId;\n    readonly assistantId?: string;\n    readonly model?: ModelSelection;\n    readonly permission?: string;\n    readonly connectors?: readonly string[];\n    readonly timing: ScheduleTimingChange;\n    readonly window?: ScheduleWindowInput;\n}',
   },
   {
     name: 'AutomationTaskCreateValue',

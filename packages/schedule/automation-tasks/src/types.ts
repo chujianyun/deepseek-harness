@@ -12,7 +12,10 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
-    /** The schedule refused the task's name, instruction, timing, or effective dates; `code` is its Schedule input code. */
+    /**
+     * The task's name, instruction, timing, or effective dates break a Schedule rule (`code` is its
+     * Schedule input code), or its permission preset does not exist (`unknown_permission`).
+     */
     'automation-tasks/invalid': { readonly code: string }
     /** The task asked for an assistant, connectors, or a permission preset, but this deployment does not mount that service. */
     'automation-tasks/unavailable': { readonly field: 'assistant' | 'connectors' | 'permission' }
@@ -27,8 +30,8 @@ export interface AutomationTaskCreateRequest {
   readonly title: string
   /** Instruction sent to the Session at each run, non-empty after trimming. */
   readonly prompt: string
-  /** Workspace of the new Session; omitted uses the default workspace. */
-  readonly workspaceId?: WorkspaceId
+  /** Workspace the new Session is filed under. */
+  readonly workspaceId: WorkspaceId
   /** Assistant the Session is bound to; omitted runs in general mode. */
   readonly assistantId?: string
   /** Model the Session uses, without changing the default; omitted keeps the assistant's or the default model. */

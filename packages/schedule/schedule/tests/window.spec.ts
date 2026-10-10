@@ -6,6 +6,7 @@ import {
 } from '../src/domain.ts'
 import { ScheduleRuntime } from '../src/runtime.ts'
 import { scheduleTaskSchema, type ScheduleTask } from '../src/storage.ts'
+import { timingRequest } from '../src/update.ts'
 import type { ScheduleWindow } from '../src/types.ts'
 import { agentFor, harness } from './harness.ts'
 
@@ -198,5 +199,27 @@ describe('delivery at the end date', () => {
     )
     expect(followup).not.toHaveBeenCalled()
     expect(task).toMatchObject({ status: 'inactive', record: { scheduledAt: '2026-09-18T15:00:00.000Z' } })
+  })
+})
+
+describe('checking a creation without storing it', () => {
+  it('applies the creation rules, and maps each timing choice to its selector', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-16T00:00:00.000Z'))
+    const { service, fiber } = await harness()
+    try {
+      const request = { title: 'Report', prompt: 'Report', ...timingRequest({ kind: 'daily', daily: { time: '23:00:00', time_zone: SHANGHAI } }) }
+      service.validate(request, { start: '2026-09-20', time_zone: SHANGHAI })
+      expect(() => { service.validate({ ...request, title: ' ' }) }).toThrow(expect.objectContaining({ code: 'invalid_prompt' }))
+      expect(() => { service.validate(request, { end: '2026-09-15', time_zone: SHANGHAI }) }).toThrow(expect.objectContaining({ code: 'invalid_rule' }))
+      expect(await service.catalog()).toEqual([])
+    } finally {
+      await fiber.dispose()
+    }
+    expect(timingRequest({ kind: 'at', at: '2026-09-20T00:00:00Z' })).toEqual({ at: '2026-09-20T00:00:00Z' })
+    expect(timingRequest({ kind: 'every', every_seconds: 600 })).toEqual({ every_seconds: 600 })
+    expect(timingRequest({ kind: 'weekly', weekly: { time: '09:00:00', time_zone: 'UTC', weekdays: [1] } }))
+      .toEqual({ weekly: { time: '09:00:00', time_zone: 'UTC', weekdays: [1] } })
+    expect(timingRequest({ kind: 'cron', cron: { expression: '0 9 * * *', time_zone: 'UTC' } })).toEqual({ cron: { expression: '0 9 * * *', time_zone: 'UTC' } })
   })
 })

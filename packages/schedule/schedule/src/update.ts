@@ -6,7 +6,9 @@ import {
   decodeStoredTitle, parseAtInput, parseCronInput, parseDailyInput, parseWeeklyInput, requireInWindow,
   ScheduleInputError, ScheduleLogError, scheduleTitle,
 } from './domain.ts'
-import type { ScheduleRecord, ScheduleTimingChange, ScheduleUpdateContent, ScheduleUpdateResult, ScheduleWindow } from './types.ts'
+import type {
+  ScheduleCreateRequest, ScheduleRecord, ScheduleTimingChange, ScheduleUpdateContent, ScheduleUpdateResult, ScheduleWindow,
+} from './types.ts'
 
 /** Name the exact selector property each timing kind must carry, or undefined for an unknown discriminant. */
 function timingSelector(kind: string): string | undefined {
@@ -180,5 +182,21 @@ export function resolveScheduleUpdate(
   } catch (error) {
     if (!(error instanceof ScheduleInputError)) throw error
     return { code: error.code, message: error.message }
+  }
+}
+
+/**
+ * The creation selector of one timing choice, for a caller that builds a `create` request from the
+ * same discriminated timing an update takes.
+ * @param timing - Timing choice.
+ * @returns The request's selector field.
+ */
+export function timingRequest(timing: ScheduleTimingChange): Omit<ScheduleCreateRequest, 'prompt' | 'title'> {
+  switch (timing.kind) {
+    case 'at': return { at: timing.at }
+    case 'every': return { every_seconds: timing.every_seconds }
+    case 'daily': return { daily: timing.daily }
+    case 'weekly': return { weekly: timing.weekly }
+    case 'cron': return { cron: timing.cron }
   }
 }

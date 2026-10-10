@@ -47,10 +47,10 @@ it('creates the task\'s Session with its assistant and permission, schedules it,
     const catalog = ctx.permissionPresets.catalog()
     const preset = catalog.options.find(option => option.value !== catalog.defaultPreset)!.value
     const sessions = async () => (await ctx.sessionController.list({}, new AbortController().signal)).items.map(item => item.sessionId)
-    const before = await sessions()
+    const workspace = await ctx.workspaceRegistry.create(scaffold.workspaceCwd, '默认工作区')
 
     const created = await ctx.automationTasks.create({
-      title: '每日简报', prompt: '整理昨天的待办并给出今天的建议', assistantId: daily.id, permission: preset,
+      title: '每日简报', prompt: '整理昨天的待办并给出今天的建议', workspaceId: workspace.id, assistantId: daily.id, permission: preset,
       timing: { kind: 'daily', daily: { time: '09:00:00', time_zone: 'Asia/Shanghai' } },
       window: { end: '2099-12-31', time_zone: 'Asia/Shanghai' },
     })
@@ -58,23 +58,30 @@ it('creates the task\'s Session with its assistant and permission, schedules it,
     const [task] = await ctx.schedule.catalog()
     expect(task).toMatchObject({ id: created.record.id, sessionId: created.sessionId, status: 'active', window: { end: '2099-12-31' } })
     expect(await sessions()).toContain(created.sessionId)
+    // The Session is filed under the chosen workspace, so the sidebar lists it there.
+    expect(ctx.workspaceRegistry.get(workspace.id)?.sessionIds).toContain(created.sessionId)
     const resolved = await ctx.sessionController.resolveAgent(created.sessionId)
     if ('error' in resolved) throw resolved.error
     expect(ctx.sessionProjections.stateOf(resolved.agent.session, 'assistant')?.assistantId).toBe(daily.id)
     expect(ctx.permissionPresets.current(resolved.agent.session)).toBe(preset)
     expect(ctx.sessionTitle.get(resolved.agent.session)?.title).toBe('每日简报')
 
-    // A task with no run inside its effective dates is refused, and its Session is archived.
+    // A task with no run inside its effective dates is refused before any Session exists.
     const listed = await sessions()
     await expect(ctx.automationTasks.create({
-      title: '过期任务', prompt: '不会执行', timing: { kind: 'daily', daily: { time: '09:00:00', time_zone: 'Asia/Shanghai' } },
-      window: { end: '2020-01-01', time_zone: 'Asia/Shanghai' },
+      title: '过期任务', prompt: '不会执行', workspaceId: workspace.id,
+      timing: { kind: 'daily', daily: { time: '09:00:00', time_zone: 'Asia/Shanghai' } }, window: { end: '2020-01-01', time_zone: 'Asia/Shanghai' },
     })).rejects.toMatchObject({ code: 'automation-tasks/invalid', details: { code: 'invalid_rule' } })
+    expect(await sessions()).toEqual(listed)
+    // A refusal after the Session exists archives it: here an assistant the tenant does not have.
+    await expect(ctx.automationTasks.create({
+      title: '无效智能体', prompt: '不会执行', workspaceId: workspace.id, assistantId: 'missing',
+      timing: { kind: 'daily', daily: { time: '09:00:00', time_zone: 'Asia/Shanghai' } },
+    })).rejects.toMatchObject({ code: 'assistants/not-found' })
     const refused = (await sessions()).filter(id => !listed.includes(id))
     expect(refused).toHaveLength(1)
     await expect.poll(() => ctx.workspaceRegistry.archivedSessionIds).toEqual(refused)
     expect((await ctx.schedule.catalog()).map(item => item.id)).toEqual([created.record.id])
-    expect(before).not.toContain(created.sessionId)
   } finally {
     await close()
   }

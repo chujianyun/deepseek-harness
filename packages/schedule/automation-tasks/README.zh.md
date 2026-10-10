@@ -24,9 +24,9 @@ kind: "package-reference"
 
 将本包作为 Loader 条目与调度一起挂载；它注入 `sessionController`、`schedule` 和 `workspaceRegistry`，仅在请求需要时用 `ctx.get` 读取 `assistants`、`connectors` 和 `permissionPresets`。web-app bundle 在配置了用户中心的桌面端启用它，那里运行着这些服务。
 
-`create(request)` 接受任务的 `title`（同时作为会话名称）和 `prompt`、可选的 `workspaceId`（省略时为默认工作区）、可选的 `assistantId`、`model`（为会话安装且不改变默认模型）、`permission` 预设和 `connectors` 列表、作为调度时间选择的 `timing`（`at`、`every`、`daily`、`weekly` 或 `cron`），以及 `window` 中可选的生效日期。各步骤按以下顺序执行：创建会话、重命名、恢复其 Agent、选择智能体、安装模型、设置权限预设、通过 `connectors.allowInSession()` 授权连接器、创建调度。它返回 `sessionId` 和已保存的调度 `record`。
+`create(request)` 接受任务的 `title`（同时作为会话名称）和 `prompt`、会话所归属的 `workspaceId`、可选的 `assistantId`、`model`（为会话安装且不改变默认模型）、`permission` 预设和 `connectors` 列表、作为调度时间选择的 `timing`（`at`、`every`、`daily`、`weekly` 或 `cron`），以及 `window` 中可选的生效日期。它先检查不需要会话就能检查的内容：用同样的请求和生效区间调用调度的 `validate()`，并确认权限预设是目录提供的预设（不是 `custom`）。然后使用自己生成的会话 id，按以下顺序执行各步骤：在工作区中创建会话、重命名、恢复其 Agent、选择智能体、安装模型、设置权限预设、通过 `connectors.allowInSession()` 授权连接器、创建调度。它返回 `sessionId` 和已保存的调度 `record`。
 
-在未挂载相应服务时请求智能体、连接器或权限预设，会在创建任何会话之前以 `automation-tasks/unavailable`（`field`）拒绝。会话创建后，任何失败都会通过带 `stopActivity` 的 `workspaceRegistry.archiveSession()` 归档它，然后拒绝：调度输入错误变为带调度 `code` 和消息的 `automation-tasks/invalid`，会话无法使用的模型变为 `automation-tasks/model-unavailable`，其他步骤的错误原样传出，例如 `assistants/not-found` 或 `connectors/not-found`。归档失败会记入日志，原始错误仍然传给调用方。
+在未挂载相应服务时请求智能体、连接器或权限预设以 `automation-tasks/unavailable`（`field`）拒绝，调度输入错误以带调度 `code` 的 `automation-tasks/invalid` 拒绝，未知的预设以代码为 `unknown_permission` 的 `automation-tasks/invalid` 拒绝，这些都发生在创建任何会话之前。开始创建后，任何失败（包括会话已存在后创建过程中的失败）都会通过带 `stopActivity` 的 `workspaceRegistry.archiveSession()` 归档生成的 id，然后拒绝：调度输入错误变为带调度 `code` 和消息的 `automation-tasks/invalid`，会话无法使用的模型变为 `automation-tasks/model-unavailable`，其他步骤的错误原样传出，例如 `assistants/not-found` 或 `connectors/not-found`。归档失败会记入日志，原始错误仍然传给调用方。
 
 -----
 
@@ -44,7 +44,8 @@ kind: "package-reference"
 <a id="known-limitations-and-deferred-work"></a>
 
 - **只负责创建** — 之后修改任务会话的设置在该会话中进行；自动化任务详情页修改名称、指令和时间。
-- **回滚即归档** — 被拒绝的任务的会话会被归档而不是删除，因此仍留在已归档会话中。
+- **回滚即归档** — 被拒绝的任务的会话会被归档而不是删除，因此仍留在已归档会话中；连归档也失败时只记录日志，该会话连同已应用的权限或连接器授权保持可用。
+- **会话名称可能更短** — 会话标题服务按字节限制名称长度，因此较长的任务名在会话列表中可能显示为缩短后的名称，任务本身保留完整名称。
 
 <a id="dev-note"></a>
 ### 开发备注
