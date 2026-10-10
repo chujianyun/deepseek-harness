@@ -113,13 +113,18 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
     setSelectedId(created.id)
     setCreated(null)
   }, [created, records])
-  if (creating) {
+  // A form whose plugin has gone leaves the page on its list.
+  if (creating && taskFormAvailable()) {
     return (
       <section className={css.page} aria-label={t('title')} data-testid="task-manager-page">
         {renderSlot('schedule.task.form', {
           onDone: (task) => {
             setCreating(false)
-            if (task !== undefined) setCreated(task)
+            if (task === undefined) return
+            // The new task's row shows whatever the list was filtered to before.
+            setSearch('')
+            setStatusFilter('all')
+            setCreated(task)
           },
         })}
       </section>

@@ -13,7 +13,10 @@ afterEach(cleanup)
 const OPTIONS: TaskFormOptions = {
   assistants: [{ value: 'a-shop', label: '电商管家' }],
   models: [{ value: JSON.stringify(['deepseek', 'v4']), label: 'DeepSeek · V4' }],
-  permissions: [{ value: 'workspace-write', label: 'workspace-write' }, { value: 'full-access', label: '完全访问' }],
+  permissions: [
+    { value: 'workspace-write', label: 'workspace-write' }, { value: 'danger-full-access', label: 'danger-full-access' },
+    { value: 'read-only', label: '只读（管理员命名）' },
+  ],
   defaultPermission: 'workspace-write',
   connectors: ['feishu', 'other'],
 }
@@ -33,7 +36,7 @@ function workspaces(items: { workspaceId: string; title: string }[]) {
 }
 
 function mount(options: { copy?: typeof zh; loaded?: TaskFormOptions; spaces?: { workspaceId: string; title: string }[] } = {}) {
-  const store = workspaces(options.spaces ?? [{ workspaceId: 'ws-1', title: '默认工作区' }, { workspaceId: 'ws-2', title: '店铺' }])
+  const store = workspaces(options.spaces ?? [{ workspaceId: 'ws-1', title: 'default-workspace' }, { workspaceId: 'ws-2', title: '店铺' }])
   const onDone = vi.fn()
   const onCreate = vi.fn<TaskFormProps['onCreate']>(async () => ({ ok: true, value: { sessionId: 's-1' as never, record: RECORD as never } }))
   const props = {
@@ -57,22 +60,37 @@ describe('the Add automation task form', () => {
     await screen.findByRole('form', { name: zh['breadcrumb.current'] })
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(zh['breadcrumb.current'])
     expect(field(zh['field.workspace']).value).toBe('ws-1')
+    // The automatic default workspace reads by its localized name.
+    expect([...field(zh['field.workspace']).options].map(option => option.textContent)).toEqual(['默认工作区', '店铺'])
     expect(field(zh['field.permission']).value).toBe('workspace-write')
     // A built-in preset is named in the UI language; another keeps the catalog's name.
-    expect([...field(zh['field.permission']).options].map(option => option.textContent)).toEqual(['工作区内修改', '完全访问'])
+    expect([...field(zh['field.permission']).options].map(option => option.textContent)).toEqual(['工作区内修改', '完全权限', '只读（管理员命名）'])
     fill(zh['field.title'], '店铺日报')
     fill(zh['field.workspace'], 'ws-2')
     fill(zh['field.prompt'], '导出昨日日报')
     fill(zh['field.assistant'], 'a-shop')
     fill(zh['field.model'], JSON.stringify(['deepseek', 'v4']))
-    fill(zh['field.permission'], 'full-access')
+    // Full access waits for the risk confirmation.
+    fill(zh['field.permission'], 'danger-full-access')
+    expect(field(zh['field.permission']).value).toBe('workspace-write')
+    const dialog = screen.getByRole('dialog', { name: zh['risk.title'] })
+    fireEvent.click(within(dialog).getByRole('button', { name: zh['risk.cancel'] }))
+    expect(field(zh['field.permission']).value).toBe('workspace-write')
+    fill(zh['field.permission'], 'danger-full-access')
+    fireEvent.click(within(screen.getByRole('dialog')).getByLabelText(zh['risk.acknowledge']))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh['risk.confirm'] }))
+    expect(field(zh['field.permission']).value).toBe('danger-full-access')
+    fill(zh['field.permission'], 'read-only')
+    fill(zh['field.permission'], 'danger-full-access')
+    fireEvent.click(within(screen.getByRole('dialog')).getByLabelText(zh['risk.acknowledge']))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh['risk.confirm'] }))
     fireEvent.click(screen.getByLabelText(zh['connector.feishu']))
     fill(zh['time.label'], '08:30')
     fill(zh['window.end'], '2026-12-31')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['action.save'] })) })
     expect(h.onCreate).toHaveBeenCalledWith({
       title: '店铺日报', prompt: '导出昨日日报', workspaceId: 'ws-2', assistantId: 'a-shop', model: { provider: 'deepseek', model: 'v4' },
-      permission: 'full-access', connectors: ['feishu'],
+      permission: 'danger-full-access', connectors: ['feishu'],
       timing: { kind: 'daily', daily: { time: '08:30:00', time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone } },
       window: { end: '2026-12-31', time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone },
     })
@@ -125,7 +143,12 @@ describe('the Add automation task form', () => {
     fill(zh['field.prompt'], '不会执行')
     h.onCreate.mockResolvedValueOnce({ ok: false, error: new RemoteError('automation-tasks/invalid', 'none', { code: 'invalid_rule' }) })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['action.save'] })) })
+    expect(screen.getByRole('alert').textContent).toBe(zh['error.timingInvalid'])
+    fill(zh['window.end'], '2020-01-01')
+    h.onCreate.mockResolvedValueOnce({ ok: false, error: new RemoteError('automation-tasks/invalid', 'none', { code: 'invalid_rule' }) })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['action.save'] })) })
     expect(screen.getByRole('alert').textContent).toBe(zh['error.outsideWindow'])
+    fill(zh['window.end'], '')
     expect(field(zh['field.title']).value).toBe('过期任务')
     expect(h.onDone).not.toHaveBeenCalled()
     h.onCreate.mockRejectedValueOnce(new Error('connection lost'))
@@ -165,10 +188,13 @@ describe('the Add automation task form', () => {
     expect(screen.queryByLabelText(en['field.permission'])).toBeNull()
   })
 
-  it('fills the workspace once the list arrives, and unchecks a connector', async () => {
+  it('fills the workspace once the list arrives and again after the chosen one goes, and unchecks a connector', async () => {
     const h = mount({ spaces: [] })
     await screen.findByRole('form')
     expect(field(zh['field.workspace']).value).toBe('')
+    act(() => { h.store.set({ ...h.store.getSnapshot(), items: [view('ws-9', '新工作区'), view('ws-8', '店铺')] }) })
+    await waitFor(() => { expect(field(zh['field.workspace']).value).toBe('ws-9') })
+    fill(zh['field.workspace'], 'ws-8')
     act(() => { h.store.set({ ...h.store.getSnapshot(), items: [view('ws-9', '新工作区')] }) })
     await waitFor(() => { expect(field(zh['field.workspace']).value).toBe('ws-9') })
     fireEvent.click(screen.getByLabelText('other'))

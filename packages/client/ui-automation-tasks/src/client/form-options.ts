@@ -66,7 +66,9 @@ export async function loadTaskFormOptions(sources: TaskFormOptionSources): Promi
     models: (models?.groups ?? []).flatMap(group => group.models.map(model => ({
       value: JSON.stringify([group.id, model.id]), label: `${group.name} · ${model.name}`,
     }))),
-    permissions: (permissions?.options ?? []).filter(option => option.value !== 'custom').map(option => ({ value: option.value, label: option.name })),
+    // `custom` is no preset to choose, and `auto` reviews only the current Session.
+    permissions: (permissions?.options ?? []).filter(option => option.value !== 'custom' && option.value !== 'auto')
+      .map(option => ({ value: option.value, label: option.name })),
     defaultPermission: permissions?.defaultPreset ?? '',
     connectors: (connectors?.connectors ?? []).filter(item => item.status === 'connected' || item.status === 'degraded').map(item => item.id),
   }

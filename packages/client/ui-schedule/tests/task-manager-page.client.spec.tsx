@@ -621,7 +621,9 @@ describe('Task manager catalog', () => {
       done = owner.onDone
       return <form aria-label="Task form" />
     }) as TaskManagerPageProps['renderSlot']
-    const h = mount({ records: [at] }, en, { taskFormAvailable: () => true, renderSlot })
+    let available = true
+    const h = mount({ records: [at] }, en, { taskFormAvailable: () => available, renderSlot })
+    fireEvent.click(within(screen.getByRole('group', { name: en['statusFilter.label'] })).getByRole('button', { name: en['status.inactive'] }))
     fireEvent.click(screen.getByRole('button', { name: en['new.action'] }))
     expect(h.props.onNewTask).not.toHaveBeenCalled()
     expect(screen.getByRole('form', { name: 'Task form' })).toBeDefined()
@@ -636,6 +638,14 @@ describe('Task manager catalog', () => {
     h.update({ records: [at, daily] })
     expect(screen.getByRole('complementary', { name: en['detail.label'] })).toBeDefined()
     expect(nameField().value).toBe('Daily weather')
+    // The filter returned to All, so the new row shows.
+    expect(screen.getByRole('button', { name: 'Daily weather' })).toBeDefined()
+    // A form whose plugin went away leaves the page on its list.
+    fireEvent.click(screen.getByRole('button', { name: en['new.action'] }))
+    available = false
+    h.update({ records: [at, daily] })
+    expect(screen.queryByRole('form')).toBeNull()
+    expect(screen.getByRole('heading', { level: 1 })).toBeDefined()
   })
 
   it('opens the creation form from the empty state too', () => {

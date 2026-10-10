@@ -45,6 +45,7 @@ describe('building the request', () => {
     [{ prompt: '' }, 'prompt', 'error.promptRequired'],
     [{ mode: 'interval' as const, interval: '0' }, 'frequency', 'error.intervalInvalid'],
     [{ mode: 'interval' as const, interval: '1.5' }, 'frequency', 'error.intervalInvalid'],
+    [{ mode: 'interval' as const, interval: '1e20' }, 'frequency', 'error.intervalInvalid'],
     [{ time: '' }, 'frequency', 'error.timeRequired'],
     [{ mode: 'once' as const, date: '' }, 'frequency', 'error.dateRequired'],
     [{ repeat: 'weekly' as const, weekdays: [] }, 'frequency', 'error.weekdaysRequired'],
@@ -56,16 +57,18 @@ describe('building the request', () => {
 
 describe('explaining a refused save', () => {
   it.each([
-    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'invalid_prompt' } }, 'prompt', 'error.promptInvalid'],
-    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'not_future' } }, 'frequency', 'error.notFuture'],
-    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'frequency_too_high' } }, 'frequency', 'error.intervalInvalid'],
-    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'unknown_permission' } }, 'prompt', 'error.permissionUnknown'],
-    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'invalid_rule' } }, 'frequency', 'error.outsideWindow'],
-    [{ code: 'automation-tasks/invalid', message: '' }, 'frequency', 'error.outsideWindow'],
-    [{ code: 'automation-tasks/model-unavailable', message: '' }, 'prompt', 'error.modelUnavailable'],
-    [{ code: 'assistants/not-found', message: '' }, 'prompt', 'error.assistantGone'],
-    [{ code: 'hub-account/signed-out', message: 'sign in' }, 'window', 'error.unknown'],
-  ])('shows %j', (refusal, field, key) => {
-    expect(refusalProblem(refusal)).toEqual({ field, key })
+    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'invalid_prompt' } }, false, 'prompt', 'error.promptInvalid'],
+    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'not_future' } }, false, 'frequency', 'error.notFuture'],
+    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'frequency_too_high' } }, false, 'frequency', 'error.intervalInvalid'],
+    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'unknown_permission' } }, false, 'prompt', 'error.permissionUnknown'],
+    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'invalid_rule' } }, true, 'window', 'error.outsideWindow'],
+    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'invalid_rule' } }, false, 'frequency', 'error.timingInvalid'],
+    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'invalid_time_zone' } }, true, 'frequency', 'error.timingInvalid'],
+    [{ code: 'automation-tasks/invalid', message: '' }, false, 'frequency', 'error.timingInvalid'],
+    [{ code: 'automation-tasks/model-unavailable', message: '' }, false, 'prompt', 'error.modelUnavailable'],
+    [{ code: 'assistants/not-found', message: '' }, false, 'prompt', 'error.assistantGone'],
+    [{ code: 'hub-account/signed-out', message: 'sign in' }, false, 'form', 'error.unknown'],
+  ])('shows %j (windowed: %s)', (refusal, windowed, field, key) => {
+    expect(refusalProblem(refusal, windowed)).toEqual({ field, key })
   })
 })

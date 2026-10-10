@@ -9,7 +9,10 @@ describe('reading the form\'s options', () => {
     const options = await loadTaskFormOptions({
       assistants: () => ok({ assistants: [{ id: 'a1', name: '电商管家' }] }),
       models: () => ok({ groups: [{ id: 'deepseek', name: 'DeepSeek', models: [{ id: 'v4', name: 'V4' }] }] }),
-      permissions: () => ok({ options: [{ value: 'workspace-write', name: '工作区内修改' }, { value: 'custom', name: '自定义' }], defaultPreset: 'workspace-write' }),
+      permissions: () => ok({
+        options: [{ value: 'workspace-write', name: '工作区内修改' }, { value: 'custom', name: '自定义' }, { value: 'auto', name: 'Auto' }],
+        defaultPreset: 'workspace-write',
+      }),
       connectors: () => ok({ connectors: [{ id: 'feishu', status: 'connected' }, { id: 'dingtalk', status: 'disconnected' }, { id: 'x', status: 'degraded' }] }),
     })
     expect(options).toEqual({

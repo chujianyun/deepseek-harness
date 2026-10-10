@@ -1,7 +1,8 @@
 /** The Add automation task form, shown by the Automation tasks page in place of its list. */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Button, Checkbox, IconCloseOutlineRegular, Input, SegmentedTabs } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Checkbox, IconCloseOutlineRegular, Input, RiskConfirmation, SegmentedTabs } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SegmentedTab } from '@deepseek-ai/dsh-client-ui-primitives'
+import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller/default-workspace'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-schedule/client'
 import type { TaskFormInjected, TaskFormOptions } from './form-options.ts'
@@ -20,9 +21,12 @@ const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7] as const
 /** The built-in permission presets, named in the UI language like the composer's permission picker names them. */
 const BUILT_IN_PRESETS = new Set(['read-only', 'workspace-write', 'danger-full-access'])
 
-/** A preset's name: the localized name of a built-in one, else the catalog's. */
+/** The preset an unattended task may take only after the user acknowledges its risk. */
+const FULL_ACCESS = 'danger-full-access'
+
+/** A preset's name: a built-in one still under its own value as name is localized; a renamed or other one keeps the catalog's. */
 function presetLabel(value: string, name: string, t: TaskFormProps['t']): string {
-  return BUILT_IN_PRESETS.has(value) ? t(`permission.${value}` as TaskFormLocaleKey) : name
+  return BUILT_IN_PRESETS.has(value) && name === value ? t(`permission.${value}` as TaskFormLocaleKey) : name
 }
 
 /** The field whose message a value belongs under. */
@@ -59,9 +63,14 @@ export function TaskForm({ t, onDone, useWorkspaces, loadOptions, onCreate }: Ta
   const [failure, setFailure] = useState('')
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState(true)
+  const [risky, setRisky] = useState(false)
+  const [acknowledged, setAcknowledged] = useState(false)
   const mounted = useRef(true)
   const id = useId()
-  useEffect(() => () => { mounted.current = false }, [])
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   useEffect(() => {
     void loadOptions().then((loaded) => { if (mounted.current) setOptions(loaded) })
   }, [loadOptions])
@@ -71,7 +80,10 @@ export function TaskForm({ t, onDone, useWorkspaces, loadOptions, onCreate }: Ta
     if (values === undefined) {
       setValues(initialValues({ workspaceId: first, permission: options.defaultPermission, ...suggested(new Date()) }))
     }
-    else if (values.workspaceId === '' && first !== '') setValues({ ...values, workspaceId: first })
+    // An empty or removed workspace falls back to the first one listed.
+    else if (values.workspaceId !== first && !workspaces.some(item => item.workspaceId === values.workspaceId)) {
+      setValues({ ...values, workspaceId: first })
+    }
   }, [options, workspaces, values])
 
   const header = (
@@ -90,7 +102,7 @@ export function TaskForm({ t, onDone, useWorkspaces, loadOptions, onCreate }: Ta
   // Editing a field clears its message; the others stay until the next save.
   const set = (patch: Partial<TaskFormValues>): void => {
     setValues({ ...values, ...patch })
-    const edited = new Set(Object.keys(patch).map(key => FIELD_OF[key as keyof TaskFormValues]))
+    const edited = new Set<TaskFormField>(Object.keys(patch).map(key => FIELD_OF[key as keyof TaskFormValues]))
     setProblems(current => current.filter(item => !edited.has(item.field)))
   }
   const problem = (field: TaskFormField): ReactNode => {
@@ -113,7 +125,7 @@ export function TaskForm({ t, onDone, useWorkspaces, loadOptions, onCreate }: Ta
       return
     }
     setFailure(result.error.message)
-    setProblems([refusalProblem(result.error)])
+    setProblems([refusalProblem(result.error, values.start !== '' || values.end !== '')])
   }
   const modes: readonly [SegmentedTab<FrequencyMode>, ...SegmentedTab<FrequencyMode>[]] = [
     { value: 'periodic', label: t('mode.periodic'), id: `${id}-periodic`, panelId: `${id}-frequency` },
@@ -149,7 +161,9 @@ export function TaskForm({ t, onDone, useWorkspaces, loadOptions, onCreate }: Ta
           {label('field.workspace', 'field.optional')}
           <select className={css.select} value={values.workspaceId} aria-label={t('field.workspace')}
             onChange={(event) => { set({ workspaceId: event.target.value }) }}>
-            {workspaces.map(item => <option key={item.workspaceId} value={item.workspaceId}>{item.title}</option>)}
+            {workspaces.map(item => (
+              <option key={item.workspaceId} value={item.workspaceId}>{workspaceDisplayTitle(item.title, t('field.defaultWorkspace'))}</option>
+            ))}
           </select>
           {problem('workspace')}
         </label>
@@ -172,7 +186,11 @@ export function TaskForm({ t, onDone, useWorkspaces, loadOptions, onCreate }: Ta
               </select>
               {options.permissions.length > 0 && (
                 <select className={css.chip} value={values.permission} aria-label={t('field.permission')}
-                  onChange={(event) => { set({ permission: event.target.value }) }}>
+                  onChange={(event) => {
+                    // Full access waits for the risk confirmation below.
+                    if (event.target.value === FULL_ACCESS) setRisky(true)
+                    else set({ permission: event.target.value })
+                  }}>
                   {options.permissions.map(item => (
                     <option key={item.value} value={item.value}>{presetLabel(item.value, item.label, t)}</option>
                   ))}
@@ -267,6 +285,20 @@ export function TaskForm({ t, onDone, useWorkspaces, loadOptions, onCreate }: Ta
           {problem('window')}
         </fieldset>
       </div>
+      {problem('form')}
+      <RiskConfirmation
+        open={risky}
+        title={t('risk.title')}
+        description={t('risk.description')}
+        acknowledgeLabel={t('risk.acknowledge')}
+        cancelLabel={t('risk.cancel')}
+        closeLabel={t('risk.close')}
+        confirmLabel={t('risk.confirm')}
+        acknowledged={acknowledged}
+        onAcknowledgedChange={setAcknowledged}
+        onCancel={() => { setAcknowledged(false); setRisky(false) }}
+        onConfirm={() => { setAcknowledged(false); setRisky(false); set({ permission: FULL_ACCESS }) }}
+      />
       <footer className={css.footer}>
         <Button type="button" variant="outline" disabled={saving} onClick={() => { onDone(undefined) }}>{t('action.cancel')}</Button>
         <Button type="submit" variant="primary" disabled={saving}>{t(saving ? 'action.saving' : 'action.save')}</Button>

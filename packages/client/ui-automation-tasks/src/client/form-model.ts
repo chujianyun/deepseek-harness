@@ -37,7 +37,7 @@ export interface TaskFormValues {
 }
 
 /** The field a message belongs under. */
-export type TaskFormField = 'title' | 'workspace' | 'prompt' | 'frequency' | 'window'
+export type TaskFormField = 'title' | 'workspace' | 'prompt' | 'frequency' | 'window' | 'form'
 
 /** One field's message. */
 export interface TaskFormProblem {
@@ -89,7 +89,7 @@ export function toRequest(
   else if (title.length > MAX_TITLE_LENGTH) problems.push({ field: 'title', key: 'error.titleTooLong' })
   if (values.workspaceId === '') problems.push({ field: 'workspace', key: 'error.workspaceRequired' })
   if (values.prompt.trim() === '') problems.push({ field: 'prompt', key: 'error.promptRequired' })
-  if (values.mode === 'interval' && !(Number.isInteger(Number(values.interval)) && Number(values.interval) >= 1)) {
+  if (values.mode === 'interval' && !(Number.isSafeInteger(Number(values.interval)) && Number(values.interval) >= 1)) {
     problems.push({ field: 'frequency', key: 'error.intervalInvalid' })
   }
   else if (values.mode !== 'interval' && !/^\d{2}:\d{2}$/u.test(values.time)) problems.push({ field: 'frequency', key: 'error.timeRequired' })
@@ -124,9 +124,10 @@ export interface TaskFormRefusal {
 /**
  * The message and field for a refused save.
  * @param refusal - the Remote error.
- * @returns where to show it and the dictionary key; `error.unknown` shows the Host's message.
+ * @param windowed - whether the form set effective dates, the only case a timing refusal blames them.
+ * @returns where to show it and the dictionary key; `error.unknown`, above the buttons, shows the Host's message.
  */
-export function refusalProblem(refusal: TaskFormRefusal): TaskFormProblem {
+export function refusalProblem(refusal: TaskFormRefusal, windowed: boolean): TaskFormProblem {
   const detail = typeof refusal.details === 'object' && refusal.details !== null && 'code' in refusal.details
     ? String(refusal.details.code)
     : ''
@@ -136,10 +137,11 @@ export function refusalProblem(refusal: TaskFormRefusal): TaskFormProblem {
       case 'not_future': return { field: 'frequency', key: 'error.notFuture' }
       case 'frequency_too_high': return { field: 'frequency', key: 'error.intervalInvalid' }
       case 'unknown_permission': return { field: 'prompt', key: 'error.permissionUnknown' }
-      default: return { field: 'frequency', key: 'error.outsideWindow' }
+      case 'invalid_rule': return windowed ? { field: 'window', key: 'error.outsideWindow' } : { field: 'frequency', key: 'error.timingInvalid' }
+      default: return { field: 'frequency', key: 'error.timingInvalid' }
     }
   }
   if (refusal.code === 'automation-tasks/model-unavailable') return { field: 'prompt', key: 'error.modelUnavailable' }
   if (refusal.code === 'assistants/not-found') return { field: 'prompt', key: 'error.assistantGone' }
-  return { field: 'window', key: 'error.unknown' }
+  return { field: 'form', key: 'error.unknown' }
 }
