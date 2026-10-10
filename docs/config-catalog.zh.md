@@ -833,6 +833,96 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-deepseek-account-platform -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-embedding -->
+<a id="deepseek-aidsh-embedding"></a>
+
+## `@deepseek-ai/dsh-embedding`
+
+- `inject`: `llm`
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/llm/embedding/src/index.ts:102`](../packages/llm/embedding/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** DeepSeek Harness home; models live under `<dshHome>/models`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** Download the local model at startup when it is missing. */
+  autoDownload?: boolean
+  /** Model file URL templates tried in order; `{repo}` and `{file}` are substituted. */
+  modelMirrors?: string[]
+  /** npm registry origins tried in order for the runtime tarballs. */
+  npmRegistries?: string[]
+  /** The local model. */
+  localModel?: LocalModelSpec
+  /** The runtime that runs it. */
+  runtime?: RuntimeSpec
+  /** API embedding models the user added; edited live through `addApiModel()` / `removeApiModel()`. */
+  apiModels?: Volatile<readonly StoredApiModel[]>
+  /** Deadline of each embedding API request. */
+  requestTimeoutMs?: number
+  /** Most texts in one embedding API request; Alibaba Cloud Model Studio refuses more than 10. */
+  apiBatchSize?: number
+}
+
+/** The local embedding model: a decoder-only ONNX export with a Hugging Face tokenizer. */
+export interface LocalModelSpec {
+  /** Embedding model id; starts with `local/`. */
+  id: string
+  /** Display name. */
+  name: string
+  /** Repository the mirrors serve it under. */
+  repo: string
+  /** Path of the ONNX weights among {@link files}. */
+  weights: string
+  /** Longest token sequence fed to the model. */
+  maxTokens: number
+  /** Every file the model needs, each verified by size and sha256. */
+  files: LocalModelFile[]
+}
+
+/** The onnxruntime-node runtime. */
+export interface RuntimeSpec {
+  /** Version shared by its packages. */
+  version: string
+  /** `<platform>-<arch>` keys it has native builds for. */
+  platforms: string[]
+  /** The npm tarballs to install. */
+  packages: RuntimePackage[]
+}
+
+/** An API embedding model as stored in the user's settings. */
+export interface StoredApiModel {
+  /** Provider route key. */
+  provider: string
+  /** Model id on the provider. */
+  model: string
+  /** Vector size measured when it was added. */
+  dimensions: number
+}
+
+/** One file of the local model. */
+export interface LocalModelFile {
+  /** Path inside the model repository and the install directory. */
+  path: string
+  /** Size in bytes. */
+  size: number
+  /** Lowercase hex sha256. */
+  sha256: string
+}
+
+/** One npm tarball of the runtime. */
+export interface RuntimePackage {
+  /** npm package name. */
+  name: string
+  /** Tarball size. */
+  size: number
+  /** Tarball sha256, lowercase hex. */
+  sha256: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-embedding -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-agent-team -->
 <a id="deepseek-aidsh-experimental-agent-team"></a>
 
@@ -4535,6 +4625,7 @@ export interface Config {
 | `@deepseek-ai/dsh-client-ui-session` | — | [`packages/client/ui-session/src/index.ts`](../packages/client/ui-session/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings` | — | [`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-agent-loop` | — | [`packages/client/ui-settings-agent-loop/src/index.ts`](../packages/client/ui-settings-agent-loop/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-settings-embedding` | — | [`packages/client/ui-settings-embedding/src/index.ts`](../packages/client/ui-settings-embedding/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-general` | — | [`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-plugin-inventory` | — | [`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-plugins` | — | [`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts) |
@@ -4698,5 +4789,6 @@ export interface Config {
 | `@deepseek-ai/dsh-util-time` | — | [`packages/util/time/src/index.ts`](../packages/util/time/src/index.ts) |
 | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
 | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
+| `@deepseek-ai/dsh-verified-download` | — | [`packages/util/verified-download/src/index.ts`](../packages/util/verified-download/src/index.ts) |
 | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
 <!-- END GENERATED config-catalog:library -->

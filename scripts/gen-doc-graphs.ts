@@ -248,6 +248,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Plugins prepare independent top-level fields; the official adapter merges them and commits their delivery state after HTTP acceptance.',
   },
   {
+    key: 'embedding',
+    pkg: 'embedding',
+    title: 'Embedding models for Desktop knowledge bases',
+    mode: 'core',
+    consumers: ['client-ui-settings-embedding'],
+    note: 'Host owns the local model install state and the API embedding model list; the Client renders state and routes mutations through the `embedding` Remote namespace. Credentials stay behind `llm.routeEndpoint()`.',
+  },
+  {
     key: 'tokenMeter',
     pkg: 'token-meter',
     title: 'Replay token measurement',

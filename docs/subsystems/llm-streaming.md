@@ -942,6 +942,91 @@ async prepare(request: DeepSeekLlmApiExtensionRequest): Promise<PreparedDeepSeek
 
 Source: [`packages/llm/deepseek-llm-api-extensions/src/index.ts`](../../packages/llm/deepseek-llm-api-extensions/src/index.ts)
 
+<a id="ctxembedding--embeddingservice"></a>
+
+### `ctx.embedding` — `EmbeddingService`
+
+Host owner of the embedding models and of the `embedding` Remote namespace.
+
+```ts cordis-catalog
+/**
+ * Read the local model's install state and the API embedding models.
+ * @returns the state Settings → Embedding models shows.
+ */
+@Remote getState(): Promise<EmbeddingState>
+
+/**
+ * Stream the state.
+ * @param signal - stream lifetime.
+ * @returns the current state, then every change; download progress at most four times a second.
+ */
+@Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<EmbeddingState>
+
+/**
+ * Pause the local model download; partial files are kept.
+ * @returns the state once the transfer has stopped.
+ */
+@Remote async pauseDownload(): Promise<EmbeddingState>
+
+/**
+ * Start, resume, retry, or repair the local model download. Repairing first checks every
+ * installed file's sha256 and downloads again the ones that do not match.
+ * @returns the state with the download running.
+ * @throws RemoteError `embedding/local-model-unavailable` on a platform the runtime does not support.
+ */
+@Remote async startDownload(): Promise<EmbeddingState>
+
+/**
+ * Delete the local model's files; the next startup downloads them again. The runtime stays:
+ * once loaded, its native library cannot be deleted on Windows.
+ * @returns the state.
+ */
+@Remote async removeLocalModel(): Promise<EmbeddingState>
+
+/**
+ * Configured provider routes that can serve API embedding models: those with an OpenAI-protocol endpoint.
+ * @returns the routes, in directory order.
+ */
+@Remote listProviders(): Promise<EmbeddingProviderView[]>
+
+/**
+ * Add an API embedding model after measuring its vector size with one request.
+ * @param provider - configured provider route.
+ * @param model - model id on the provider.
+ * @returns the state with the model added.
+ * @throws RemoteError `embedding/duplicate-model`, `embedding/provider-unavailable`, or `embedding/request-failed`.
+ */
+@Remote async addApiModel(provider: string, model: string): Promise<EmbeddingState>
+
+/**
+ * Remove an API embedding model.
+ * @param id - `<provider>/<model>`.
+ * @returns the state without it.
+ * @throws RemoteError `embedding/model-not-found` when no API model has this id, `embedding/model-in-use` while something uses it.
+ */
+@Remote async removeApiModel(id: string): Promise<EmbeddingState>
+
+/**
+ * Declare a user of embedding models: while it names users of a model, that model cannot be removed. Host only;
+ * withdrawn with the caller's fiber.
+ * @param usage - names of what uses an embedding model id, empty when nothing does.
+ */
+registerUsage(usage: (id: string) => Promise<readonly string[]>): void
+
+/**
+ * Embed texts with one embedding model. Host only.
+ * @param id - the local model's id, or an API model's `<provider>/<model>`.
+ * @param texts - inputs, in order.
+ * @param signal - cancels the work.
+ * @returns one vector per text, in input order.
+ * @throws RemoteError `embedding/model-not-found`, `embedding/local-model-unavailable`,
+ *   `embedding/provider-unavailable`, or `embedding/request-failed`.
+ */
+async embed(id: string, texts: readonly string[], signal?: AbortSignal): Promise<number[][]>
+```
+
+Source: [`packages/llm/embedding/src/index.ts`](../../packages/llm/embedding/src/index.ts)
+
 <a id="ctxllm--llmruntime"></a>
 
 ### `ctx.llm` — `LlmRuntime`
@@ -992,6 +1077,25 @@ registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): Dire
  * @returns the disposer that withdraws the offer.
  */
 registerModelDiscovery( settingsNs: string, discover: ( request: LlmModelDiscoveryRequest, signal?: AbortSignal, ) => Promise<readonly LlmDiscoveredModel[]>, ): () => void
+
+/**
+ * Offer the endpoints of the configured routes behind one settings namespace,
+ * for Host consumers that call them for something other than chat. Disposed
+ * with the fiber.
+ * @param settingsNs - the namespace whose routes this resolver describes.
+ * @param resolve - the configured endpoint of one route, or undefined when the
+ *   route is not configured or has no endpoint to describe.
+ * @returns the disposer that withdraws the offer.
+ */
+registerEndpointResolver(settingsNs: string, resolve: (provider: string) => LlmRouteEndpoint | undefined): () => void
+
+/**
+ * The configured endpoint of one route, through the resolver of the namespace
+ * that declares the route in the configurable-provider directory. Host only.
+ * @param provider - provider route key.
+ * @returns the endpoint, or undefined when no declared and configured route has one.
+ */
+routeEndpoint(provider: string): LlmRouteEndpoint | undefined
 
 /**
  * Interrogate one provider endpoint for the models it advertises. The

@@ -1,0 +1,24 @@
+.section { display: flex; flex-direction: column; gap: 12px; }
+.intro { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 20px; }
+.card { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-md); background: var(--dsw-alias-bg-layer-1); }
+.cardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.identity { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.title { color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 600; }
+.meta { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+.hint { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.warning { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.error { margin: 0; color: var(--dsw-alias-state-error-primary); font-size: 12px; }
+.progress { display: flex; flex-direction: column; gap: 6px; }
+.bar { height: 6px; overflow: hidden; border-radius: var(--dsw-radius-sm); background: var(--dsw-alias-interactive-bg-hover); }
+.fill { display: block; height: 100%; background: var(--dsw-alias-label-primary); transition: width 0.25s ease; }
+.actions { display: flex; gap: 8px; }
+.list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 0.5px solid var(--dsw-alias-border-l2); }
+.row:first-child { border-top: 0; }
+.model { color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-mono); font-size: 13px; }
+.rowAction { margin-left: auto; }
+.notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.form { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.label { color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.select { height: 32px; min-width: 160px; padding: 0 8px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: var(--dsw-radius-sm); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; }

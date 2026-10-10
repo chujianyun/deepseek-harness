@@ -21,6 +21,7 @@ import type {
   LlmModelInfo,
   LlmResolvedModelInfo,
   LlmProviderInfo,
+  LlmRouteEndpoint,
   ModelModality,
   StreamChunk,
   SystemPromptUpdate,
@@ -346,6 +347,7 @@ export class LlmRuntime extends TypertRemoteService {
     string,
     (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>
   >()
+  private endpointResolvers = new Map<string, (provider: string) => LlmRouteEndpoint | undefined>()
 
   constructor(ctx: Context) {
     super(ctx, 'llm')
@@ -574,6 +576,43 @@ export class LlmRuntime extends TypertRemoteService {
       }
     }.bind(this), 'llm.registerModelDiscovery()')
     return () => void dispose()
+  }
+
+  /**
+   * Offer the endpoints of the configured routes behind one settings namespace,
+   * for Host consumers that call them for something other than chat. Disposed
+   * with the fiber.
+   * @param settingsNs - the namespace whose routes this resolver describes.
+   * @param resolve - the configured endpoint of one route, or undefined when the
+   *   route is not configured or has no endpoint to describe.
+   * @returns the disposer that withdraws the offer.
+   */
+  registerEndpointResolver(settingsNs: string, resolve: (provider: string) => LlmRouteEndpoint | undefined): () => void {
+    const dispose = this.ctx.effect(function* (this: LlmRuntime) {
+      if (settingsNs.length === 0) {
+        throw new LlmError('an endpoint resolver needs a non-empty settings namespace', 'INVALID_ENDPOINT_RESOLVER')
+      }
+      if (this.endpointResolvers.has(settingsNs)) {
+        throw new LlmError(`an endpoint resolver for "${settingsNs}" is already registered`, 'DUPLICATE_ENDPOINT_RESOLVER')
+      }
+      this.endpointResolvers.set(settingsNs, resolve)
+      yield () => {
+        this.endpointResolvers.delete(settingsNs)
+      }
+    }.bind(this), 'llm.registerEndpointResolver()')
+    return () => void dispose()
+  }
+
+  /**
+   * The configured endpoint of one route, through the resolver of the namespace
+   * that declares the route in the configurable-provider directory. Host only.
+   * @param provider - provider route key.
+   * @returns the endpoint, or undefined when no declared and configured route has one.
+   */
+  routeEndpoint(provider: string): LlmRouteEndpoint | undefined {
+    const entry = this.directory.get(provider)
+    if (entry === undefined) return undefined
+    return this.endpointResolvers.get(entry.settingsNs)?.(provider)
   }
 
   /**

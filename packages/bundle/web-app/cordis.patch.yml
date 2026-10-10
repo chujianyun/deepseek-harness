@@ -131,6 +131,13 @@
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'
 
+    # Embedding models for Desktop knowledge bases: the local model downloaded at
+    # startup and API embedding models over configured provider routes. No Hub or
+    # enterprise account is involved; usable on any Desktop install.
+    - id: embedding
+      name: '@deepseek-ai/dsh-embedding'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
+
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'
@@ -287,6 +294,12 @@
 
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
+
+    # Settings → Embedding models over the `embedding` Remote; mounted exactly
+    # when the embedding row is.
+    - id: ui-settings-embedding
+      name: '@deepseek-ai/dsh-client-ui-settings-embedding'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
 
     # Plugin management: the sidebar Plugins page installs, enables, disables,
     # and removes the profile's bundles through the `pluginManager` Remote.

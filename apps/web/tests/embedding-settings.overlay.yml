@@ -1,0 +1,17 @@
+# Enables the Desktop embedding rows for the keyless Web e2e (`embedding-settings.e2e.ts`), and
+# points an OpenAI-compatible provider route at the spec's mock embeddings endpoint. The spec
+# writes the embedding row's sources (a loopback mirror of a tiny stand-in model and runtime)
+# into the home profile patch, where the Settings section can also write its API models.
+- id: embedding
+  disabled: false
+- id: ui-settings-embedding
+  disabled: false
+- id: llm-pi-ai
+  config:
+    providers:
+      acme-gateway:
+        displayName: Acme 网关
+        api: openai-completions
+        baseURL: !!js process.env.DSH_E2E_EMBEDDING_API
+        models:
+          - id: acme-chat
