@@ -376,19 +376,22 @@ describe('SettingsPanel navigation', () => {
         { id: 'agent-presets', order: 20, label: 'Agent presets' },
         { id: 'plugins', order: 30, label: 'Plugins' },
         { id: 'archived-sessions', order: 40, label: 'Archived sessions' },
+        { id: 'hub-account', order: -20, label: 'Skill Hub account' },
+        { id: 'ecommerce-accounts', order: -10, label: 'Store accounts' },
+        { id: 'embedding', order: 11, label: 'Embedding models' },
         { id: 'contributed', order: 50, label: 'Contributed' },
       ],
     })
     openPanel()
     // Glyphs carry no id of their own, so the drawn paths are what tells them apart.
-    const glyphs = ['General', 'Models', 'Agent presets', 'Plugins', 'Archived sessions', 'Contributed']
-      .map(name => screen.getByRole('button', { name }).querySelector('svg')?.innerHTML)
+    const names = ['General', 'Models', 'Agent presets', 'Plugins', 'Archived sessions', 'Skill Hub account', 'Store accounts', 'Embedding models', 'Contributed']
+    const glyphs = names.map(name => screen.getByRole('button', { name }).querySelector('svg')?.innerHTML)
 
     expect(glyphs.every(glyph => glyph !== undefined && glyph !== '')).toBe(true)
-    // The four ids the shell names get their own glyph; every other section —
+    // The ids the shell names get their own glyph; every other section —
     // including one this package never heard of — shares the gear.
-    expect(new Set(glyphs.slice(0, 5)).size).toBe(5)
-    expect(glyphs[5]).toBe(glyphs[0])
+    expect(new Set(glyphs.slice(0, 8)).size).toBe(8)
+    expect(glyphs[8]).toBe(glyphs[0])
   })
 
   it('switches the rendered section on nav click', () => {

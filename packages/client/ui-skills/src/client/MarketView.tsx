@@ -75,7 +75,7 @@ export function MarketView(props: SkillsPageProps & { onShowInstalled: () => voi
 
   return (
     <div className={css.page}>
-      <header className={css.header}>
+      <header className={css.header} data-window-drag>
         <div className={css.headerRow}>
           <h1 className={css.title}>{t('marketTitle')}</h1>
           <div className={css.headerActions}>

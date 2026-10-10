@@ -55,7 +55,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
 
 function Header({ t }: { t: T }) {
   return (
-    <header className={css.header}>
+    <header className={css.header} data-window-drag>
       <h1 className={css.title}>{t('title')}</h1>
       <p className={css.muted}>{t('intro')}</p>
     </header>

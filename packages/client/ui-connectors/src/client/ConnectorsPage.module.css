@@ -4,10 +4,14 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  box-sizing: border-box;
   min-width: 0;
   height: 100%;
   overflow-y: auto;
-  padding: 24px 28px;
+  /* Same column as the Plugins and Automation tasks pages: centred and at most 960px wide (the inline
+     padding centres it, so controls keep their own width), with the 28px top inset on the header row
+     so the strip above the content drags the window on macOS. */
+  padding: 0 max(clamp(24px, 4vw, 48px), calc((100% - 960px) / 2)) 48px;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -15,12 +19,18 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  box-sizing: border-box;
+  padding-top: 28px;
+}
+:global([data-platform='darwin']) .header {
+  padding-top: calc(28px + var(--dsh-frame-top-clearance, 0px));
 }
 
 .title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 28px;
 }
 
 .intro,
@@ -309,4 +319,11 @@
 .more:disabled {
   cursor: default;
   opacity: 0.5;
+}
+
+/* Header intro, as on the Plugins page. */
+.header .intro {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
 }

@@ -92,7 +92,7 @@ export function AssistantsPage(props: AssistantsPageProps) {
   }
   return (
     <div className={css.page}>
-      <header className={css.header}>
+      <header className={css.header} data-window-drag>
         <div className={css.headerRow}>
           <h1 className={css.title}>{t('title')}</h1>
           {state?.tenantId != null && <Button variant="primary" size="sm" onClick={() => { setCreating(true) }}>{t('create')}</Button>}

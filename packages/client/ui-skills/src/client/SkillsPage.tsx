@@ -92,7 +92,7 @@ export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
 
   return (
     <div className={css.page}>
-      <header className={css.header}>
+      <header className={css.header} data-window-drag>
         <div className={css.headerRow}>
           <h1 className={css.title}>{t('installedTitle')}</h1>
           <Button size="sm" variant="outline" onClick={onBack}>{t('backToMarket')}</Button>
