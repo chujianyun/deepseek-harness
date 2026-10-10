@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { MarketSkillCard, MarketSkillDetail } from '@deepseek-ai/dsh-skill-market/types'
-import { categoryTint, MarketView, skillMdBody } from '../src/client/MarketView.tsx'
+import { categoryTint, initial, MarketView, skillMdBody } from '../src/client/MarketView.tsx'
 import { InstalledView, SkillsPage } from '../src/client/SkillsPage.tsx'
 import { pageProps } from './page-props.client.ts'
 
@@ -37,6 +37,11 @@ describe('Market view', () => {
     expect(tints[2]).toMatch(/^[0-4]$/u)
     expect(tints[3]).toBe('none')
     expect(categoryTint('c-doc')).toBe(categoryTint('c-doc'))
+  })
+
+  it('takes the avatar letter from the first character and leaves an empty name blank', () => {
+    expect(initial('pdf')).toBe('P')
+    expect(initial('')).toBe('')
   })
 
   it('reads the market and the installed count when it opens, and shows cards with their install state', () => {
