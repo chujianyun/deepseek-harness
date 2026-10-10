@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
-import { decodeScheduleRecord } from './domain.ts'
+import { canonicalizeTimeZone, decodeScheduleRecord } from './domain.ts'
 import type { ScheduleId, ScheduleRecord, ScheduleWindow } from './types.ts'
 
 const recordSchema = z.unknown().transform((value, context): ScheduleRecord => {
@@ -39,7 +39,15 @@ const windowDateSchema = z.iso.date()
 const windowSchema = z.object({
   start: windowDateSchema.optional(),
   end: windowDateSchema.optional(),
-  timeZone: z.string().min(1),
+  timeZone: z.string().refine((zone) => {
+    try {
+      canonicalizeTimeZone(zone)
+      return true
+    } catch {
+      // ScheduleInputError: not UTC or an IANA zone this runtime knows; the task is refused as malformed.
+      return false
+    }
+  }, { message: 'A window zone is UTC or an IANA Area/Location name' }),
 }).strict().refine(window => window.start !== undefined || window.end !== undefined, {
   message: 'A window sets a start or an end date',
 }).refine(window => window.start === undefined || window.end === undefined || window.start <= window.end, {

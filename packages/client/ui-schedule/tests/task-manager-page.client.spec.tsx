@@ -661,7 +661,9 @@ describe('Task manager catalog', () => {
   })
 
   it.each([en, zh])('shows a task\'s effective dates in its row and its detail', (dictionary) => {
-    const windowed: ScheduleCatalogEntry = { ...daily, window: { start: '2026-09-20', end: '2026-10-31', timeZone: 'Asia/Shanghai' } }
+    const windowed: ScheduleCatalogEntry = {
+      ...daily, window: { start: '2026-09-20', end: '2026-10-31', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+    }
     mount({ records: [windowed, every] }, dictionary)
     const text = dictionary['window.range'].replace('{start}', '2026-09-20').replace('{end}', '2026-10-31')
     const row = screen.getByRole('button', { name: 'Daily weather' })
@@ -2518,6 +2520,28 @@ describe('Task detail rule header and run-time card', () => {
       sessionId: daily.sessionId, id: daily.id, expected: timingSnapshot(daily),
       change: { kind: 'at', at: { date: '2026-10-01', time: '23:00:00.000', time_zone: DEVICE_ZONE } },
     })
+  })
+
+  it.each([en, zh])('explains a time refused by the task\'s effective dates, and keeps the generic message without them', async (dictionary) => {
+    const windowed: ScheduleCatalogEntry = { ...daily, window: { end: '2026-10-31', timeZone: 'Asia/Shanghai' } }
+    const h = mount({ records: [windowed, every] }, dictionary)
+    h.updateTiming.mockResolvedValue({ ok: true, value: { code: 'invalid_rule', message: 'No occurrence of this rule falls within the effective dates.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Daily weather' }))
+    chooseTime('10', '23', '00', dictionary)
+    clickSave(dictionary)
+    await act(async () => { await h.updateTiming.mock.results[0]!.value })
+    expect(h.updateTiming).toHaveBeenCalledOnce()
+    // On the rule tab the refusal shows in the Run time card's hint slot.
+    expect(screen.getByText(dictionary['rule.error.outsideWindow'])).toBeDefined()
+    cleanup()
+    const plain = mount({ records: [daily] }, dictionary)
+    plain.updateTiming.mockResolvedValue({ ok: true, value: { code: 'invalid_rule', message: 'Invalid.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Daily weather' }))
+    chooseTime('10', '23', '00', dictionary)
+    clickSave(dictionary)
+    await act(async () => { await plain.updateTiming.mock.results[0]!.value })
+    expect(plain.updateTiming).toHaveBeenCalledOnce()
+    expect(screen.queryByText(dictionary['rule.error.outsideWindow'])).toBeNull()
   })
 
   it('reports a resolved Remote failure as an unconfirmed update', async () => {

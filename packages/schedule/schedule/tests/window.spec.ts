@@ -83,6 +83,7 @@ describe('stored effective dates', () => {
     { start: '2026-09-21', end: '2026-09-20', timeZone: SHANGHAI },
     { start: '20260921', timeZone: SHANGHAI },
     { start: '2026-09-21', timeZone: SHANGHAI, extra: true },
+    { start: '2026-09-21', timeZone: 'Mars/Base' },
   ])('refuses a malformed window %j', (value) => {
     expect(scheduleTaskSchema.safeParse({ ...base, window: value }).success).toBe(false)
   })
@@ -110,6 +111,9 @@ describe('the service', () => {
         sessionId, id: record.id, expected: record, change: { kind: 'daily', daily: { time: '08:00:00', time_zone: SHANGHAI } },
       })
       expect(result).toMatchObject({ updated: true, record: { scheduledAt: '2026-09-20T00:00:00.000Z' } })
+      // A rename keeps the target without placing it again.
+      const renamed = await service.update({ sessionId, id: record.id, expected: (result as { record: typeof record }).record, title: 'Renamed' })
+      expect(renamed).toMatchObject({ updated: true, record: { title: 'Renamed', scheduledAt: '2026-09-20T00:00:00.000Z' } })
       // A retiming with no occurrence inside the window is refused.
       const current = (await service.catalog()).find(item => item.id === record.id)!
       const { sessionId: _sessionId, status: _status, window: _window, ...expected } = current
@@ -156,13 +160,35 @@ describe('delivery at the end date', () => {
     expect(task).toMatchObject({ status: 'active', record: { scheduledAt: '2026-09-17T15:00:00.000Z' } })
   })
 
-  it('catches up with the last occurrence before the end date after the Host was off past it', async () => {
+  it('runs nothing, not even a missed occurrence, once the end date has passed', async () => {
     const { task, followup } = await drive(
       { sessionId: SessionId('w3'), record: daily(), status: 'active', window: window(undefined, '2026-09-17') }, '2026-09-20T00:00:00.000Z',
     )
-    expect(followup).toHaveBeenCalledOnce()
-    expect(JSON.stringify(followup.mock.calls[0]![0].content)).toContain('2026-09-17T15:00:00.000Z')
-    expect(task).toMatchObject({ status: 'inactive', record: { scheduledAt: '2026-09-17T15:00:00.000Z' } })
+    expect(followup).not.toHaveBeenCalled()
+    expect(task).toMatchObject({ status: 'inactive', record: { scheduledAt: '2026-09-16T15:00:00.000Z' } })
+  })
+
+  it('logs a failed end and still delivers the other due tasks', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-20T00:00:00.000Z'))
+    const { ctx, resolve, fiber } = await harness()
+    const agent = agentFor(ctx, 'w5')
+    resolve.mockResolvedValue({ agent })
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    const expired: ScheduleTask = { sessionId: SessionId('w5'), record: { ...daily(), id: ScheduleId('expired') }, status: 'active', window: window(undefined, '2026-09-17') }
+    const open: ScheduleTask = { sessionId: SessionId('w5'), record: { ...daily(), id: ScheduleId('open') }, status: 'active' }
+    const tasks = [expired, open]
+    const commit = vi.fn(async (next: ScheduleTask) => {
+      if (next.record.id === 'expired') throw new Error('disk full')
+      tasks[1] = next
+    })
+    const runtime = new ScheduleRuntime(ctx, () => tasks, work => work(), commit, { days: 30, records: 200 })
+    runtime.requestDrive()
+    await vi.waitFor(() => { expect(agent.followup).toHaveBeenCalledOnce() })
+    await runtime.dispose()
+    await fiber.dispose()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('could not end reminder "expired" after its effective dates: Error: disk full'))
+    expect(tasks[1]).toMatchObject({ status: 'active', record: { id: 'open' } })
   })
 
   it('ends without a delivery a task whose target is already after the end date', async () => {

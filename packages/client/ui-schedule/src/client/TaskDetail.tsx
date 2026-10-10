@@ -670,7 +670,7 @@ export function TaskDetail({
       return
     }
     if ('code' in result.value) {
-      setFailure(ruleError(result.value.code))
+      setFailure(ruleError(result.value.code, task.window !== undefined))
       return
     }
     const saved = ruleValues(result.value.record)
@@ -1220,9 +1220,12 @@ const RULE_ERROR_OVERRIDES: Readonly<Partial<Record<TaskManagerKey, TaskManagerK
 /**
  * Localize a rejected rule update without exposing transport or storage diagnostics.
  * @param code - error code returned by the compare-and-update.
+ * @param windowed - whether the task has effective dates; the card validates the rule fields before
+ *   saving, so the Host's `invalid_rule` for such a task means no run falls within them.
  * @returns dictionary key describing the recovery action.
  */
-function ruleError(code: Extract<ScheduleUpdateResult, { code: string }>['code']): TaskManagerKey {
+function ruleError(code: Extract<ScheduleUpdateResult, { code: string }>['code'], windowed: boolean): TaskManagerKey {
+  if (code === 'invalid_rule' && windowed) return 'rule.error.outsideWindow'
   const key = timingError(code)
   return RULE_ERROR_OVERRIDES[key] ?? key
 }

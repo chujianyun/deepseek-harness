@@ -1874,8 +1874,8 @@ export function parseWindowInput(input: ScheduleWindowInput): ScheduleWindow | u
 }
 
 /** First instant of a local date, at the earlier of two midnights and after a skipped one. */
-function startOfDate(date: string, timeZone: string): number {
-  return Temporal.PlainDate.from(date).toZonedDateTime({ timeZone }).epochMilliseconds
+function startOfDate(date: Temporal.PlainDate, timeZone: string): number {
+  return date.toZonedDateTime({ timeZone }).epochMilliseconds
 }
 
 /**
@@ -1884,7 +1884,7 @@ function startOfDate(date: string, timeZone: string): number {
  * @returns Epoch milliseconds of the start date's first local instant, or undefined without a start date.
  */
 export function windowOpensAt(window: ScheduleWindow): number | undefined {
-  return window.start === undefined ? undefined : startOfDate(window.start, window.timeZone)
+  return window.start === undefined ? undefined : startOfDate(Temporal.PlainDate.from(window.start), window.timeZone)
 }
 
 /**
@@ -1895,7 +1895,7 @@ export function windowOpensAt(window: ScheduleWindow): number | undefined {
 export function windowClosesAt(window: ScheduleWindow): number | undefined {
   return window.end === undefined
     ? undefined
-    : startOfDate(Temporal.PlainDate.from(window.end).add({ days: 1 }).toString(), window.timeZone)
+    : startOfDate(Temporal.PlainDate.from(window.end).add({ days: 1 }), window.timeZone)
 }
 
 /**

@@ -456,16 +456,21 @@ export function orderScheduleRecords(records: readonly ScheduleRecord[], now: nu
 }
 
 /** Dictionary keys of a task's effective dates. */
-export type WindowKey = 'window.range' | 'window.from' | 'window.until'
+export type WindowKey = 'window.range' | 'window.from' | 'window.until' | 'window.zone'
 
 /**
- * Describe a task's effective dates as stored, local dates in the task's zone.
+ * Describe a task's effective dates as stored, local dates in the task's zone, naming the zone
+ * when it is not the browser's.
  * @param window - Effective dates with at least one date set.
  * @param t - Translator owning the window keys.
+ * @param systemZone - The browser's zone.
  * @returns One line such as `生效日期 2026-09-20 至 2026-09-30`.
  */
-export function formatScheduleWindow(window: ScheduleWindow, t: Translate<WindowKey>): string {
-  if (window.start !== undefined && window.end !== undefined) return t('window.range', { start: window.start, end: window.end })
-  if (window.start !== undefined) return t('window.from', { start: window.start })
-  return t('window.until', { end: String(window.end) })
+export function formatScheduleWindow(
+  window: ScheduleWindow, t: Translate<WindowKey>, systemZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+): string {
+  const dates = window.start !== undefined && window.end !== undefined
+    ? t('window.range', { start: window.start, end: window.end })
+    : window.start !== undefined ? t('window.from', { start: window.start }) : t('window.until', { end: String(window.end) })
+  return window.timeZone === systemZone ? dates : t('window.zone', { dates, zone: window.timeZone })
 }

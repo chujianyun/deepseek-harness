@@ -324,8 +324,17 @@ describe('effective dates', () => {
     [zh, '生效日期 2026-09-20 至 2026-09-30', '2026-09-20 起生效', '生效至 2026-09-30'],
   ])('describes a range, an open end, and an open start', (dictionary, range, from, until) => {
     const t = makeTranslate(dictionary)
-    expect(formatScheduleWindow({ start: '2026-09-20', end: '2026-09-30', timeZone: SYSTEM }, t)).toBe(range)
-    expect(formatScheduleWindow({ start: '2026-09-20', timeZone: SYSTEM }, t)).toBe(from)
-    expect(formatScheduleWindow({ end: '2026-09-30', timeZone: SYSTEM }, t)).toBe(until)
+    expect(formatScheduleWindow({ start: '2026-09-20', end: '2026-09-30', timeZone: SYSTEM }, t, SYSTEM)).toBe(range)
+    expect(formatScheduleWindow({ start: '2026-09-20', timeZone: SYSTEM }, t, SYSTEM)).toBe(from)
+    expect(formatScheduleWindow({ end: '2026-09-30', timeZone: SYSTEM }, t, SYSTEM)).toBe(until)
+  })
+
+  it.each([
+    [en, 'Effective until 2026-09-30 (America/New_York)'],
+    [zh, '生效至 2026-09-30（America/New_York）'],
+  ])('names the zone when it is not the browser\'s', (dictionary, text) => {
+    expect(formatScheduleWindow({ end: '2026-09-30', timeZone: 'America/New_York' }, makeTranslate(dictionary), SYSTEM)).toBe(text)
+    const browser = Intl.DateTimeFormat().resolvedOptions().timeZone
+    expect(formatScheduleWindow({ end: '2026-09-30', timeZone: browser }, makeTranslate(dictionary))).not.toContain(browser)
   })
 })

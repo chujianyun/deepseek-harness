@@ -174,7 +174,8 @@ export function resolveScheduleUpdate(
     const title = content.title === undefined ? retained : scheduleTitle(content.title)
     const prompt = content.prompt === undefined ? current.prompt : schedulePrompt(content.prompt)
     const changed = changedRecord(current, title, prompt, change, now)
-    const record = change === undefined || changed === current ? changed : requireInWindow(changed, window)
+    // Only a new target is placed in the window; a name or instruction change, or an equivalent timing, keeps it.
+    const record = changed.scheduledAt === current.scheduledAt ? changed : requireInWindow(changed, window)
     return { id: current.id, updated: record !== current, record }
   } catch (error) {
     if (!(error instanceof ScheduleInputError)) throw error
