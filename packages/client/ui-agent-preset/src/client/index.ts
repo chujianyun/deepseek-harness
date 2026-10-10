@@ -71,7 +71,7 @@ export const inject = [
  */
 export function apply(ctx: ClientContext): void {
   const toolsSettings = ctx.configForms.get<{ enabled: boolean }>('ui-settings')
-  const presetSettings = ctx.configForms.get(AGENT_PRESET_SETTINGS_NS)
+  const presetSettings = ctx.configForms.get<{ showPicker?: boolean }>(AGENT_PRESET_SETTINGS_NS)
   let active = true
   // Host preferences start at false before their first accepted document.
   const codingToolsDisabled = (): boolean => active && toolsSettings.getSnapshot().mode === 'host'
@@ -205,25 +205,43 @@ export function apply(ctx: ClientContext): void {
       void seat.apply()
     }
 
+    // The deployment can hide the chip and the header label (`showPicker` on the registry); sessions
+    // then run on its default preset. Shown unless the setting reads false, so a setting that cannot be read never hides them.
+    const pickerShown = (): boolean => {
+      const { status, value } = presetSettings.getSnapshot()
+      return !(status === 'ready' && value?.showPicker === false)
+    }
     scope.effect(() => {
       creatorDraft = startCreatorDraft
-      const chip = scope.slots.register({
-        name: 'conversation.hero.agentPreset',
-        locale: 'settings.agentPreset',
-        inject: seatInjected,
-      }, AgentPresetSeat)
-      const label = scope.slots.register({
-        name: 'conversation.session.header.actions',
-        id: 'agent-preset',
-        // Static session context occupies the header's leading negative-order band.
-        order: -10,
-        locale: 'settings.agentPreset',
-        inject: labelInjected,
-      }, AgentPresetLabel)
+      let unregister: (() => void) | undefined
+      const sync = (): void => {
+        if (pickerShown() === (unregister !== undefined)) return
+        if (unregister !== undefined) {
+          unregister()
+          unregister = undefined
+          return
+        }
+        const chip = scope.slots.register({
+          name: 'conversation.hero.agentPreset',
+          locale: 'settings.agentPreset',
+          inject: seatInjected,
+        }, AgentPresetSeat)
+        const label = scope.slots.register({
+          name: 'conversation.session.header.actions',
+          id: 'agent-preset',
+          // Static session context occupies the header's leading negative-order band.
+          order: -10,
+          locale: 'settings.agentPreset',
+          inject: labelInjected,
+        }, AgentPresetLabel)
+        unregister = () => { chip(); label() }
+      }
+      const unsubscribe = presetSettings.subscribe(sync)
+      sync()
       return () => {
         creatorDraft = undefined
-        chip()
-        label()
+        unsubscribe()
+        unregister?.()
       }
     }, 'ui-agent-preset: new-session chip and header label')
 

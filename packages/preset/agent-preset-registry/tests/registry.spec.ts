@@ -229,6 +229,16 @@ it('resolves the saved default over the deployment default, and drops a removed 
   expect(ctx.agentPresets.defaultId).toBe('standard')
 })
 
+it('uses the deployment default over a saved one while the picker is hidden', async () => {
+  const ctx = await harness({ live: true })
+  contexts.push(ctx)
+  const live = liveRegistries.get(ctx)!
+  await live.update({ selectedDefault: 'minimal', showPicker: false })
+  expect(ctx.agentPresets.defaultId).toBe('standard')
+  await live.update({ selectedDefault: 'minimal', showPicker: true })
+  expect(ctx.agentPresets.defaultId).toBe('minimal')
+})
+
 it('ignores a retired modeSelectionEnabled field in the user patch', async () => {
   const ctx = await harness({ live: true })
   contexts.push(ctx)

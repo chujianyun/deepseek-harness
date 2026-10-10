@@ -696,3 +696,6 @@
       name: '@deepseek-ai/dsh-agent-preset-registry'
       config:
         default: standard
+        # Desktop configured with a user center (the enterprise build) runs every session on the
+        # default (Standard) preset and shows no preset chip or header label.
+        showPicker: !!js "!(ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN)"

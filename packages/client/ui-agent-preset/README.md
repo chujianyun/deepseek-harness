@@ -37,6 +37,8 @@ Known shipped presets offer mode details and usage examples in a read-only dialo
 
 Entering Creator selects `cordis` for the receiving blank Session without changing the new-task default or Coding Tools setting. If no workspace or blank Session is bound yet, the choice waits for that binding. After the choice is applied, the Creator Session keeps its preset; a later newly created Session uses the configured default, such as Standard.
 
+The registry's `showPicker` setting (default `true`) controls the new-session preset chip and the session header's preset label: they show unless the setting reads `false`, so a setting that cannot be read never hides them; sessions then run on the deployment's default preset, while the Settings section and the Creator entry stay. The web-app bundle composes `false` for Desktop signed in to a user center.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

@@ -15,4 +15,9 @@ export interface Config {
   default: string
   /** User-selected default; edited through Settings. */
   selectedDefault: Volatile<string | undefined>
+  /**
+   * Whether clients show the new-session preset chip and the session header's preset label; a
+   * deployment that runs every session on its default preset composes `false`.
+   */
+  showPicker: Volatile<boolean>
 }

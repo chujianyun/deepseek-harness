@@ -73,6 +73,7 @@ async function bench(options: {
   presets?: AgentPresetRow[]
   developerToolsEnabled?: boolean
   memory?: boolean
+  showPicker?: boolean
 } = {}) {
   const ctx = new Context()
   // The host's answer, mutable so a spec can move the default the way the
@@ -109,8 +110,8 @@ async function bench(options: {
           revision: 0,
         }, {
           ns: 'agent-preset-registry',
-          schema: { type: 'object', dict: { selectedDefault: { type: 'string', meta: {} } } },
-          value: { selectedDefault: savedDefault },
+          schema: { type: 'object', dict: { selectedDefault: { type: 'string', meta: {} }, showPicker: { type: 'boolean', meta: {} } } },
+          value: { selectedDefault: savedDefault, ...options.showPicker === undefined ? {} : { showPicker: options.showPicker } },
           autoGenerate: false,
           applies: 'live',
           secrets: [],
@@ -510,6 +511,24 @@ describe('ui-agent-preset apply', () => {
     expect(slots.entries('conversation.hero.agentPreset')).toHaveLength(0)
     expect(slots.entries('conversation.session.header.actions')).toHaveLength(0)
     expect(slots.entries('settings.section')).toHaveLength(0)
+    conversation()
+  })
+
+  it('shows neither the chip nor the header label when the deployment hides the preset picker', async () => {
+    const { ctx, slots } = await bench({ showPicker: false })
+    declareRoot(slots)
+    const conversation = declareConversation(slots)
+    ctx.provide('conversation', {} as never)
+    ctx.provide('sessions', sessionsDouble(ctx, { byId: {} }) as never)
+    ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
+    const fiber = ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply })
+    await fiber.await()
+    await vi.waitFor(() => { expect(ctx.configForms.get('agent-preset-registry').getSnapshot().status).toBe('ready') })
+    expect(slots.entries('conversation.hero.agentPreset')).toHaveLength(0)
+    expect(slots.entries('conversation.session.header.actions')).toHaveLength(0)
+    // The settings section stays, so the roster and Creator mode remain reachable.
+    expect(slots.entries('settings.section')).toHaveLength(1)
+    await fiber.dispose()
     conversation()
   })
 
