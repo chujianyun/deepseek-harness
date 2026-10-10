@@ -3,9 +3,12 @@
  * session or its detail page, with actions to make one the default, copy it, or delete it.
  */
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { AssistantView } from '@deepseek-ai/dsh-assistants/types'
-import { Button, IconSearchOutlineRegular, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button, IconAgentPresetOutlineRegular, IconCopyOutlineMedium, IconEllipsisOutlineMedium, IconSearchOutlineRegular, IconTrashOutlineMedium,
+  IconUserOutlineRegular, Input, Menu, Modal,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { AssistantAvatar } from './AssistantAvatar.tsx'
 import { AssistantDetailPage } from './AssistantDetail.tsx'
@@ -92,7 +95,7 @@ export function AssistantsPage(props: AssistantsPageProps) {
   }
   return (
     <div className={css.page}>
-      <header className={css.header}>
+      <header className={css.header} data-window-drag>
         <div className={css.headerRow}>
           <h1 className={css.title}>{t('title')}</h1>
           {state?.tenantId != null && <Button variant="primary" size="sm" onClick={() => { setCreating(true) }}>{t('create')}</Button>}
@@ -106,7 +109,7 @@ export function AssistantsPage(props: AssistantsPageProps) {
         />
       )}
       {alerts}
-      {state !== undefined && state.tenantId === null && <p className={css.empty}>{t('signedOut')}</p>}
+      {state !== undefined && state.tenantId === null && <EmptyState icon={<IconUserOutlineRegular size={24} className={css.emptyGlyph} />} text={t('signedOut')} />}
       {state !== undefined && state.tenantId !== null && (
         <>
           <div className={css.toolbar}>
@@ -121,8 +124,14 @@ export function AssistantsPage(props: AssistantsPageProps) {
             </span>
             <span className={css.count}>{t('count', { count: assistants.length })}</span>
           </div>
-          {assistants.length === 0 && <p className={css.empty}>{t('empty')}</p>}
-          {assistants.length > 0 && shown.length === 0 && <p className={css.empty}>{t('noMatch')}</p>}
+          {assistants.length === 0 && (
+            <EmptyState icon={<IconAgentPresetOutlineRegular size={24} className={css.emptyGlyph} />} text={t('empty')}>
+              <Button variant="primary" className={css.emptyAction} onClick={() => { setCreating(true) }}>{t('create')}</Button>
+            </EmptyState>
+          )}
+          {assistants.length > 0 && shown.length === 0 && (
+            <EmptyState icon={<IconSearchOutlineRegular size={24} className={css.emptyGlyph} />} text={t('noMatch')} />
+          )}
           <ul className={css.grid}>
             {shown.map(item => (
               <li key={item.id} className={css.card} data-assistant-id={item.id}>
@@ -134,9 +143,10 @@ export function AssistantsPage(props: AssistantsPageProps) {
                   <span className={css.description}>{item.description === '' ? t('noDescription') : item.description}</span>
                 </button>
                 <div className={css.actions}>
-                  <Button variant="ghost" size="sm" onClick={() => { void duplicate(item.id, false) }}>{t('duplicate')}</Button>
-                  <Button variant="ghost" size="sm" onClick={() => { setDeleting(item) }}>{t('delete')}</Button>
-                  <Button variant="outline" size="sm" onClick={() => { void onChat(item.id) }}>{t('chat')}</Button>
+                  <CardMenu
+                    t={t} name={item.name} onDuplicate={() => { void duplicate(item.id, false) }} onDelete={() => { setDeleting(item) }}
+                  />
+                  <Button variant="primary" size="sm" onClick={() => { void onChat(item.id) }}>{t('chat')}</Button>
                 </div>
               </li>
             ))}
@@ -145,5 +155,43 @@ export function AssistantsPage(props: AssistantsPageProps) {
       )}
       {confirm}
     </div>
+  )
+}
+
+/** An empty state: a 24px glyph, one line of explanation, and an optional primary action. */
+function EmptyState({ icon, text, children }: { icon: ReactNode; text: string; children?: ReactNode }) {
+  return <div className={css.empty} role="status">{icon}<p>{text}</p>{children}</div>
+}
+
+/**
+ * A card's ⋯ menu: 复制 and a destructive 删除 (which still asks for confirmation), portaled so the page's scroll box does not clip it.
+ * @param props - the translator, the assistant name for the trigger's label, and the two actions.
+ * @returns the menu with its trigger.
+ */
+function CardMenu({ t, name, onDuplicate, onDelete }: {
+  t: AssistantsPageProps['t']
+  name: string
+  onDuplicate: () => void
+  onDelete: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Menu open={open} side="bottom" align="end" portal autoFocus
+      anchor={(
+        <Button variant="ghost" size="sm" className={css.more} aria-label={t('more', { name })} aria-haspopup="menu" aria-expanded={open}
+          onClick={() => { setOpen(value => !value) }}>
+          <IconEllipsisOutlineMedium size={16} />
+        </Button>
+      )}
+      items={[
+        { id: 'duplicate', label: t('duplicate'), icon: <IconCopyOutlineMedium size={16} /> },
+        { id: 'delete', label: t('delete'), icon: <IconTrashOutlineMedium size={16} />, danger: true },
+      ]}
+      onClose={() => { setOpen(false) }}
+      onSelect={(id) => {
+        setOpen(false)
+        if (id === 'duplicate') onDuplicate()
+        else onDelete()
+      }} />
   )
 }

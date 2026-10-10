@@ -27,6 +27,11 @@ export const zh = {
   switchTenant: '切换租户',
   signOut: '退出登录',
   brandLogo: '公司 Logo',
+  greetingMorning: '早上好，{name}',
+  greetingNoon: '中午好，{name}',
+  greetingAfternoon: '下午好，{name}',
+  greetingEvening: '晚上好，{name}',
+  greetingPrompt: '今天想做点什么？',
 }
 
 /** Typed key union derived from the zh source of truth. */
@@ -59,4 +64,9 @@ export const en = {
   switchTenant: 'Switch tenant',
   signOut: 'Sign out',
   brandLogo: 'Company logo',
+  greetingMorning: 'Good morning, {name}',
+  greetingNoon: 'Hello, {name}',
+  greetingAfternoon: 'Good afternoon, {name}',
+  greetingEvening: 'Good evening, {name}',
+  greetingPrompt: 'What would you like to get done today?',
 } satisfies Record<HubAccountLocaleKey, string>

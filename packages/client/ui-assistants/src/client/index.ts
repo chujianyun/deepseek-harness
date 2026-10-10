@@ -3,7 +3,8 @@
  * in the main column, and the assistant picker that leads the new-session screen's workspace row.
  * State streams from the `assistants` Remote; a pick binds the blank session the main view shows,
  * and a card's Chat button opens the new-session screen with that assistant picked. A card opens
- * the assistant's detail page, where its fields and core files are edited.
+ * the assistant's detail page, where its fields and core files are edited. Other plugins pick an
+ * assistant by template through the optional `assistantPicker` service.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -15,7 +16,7 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
-import { assistantOf, assistantSessions, createAssistantsSource, type BlankSession, type WizardOptions } from './assistants-source.ts'
+import { assistantOf, assistantSessions, createAssistantsSource, type AssistantPicker, type BlankSession, type WizardOptions } from './assistants-source.ts'
 import { squareAvatar } from './avatar-image.ts'
 import { AssistantSeat } from './AssistantSeat.tsx'
 import { SessionAssistantBadge, SessionAssistantHover } from './SessionAssistant.tsx'
@@ -23,10 +24,17 @@ import { AssistantsPage } from './AssistantsPage.tsx'
 import { AssistantsPanelIcon } from './AssistantsPanelIcon.tsx'
 import { en, zh, type AssistantsLocaleKey } from './locales.ts'
 
-export type { AssistantsDependencies, AssistantsInjected, AssistantsSnapshot, BlankSession } from './assistants-source.ts'
+export type { AssistantPicker, AssistantsDependencies, AssistantsInjected, AssistantsSnapshot, BlankSession } from './assistants-source.ts'
 export type { AssistantsLocaleKey } from './locales.ts'
 export type { AssistantsPageProps } from './AssistantsPage.tsx'
 export type { AssistantSeatProps } from './AssistantSeat.tsx'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Optional: pick the new session's assistant by template, provided while the assistants UI is mounted. */
+    assistantPicker: AssistantPicker
+  }
+}
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -113,6 +121,7 @@ export function apply(ctx: ClientContext): void {
       // The stream reconnects on its own; a disposed plugin simply stops listening.
     })
     scope.effect(() => scope.sessions.list.subscribe(() => { void source.sessionsChanged() }), 'ui-assistants: session list')
+    scope.provide('assistantPicker', { pickTemplate: source.pickTemplate } satisfies AssistantPicker)
     scope.slots.inject('main', () => scope.slots.register({ name: 'main', key: PANEL_ID, locale: NS, inject: () => source }, AssistantsPage))
     scope.slots.inject('sidebar.panellist', () => scope.slots.register({
       name: 'sidebar.panellist', id: PANEL_ID, order: 8, label: () => t('panel'), locale: NS,

@@ -56,6 +56,47 @@ describe('assistants source', () => {
     expect(shownAssistant(h.snapshot())).toBe('a2')
   })
 
+  it('picks the first assistant created from a template, keeps a current one from it, and reports a missing template', async () => {
+    const h = harness({ id: sid('s1'), assistantId: null })
+    h.source.publish({
+      ...state, revision: 2,
+      assistants: [state.assistants[0]!, { ...state.assistants[1]!, templateId: 'ecommerce' }, { ...state.assistants[1]!, id: 'a3', templateId: 'ecommerce' }],
+    })
+    expect(await h.source.pickTemplate('ecommerce')).toBe(true)
+    expect(h.select).toHaveBeenCalledWith('s1', 'a2')
+    // Already showing an assistant from the template (here the copy a3): left as is.
+    h.setBlank({ id: sid('s1'), assistantId: 'a3' })
+    await h.source.sessionsChanged()
+    h.select.mockClear()
+    expect(await h.source.pickTemplate('ecommerce')).toBe(true)
+    expect(h.select).not.toHaveBeenCalled()
+    expect(await h.source.pickTemplate('daily')).toBe(false)
+    expect(h.select).not.toHaveBeenCalled()
+  })
+
+  it('binds a pick made while an earlier bind runs once that bind settles', async () => {
+    const h = harness({ id: sid('s1'), assistantId: null })
+    let release: () => void = () => {}
+    h.select.mockImplementationOnce((_sessionId, assistantId) => new Promise((resolve) => {
+      release = () => { resolve({ ok: true as const, value: assistantId }) }
+    }))
+    const first = h.source.onPick('a1')
+    await vi.waitFor(() => { expect(h.select).toHaveBeenCalledWith('s1', 'a1') })
+    const second = h.source.onPick('a2')
+    expect(shownAssistant(h.snapshot())).toBe('a2')
+    release()
+    await Promise.all([first, second])
+    expect(h.select).toHaveBeenLastCalledWith('s1', 'a2')
+    expect(h.snapshot()).toMatchObject({ staged: undefined, busy: false, bound: 'a2' })
+  })
+
+  it('reports no template before the first state frame', async () => {
+    const source = createAssistantsSource({
+      select: vi.fn(), startSession: vi.fn(), blankSession: () => undefined, create: vi.fn(), ...unused,
+    })
+    expect(await source.pickTemplate('ecommerce')).toBe(false)
+  })
+
   it('binds no assistant to the blank session when none is picked', async () => {
     const h = harness({ id: sid('s1'), assistantId: 'a1' })
     await h.source.onPick(null)

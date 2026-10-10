@@ -101,15 +101,18 @@ describe('assistants page', () => {
     expect(screen.queryByText('电商管家')).toBeNull()
     expect(screen.getByText('日常助手')).toBeTruthy()
     fireEvent.change(search, { target: { value: 'zzz' } })
-    expect(screen.getByText('没有找到匹配的智能体，试试别的关键词。')).toBeTruthy()
+    expect(screen.getByRole('status').textContent).toBe('没有找到匹配的智能体，试试别的关键词。')
   })
 
-  it('says when the tenant has none, and when signed out', () => {
+  it('explains assistants with a primary 新建 when the tenant has none, and says when signed out', () => {
     mount({ ...state, assistants: [] })
-    expect(screen.getByText('还没有智能体。')).toBeTruthy()
+    const empty = screen.getByRole('status')
+    expect(empty.textContent).toBe(zh.empty + zh.create)
+    fireEvent.click(within(empty).getByRole('button', { name: zh.create }))
+    expect(screen.getByRole('dialog')).toBeTruthy()
     cleanup()
     mount({ ...state, tenantId: null, assistants: [] })
-    expect(screen.getByText('登录用户中心后可以使用智能体。')).toBeTruthy()
+    expect(screen.getByRole('status').textContent).toBe('登录用户中心后可以使用智能体。')
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 
@@ -122,11 +125,27 @@ describe('assistants page', () => {
   })
 })
 
+/** Open a card's ⋯ menu and return one of its items. */
+function cardAction(name: string, action: string): HTMLElement {
+  fireEvent.click(within(card(name)).getByRole('button', { name: `${name} 的更多操作` }))
+  return screen.getByRole('menuitem', { name: action })
+}
+
 describe('managing assistants on the page', () => {
+  it('leads each card with 对话 and keeps 复制 and a red 删除 in its ⋯ menu', async () => {
+    const props = mount(state)
+    expect(within(card('日常助手')).queryByRole('button', { name: '复制' })).toBeNull()
+    expect(within(card('日常助手')).queryByRole('button', { name: '删除' })).toBeNull()
+    fireEvent.click(within(card('日常助手')).getByRole('button', { name: '对话' }))
+    expect(props.onChat).toHaveBeenCalledWith('a1')
+    expect(cardAction('日常助手', '删除').className).toContain('danger')
+  })
+
   it('duplicates, and offers no Make default on any card', async () => {
     const props = mount(state)
     expect(screen.queryByRole('button', { name: '设为默认' })).toBeNull()
-    await act(async () => { fireEvent.click(within(card('日常助手')).getByRole('button', { name: '复制' })) })
+    const duplicateDaily = cardAction('日常助手', '复制')
+    await act(async () => { fireEvent.click(duplicateDaily) })
     expect(props.onDuplicate).toHaveBeenCalledWith('a1')
     expect(screen.getByRole('heading', { name: '智能体' })).toBeTruthy()
   })
@@ -134,30 +153,43 @@ describe('managing assistants on the page', () => {
   it('shows a refused action until dismissed', async () => {
     const props = mount(state)
     props.onDuplicate.mockResolvedValueOnce('gone')
-    await act(async () => { fireEvent.click(within(card('电商管家')).getByRole('button', { name: '复制' })) })
+    const firstDuplicate = cardAction('电商管家', '复制')
+    await act(async () => { fireEvent.click(firstDuplicate) })
     expect(screen.getByRole('alert').textContent).toContain('操作失败：gone')
     fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     expect(screen.queryByRole('alert')).toBeNull()
     props.onDuplicate.mockResolvedValueOnce('full')
-    await act(async () => { fireEvent.click(within(card('电商管家')).getByRole('button', { name: '复制' })) })
+    const secondDuplicate = cardAction('电商管家', '复制')
+    await act(async () => { fireEvent.click(secondDuplicate) })
     expect(screen.getByRole('alert').textContent).toContain('操作失败：full')
   })
 
   it('confirms a delete with the session count, and cancels', async () => {
     const props = mount(state)
-    fireEvent.click(within(card('电商管家')).getByRole('button', { name: '删除' }))
+    fireEvent.click(cardAction('电商管家', '删除'))
     const dialog = screen.getByRole('dialog', { name: '删除智能体' })
     expect(dialog.textContent).toContain('确定删除「电商管家」吗？它有 4 个会话。')
     expect(props.sessionCount).toHaveBeenCalledWith('a2')
     fireEvent.click(within(dialog).getByRole('button', { name: '取消' }))
     expect(screen.queryByRole('dialog')).toBeNull()
-    fireEvent.click(within(card('电商管家')).getByRole('button', { name: '删除' }))
+    fireEvent.click(cardAction('电商管家', '删除'))
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '关闭' }))
     expect(screen.queryByRole('dialog')).toBeNull()
-    fireEvent.click(within(card('电商管家')).getByRole('button', { name: '删除' }))
+    fireEvent.click(cardAction('电商管家', '删除'))
     await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '删除' })) })
     expect(props.onDelete).toHaveBeenCalledWith('a2')
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('shows a refused delete, and closes the ⋯ menu on Escape', async () => {
+    const props = mount(state)
+    props.onDelete.mockResolvedValueOnce('in use')
+    fireEvent.click(cardAction('电商管家', '删除'))
+    await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '删除' })) })
+    expect(screen.getByRole('alert').textContent).toContain('in use')
+    const item = cardAction('日常助手', '复制')
+    fireEvent.keyDown(item, { key: 'Escape' })
+    expect(screen.queryByRole('menuitem')).toBeNull()
   })
 
   it('opens the detail page from a card and returns to the list', async () => {

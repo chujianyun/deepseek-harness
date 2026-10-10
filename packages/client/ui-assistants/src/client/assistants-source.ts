@@ -113,8 +113,21 @@ export interface AssistantsInjected {
   readonly onOpenSession: (sessionId: SessionSummary['id']) => void
 }
 
+/** Picks for other plugins, provided as the `assistantPicker` service. */
+export interface AssistantPicker {
+  /**
+   * Pick, for the session about to start, the first assistant of the signed-in tenant created from a template (in
+   * creation order), as the new-session picker does; a picked or bound assistant already created from it is kept.
+   * Resolves once the pick is bound to the blank session the main view shows, or staged when there is none; a
+   * refused bind shows as the picker's failure toast.
+   * @param templateId - template id, for example `ecommerce` (电商管家).
+   * @returns false when the tenant has no assistant from the template, or before the first state frame.
+   */
+  readonly pickTemplate: (templateId: string) => Promise<boolean>
+}
+
 /** The face plus the entry points of the Host stream and of session-list changes. */
-export interface AssistantsSource extends AssistantsInjected {
+export interface AssistantsSource extends AssistantsInjected, AssistantPicker {
   readonly publish: (state: AssistantsState) => void
   /** Re-read the main view's blank session and bind a staged pick to it. */
   readonly sessionsChanged: () => Promise<void>
@@ -188,9 +201,16 @@ export function createAssistantsSource(deps: AssistantsDependencies): Assistants
     } catch (error) {
       set({ failure: error instanceof Error ? error.message : String(error) })
     } finally {
-      // The session list reports the new binding a moment later; show it now.
-      set({ staged: undefined, busy: false, bound: shown })
+      // The session list reports the new binding a moment later; show it now. A pick made while
+      // this bind ran stays staged and binds next.
+      const next = store.getSnapshot().staged
+      set({ staged: next === staged ? undefined : next, busy: false, bound: shown })
     }
+    if (store.getSnapshot().staged !== undefined) await apply()
+  }
+  const pick = async (assistantId: string | null): Promise<void> => {
+    set({ staged: assistantId })
+    await apply()
   }
   // Ask the Host about bound ids the signed-in tenant does not have; answers hold until the tenant changes.
   let askedFor: string | null = null
@@ -237,9 +257,16 @@ export function createAssistantsSource(deps: AssistantsDependencies): Assistants
     hooks: { assistants: store, sessions: deps.sessionList },
     publish: (state) => { set({ state }); void lookUp() },
     sessionsChanged: async () => { void lookUp(); await apply() },
-    onPick: async (assistantId) => {
-      set({ staged: assistantId })
-      await apply()
+    onPick: pick,
+    pickTemplate: async (templateId) => {
+      const snapshot = store.getSnapshot()
+      const assistants = snapshot.state?.assistants ?? []
+      const shown = shownAssistant(snapshot)
+      if (assistants.some(item => item.id === shown && item.templateId === templateId)) return true
+      const match = assistants.find(item => item.templateId === templateId)
+      if (match === undefined) return false
+      await pick(match.id)
+      return true
     },
     onChat: async (assistantId) => {
       set({ staged: assistantId })

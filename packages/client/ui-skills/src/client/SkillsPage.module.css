@@ -4,10 +4,14 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  box-sizing: border-box;
   min-width: 0;
   height: 100%;
   overflow-y: auto;
-  padding: 24px 28px;
+  /* Same column as the Plugins and Automation tasks pages: centred and at most 960px wide (the inline
+     padding centres it, so controls keep their own width), with the 28px top inset on the header row
+     so the strip above the content drags the window on macOS. */
+  padding: 0 max(clamp(24px, 4vw, 48px), calc((100% - 960px) / 2)) 48px;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -15,12 +19,18 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  box-sizing: border-box;
+  padding-top: 28px;
+}
+:global([data-platform='darwin']) .header {
+  padding-top: calc(28px + var(--dsh-frame-top-clearance, 0px));
 }
 
 .title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 28px;
 }
 
 .intro,
@@ -196,6 +206,26 @@
   align-items: center;
   gap: 8px;
   max-width: 480px;
+}
+
+/* The market's search form beside its category tabs, in one row. */
+.marketSearch {
+  flex: 0 1 320px;
+  min-width: 200px;
+}
+
+/* Search and the category tabs share one row, wrapping on a narrow window. */
+.marketBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Compact tabs: as wide as their labels, never stretched across the row. */
+.categoryTabs {
+  width: fit-content;
+  max-width: 100%;
 }
 
 .search {
@@ -374,3 +404,26 @@
   justify-content: space-between;
   gap: 12px;
 }
+
+/* Header intro, as on the Plugins page. */
+.header .intro {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Category tints for market card avatars (MO product-line colours), lifted in the dark theme. */
+.avatar[data-tint] { width: 28px; height: 28px; border-radius: 8px; font-size: 13px; }
+.avatar[data-tint='0'] { background: color-mix(in srgb, #2A55F9 14%, transparent); color: #2A55F9; }
+.avatar[data-tint='1'] { background: color-mix(in srgb, #9B7BE8 16%, transparent); color: #7A5BD6; }
+.avatar[data-tint='2'] { background: color-mix(in srgb, #EE7A9B 16%, transparent); color: #D9567D; }
+.avatar[data-tint='3'] { background: color-mix(in srgb, #8DB51E 18%, transparent); color: #5F7E0F; }
+.avatar[data-tint='4'] { background: color-mix(in srgb, #1F2333 12%, transparent); color: #1F2333; }
+:global(body[data-ds-dark-theme]) .avatar[data-tint='0'] { color: #A9BAFF; }
+:global(body[data-ds-dark-theme]) .avatar[data-tint='1'] { color: #C7B4F5; }
+:global(body[data-ds-dark-theme]) .avatar[data-tint='2'] { color: #F5A3C7; }
+:global(body[data-ds-dark-theme]) .avatar[data-tint='3'] { color: #C2DE6E; }
+:global(body[data-ds-dark-theme]) .avatar[data-tint='4'] { background: color-mix(in srgb, #B8BEDA 16%, transparent); color: #E2E5F0; }
+
+/* An installed market Skill: success-coloured state instead of a neutral tag. */
+.installed { flex: none; padding: 2px 8px; border-radius: 6px; background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent); color: var(--dsw-alias-state-success-primary); font-size: 12px; line-height: 18px; white-space: nowrap; }

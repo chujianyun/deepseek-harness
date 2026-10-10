@@ -67,7 +67,8 @@ it('adds and syncs a folder, keeps an unreachable page, and writes notes, all fo
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl)
     await page.getByRole('button', { name: '知识库', exact: true }).click()
-    await page.getByRole('button', { name: '新建知识库' }).click()
+    // The empty state's primary action opens the same dialog as the list's button.
+    await page.getByRole('status').getByRole('button', { name: '新建知识库' }).click()
     const dialog = page.getByRole('dialog', { name: '新建知识库' })
     await dialog.getByRole('textbox').fill('甲公司资料')
     await dialog.getByRole('combobox').selectOption('acme-gateway/bge-m3')

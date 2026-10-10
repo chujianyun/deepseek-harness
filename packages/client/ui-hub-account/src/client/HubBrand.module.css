@@ -4,3 +4,6 @@
 .heroLogo { display: block; width: auto; max-width: min(240px, 50vw); object-fit: contain; }
 :global(body[data-ds-dark-theme]) .heroLogo { box-sizing: border-box; padding: 3px 6px; border-radius: var(--dsw-radius-sm); corner-shape: round;
   background: var(--dsw-static-neutral-00); }
+/* Greeting headline: the hero's own title size for the greeting, a quieter prompt below it. */
+.greeting { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.greetingPrompt { font-size: 14px; font-weight: 400; line-height: 20px; color: var(--dsw-alias-label-tertiary); }

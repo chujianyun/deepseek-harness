@@ -53,7 +53,7 @@ export function ConnectorsPage(props: ConnectorsPageProps) {
   const connecting = state?.connectors.find(connector => connector.status === 'connecting')
   return (
     <div className={css.page}>
-      <header className={css.header}>
+      <header className={css.header} data-window-drag>
         <h1 className={css.title}>{t('title')}</h1>
         <p className={css.intro}>{t('intro')}</p>
       </header>

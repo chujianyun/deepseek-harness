@@ -27,7 +27,7 @@ import { browse, startMockUserCenter } from '../../../packages/credentials/hub-a
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
 import { connectFreshWorkspaceZh, saveFailureShot, writeComposerDraft, ZH_BROWSER_LOCALE } from './support.ts'
 
-const OVERLAYS = ['./hub-account.overlay.yml', './assistants.overlay.yml'].map(path => fileURLToPath(new URL(path, import.meta.url)))
+const OVERLAYS = ['./hub-account.overlay.yml', './assistants.overlay.yml', './brand-mo.overlay.yml'].map(path => fileURLToPath(new URL(path, import.meta.url)))
 const ANSWER = 'ASSISTANT_ANSWER'
 const SHOP_ID = 'shop-keeper'
 /** A 3x2 PNG, so the wizard has a non-square image to crop. */
@@ -153,7 +153,7 @@ it('seeds the Daily Assistant, starts new sessions with no assistant, carries a 
 
     // The new-session screen starts with no assistant.
     const picker = page.getByRole('button', { name: '选择这个会话的智能体' })
-    await expect.poll(() => picker.textContent()).toContain('不使用智能体')
+    await expect.poll(() => picker.textContent()).toContain('通用模式')
 
     // The sidebar entry opens the cards, none marked default; search narrows the list.
     await page.getByRole('button', { name: '智能体', exact: true }).click()
@@ -188,7 +188,7 @@ it('seeds the Daily Assistant, starts new sessions with no assistant, carries a 
 
     // A new session picks another assistant in the hero picker; its first request carries that identity.
     await page.getByRole('button', { name: '新建会话' }).first().click()
-    await expect.poll(() => picker.textContent()).toContain('不使用智能体')
+    await expect.poll(() => picker.textContent()).toContain('通用模式')
     await picker.click()
     await page.getByRole('menuitem', { name: /店铺测试助手/ }).click()
     await expect.poll(() => picker.textContent()).toContain('店铺测试助手')
@@ -202,8 +202,8 @@ it('seeds the Daily Assistant, starts new sessions with no assistant, carries a 
     await page.getByRole('menuitem', { name: /店铺测试助手/ }).click()
     await expect.poll(() => picker.textContent()).toContain('店铺测试助手')
     await picker.click()
-    await page.getByRole('menuitem', { name: /不使用智能体/ }).click()
-    await expect.poll(() => picker.textContent()).toContain('不使用智能体')
+    await page.getByRole('menuitem', { name: /通用模式/ }).click()
+    await expect.poll(() => picker.textContent()).toContain('通用模式')
     const before = chat.chats.length
     await send('不用智能体回答')
     await expect.poll(() => chat.chats.length, { timeout: 30_000 }).toBeGreaterThan(before)
@@ -254,7 +254,19 @@ it('seeds the Daily Assistant, starts new sessions with no assistant, carries a 
     await card.locator('img[src^="data:image/webp"]').waitFor()
     expect(await readFile(join(tenantDir, created.id, 'USER.md'), 'utf8')).toContain('- **称呼**：小明 USER_NAME')
 
+    // A quick task on a blank session in General mode picks the assistant created from the e-commerce template and fills the draft.
+    await page.getByRole('button', { name: '新建会话' }).first().click()
+    await picker.click()
+    await page.getByRole('menuitem', { name: /通用模式/ }).click()
+    await expect.poll(() => picker.textContent()).toContain('通用模式')
+    await page.locator('[data-quick-tasks] button[data-task="multi-publish"]').click()
+    await expect.poll(() => picker.textContent()).toContain('名流电商管家')
+    await expect.poll(() => page.locator('[data-composer-input][contenteditable="true"]').first().textContent()).toContain('发到多个店铺')
+    await page.locator('[data-quick-tasks]').waitFor({ state: 'detached' })
+    await writeComposerDraft(page, page.locator('[data-composer-input][contenteditable="true"]').first(), '')
+
     // Chat with it: the first request runs on the assistant's model and carries its core files and the user information.
+    await page.getByRole('button', { name: '智能体', exact: true }).click()
     await card.getByRole('button', { name: '对话' }).click()
     await expect.poll(() => picker.textContent()).toContain('名流电商管家')
     await send('帮我看看店铺')
@@ -287,8 +299,12 @@ it('edits core files on the detail page, copies, and deletes assistants', async 
     await page.getByRole('heading', { level: 1, name: '智能体' }).waitFor()
   }
   const card = (id: string) => page.locator(`li[data-assistant-id="${id}"]`)
+  const cardMenu = async (id: string, action: '复制' | '删除') => {
+    await card(id).getByRole('button', { name: /的更多操作$/u }).click()
+    await page.getByRole('menuitem', { name: action }).click()
+  }
   const deleteCard = async (id: string, sessions: number) => {
-    await card(id).getByRole('button', { name: '删除' }).click()
+    await cardMenu(id, '删除')
     const dialog = page.getByRole('dialog', { name: '删除智能体' })
     await expect.poll(() => dialog.textContent()).toContain(`它有 ${String(sessions)} 个会话`)
     await dialog.getByRole('button', { name: '删除' }).click()
@@ -343,7 +359,7 @@ it('edits core files on the detail page, copies, and deletes assistants', async 
 
     // Duplicate: a copy with the same core files and no sessions.
     await openAssistants()
-    await card(SHOP_ID).getByRole('button', { name: '复制' }).click()
+    await cardMenu(SHOP_ID, '复制')
     await expect.poll(async () => (await scaffold.ctx.assistants.getState()).assistants.length).toBe(3)
     const copy = (await scaffold.ctx.assistants.getState()).assistants.at(-1)!
     expect(copy.name).toBe('店铺复盘助手 副本')
@@ -366,7 +382,7 @@ it('edits core files on the detail page, copies, and deletes assistants', async 
     await openAssistants()
     await deleteCard(copy.id, 0)
     await deleteCard(dailyId, 0)
-    await page.getByText('还没有智能体。').waitFor()
+    await page.getByText('智能体把常用的模型、Skill 和知识库存成一个角色，建好后一键开始对话。').waitFor()
     await page.getByRole('button', { name: '新建会话' }).first().click()
     await page.locator('[data-composer-card]').waitFor()
     expect(await picker.count()).toBe(0)
@@ -415,7 +431,7 @@ it('gives an assistant\'s sessions only the Skills it allows, and marks a Skill 
     await expect.poll(messages).toContain('e2e-alpha')
     expect(messages()).not.toContain('e2e-beta')
     await page.getByRole('button', { name: '新建会话' }).first().click()
-    await expect.poll(() => picker.textContent()).toContain('不使用智能体')
+    await expect.poll(() => picker.textContent()).toContain('通用模式')
     const before = chat.chats.length
     await send('有哪些 Skill？')
     await expect.poll(() => chat.chats.length, { timeout: 30_000 }).toBeGreaterThan(before)
@@ -480,7 +496,8 @@ it('tells a session of another company\'s assistant from one whose assistant was
     await useChatModel()
     const shop = await startWith(/店铺测试助手/, SHOP_ID, '甲公司的会话')
     await openAssistants()
-    await page.locator(`li[data-assistant-id="${SHOP_ID}"]`).getByRole('button', { name: '复制' }).click()
+    await page.locator(`li[data-assistant-id="${SHOP_ID}"]`).getByRole('button', { name: /的更多操作$/u }).click()
+    await page.getByRole('menuitem', { name: '复制' }).click()
     await expect.poll(async () => (await scaffold.ctx.assistants.getState()).assistants.length).toBe(3)
     const copyId = (await scaffold.ctx.assistants.getState()).assistants.at(-1)!.id
     const gone = await startWith(/店铺测试助手 副本/, copyId, '副本的会话')

@@ -1,8 +1,35 @@
 /* Knowledge page: knowledge bases on the left, the selected one's files on the right. */
 
-.page { display: flex; flex-direction: column; gap: 16px; height: 100%; min-width: 0; overflow-y: auto; padding: 24px 28px; color: var(--dsw-alias-label-primary); }
-.header { display: flex; flex-direction: column; gap: 4px; }
-.title { margin: 0; font-size: 18px; font-weight: 600; }
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  /* Same column as the Plugins and Automation tasks pages: centred and at most 960px wide (the inline
+     padding centres it, so controls keep their own width), with the 28px top inset on the header row
+     so the strip above the content drags the window on macOS. */
+  padding: 0 max(clamp(24px, 4vw, 48px), calc((100% - 960px) / 2)) 48px;
+  color: var(--dsw-alias-label-primary);
+}
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  padding-top: 28px;
+}
+:global([data-platform='darwin']) .header {
+  padding-top: calc(28px + var(--dsh-frame-top-clearance, 0px));
+}
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 28px;
+}
 .muted { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 13px; }
 .columns { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px; min-height: 0; }
 .list { display: flex; flex-direction: column; gap: 4px; }
@@ -11,6 +38,11 @@
 .listItem[aria-current='true'] { background: var(--dsw-alias-interactive-bg-hover); font-weight: 600; }
 .listName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .listMeta { color: var(--dsw-alias-label-tertiary); font-size: 12px; font-weight: 400; }
+/* Empty states: a 24px glyph, one line on what the page is for, and the primary action. */
+.empty { display: flex; flex-direction: column; align-items: center; padding: 48px 20px; text-align: center; color: var(--dsw-alias-label-tertiary); font-size: 14px; line-height: 1.6; }
+.empty p { margin: 0; }
+.emptyGlyph { margin-bottom: 12px; color: var(--dsw-alias-label-caption); }
+.emptyAction { margin-top: 16px; }
 .detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .detailHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .identity { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -95,3 +127,10 @@
 .citationName { overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .citationMeta { color: var(--dsw-alias-label-tertiary); font-size: 12px; }
 .citationSnippet { display: -webkit-box; overflow: hidden; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+
+/* Header intro, as on the Plugins page. */
+.header .muted {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}

@@ -13,10 +13,25 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../locale/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-assistants"
+    },
+    {
+      "path": "../ui-conversation/tsconfig.client.json"
+    },
+    {
       "path": "../ui-renderer"
     },
     {
+      "path": "../ui-settings/tsconfig.client.json"
+    },
+    {
       "path": "../ui-sidebar"
+    },
+    {
+      "path": "../ui-slots"
     },
     {
       "path": "../ui-theme/tsconfig.client.json"

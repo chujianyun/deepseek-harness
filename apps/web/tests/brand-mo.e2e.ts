@@ -115,6 +115,16 @@ it('paints primary buttons, send, and the active panel 名流蓝 in both palette
     expect(await settled(() => railPanel.evaluate(element => getComputedStyle(element).color))).toBe('rgb(42, 85, 249)')
     // ... and shows the app icon as its mark.
     expect(await page.locator('[data-slot="sidebar.brand.mark"] img').count()).toBe(1)
+    // A blank new session offers the configured quick tasks; a card fills the draft without sending.
+    await page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
+    await page.getByRole('button', { name: 'New session', exact: true }).first().click()
+    const tasks = page.locator('[data-quick-tasks] button')
+    await tasks.first().waitFor()
+    expect(await tasks.evaluateAll(cards => cards.map(card => card.getAttribute('data-task'))))
+      .toEqual(['multi-publish', 'business-report', 'product-research', 'asset-organize'])
+    await page.getByRole('button', { name: /Publish to several stores/ }).click()
+    const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
+    await expect.poll(() => composer.innerText()).toContain('Publish one new product to several stores')
   }, 'brand-mo')
 })
 
@@ -126,5 +136,6 @@ it('keeps the platform palette when the brand row is not mounted', async () => {
     expect(light.activePanelLabel).toBe('rgb(15, 17, 21)')
     expect(light.send).not.toBe('rgb(42, 85, 249)')
     expect(await bootRows(page)).toEqual({ brand: null, navyBoot: false })
+    expect(await page.locator('[data-quick-tasks]').count()).toBe(0)
   }, 'brand-mo-absent')
 })

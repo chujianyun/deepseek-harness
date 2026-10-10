@@ -55,7 +55,8 @@ it('creates a knowledge base, processes the four document kinds, tunes and tests
     await page.getByText('还没有知识库。').waitFor({ timeout: 15_000 })
 
     // Create on the API embedding model; the dialog warns that content goes to the provider.
-    await page.getByRole('button', { name: '新建知识库' }).click()
+    // The empty state's primary action opens the same dialog as the list's button.
+    await page.getByRole('status').getByRole('button', { name: '新建知识库' }).click()
     const dialog = page.getByRole('dialog', { name: '新建知识库' })
     await dialog.getByRole('textbox').fill('公司制度')
     await dialog.getByRole('combobox').selectOption('acme-gateway/bge-m3')

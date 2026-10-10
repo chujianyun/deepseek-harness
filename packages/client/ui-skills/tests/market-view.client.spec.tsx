@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { MarketSkillCard, MarketSkillDetail } from '@deepseek-ai/dsh-skill-market/types'
-import { MarketView, skillMdBody } from '../src/client/MarketView.tsx'
+import { categoryTint, initial, MarketView, skillMdBody } from '../src/client/MarketView.tsx'
 import { InstalledView, SkillsPage } from '../src/client/SkillsPage.tsx'
 import { pageProps } from './page-props.client.ts'
 
@@ -20,6 +20,30 @@ const detail: MarketSkillDetail = {
 }
 
 describe('Market view', () => {
+  it('tints a card avatar by its category, the same tint for the same category', () => {
+    const { props } = pageProps({}, {
+      items: [
+        card('a', { category: { id: 'c-doc', name: '文档' } }),
+        card('b', { category: { id: 'c-doc', name: '文档' } }),
+        card('c', { category: { id: 'c-data', name: '数据' } }),
+        card('d'),
+      ],
+      total: 4,
+    })
+    render(<MarketView {...props} onShowInstalled={() => {}} />)
+    const tints = ['a', 'b', 'c', 'd'].map(name => screen.getByText(name.toUpperCase(), { selector: 'span' }).getAttribute('data-tint'))
+    expect(tints[0]).toBe(tints[1])
+    expect(tints[0]).toMatch(/^[0-4]$/u)
+    expect(tints[2]).toMatch(/^[0-4]$/u)
+    expect(tints[3]).toBe('none')
+    expect(categoryTint('c-doc')).toBe(categoryTint('c-doc'))
+  })
+
+  it('takes the avatar letter from the first character and leaves an empty name blank', () => {
+    expect(initial('pdf')).toBe('P')
+    expect(initial('')).toBe('')
+  })
+
   it('reads the market and the installed count when it opens, and shows cards with their install state', () => {
     const { props } = pageProps({ skills: [] }, {
       items: [card('pdf-tools'), card('sql-helper', { installedVersion: '2.0.0' }), card('my-notes', { conflict: true })], total: 5,
@@ -31,7 +55,9 @@ describe('Market view', () => {
     expect(screen.getByRole('button', { name: '我安装的（0）' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '安装 pdf-tools' }))
     expect(props.onInstall).toHaveBeenCalledWith('id-pdf-tools')
-    expect(screen.getByText('已安装 v2.0.0')).toBeTruthy()
+    expect(screen.getByText('已安装 v2.0.0').hasAttribute('data-installed')).toBe(true)
+    // An installable card reads 安装 on its button, not a bare +.
+    expect(screen.getByRole('button', { name: '安装 pdf-tools' }).textContent).toBe('安装')
     const conflict = screen.getByRole('button', { name: '本地已有同名 Skill' })
     expect(conflict.hasAttribute('disabled')).toBe(true)
     expect(screen.getByText('本地已有同名 Skill', { selector: 'span' })).toBeTruthy()
@@ -56,9 +82,15 @@ describe('Market view', () => {
   it('searches and filters by category', () => {
     const { props } = pageProps({}, { items: [card('pdf-tools')], total: 1, categories: [{ id: 'c-doc', name: '文档' }] })
     render(<MarketView {...props} onShowInstalled={() => {}} />)
-    fireEvent.change(screen.getByRole('searchbox', { name: '搜索 Skill' }), { target: { value: ' pdf ' } })
-    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+    const searchbox = screen.getByRole('searchbox', { name: '搜索 Skill' })
+    fireEvent.change(searchbox, { target: { value: ' pdf ' } })
+    // Enter submits the search; there is no separate search button.
+    fireEvent.submit(searchbox.closest('form')!)
     expect(props.onSearch).toHaveBeenCalledWith('pdf')
+    expect(screen.queryByRole('button', { name: '搜索' })).toBeNull()
+    // Emptying the field shows every Skill again without Enter.
+    fireEvent.change(searchbox, { target: { value: '' } })
+    expect(props.onSearch).toHaveBeenLastCalledWith('')
     fireEvent.click(screen.getByRole('tab', { name: '文档' }))
     expect(props.onCategory).toHaveBeenCalledWith('c-doc')
   })

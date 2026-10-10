@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package gives the MO WorkAI enterprise Desktop client its brand. While it is mounted, primary buttons, the composer's send button, links, focus rings, and the active sidebar panel use 名流蓝 (`#2A55F9` light, `#5C7CFF` dark), body text uses the brand greys, the sidebar brand row shows the MO wire-frame wordmark (inverted to dark on the light theme) and the collapsed rail the MO app icon, and the boot page shows the icon, **MO WorkAI**, and a loading hint in the user's language on navy. It has no runtime state and does not affect model requests.
+This package gives the MO WorkAI enterprise Desktop client its brand. Primary buttons, the send button, links, focus rings, and the active sidebar panel use 名流蓝 (`#2A55F9` light, `#5C7CFF` dark) and text uses the brand greys. The sidebar shows the MO wordmark (dark on the light theme) and the collapsed rail the app icon; the boot page shows the icon, **MO WorkAI**, and a hint in the user's language on navy; a blank new session offers configured quick tasks. It has no runtime state and does not affect model requests.
 
 ## Table of Contents
 
@@ -38,6 +38,10 @@ The web-app bundle mounts this plugin only for the `desktop` profile with a conf
 | Text primary / secondary / tertiary, ink | `#343434` / `#4D4D4D` / `#767676`, `#343434` | platform values |
 
 The ink tokens (`--dsw-alias-brand-primary`, `--dsw-alias-brand-text`), which text and controls read as a foreground, take the primary text grey so the light palette has one primary ink. The dark palette darkens ramp steps 800/900 and lightens 500 so badges and info-button hovers stay at WCAG AA.
+
+### Quick tasks
+
+`quickTasks` lists the cards shown in the `conversation.hero.dock` slot under the composer of a blank new session, in order: `multi-publish`, `business-report`, `product-research`, `asset-organize`; a repeated id shows once. Each card's title, description, and prompt come from the `ui-brand-mo` dictionary in the UI language; a click puts the prompt in the draft and does not send it. `quickTaskAssistant` names the template of the assistant a click also picks for the new session through the [ui-assistants](../ui-assistants/README.md) `assistantPicker` service; the tasks need 电商管家's Skills, so the web-app bundle sets `ecommerce`. The prompt lands only after the pick binds, so it cannot be sent in the wrong mode; when the tenant has no assistant from the template (the earliest created one wins when several exist), the card fills nothing and says to create one on the Assistants page. A deployment without the assistants UI keeps the current pick, and the default empty value never changes it. The default is an empty list; the web-app bundle composes all four for enterprise Desktop. The cards show only while the draft has no text, reference, or attachment, so a click never replaces what the user entered, and they leave once the session is no longer blank. The cards need the locale registry and the settings forms; without them the theme and the sidebar brand still apply.
 
 -----
 
