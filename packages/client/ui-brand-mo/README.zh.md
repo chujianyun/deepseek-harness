@@ -41,7 +41,7 @@ web-app bundle 只在 `desktop` profile 且配置了用户中心（`DSH_HUB_ORIG
 
 ### 快捷任务
 
-`quickTasks` 按顺序列出空白新会话输入框下方显示的卡片：`multi-publish`、`business-report`、`product-research`、`asset-organize`。每张卡的标题、说明和提示词来自 `ui-brand-mo` 字典，跟随界面语言；点击会用提示词替换草稿，不会发送。默认是空列表；web-app bundle 为企业版桌面端组合全部四张。会话一旦不再空白，卡片就会消失。
+`quickTasks` 按顺序列出空白新会话输入框下方 `conversation.hero.dock` 插槽里显示的卡片：`multi-publish`、`business-report`、`product-research`、`asset-organize`；重复的 id 只显示一次。每张卡的标题、说明和提示词来自 `ui-brand-mo` 字典，跟随界面语言；点击会把提示词放进草稿，不会发送。默认是空列表；web-app bundle 为企业版桌面端组合全部四张。卡片只在草稿没有文字、引用和附件时显示，因此点击不会替换用户已输入的内容；会话一旦不再空白，卡片就会消失。卡片需要语言注册表和设置表单；缺少它们时主题和侧栏品牌照常生效。
 
 -----
 

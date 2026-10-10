@@ -42,8 +42,10 @@ export function KnowledgePage(props: KnowledgePageProps) {
       <Notice {...props} />
       <div className={css.columns}>
         <nav className={css.list} aria-label={t('title')}>
-          <Button variant="outline" onClick={() => { setDialog('create') }}>{t('create')}</Button>
-          {state.bases.length === 0 && <p className={css.muted}>{t('listEmpty')}</p>}
+          {/* With no knowledge base the empty state's primary button is the only create action. */}
+          {state.bases.length === 0
+            ? <p className={css.muted}>{t('listEmpty')}</p>
+            : <Button variant="outline" onClick={() => { setDialog('create') }}>{t('create')}</Button>}
           {state.bases.map(base => (
             <button key={base.id} type="button" className={css.listItem} aria-current={base.id === selected?.id ? 'true' : undefined}
               onClick={() => { onSelect(base.id) }}>

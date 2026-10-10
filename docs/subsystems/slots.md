@@ -174,6 +174,7 @@ root
 │     ├─ conversation.composer.dock
 │     ├─ conversation.input.left
 │     ├─ conversation.input.right
+│     ├─ conversation.hero.dock
 │     ├─ conversation.hero.brand.mark
 │     ├─ conversation.hero.brand.headline
 │     ├─ conversation.hero.workspace

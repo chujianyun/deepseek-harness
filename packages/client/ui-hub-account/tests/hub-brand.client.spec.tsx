@@ -13,8 +13,8 @@ afterEach(cleanup)
 const LOGO = 'data:image/png;base64,iVBORw0KGgo='
 const profile = { nickname: '韩梅梅', phone: '138****0001', tenantId: 't-a', tenantName: '甲公司', isTenantAdmin: false }
 
-function hooks(tenantName: string | null, logo: string | null, slogan: string | null = null) {
-  const view: HubAccountView = { status: 'signed-in', profile: { ...profile, tenantName }, reason: null, attempt: null, branding: null }
+function hooks(tenantName: string | null, logo: string | null, slogan: string | null = null, nickname = profile.nickname) {
+  const view: HubAccountView = { status: 'signed-in', profile: { ...profile, tenantName, nickname }, reason: null, attempt: null, branding: null }
   const brand: HubBrandingView | null = logo === null && slogan === null ? null : { tenantId: 't-a', title: null, slogan, logo }
   return {
     useHub: bindSnapshotSelector(createSnapshotStore<{ view: HubAccountView | undefined }>({ view })),
@@ -57,11 +57,18 @@ it('greets the employee by the time of day when the tenant set no slogan', () =>
     expect(at(3).querySelector('[data-hero-greeting]')?.textContent).toBe('晚上好，韩梅梅')
     expect(at(15).textContent).toBe(`下午好，韩梅梅${zh.greetingPrompt}`)
     expect(at(8, en).querySelector('[data-hero-greeting]')?.textContent).toBe('Good morning, 韩梅梅')
+    expect(at(12, en).querySelector('[data-hero-greeting]')?.textContent).toBe('Hello, 韩梅梅')
     expect(at(15, en).querySelector('[data-hero-greeting]')?.textContent).toBe('Good afternoon, 韩梅梅')
     expect(at(21, en).querySelector('[data-hero-greeting]')?.textContent).toBe('Good evening, 韩梅梅')
   } finally {
     vi.useRealTimers()
   }
+})
+
+it('shows the prompt alone for a blank nickname', () => {
+  const headline = render(<HubHeroHeadline {...standard} {...hooks('甲公司', LOGO, null, ' ')} t={makeTranslate(zh)} />).container
+  expect(headline.querySelector('[data-hero-greeting]')).toBeNull()
+  expect(headline.textContent).toBe(zh.greetingPrompt)
 })
 
 it('shows no headline while nobody is signed in', () => {

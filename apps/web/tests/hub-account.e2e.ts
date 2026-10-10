@@ -102,7 +102,7 @@ it('signs in from Settings, survives a refused refresh without stopping a runnin
     expect(await page.locator('[data-slot="sidebar.brand.mark"] img').count()).toBe(0)
     // Without a slogan, the hero greets the signed-in employee by the time of day.
     await expect.poll(() => page.locator('[data-hero-greeting]').textContent(), { timeout: 10_000 })
-      .toMatch(/^Good (morning|afternoon|evening), 李雷$/u)
+      .toMatch(/^(Good (morning|afternoon|evening)|Hello), 李雷$/u)
     // The new-session hero reads the tenant's branding through hubAccount.getBranding(): 甲公司's logo.
     await expect.poll(() => page.locator('[data-slot="conversation.hero.brand.mark"] img').getAttribute('src'), { timeout: 10_000 })
       .toMatch(/^data:image\/svg\+xml;base64,/u)

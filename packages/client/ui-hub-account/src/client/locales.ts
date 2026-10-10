@@ -65,7 +65,7 @@ export const en = {
   signOut: 'Sign out',
   brandLogo: 'Company logo',
   greetingMorning: 'Good morning, {name}',
-  greetingNoon: 'Good afternoon, {name}',
+  greetingNoon: 'Hello, {name}',
   greetingAfternoon: 'Good afternoon, {name}',
   greetingEvening: 'Good evening, {name}',
   greetingPrompt: 'What would you like to get done today?',

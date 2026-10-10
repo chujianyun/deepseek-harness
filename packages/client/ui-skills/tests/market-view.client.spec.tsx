@@ -88,6 +88,9 @@ describe('Market view', () => {
     fireEvent.submit(searchbox.closest('form')!)
     expect(props.onSearch).toHaveBeenCalledWith('pdf')
     expect(screen.queryByRole('button', { name: '搜索' })).toBeNull()
+    // Emptying the field shows every Skill again without Enter.
+    fireEvent.change(searchbox, { target: { value: '' } })
+    expect(props.onSearch).toHaveBeenLastCalledWith('')
     fireEvent.click(screen.getByRole('tab', { name: '文档' }))
     expect(props.onCategory).toHaveBeenCalledWith('c-doc')
   })

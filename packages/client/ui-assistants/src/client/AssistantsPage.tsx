@@ -164,7 +164,7 @@ function EmptyState({ icon, text, children }: { icon: ReactNode; text: string; c
 }
 
 /**
- * A card's ⋯ menu: 复制 and a destructive 删除 (which still asks for confirmation).
+ * A card's ⋯ menu: 复制 and a destructive 删除 (which still asks for confirmation), portaled so the page's scroll box does not clip it.
  * @param props - the translator, the assistant name for the trigger's label, and the two actions.
  * @returns the menu with its trigger.
  */
@@ -176,7 +176,7 @@ function CardMenu({ t, name, onDuplicate, onDelete }: {
 }) {
   const [open, setOpen] = useState(false)
   return (
-    <Menu open={open} side="bottom" align="end" autoFocus
+    <Menu open={open} side="bottom" align="end" portal autoFocus
       anchor={(
         <Button variant="ghost" size="sm" className={css.more} aria-label={t('more', { name })} aria-haspopup="menu" aria-expanded={open}
           onClick={() => { setOpen(value => !value) }}>

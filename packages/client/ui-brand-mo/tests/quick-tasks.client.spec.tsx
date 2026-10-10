@@ -15,10 +15,18 @@ interface MountOptions {
   tasks?: readonly QuickTaskId[]
   copy?: typeof zh
   loading?: boolean
+  draft?: string
+  occurrences?: number
+  attachments?: number
 }
 
 function mount(options: MountOptions = {}) {
   const setDraft = vi.fn()
+  const input = {
+    draft: options.draft ?? '',
+    occurrences: Array.from({ length: options.occurrences ?? 0 }),
+    attachmentIds: Array.from({ length: options.attachments ?? 0 }),
+  }
   const session = { blank: options.blank ?? true, promptAttempted: options.promptAttempted ?? false, running: false }
   const settings = options.loading === true
     ? { status: 'loading' as const, value: undefined }
@@ -27,6 +35,7 @@ function mount(options: MountOptions = {}) {
   const props: Partial<QuickTasksProps> = {
     t: makeTranslate(options.copy ?? zh),
     useSession: bindSnapshotSelector(createSnapshotStore(session)) as QuickTasksProps['useSession'],
+    useInput: bindSnapshotSelector(createSnapshotStore(input)) as Partial<QuickTasksProps['useInput']> as QuickTasksProps['useInput'],
     inputActions: { setDraft } as Partial<QuickTasksProps['inputActions']> as QuickTasksProps['inputActions'],
     useBrandSettings: bindSnapshotSelector(createSnapshotStore(settings)) as QuickTasksProps['useBrandSettings'],
   }
@@ -59,6 +68,19 @@ it('shows nothing once the Session left the blank state or with no task configur
   mount({ tasks: [] })
   expect(screen.queryByRole('list')).toBeNull()
   cleanup()
+  // A draft, a reference, or an attachment the user entered is never replaced by a card.
+  mount({ draft: '写一份周报' })
+  expect(screen.queryByRole('list')).toBeNull()
+  cleanup()
+  mount({ occurrences: 1 })
+  expect(screen.queryByRole('list')).toBeNull()
+  cleanup()
+  mount({ attachments: 1 })
+  expect(screen.queryByRole('list')).toBeNull()
+  cleanup()
+  mount({ draft: '  ' })
+  expect(screen.getByRole('list')).toBeTruthy()
+  cleanup()
   // Before the settings section arrives, nothing flashes in.
   mount({ loading: true })
   expect(screen.queryByRole('list')).toBeNull()
@@ -71,4 +93,9 @@ it('has a title, description, and prompt in both languages for every task', () =
       expect(en[`${id}.${field}`]).not.toBe('')
     }
   }
+})
+
+it('shows a repeated task id once', () => {
+  mount({ tasks: ['multi-publish', 'multi-publish', 'asset-organize'] })
+  expect(screen.getAllByRole('button').map(card => card.getAttribute('data-task'))).toEqual(['multi-publish', 'asset-organize'])
 })

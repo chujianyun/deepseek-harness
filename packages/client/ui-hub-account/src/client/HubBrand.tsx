@@ -33,7 +33,8 @@ function greetingKey(hour: number): 'greetingMorning' | 'greetingNoon' | 'greeti
 
 /**
  * Show the tenant's new-session slogan as written, whatever the UI language; without one, greet the
- * signed-in employee by the time of day above a short prompt; signed out, nothing.
+ * signed-in employee by the time of day above a short prompt (the prompt alone for a blank nickname); signed out, nothing.
+ * The greeting follows the hour of the render.
  * @param props - the `hub-account` translator and the branding hooks.
  * @returns the slogan, the greeting, or null.
  */
@@ -42,9 +43,10 @@ export function HubHeroHeadline({ t, useHub, useBrand }: HubHeroHeadlineProps) {
   const nickname = useHub(snapshot => snapshot.view?.profile?.nickname ?? null)
   if (slogan !== null) return slogan
   if (nickname === null) return null
+  const name = nickname.trim()
   return (
     <span className={css.greeting}>
-      <span data-hero-greeting="">{t(greetingKey(new Date().getHours()), { name: nickname })}</span>
+      {name !== '' && <span data-hero-greeting="">{t(greetingKey(new Date().getHours()), { name })}</span>}
       <span className={css.greetingPrompt}>{t('greetingPrompt')}</span>
     </span>
   )

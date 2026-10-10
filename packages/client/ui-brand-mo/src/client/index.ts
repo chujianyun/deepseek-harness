@@ -27,25 +27,28 @@ const NS = 'ui-brand-mo'
 /** Override-layer source id; the theme runtime replaces an earlier layer with the same id. */
 export const MO_THEME_SOURCE = '@deepseek-ai/dsh-client-ui-brand-mo'
 
-/** Required services: the theme runtime, the UI slot registry, the locale registry, and the settings forms. */
-export const inject = ['theme', 'slots', 'locale', 'configForms']
+/** Required services: the theme runtime and the UI slot registry; the quick tasks also need the locale registry and the settings forms. */
+export const inject = ['theme', 'slots']
 
 /**
  * Apply the MO token layer and occupy both sidebar brand slots for exactly the plugin lifetime:
- * the wordmark in the expanded row, the app icon on the collapsed rail; offer the configured quick
- * tasks under the blank new-session composer.
+ * the wordmark in the expanded row, the app icon on the collapsed rail. While the locale registry
+ * and the settings forms are present, offer the configured quick tasks under the blank new-session
+ * composer; their absence leaves the theme and the brand row in place.
  * @param ctx - Client root context.
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.theme.overrideTokens(MO_THEME_SOURCE, MO_THEME_TOKENS), 'ui-brand-mo: theme tokens')
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-brand-mo: dictionaries')
-  const brandSettings = ctx.configForms.get<{ quickTasks?: readonly QuickTaskId[] }>(BRAND_SETTINGS_NAMESPACE)
-  const quickTasksFace: QuickTasksInjected = { hooks: { brandSettings } }
-  ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
-    name: 'conversation.composer.dock', id: 'mo-quick-tasks', order: 10, locale: NS, inject: () => quickTasksFace,
-  }, QuickTasks))
   ctx.slots.inject('sidebar.brand.mark', () => ctx.slots.inject('sidebar.brand.name', function* () {
     yield ctx.slots.register({ name: 'sidebar.brand.mark' }, MoBrandMark)
     yield ctx.slots.register({ name: 'sidebar.brand.name' }, MoWordmark)
   }))
+  ctx.inject(['locale', 'configForms'], (scope: ClientContext) => {
+    scope.effect(() => scope.locale.register(NS, { zh, en }), 'ui-brand-mo: dictionaries')
+    const brandSettings = scope.configForms.get<{ quickTasks?: readonly QuickTaskId[] }>(BRAND_SETTINGS_NAMESPACE)
+    const quickTasksFace: QuickTasksInjected = { hooks: { brandSettings } }
+    scope.slots.inject('conversation.hero.dock', () => scope.slots.register({
+      name: 'conversation.hero.dock', id: 'mo-quick-tasks', order: 10, locale: NS, inject: () => quickTasksFace,
+    }, QuickTasks))
+  })
 }

@@ -41,7 +41,7 @@ The ink tokens (`--dsw-alias-brand-primary`, `--dsw-alias-brand-text`), which te
 
 ### Quick tasks
 
-`quickTasks` lists the cards shown under the composer of a blank new session, in order: `multi-publish`, `business-report`, `product-research`, `asset-organize`. Each card's title, description, and prompt come from the `ui-brand-mo` dictionary in the UI language; a click replaces the draft with the prompt and does not send it. The default is an empty list; the web-app bundle composes all four for enterprise Desktop. The cards leave once the session is no longer blank.
+`quickTasks` lists the cards shown in the `conversation.hero.dock` slot under the composer of a blank new session, in order: `multi-publish`, `business-report`, `product-research`, `asset-organize`; a repeated id shows once. Each card's title, description, and prompt come from the `ui-brand-mo` dictionary in the UI language; a click puts the prompt in the draft and does not send it. The default is an empty list; the web-app bundle composes all four for enterprise Desktop. The cards show only while the draft has no text, reference, or attachment, so a click never replaces what the user entered, and they leave once the session is no longer blank. The cards need the locale registry and the settings forms; without them the theme and the sidebar brand still apply.
 
 -----
 

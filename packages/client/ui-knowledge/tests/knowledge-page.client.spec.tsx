@@ -76,11 +76,14 @@ describe('knowledge page', () => {
     const other = screen.getByRole('region', { name: '产品资料' })
     expect(other.textContent).toContain(copy.unavailable)
     expect(other.textContent).toContain(copy.itemsEmpty)
+    fireEvent.click(within(list).getByRole('button', { name: copy.create }))
+    expect(screen.getByRole('dialog', { name: copy.createTitle })).toBeTruthy()
   })
 
   it('shows empty states whose primary action creates a knowledge base', () => {
     mount({ revision: 1, tenantId: 't-a', bases: [] })
     expect(screen.getByText(zh.listEmpty)).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: zh.create })).toHaveLength(1)
     const empty = screen.getByRole('status')
     expect(empty.textContent).toBe(zh.detailEmpty + zh.create)
     fireEvent.click(within(empty).getByRole('button', { name: zh.create }))
@@ -133,7 +136,7 @@ describe('knowledge page', () => {
 
   it('creates a knowledge base with a chosen embedding model, warning about API models', async () => {
     const { props, store } = mount({ revision: 1, tenantId: 't-a', bases: [] })
-    fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: zh.create }))
+    fireEvent.click(within(screen.getByRole('status')).getByRole('button', { name: zh.create }))
     const dialog = screen.getByRole('dialog', { name: zh.createTitle })
     const create = within(dialog).getByRole('button', { name: zh.confirmCreate })
     expect((create as HTMLButtonElement).disabled).toBe(true)
@@ -151,7 +154,7 @@ describe('knowledge page', () => {
     await act(async () => { fireEvent.click(create) })
     expect(screen.queryByRole('dialog')).toBeNull()
     // Reopened, the form starts empty; Cancel closes it.
-    fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: zh.create }))
+    fireEvent.click(within(screen.getByRole('status')).getByRole('button', { name: zh.create }))
     expect(within(screen.getByRole('dialog')).getByRole<HTMLInputElement>('textbox').value).toBe('')
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh.cancel }))
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -159,7 +162,7 @@ describe('knowledge page', () => {
 
   it('offers a downloading local model, and explains when no embedding model exists', () => {
     const { store } = mount({ revision: 1, tenantId: 't-a', bases: [] }, { embedding: embedding('downloading') })
-    fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: zh.create }))
+    fireEvent.click(within(screen.getByRole('status')).getByRole('button', { name: zh.create }))
     expect(within(screen.getByRole('combobox')).getAllByRole('option')[0]!.textContent).toBe('Qwen3-Embedding-0.6B（本地，下载完成后可用）')
     act(() => { store.set({ ...store.getSnapshot(), embedding: { ...embedding('unsupported'), apiModels: [] } }) })
     expect(screen.getByText(zh.noModel)).toBeTruthy()

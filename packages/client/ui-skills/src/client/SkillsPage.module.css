@@ -203,9 +203,14 @@
 
 .toolbar {
   display: flex;
-  flex: 0 1 320px;
   align-items: center;
   gap: 8px;
+  max-width: 480px;
+}
+
+/* The market's search form beside its category tabs, in one row. */
+.marketSearch {
+  flex: 0 1 320px;
   min-width: 200px;
 }
 

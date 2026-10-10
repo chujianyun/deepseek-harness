@@ -86,10 +86,13 @@ export function MarketView(props: SkillsPageProps & { onShowInstalled: () => voi
         <p className={css.intro}>{t('marketIntro')}</p>
       </header>
       <div className={css.marketBar}>
-        {/* Enter submits the search. */}
-        <form className={css.toolbar} role="search" onSubmit={(event) => { event.preventDefault(); void onSearch(query.trim()) }}>
+        {/* Enter submits the search; emptying the field (typing or its clear button) shows every Skill again. */}
+        <form className={`${css.toolbar} ${css.marketSearch}`} role="search" onSubmit={(event) => { event.preventDefault(); void onSearch(query.trim()) }}>
           <Input className={`${css.search}`} type="search" value={query} placeholder={t('searchPlaceholder')} aria-label={t('searchPlaceholder')}
-            onChange={(event) => { setQuery(event.target.value) }} />
+            onChange={(event) => {
+              setQuery(event.target.value)
+              if (event.target.value === '') void onSearch('')
+            }} />
         </form>
         <SegmentedTabs className={css.categoryTabs} items={[tabs[0], ...tabs.slice(1)]} value={selected.value} label={t('categoryTabs')}
           onChange={(value) => { void onCategory(value === ALL ? null : value) }} />

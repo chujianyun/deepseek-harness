@@ -37,20 +37,42 @@ it('occupies both sidebar brand slots and the quick-task dock until unloaded', a
     children: {
       'sidebar.brand.mark': { kind: 'single', scope: 'root' },
       'sidebar.brand.name': { kind: 'single', scope: 'root' },
-      'conversation.composer.dock': { kind: 'list', scope: 'root' },
+      'conversation.hero.dock': { kind: 'list', scope: 'root' },
     },
   } as never, () => null)
   const fiber = await ctx.plugin({ inject, apply })
-  expect(inject).toEqual(['theme', 'slots', 'locale', 'configForms'])
+  expect(inject).toEqual(['theme', 'slots'])
   expect(slots.entries('sidebar.brand.mark')[0]?.component).toBe(MoBrandMark)
   expect(slots.entries('sidebar.brand.name')[0]?.component).toBe(MoWordmark)
-  const [dock] = slots.entries('conversation.composer.dock')
+  const [dock] = slots.entries('conversation.hero.dock')
   expect(dock?.component).toBe(QuickTasks)
   expect(dock?.options).toMatchObject({ id: 'mo-quick-tasks' })
   expect(Object.keys((dock!.inject!() as { hooks: object }).hooks)).toEqual(['brandSettings'])
   await fiber.dispose()
   expect(slots.entries('sidebar.brand.mark')).toEqual([])
   expect(slots.entries('sidebar.brand.name')).toEqual([])
-  expect(slots.entries('conversation.composer.dock')).toEqual([])
+  expect(slots.entries('conversation.hero.dock')).toEqual([])
+  disposeHoles()
+})
+
+it('keeps the theme and the brand row without the settings forms, offering no quick tasks', async () => {
+  const ctx = new Context()
+  const layers: string[] = []
+  ctx.provide('theme', { overrideTokens: (source: string) => { layers.push(source); return () => {} } } as never)
+  await ctx.plugin(SlotRegistry).await()
+  const slots = ctx.get('slots') as SlotRegistry
+  const disposeHoles = slots.register({
+    name: 'root',
+    children: {
+      'sidebar.brand.mark': { kind: 'single', scope: 'root' },
+      'sidebar.brand.name': { kind: 'single', scope: 'root' },
+      'conversation.hero.dock': { kind: 'list', scope: 'root' },
+    },
+  } as never, () => null)
+  const fiber = await ctx.plugin({ inject, apply })
+  expect(layers).toEqual(['@deepseek-ai/dsh-client-ui-brand-mo'])
+  expect(slots.entries('sidebar.brand.name')[0]?.component).toBe(MoWordmark)
+  expect(slots.entries('conversation.hero.dock')).toEqual([])
+  await fiber.dispose()
   disposeHoles()
 })

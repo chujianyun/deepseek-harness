@@ -97,6 +97,7 @@ interface BenchOptions {
   activityEntry?: (owner: InputActivityOwnerProps) => React.ReactNode
   contextPressure?: ContextPressureProjection
   footer?: React.ReactNode
+  heroDock?: React.ReactNode
   attachments?: readonly ComposerAttachment[]
   /** Upload states served for file-kind drafts (absent = every file is ready). */
   fileUploads?: DraftFileUploads
@@ -164,6 +165,7 @@ function bench(over?: BenchOptions) {
     if (key === 'conversation.input.left') return over?.leftItems ?? null
     if (key === 'conversation.input.right') return over?.rightItems ?? null
     if (key === 'conversation.composer.dock') return over?.footer ?? null
+    if (key === 'conversation.hero.dock') return over?.heroDock ?? null
     if (key === 'conversation.input.plan') return over?.planEntry ?? null
     if (key === 'conversation.input.permission') return over?.permissionEntry ?? null
     if (key === 'conversation.input.model') return over?.modelEntry ?? null
@@ -1663,9 +1665,10 @@ describe('strips and variants', () => {
     expect(view.getByTestId('foot')).toBeTruthy()
   })
 
-  it('renders the dock slot under the blank-session hero composer too', () => {
-    const { view } = bench({ variant: 'hero', footer: <i data-testid="foot" /> })
-    expect(view.getByTestId('foot')).toBeTruthy()
+  it('renders the hero dock, not the composer dock, under the blank-session hero', () => {
+    const { view } = bench({ variant: 'hero', footer: <i data-testid="foot" />, heroDock: <i data-testid="hero-dock" /> })
+    expect(view.getByTestId('hero-dock')).toBeTruthy()
+    expect(view.queryByTestId('foot')).toBeNull()
   })
 })
 
