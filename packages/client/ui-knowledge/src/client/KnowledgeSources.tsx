@@ -125,7 +125,7 @@ function FilesPane(props: SourceProps) {
       {noPath && <p className={css.alert} role="alert">{t('noPath')}</p>}
       <DropZone hint={t('dropHint')} onDrop={add}>
         <Button variant="primary" disabled={busy} onClick={() => { input.current?.click() }}>{t('addFiles')}</Button>
-        <input ref={input} className={css.fileInput} type="file" multiple accept=".docx,.pdf,.md,.markdown,.txt" aria-label={t('addFiles')}
+        <input ref={input} className={css.fileInput} type="file" multiple accept=".docx,.pdf,.xlsx,.md,.markdown,.txt" aria-label={t('addFiles')}
           onChange={(event) => { add(event.target.files); event.target.value = '' }} />
       </DropZone>
       {items.length === 0 ? <p className={css.muted}>{t('itemsEmpty')}</p> : (

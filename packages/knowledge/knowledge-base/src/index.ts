@@ -50,6 +50,8 @@ export interface Config {
   dshHome?: string
   /** Largest file accepted, in bytes. */
   maxFileBytes?: number
+  /** Most data rows read from one Excel workbook; later rows are left out and its text says so. */
+  maxWorkbookRows?: number
   /** Chunk size of a new knowledge base, in estimated tokens. */
   chunkSize?: number
   /** Tokens a new knowledge base's chunks carry over from the previous chunk. */
@@ -70,6 +72,7 @@ export interface Config {
 export const Config: Schema<Config> = Schema.object({
   dshHome: Schema.string(),
   maxFileBytes: Schema.natural().min(1).default(100 * 1024 * 1024),
+  maxWorkbookRows: Schema.natural().min(1).default(50_000),
   chunkSize: Schema.natural().min(16).default(1024),
   chunkOverlap: Schema.natural().default(200),
   embedBatch: Schema.natural().min(1).max(256).default(16),
@@ -943,7 +946,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
     const unfetched = item.kind === 'url' ? await this.fetchPage(base, item, signal) : undefined
     let text: string
     try {
-      text = await readDocument(this.copyPath(base, item))
+      text = await readDocument(this.copyPath(base, item), { maxWorkbookRows: this.config.maxWorkbookRows })
     } catch (error) {
       if (unfetched === undefined) fail('unreadable', error)
       else fail(unfetched.reason, unfetched.error)

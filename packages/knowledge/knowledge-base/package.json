@@ -48,6 +48,7 @@
     "@deepseek-ai/dsh-native-command": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
     "@mozilla/readability": "0.6.0",
+    "exceljs": "4.4.0",
     "linkedom": "0.18.13",
     "mammoth": "^1.13.0",
     "pdfjs-dist": "6.3.289",
