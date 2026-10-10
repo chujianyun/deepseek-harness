@@ -1,0 +1,4 @@
+# Enables the MO WorkAI brand theme for the keyless Web e2e (`brand-mo.e2e.ts`). The shipped web-app
+# bundle enables it only for the `desktop` profile with a configured user center.
+- id: ui-brand-mo
+  disabled: false

@@ -446,6 +446,11 @@
       name: '@deepseek-ai/dsh-client-ui-brand-official'
       disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
+    # MO WorkAI brand theme (名流蓝 accent, brand greys) for Desktop signed in to a user center.
+    - id: ui-brand-mo
+      name: '@deepseek-ai/dsh-client-ui-brand-mo'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     - id: ui-attachment
       name: '@deepseek-ai/dsh-client-ui-attachment'
 
