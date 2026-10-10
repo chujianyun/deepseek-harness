@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { MarketSkillCard, MarketSkillDetail } from '@deepseek-ai/dsh-skill-market/types'
-import { Button, fileSizeText, Input, MarkdownText, Modal, SegmentedTabs, Tag, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, fileSizeText, Input, MarkdownText, Modal, SegmentedTabs, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MarketFailure } from './market-source.ts'
 import type { SkillsPageProps } from './SkillsPage.tsx'
@@ -85,13 +85,15 @@ export function MarketView(props: SkillsPageProps & { onShowInstalled: () => voi
         </div>
         <p className={css.intro}>{t('marketIntro')}</p>
       </header>
-      <form className={css.toolbar} role="search" onSubmit={(event) => { event.preventDefault(); void onSearch(query.trim()) }}>
-        <Input className={`${css.search}`} type="search" value={query} placeholder={t('searchPlaceholder')} aria-label={t('searchPlaceholder')}
-          onChange={(event) => { setQuery(event.target.value) }} />
-        <Button size="sm" variant="outline" type="submit">{t('search')}</Button>
-      </form>
-      <SegmentedTabs items={[tabs[0], ...tabs.slice(1)]} value={selected.value} label={t('categoryTabs')}
-        onChange={(value) => { void onCategory(value === ALL ? null : value) }} />
+      <div className={css.marketBar}>
+        {/* Enter submits the search. */}
+        <form className={css.toolbar} role="search" onSubmit={(event) => { event.preventDefault(); void onSearch(query.trim()) }}>
+          <Input className={`${css.search}`} type="search" value={query} placeholder={t('searchPlaceholder')} aria-label={t('searchPlaceholder')}
+            onChange={(event) => { setQuery(event.target.value) }} />
+        </form>
+        <SegmentedTabs className={css.categoryTabs} items={[tabs[0], ...tabs.slice(1)]} value={selected.value} label={t('categoryTabs')}
+          onChange={(value) => { void onCategory(value === ALL ? null : value) }} />
+      </div>
       {failure !== null && (
         <div className={css.failure} role="alert">
           <span>{t('installFailed', { message: failureText(failure, t) })}</span>
@@ -124,6 +126,21 @@ export function MarketView(props: SkillsPageProps & { onShowInstalled: () => voi
   )
 }
 
+/** Number of category tints in SkillsPage.module.css (`.avatar[data-tint='0'..'4']`). */
+const CATEGORY_TINTS = 5
+
+/**
+ * The tint of a category's avatars: a stable index from its id, so one category keeps one colour.
+ * @param categoryId - the Hub category id, or null for an uncategorised Skill.
+ * @returns `'0'`–`'4'`, or `'none'` without a category.
+ */
+export function categoryTint(categoryId: string | null): string {
+  if (categoryId === null) return 'none'
+  let hash = 0
+  for (let index = 0; index < categoryId.length; index += 1) hash = (hash * 31 + categoryId.charCodeAt(index)) % 1_000_003
+  return String(hash % CATEGORY_TINTS)
+}
+
 /**
  * The avatar letter of a Skill: the first character of its shown name, uppercased.
  * @param name - the shown name.
@@ -138,7 +155,7 @@ function MarketCard({ item, props }: { item: MarketSkillCard; props: SkillsPageP
   return (
     <li className={css.card}>
       <div className={css.cardHead}>
-        <span className={css.avatar} aria-hidden="true">{initial(item.displayName)}</span>
+        <span className={css.avatar} data-tint={categoryTint(item.category?.id ?? null)} aria-hidden="true">{initial(item.displayName)}</span>
         <button type="button" className={css.cardLink} onClick={() => { void onOpenDetail(item.id) }}>{item.displayName}</button>
         <InstallControl item={item} props={props} compact />
       </div>
@@ -153,7 +170,9 @@ function MarketCard({ item, props }: { item: MarketSkillCard; props: SkillsPageP
 function InstallControl({ item, props, compact = false }: { item: MarketSkillCard; props: SkillsPageProps; compact?: boolean }) {
   const { t, useMarket, onInstall } = props
   const installing = useMarket(snapshot => snapshot.installing.includes(item.id))
-  if (item.installedVersion !== null && !item.updateAvailable) return <Tag>{t('installedVersion', { version: item.installedVersion })}</Tag>
+  if (item.installedVersion !== null && !item.updateAvailable) {
+    return <span className={css.installed} data-installed="">{t('installedVersion', { version: item.installedVersion })}</span>
+  }
   if (item.updateAvailable) {
     return (
       <Button size="sm" variant={compact ? 'outline' : 'primary'} disabled={installing}
@@ -162,7 +181,7 @@ function InstallControl({ item, props, compact = false }: { item: MarketSkillCar
       </Button>
     )
   }
-  const label = installing ? t('installing') : compact ? '+' : t('installButton')
+  const label = installing ? t('installing') : t('installButton')
   const button = (
     <Button size="sm" variant={compact ? 'outline' : 'primary'} disabled={installing || item.conflict}
       aria-label={item.conflict ? t('conflict') : t('install', { name: item.displayName })} onClick={() => { void onInstall(item.id) }}>
