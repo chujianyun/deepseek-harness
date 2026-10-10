@@ -49,11 +49,11 @@ it('occupies both sidebar brand slots and the quick-task dock until unloaded', a
   expect(dock?.options).toMatchObject({ id: 'mo-quick-tasks' })
   const face = dock!.inject!() as { hooks: object; pickAssistant: QuickTasksInjected['pickAssistant'] }
   expect(Object.keys(face.hooks)).toEqual(['brandSettings'])
-  // Without the assistants UI a card only fills the draft; with it, the card picks by template.
-  face.pickAssistant('ecommerce')
-  const pickTemplate = vi.fn(async () => true)
+  // Without the assistants UI there is nothing to pick; with it, the card picks by template and reports a missing one.
+  expect(await face.pickAssistant('ecommerce')).toBe(true)
+  const pickTemplate = vi.fn(async () => false)
   ctx.provide('assistantPicker', { pickTemplate })
-  face.pickAssistant('ecommerce')
+  expect(await face.pickAssistant('ecommerce')).toBe(false)
   expect(pickTemplate).toHaveBeenCalledWith('ecommerce')
   await fiber.dispose()
   expect(slots.entries('sidebar.brand.mark')).toEqual([])

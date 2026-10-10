@@ -3,6 +3,7 @@
 /** Simplified Chinese dictionary and key source of truth. */
 export const zh = {
   quickTasks: '快捷任务',
+  missingAssistant: '这些快捷任务需要由「电商管家」模板创建的智能体，请先在「智能体」页新建。',
   'multi-publish.title': '多店铺发品',
   'multi-publish.description': '同一款新品一次发到天猫、拼多多、抖店草稿',
   'multi-publish.prompt': '帮我把一款新品发到多个店铺（天猫、拼多多、抖店），先存为草稿。新品素材文件夹是：',
@@ -23,6 +24,7 @@ export type BrandLocaleKey = keyof typeof zh
 /** English dictionary. */
 export const en: Record<BrandLocaleKey, string> = {
   quickTasks: 'Quick tasks',
+  missingAssistant: 'These quick tasks need an assistant created from the E-commerce Manager template. Create one on the Assistants page first.',
   'multi-publish.title': 'Publish to several stores',
   'multi-publish.description': 'Send one new product to Tmall, Pinduoduo, and Douyin drafts at once',
   'multi-publish.prompt': 'Publish one new product to several stores (Tmall, Pinduoduo, Douyin) and save it as drafts. The product asset folder is: ',

@@ -74,6 +74,22 @@ describe('assistants source', () => {
     expect(h.select).not.toHaveBeenCalled()
   })
 
+  it('binds a pick made while an earlier bind runs once that bind settles', async () => {
+    const h = harness({ id: sid('s1'), assistantId: null })
+    let release: () => void = () => {}
+    h.select.mockImplementationOnce((_sessionId, assistantId) => new Promise((resolve) => {
+      release = () => { resolve({ ok: true as const, value: assistantId }) }
+    }))
+    const first = h.source.onPick('a1')
+    await vi.waitFor(() => { expect(h.select).toHaveBeenCalledWith('s1', 'a1') })
+    const second = h.source.onPick('a2')
+    expect(shownAssistant(h.snapshot())).toBe('a2')
+    release()
+    await Promise.all([first, second])
+    expect(h.select).toHaveBeenLastCalledWith('s1', 'a2')
+    expect(h.snapshot()).toMatchObject({ staged: undefined, busy: false, bound: 'a2' })
+  })
+
   it('reports no template before the first state frame', async () => {
     const source = createAssistantsSource({
       select: vi.fn(), startSession: vi.fn(), blankSession: () => undefined, create: vi.fn(), ...unused,

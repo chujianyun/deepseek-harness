@@ -49,8 +49,8 @@ export function apply(ctx: ClientContext): void {
     const brandSettings = scope.configForms.get<BrandSettings>(BRAND_SETTINGS_NAMESPACE)
     const quickTasksFace: QuickTasksInjected = {
       hooks: { brandSettings },
-      // The assistants UI is optional; read it at click time.
-      pickAssistant: (templateId) => { void ctx.get('assistantPicker')?.pickTemplate(templateId) },
+      // The assistants UI is optional and read at click time; without it there is nothing to pick.
+      pickAssistant: templateId => ctx.get('assistantPicker')?.pickTemplate(templateId) ?? Promise.resolve(true),
     }
     scope.slots.inject('conversation.hero.dock', () => scope.slots.register({
       name: 'conversation.hero.dock', id: 'mo-quick-tasks', order: 10, locale: NS, inject: () => quickTasksFace,

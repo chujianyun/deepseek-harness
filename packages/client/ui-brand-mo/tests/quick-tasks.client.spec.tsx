@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { QuickTasks, type QuickTasksProps } from '../src/client/QuickTasks.tsx'
@@ -19,11 +19,12 @@ interface MountOptions {
   occurrences?: number
   attachments?: number
   assistant?: string
+  found?: boolean
 }
 
 function mount(options: MountOptions = {}) {
   const setDraft = vi.fn()
-  const pickAssistant = vi.fn()
+  const pickAssistant = vi.fn(async (_templateId: string) => options.found ?? true)
   const input = {
     draft: options.draft ?? '',
     occurrences: Array.from({ length: options.occurrences ?? 0 }),
@@ -52,27 +53,37 @@ function mount(options: MountOptions = {}) {
   return { setDraft, pickAssistant }
 }
 
-it('offers the configured tasks in order on a blank Session, picks the configured assistant, and fills the draft without sending', () => {
+it('offers the configured tasks in order on a blank Session, picks the configured assistant, and fills the draft without sending', async () => {
   const { setDraft, pickAssistant } = mount({ tasks: ['asset-organize', 'multi-publish'] })
   const cards = screen.getAllByRole('button')
   expect(cards.map(card => card.getAttribute('data-task'))).toEqual(['asset-organize', 'multi-publish'])
   expect(cards[0]!.textContent).toBe(`商${zh['asset-organize.title']}${zh['asset-organize.description']}`)
   fireEvent.click(cards[1]!)
-  expect(setDraft).toHaveBeenCalledWith(zh['multi-publish.prompt'])
   expect(pickAssistant).toHaveBeenCalledWith('ecommerce')
+  // The prompt lands only after the pick resolves.
+  expect(setDraft).not.toHaveBeenCalled()
+  await waitFor(() => { expect(setDraft).toHaveBeenCalledWith(zh['multi-publish.prompt']) })
 })
 
-it('keeps the current assistant when no template is configured', () => {
+it.each([zh, en])('fills nothing and says so when the tenant has no assistant from the template', async (copy) => {
+  const { setDraft, pickAssistant } = mount({ found: false, copy })
+  fireEvent.click(screen.getAllByRole('button')[0]!)
+  expect((await screen.findByRole('alert')).textContent).toBe(copy.missingAssistant)
+  expect(pickAssistant).toHaveBeenCalledOnce()
+  expect(setDraft).not.toHaveBeenCalled()
+})
+
+it('keeps the current assistant when no template is configured', async () => {
   const { setDraft, pickAssistant } = mount({ assistant: '' })
   fireEvent.click(screen.getAllByRole('button')[0]!)
-  expect(setDraft).toHaveBeenCalledOnce()
+  await waitFor(() => { expect(setDraft).toHaveBeenCalledOnce() })
   expect(pickAssistant).not.toHaveBeenCalled()
 })
 
-it('writes the prompt in the active language', () => {
+it('writes the prompt in the active language', async () => {
   const { setDraft } = mount({ copy: en, tasks: ['business-report'] })
   fireEvent.click(screen.getByRole('button', { name: new RegExp(en['business-report.title']) }))
-  expect(setDraft).toHaveBeenCalledWith(en['business-report.prompt'])
+  await waitFor(() => { expect(setDraft).toHaveBeenCalledWith(en['business-report.prompt']) })
 })
 
 it('shows nothing once the Session left the blank state or with no task configured', () => {
