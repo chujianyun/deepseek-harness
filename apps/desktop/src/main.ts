@@ -821,7 +821,8 @@ async function main(): Promise<void> {
           if (!joinedPolicyAuthentication) {
             policyCheck = checkPolicyManually('deferred').catch((error: unknown) => { console.error(error) })
           }
-          state = await updateSchedule.check(true)
+          // A build without an update source can only point at the download page, so it skips the updater check.
+          state = updates.hasUpdateSource ? await updateSchedule.check(true) : updates.state
           // Only an up-to-date result consults the policy's offered release, so only it waits for the policy.
           if (state.phase === 'idle') await policyCheck
         }
@@ -832,10 +833,10 @@ async function main(): Promise<void> {
           controller?.abort()
           const result = await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
             message: formatDesktopMessage(locale.messages.updateAvailable, { version: offered.version }),
-            detail: [offered.detail, formatDesktopMessage(locale.messages.updateManualDetail, { version: app.getVersion() })]
-              .filter(line => line !== undefined).join('\n\n'),
+            detail: [offered.detail,
+              formatDesktopMessage(locale.messages.updateManualDetail, { version: desktopClientMetadata(locale.id).version })].filter(line => line !== undefined).join('\n\n'),
             buttons: [locale.messages.updateOpenDownloadPage, locale.messages.later], defaultId: 0, cancelId: 1 })
-          if (result.response === 0) await shell.openExternal(offered.page)
+          if (result.response === 0) await shell.openExternal(offered.page).catch((error: unknown) => { console.error(error) })
           return
         }
         if (state.phase === 'idle') {
