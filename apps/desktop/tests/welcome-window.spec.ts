@@ -33,6 +33,7 @@ function createWindow() {
     isDestroyed: vi.fn().mockReturnValue(false),
     destroy: vi.fn(),
     show: vi.fn(),
+    maximize: vi.fn(),
     once: vi.fn<(name: string, callback: () => void) => void>(),
   }
 }
@@ -50,11 +51,11 @@ const operations = {
 }
 
 describe('desktop welcome window', () => {
-  it.each(['darwin', 'win32', 'linux'] as const)('keeps the %s preview fixed-size and sandboxed', (platform) => {
+  it.each(['darwin', 'win32', 'linux'] as const)('makes the %s window resizable down to the design size, and sandboxed', (platform) => {
     const options = welcomeWindowOptions(platform, resolveDesktopLocale('zh-CN'))
     expect(options).toMatchObject({
-      width: 600, height: 700, useContentSize: true, center: true, show: false,
-      resizable: false, maximizable: false, fullscreenable: false,
+      width: 600, height: 700, minWidth: 600, minHeight: 700, useContentSize: true, center: true, show: false,
+      resizable: true, maximizable: true, fullscreenable: false,
       webPreferences: {
         nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true,
         additionalArguments: ['--dsh-welcome-locale=zh-CN'],
@@ -82,6 +83,7 @@ describe('desktop welcome window', () => {
     electron.create.mockReturnValue(window)
     const opening = openWelcomeWindow(resolveDesktopLocale('en'), operations)
     expect(window.show).not.toHaveBeenCalled()
+    expect(window.maximize).not.toHaveBeenCalled()
     expect(window.loadFile).toHaveBeenCalledWith(join(electron.root, 'renderer', 'welcome.html'))
     expect(window.webContents.setWindowOpenHandler.mock.calls[0]![0]()).toEqual({ action: 'deny' })
     const event = { preventDefault: vi.fn() }
@@ -89,7 +91,10 @@ describe('desktop welcome window', () => {
     expect(event.preventDefault).toHaveBeenCalledOnce()
     loaded.resolve(undefined)
     expect(await opening).toBe(window)
+    // Opens maximized to the screen's work area, then shows.
+    expect(window.maximize).toHaveBeenCalledOnce()
     expect(window.show).toHaveBeenCalledOnce()
+    expect(window.maximize.mock.invocationCallOrder[0]!).toBeLessThan(window.show.mock.invocationCallOrder[0]!)
   })
 
   it('destroys a window whose document fails to load', async () => {
