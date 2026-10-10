@@ -45,7 +45,7 @@ import { connectDesktopWelcome, type DesktopWelcomeBackend } from './welcome-bac
 import { DesktopUpdateJournal } from './update-journal.ts'
 import { DesktopUpdatePreparationError } from './update-error.ts'
 import { DesktopUpdateSchedule, resolveDesktopUpdateScheduleConfig } from './update-schedule.ts'
-import { desktopUpdateErrorSummary, presentDesktopUpdate } from './update-presentation.ts'
+import { desktopUpdateErrorSummary, presentDesktopStatus, presentDesktopUpdate } from './update-presentation.ts'
 import { desktopErrorState } from './startup-error.ts'
 import { readDesktopLoginShellEnvironment, resolveDesktopLoginShellConfig } from './login-shell-environment.ts'
 import { desktopHubEnvironment, resolveDesktopHubConfig } from './hub-config.ts'
@@ -520,13 +520,16 @@ async function main(): Promise<void> {
     }
     return shown
   }
+  const updatePresentation = () => presentDesktopStatus(presentDesktopUpdate(updates.state), mandatoryPolicy?.state)
+  const broadcastUpdatePresentation = (): void => {
+    const presentation = updatePresentation()
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.send(DESKTOP_IPC.updatesPresentation, presentation)
+  }
   const publishUpdate = (state: DesktopUpdateState): DesktopUpdateState => {
     updateJournal?.state(state)
     updateState = state
     mandatoryUI?.sync()
-    for (const window of BrowserWindow.getAllWindows()) {
-      window.webContents.send(DESKTOP_IPC.updatesPresentation, presentDesktopUpdate(state))
-    }
+    broadcastUpdatePresentation()
     if (state.phase === 'error' && state.failedOperation !== 'check') {
       const restoreHost = state.failedOperation === 'install' && updateStoppedHost && !quitting
       shellInstallerOwnsQuit = false
@@ -761,7 +764,7 @@ async function main(): Promise<void> {
   })
   ipcMain.handle(DESKTOP_IPC.updatesStatus, (event) => {
     assertProductSender(event)
-    return presentDesktopUpdate(updates.state)
+    return updatePresentation()
   })
   ipcMain.handle(DESKTOP_IPC.deviceInfo, (event) => {
     assertProductSender(event)
@@ -806,6 +809,7 @@ async function main(): Promise<void> {
       }
       let controller: AbortController | undefined
       let progress: Promise<unknown> | undefined
+      let policyCheck: Promise<unknown> | undefined
       try {
         let state = updates.state
         if (manual || state.phase === 'idle' || (state.phase === 'error' && state.failedOperation === 'check')) {
@@ -815,12 +819,25 @@ async function main(): Promise<void> {
           progress = parent === undefined ? Promise.resolve() : updateDialog.show(parent, { type: 'info', title: locale.messages.updateCheckTitle,
             message: locale.messages.updateChecking, buttons: [locale.messages.later], cancelId: 0, signal: controller.signal })
           if (!joinedPolicyAuthentication) {
-            void checkPolicyManually('deferred').catch((error: unknown) => { console.error(error) })
+            policyCheck = checkPolicyManually('deferred').catch((error: unknown) => { console.error(error) })
           }
           state = await updateSchedule.check(true)
+          // Only an up-to-date result consults the policy's offered release, so only it waits for the policy.
+          if (state.phase === 'idle') await policyCheck
         }
         if (isMandatory()) { mandatoryUI?.focus(); return }
         if (state.phase === 'error' && state.failedOperation === 'check') { await showUpdateFailure(state); return }
+        const offered = mandatoryPolicy?.state.available
+        if (state.phase === 'idle' && offered !== undefined) {
+          controller?.abort()
+          const result = await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
+            message: formatDesktopMessage(locale.messages.updateAvailable, { version: offered.version }),
+            detail: [offered.detail, formatDesktopMessage(locale.messages.updateManualDetail, { version: app.getVersion() })]
+              .filter(line => line !== undefined).join('\n\n'),
+            buttons: [locale.messages.updateOpenDownloadPage, locale.messages.later], defaultId: 0, cancelId: 1 })
+          if (result.response === 0) await shell.openExternal(offered.page)
+          return
+        }
         if (state.phase === 'idle') {
           await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
             message: locale.messages.updateCurrent,
@@ -1296,6 +1313,7 @@ async function main(): Promise<void> {
     }
     if (!['win32', 'darwin'].includes(process.platform) || !['x64', 'arm64'].includes(process.arch)) throw new Error('desktop policy: unsupported platform')
     let wasBlocking = false
+    let wasOffered: string | undefined
     mandatoryPolicy = new DesktopMandatoryUpdatePolicy(policyConfig, {
       platform: process.platform as 'win32' | 'darwin', arch: process.arch as 'x64' | 'arm64',
       bundledDshVersion: app.isPackaged ? readDesktopRuntime(resources.dsh).release.version : app.getVersion(),
@@ -1306,6 +1324,9 @@ async function main(): Promise<void> {
         if (!wasBlocking) updateDialog.cancel()
       }
       mandatoryUI?.sync()
+      const offered = state.blocking ? undefined : state.available?.version
+      if (offered !== wasOffered) broadcastUpdatePresentation()
+      wasOffered = offered
       if (state.blocking && !wasBlocking) void updateSchedule.check(false, true).catch((error: unknown) => { console.error(error) })
       wasBlocking = state.blocking
     }, policyAuth?.request, () => desktopClientMetadata(locale.id))

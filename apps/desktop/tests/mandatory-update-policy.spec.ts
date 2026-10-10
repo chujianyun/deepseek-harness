@@ -97,6 +97,24 @@ describe('mandatory update policy', () => {
     expect(request).toHaveBeenCalledTimes(3)
   })
 
+  it('carries a newer version the Hub offers without forcing it, and ignores an older, same, malformed, or off-list offer', async () => {
+    const { policy, request } = fixture()
+    const offer = (available: unknown) => Response.json({ ...clear, data: { ...clear.data, available } })
+    request.mockResolvedValueOnce(offer({ version: '1.3.0', desktop_app_link: 'https://downloads.example.com/download', detail: '修复登录' }))
+    expect(await policy.check('launch')).toEqual({ blocking: false, checking: false,
+      available: { version: '1.3.0', page: 'https://downloads.example.com/download', detail: '修复登录' } })
+    for (const available of [
+      { version: '1.2.3', desktop_app_link: 'https://downloads.example.com/download' },
+      { version: '1.1.0', desktop_app_link: 'https://downloads.example.com/download' },
+      { version: 'next', desktop_app_link: 'https://downloads.example.com/download' },
+      { version: '1.3.0', desktop_app_link: 'https://evil.example.com/download' },
+      null,
+    ]) {
+      request.mockResolvedValueOnce(offer(available))
+      expect(await policy.check('manual', true)).toEqual({ blocking: false, checking: false })
+    }
+  })
+
   it('accepts flattened 40005 on an HTTP error and keeps server content as plain text', async () => {
     const { policy, request } = fixture()
     request.mockResolvedValueOnce(Response.json(force, { status: 403 }))

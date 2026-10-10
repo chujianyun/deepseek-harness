@@ -1497,6 +1497,24 @@ describe('desktop main startup', () => {
       message: en.updateDownloadFailed, technicalDetails: 'desktop update: download confirmation is stale' }))
   })
 
+  it('offers a Hub release for manual download when the updater has nothing newer', async () => {
+    harness.embeddedPolicy = { origin: 'https://policy.example.com', allowedPageOrigins: ['https://downloads.example.com'] }
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ code: 0, data: { biz_code: 0, biz_data: null,
+      available: { version: '1.3.0', desktop_app_link: 'https://downloads.example.com/download', detail: 'Faster sign-in' } } })))
+    await readyForUpdate()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(await invoke(DESKTOP_IPC.updatesStatus, 'app')).toEqual({ phase: 'available', version: '1.3.0' })
+    harness.dialog.showMessageBox.mockClear()
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 }).mockResolvedValueOnce({ response: 0 })
+    harness.updateCheck.mockResolvedValueOnce({ phase: 'idle' })
+    await invoke(DESKTOP_IPC.updatesOpen, 'app')
+    expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({
+      message: 'New version available: 1.3.0', buttons: [en.updateOpenDownloadPage, en.later],
+      detail: 'Faster sign-in\n\nCurrent version: 1.0.0. Download the new version from the download page and install it.' }))
+    expect(harness.openExternal).toHaveBeenCalledExactlyOnceWith('https://downloads.example.com/download')
+    expect(harness.updateDownload).not.toHaveBeenCalled()
+  })
+
   it('keeps policy failures silent while an ordinary update proceeds', async () => {
     harness.embeddedPolicy = { origin: 'https://policy.example.com',
       allowedPageOrigins: ['https://downloads.example.com'] }

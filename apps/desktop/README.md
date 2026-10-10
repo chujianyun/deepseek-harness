@@ -452,6 +452,8 @@ A flattened `40005` opens a shell-owned modal and refuses subsequent plugin muta
 
 Failures retain blocking, localized retry guidance, and folded diagnostics inside the modal. The allowed download-page action appears in recovery states, not beside normal download or installation. Requesting the browser immediately exposes a copy alternative even while the OS request is pending; a resolved request does not prove the page opened. Copy failure reveals the complete, read-only address for manual copying. Browser and clipboard outcomes do not overwrite updater errors. Only a fresh valid no-force response clears the block; the top-menu check remains available while blocked.
 
+A no-force response may carry `data.available` (`version`, `desktop_app_link`, optional `detail`) beside `biz_data`. When the version is valid semver above the installed version and the link is on `allowedPageOrigins`, the update indicator shows it as available while the updater is idle and nothing is forced; opening it shows the version with Go to download, which opens the page in the browser, and Later. The offer survives failed checks and disappears with the next no-force response that omits it.
+
 Background mandatory-installation confirmation requests Windows taskbar attention or an informational macOS Dock bounce plus one silent notification per readiness episode. It does not restore or focus the app. Notification clicks only return to current confirmation. Foreground return, installation, policy clearance, and shutdown clear owned reminders. System permissions and focus modes can suppress notifications; installed Windows and macOS notification qualification remains required.
 
 ### Local updater qualification
