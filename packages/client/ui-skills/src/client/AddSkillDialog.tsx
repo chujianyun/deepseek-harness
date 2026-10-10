@@ -10,6 +10,22 @@ import type { MarketFailure } from './market-source.ts'
 import type { SkillsPageProps } from './SkillsPage.tsx'
 import css from './SkillsPage.module.css'
 
+/** The Skill Hub's limit on a display name, in characters (code points). */
+const DISPLAY_NAME_MAX_LENGTH = 40
+
+/**
+ * Why a trimmed display name breaks the Skill Hub's rule (T93), as a `skills` locale key; the
+ * market host checks the same rule before uploading.
+ * @param displayName - the name without surrounding whitespace.
+ * @returns the locale key of the problem, or null.
+ */
+function displayNameProblemKey(displayName: string) {
+  if (displayName === '') return 'displayNameMissing' as const
+  if (Array.from(displayName).length > DISPLAY_NAME_MAX_LENGTH) return 'displayNameTooLong' as const
+  if (/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u.test(displayName)) return 'displayNameInvisible' as const
+  return null
+}
+
 /**
  * The locale key of one reason a folder cannot be uploaded.
  * @param problem - the reason.
@@ -98,6 +114,7 @@ function FormStep({ t, useUpload, onBackToPick, onSubmitUpload, preview }: Skill
   const options = useUpload(snapshot => snapshot.options)
   const busy = useUpload(snapshot => snapshot.busy)
   const [version, setVersion] = useState(preview.suggestedVersion)
+  const [displayName, setDisplayName] = useState('')
   const [visibility, setVisibility] = useState<MarketVisibility>('tenant')
   const [departmentIds, setDepartmentIds] = useState<string[]>([])
   const [employeeIds, setEmployeeIds] = useState<string[]>([])
@@ -105,6 +122,9 @@ function FormStep({ t, useUpload, onBackToPick, onSubmitUpload, preview }: Skill
   useEffect(() => { setVersion(preview.suggestedVersion) }, [preview.suggestedVersion])
   const creating = preview.existing === null
   const invalid = preview.problems.length > 0
+  // A new Skill needs a usable display name; a new version keeps the existing one
+  const nameProblem = creating ? displayNameProblemKey(displayName.trim()) : null
+  const nameLength = Array.from(displayName.trim()).length
   return (
     <>
       <PreviewFacts preview={preview} t={t} />
@@ -118,6 +138,7 @@ function FormStep({ t, useUpload, onBackToPick, onSubmitUpload, preview }: Skill
           void onSubmitUpload({
             version: version.trim(),
             ...creating ? {
+              displayName: displayName.trim(),
               visibility,
               ...visibility === 'departments' ? { departmentIds } : {},
               ...visibility === 'employees' ? { employeeIds } : {},
@@ -126,7 +147,17 @@ function FormStep({ t, useUpload, onBackToPick, onSubmitUpload, preview }: Skill
           })
         }}>
           {preview.existing !== null && (
-            <p className={css.notice}>{t('uploadAsVersion', { version: preview.existing.highestVersion })}</p>
+            <p className={css.notice}>{t('uploadAsVersion', { displayName: preview.existing.displayName, version: preview.existing.highestVersion })}</p>
+          )}
+          {creating && (
+            <label className={css.field}>
+              <span>{t('uploadDisplayName')}</span>
+              <Input value={displayName} aria-label={t('uploadDisplayName')} aria-invalid={displayName !== '' && nameProblem !== null}
+                onChange={(event) => { setDisplayName(event.target.value) }} />
+              {displayName !== '' && nameProblem !== null
+                ? <span className={css.failure} role="alert">{t(nameProblem)}</span>
+                : <span className={css.meta}>{t('uploadDisplayNameHint', { count: String(nameLength) })}</span>}
+            </label>
           )}
           <label className={css.field}>
             <span>{t('uploadVersion')}</span>
@@ -139,7 +170,7 @@ function FormStep({ t, useUpload, onBackToPick, onSubmitUpload, preview }: Skill
           )}
           <div className={css.dialogActions}>
             <Button variant="outline" onClick={onBackToPick}>{t('uploadBack')}</Button>
-            <Button variant="primary" type="submit" disabled={busy || version.trim() === ''}>{busy ? t('uploading') : t('uploadSubmit')}</Button>
+            <Button variant="primary" type="submit" disabled={busy || version.trim() === '' || nameProblem !== null}>{busy ? t('uploading') : t('uploadSubmit')}</Button>
           </div>
         </form>
       )}
@@ -217,7 +248,7 @@ function DoneStep({ t, useUpload, onCloseUpload, onCopyReviewUrl, result }: Skil
   return (
     <>
       <p className={css.done} role="status">
-        {pending ? t('uploadPending', { name: result.name, version: result.version }) : t('uploadPublished', { name: result.name, version: result.version })}
+        {pending ? t('uploadPending', { name: result.displayName, version: result.version }) : t('uploadPublished', { name: result.displayName, version: result.version })}
       </p>
       {pending && result.reviewUrl !== null && (
         <div className={css.toolbar}>

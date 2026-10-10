@@ -1,6 +1,7 @@
 // The assembled Skills market over the real `skillMarket` and `installedSkills` Remotes and a mock
 // Skill Hub: sign in, browse, search, filter by category, open a detail, install, find the Skill
-// under "From the market", and invoke it with `/name` in a new conversation.
+// under "From the market", and invoke it with `/name` in a new conversation. Cards, the detail, and the
+// installed card show the Hub's display name; the slug stays the name the model and `/name` use.
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -32,7 +33,7 @@ function replay(): ReplayOverrideDoc {
 it('browses the market, installs a Skill, lists it from the market, and invokes it with /name', async () => {
   const center = await startMockUserCenter()
   center.skills = [
-    { id: 's-pdf', name: 'pdf-tools', description: 'Read PDF files', category: { id: 'c-doc', name: 'Docs' }, version: '1.0.0', files: { 'scripts/run.sh': 'echo pdf\n' } },
+    { id: 's-pdf', name: 'pdf-tools', displayName: 'PDF 工具', description: 'Read PDF files', category: { id: 'c-doc', name: 'Docs' }, version: '1.0.0', files: { 'scripts/run.sh': 'echo pdf\n' } },
     { id: 's-sql', name: 'sql-helper', description: 'Write SQL', category: { id: 'c-dev', name: 'Dev' }, version: '2.1.0' },
   ]
   const replayDir = await mkdtemp(join(tmpdir(), 'dsh-skills-market-replay-'))
@@ -60,11 +61,11 @@ it('browses the market, installs a Skill, lists it from the market, and invokes 
     // Browse: cards, search, category.
     await page.getByRole('button', { name: 'Skills', exact: true }).click()
     await page.getByRole('heading', { name: 'Skills' }).waitFor()
-    await page.getByRole('button', { name: 'pdf-tools', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'PDF 工具', exact: true }).waitFor()
     expect(await page.getByRole('button', { name: 'A local Skill has the same name' }).isDisabled()).toBe(true)
     await page.getByRole('searchbox', { name: 'Search Skills' }).fill('sql')
     await page.getByRole('button', { name: 'Search', exact: true }).click()
-    await expect.poll(() => page.getByRole('button', { name: 'pdf-tools', exact: true }).count()).toBe(0)
+    await expect.poll(() => page.getByRole('button', { name: 'PDF 工具', exact: true }).count()).toBe(0)
     await page.getByRole('searchbox', { name: 'Search Skills' }).fill('')
     await page.getByRole('button', { name: 'Search', exact: true }).click()
     await page.getByRole('tab', { name: 'Docs' }).click()
@@ -72,23 +73,25 @@ it('browses the market, installs a Skill, lists it from the market, and invokes 
     expect(center.clientRequests.some(path => path.includes('categoryId=c-doc'))).toBe(true)
 
     // Detail and install.
-    await page.getByRole('button', { name: 'pdf-tools', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'pdf-tools' })
+    await page.getByRole('button', { name: 'PDF 工具', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'PDF 工具' })
     await dialog.getByRole('heading', { name: 'pdf-tools' }).waitFor()
     await dialog.getByText('scripts/run.sh').waitFor()
-    await dialog.getByRole('button', { name: 'Install pdf-tools' }).click()
+    await dialog.locator('code', { hasText: 'pdf-tools' }).first().waitFor()
+    await dialog.getByRole('button', { name: 'Install PDF 工具' }).click()
     await dialog.getByText('Installed v1.0.0').waitFor()
     await dialog.getByRole('button', { name: 'Close' }).last().click()
     const installedDir = join(scaffold.harnessHome, 'skills-market', 't-a', 'pdf-tools')
     expect(await readFile(join(installedDir, 'scripts', 'run.sh'), 'utf8')).toBe('echo pdf\n')
-    expect(JSON.parse(await readFile(join(installedDir, '.hub-install.json'), 'utf8'))).toMatchObject({ hubSkillId: 's-pdf', version: '1.0.0' })
+    expect(JSON.parse(await readFile(join(installedDir, '.hub-install.json'), 'utf8'))).toMatchObject({ hubSkillId: 's-pdf', displayName: 'PDF 工具', version: '1.0.0' })
 
     // Installed: the market group, then chat with it.
     await page.getByRole('button', { name: /^Installed \(\d+\)$/ }).click()
     const marketGroup = page.getByRole('region', { name: /From the market/ })
-    await marketGroup.getByText('pdf-tools').waitFor()
-    expect(await marketGroup.getByRole('switch', { name: 'Enable pdf-tools' }).getAttribute('aria-checked')).toBe('true')
-    await marketGroup.getByRole('button', { name: 'More actions for pdf-tools' }).click()
+    await marketGroup.getByText('PDF 工具').waitFor()
+    await marketGroup.getByText('pdf-tools', { exact: true }).waitFor()
+    expect(await marketGroup.getByRole('switch', { name: 'Enable PDF 工具' }).getAttribute('aria-checked')).toBe('true')
+    await marketGroup.getByRole('button', { name: 'More actions for PDF 工具' }).click()
     await page.getByRole('menuitem', { name: 'Chat with it' }).click()
     const input = page.locator('[data-composer-input][contenteditable="true"]').first()
     await expect.poll(async () => (await input.textContent())?.trim()).toBe('/pdf-tools')

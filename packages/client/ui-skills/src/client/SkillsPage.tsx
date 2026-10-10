@@ -11,7 +11,7 @@ import type { InstalledSkillsInjected } from './installed-source.ts'
 import type { MarketInjected } from './market-source.ts'
 import type { UploadInjected } from './upload-source.ts'
 import { AddSkillDialog } from './AddSkillDialog.tsx'
-import { MarketView } from './MarketView.tsx'
+import { initial, MarketView } from './MarketView.tsx'
 import css from './SkillsPage.module.css'
 
 /** Cards shown per "load more" step of an installed group. */
@@ -50,11 +50,14 @@ export function SkillsPage(props: SkillsPageProps) {
  */
 export function OverwriteDialog({ t, useMarket, onConfirmOverwrite, onCancelOverwrite }: SkillsPageProps) {
   const pending = useMarket(snapshot => snapshot.overwrite)
+  // The overwrite comes from the install refusal, which names the slug; show the display name when known
+  const label = useMarket(snapshot => pending === null ? ''
+    : snapshot.items.find(item => item.id === pending.id)?.displayName ?? snapshot.statuses[pending.name]?.displayName ?? pending.name)
   return (
     <Modal
       open={pending !== null}
       title={t('overwriteTitle')}
-      description={t('overwriteDescription', { name: pending?.name ?? '' })}
+      description={t('overwriteDescription', { name: label })}
       closeLabel={t('uninstallClose')}
       onClose={onCancelOverwrite}
       footer={pending !== null && (
@@ -80,6 +83,7 @@ export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
   const skills = useInstalled(snapshot => snapshot.skills)
   const failure = useInstalled(snapshot => snapshot.failure)
   const [uninstalling, setUninstalling] = useState<string>()
+  const uninstallLabel = props.useMarket(snapshot => uninstalling === undefined ? undefined : snapshot.statuses[uninstalling]?.displayName)
 
   useEffect(() => {
     void onRefresh()
@@ -114,6 +118,7 @@ export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
       ))}
       <UninstallDialog
         name={uninstalling}
+        label={uninstallLabel ?? uninstalling}
         t={t}
         onClose={() => { setUninstalling(undefined) }}
         onConfirm={(name) => {
@@ -165,14 +170,18 @@ function SkillCard({ skill, props, onUninstall }: {
   props: SkillsPageProps
   onUninstall: () => void
 }) {
-  const { t, useInstalled, onToggle, onReveal, onEdit, onChat } = props
+  const { t, useInstalled, useMarket, onToggle, onReveal, onEdit, onChat } = props
   const busy = useInstalled(snapshot => snapshot.busy.includes(skill.name))
+  // A market Skill shows the display name its Hub status carries; a user Skill has only its name
+  const marketName = useMarket(snapshot => skill.group === 'market' ? snapshot.statuses[skill.name]?.displayName : undefined)
+  const shown = marketName ?? skill.name
   const [menuOpen, setMenuOpen] = useState(false)
   return (
     <li className={css.card} data-enabled={skill.enabled ? 'true' : 'false'}>
       <div className={css.cardHead}>
-        <span className={css.avatar} aria-hidden="true">{skill.name.slice(0, 1).toUpperCase()}</span>
-        <span className={css.name}>{skill.name}</span>
+        <span className={css.avatar} aria-hidden="true">{initial(shown)}</span>
+        <span className={css.name}>{shown}</span>
+        {shown !== skill.name && <span className={css.meta}>{skill.name}</span>}
         <Menu
           open={menuOpen}
           onClose={() => { setMenuOpen(false) }}
@@ -196,7 +205,7 @@ function SkillCard({ skill, props, onUninstall }: {
             <Button
               size="sm"
               className={css.more}
-              aria-label={t('more', { name: skill.name })}
+              aria-label={t('more', { name: shown })}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               disabled={busy}
@@ -208,7 +217,7 @@ function SkillCard({ skill, props, onUninstall }: {
         />
         <Switch
           checked={skill.enabled}
-          label={t('toggle', { name: skill.name })}
+          label={t('toggle', { name: shown })}
           disabled={busy}
           onChange={(next) => { void onToggle(skill.name, next) }}
         />
@@ -219,8 +228,10 @@ function SkillCard({ skill, props, onUninstall }: {
   )
 }
 
-function UninstallDialog({ name, t, onClose, onConfirm }: {
+function UninstallDialog({ name, label, t, onClose, onConfirm }: {
   name: string | undefined
+  /** The name shown in the title: a market Skill's display name, otherwise its name. */
+  label: string | undefined
   t: TranslateNS<'skills'>
   onClose: () => void
   onConfirm: (name: string) => void
@@ -228,7 +239,7 @@ function UninstallDialog({ name, t, onClose, onConfirm }: {
   return (
     <Modal
       open={name !== undefined}
-      title={t('uninstallTitle', { name: name ?? '' })}
+      title={t('uninstallTitle', { name: label ?? '' })}
       description={t('uninstallDescription')}
       closeLabel={t('uninstallClose')}
       onClose={onClose}
@@ -252,7 +263,7 @@ function MarketStatus({ name, props }: { name: string; props: SkillsPageProps })
   return (
     <div className={css.statusRow}>
       <span className={css.meta}>{t('updateAvailable', { version: String(status.latestVersion) })}</span>
-      <Button size="sm" variant="outline" disabled={installing} aria-label={t('update', { name })}
+      <Button size="sm" variant="outline" disabled={installing} aria-label={t('update', { name: status.displayName })}
         onClick={() => { void onInstall(status.hubSkillId) }}>
         {installing ? t('installing') : t('updateButton')}
       </Button>

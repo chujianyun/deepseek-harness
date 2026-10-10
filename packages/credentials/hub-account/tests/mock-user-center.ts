@@ -19,6 +19,8 @@ export interface MockTenant {
 export interface MockSkill {
   readonly id: string
   readonly name: string
+  /** Display name (T93); left out, the answers omit it as a user center before T93 does. */
+  readonly displayName?: string
   readonly description: string
   readonly category: { readonly id: string; readonly name: string } | null
   readonly version: string
@@ -40,6 +42,8 @@ export interface MockUpload {
 export interface MockOwnedSkill {
   readonly id: string
   readonly name: string
+  /** Display name (T93); left out, the answers omit it. */
+  readonly displayName?: string
   readonly versions: { readonly version: string; readonly status: 'published' | 'pending' }[]
 }
 
@@ -201,7 +205,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     ...skill.files,
   })
   const summary = (skill: MockSkill) => ({
-    id: skill.id, name: skill.name, category: skill.category,
+    id: skill.id, name: skill.name, ...skill.displayName === undefined ? {} : { displayName: skill.displayName }, category: skill.category,
     currentVersion: { id: `${skill.id}-v`, version: skill.version, description: skill.description, uploaderName: '韩梅梅',
       uploadedAt: '2026-10-01T08:00:00.000Z', sizeBytes: 100, fileCount: Object.keys(filesOf(skill)).length, downloadCount: 0 },
   })
@@ -232,7 +236,8 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
       if (mock.owned.some(skill => skill.name === name) || mock.skills.some(skill => skill.name === name)) {
         json(409, { message: `本租户已存在名为「${name}」的 Skill，请到该 Skill 详情页上传新版本` }); return
       }
-      owned = { id: `s-up-${mock.owned.length + 1}`, name, versions: [] }
+      // Like the T93 Hub: a new Skill without a display name takes its slug
+      owned = { id: `s-up-${mock.owned.length + 1}`, name, displayName: typeof fields.displayName === 'string' ? fields.displayName.trim() : name, versions: [] }
       mock.owned.push(owned)
     } else {
       if (owned === undefined) { json(403, { message: '只有所有者或租户管理员可以上传新版本' }); return }
@@ -245,11 +250,11 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     owned.versions.push({ version, status })
     if (status === 'published') {
       const ownedId = owned.id
-      mock.skills = [...mock.skills.filter(skill => skill.id !== ownedId), { id: ownedId, name, description: `${name} uploaded`, category: null, version }]
+      mock.skills = [...mock.skills.filter(skill => skill.id !== ownedId), { id: ownedId, name, ...owned.displayName === undefined ? {} : { displayName: owned.displayName }, description: `${name} uploaded`, category: null, version }]
     }
     const versionId = `${owned.id}-v${owned.versions.length}`
     json(201, {
-      skillId: owned.id, name, version: { id: versionId, version, description: '', uploaderName: '李雷', uploadedAt: '2026-10-04T00:00:00.000Z', sizeBytes: 1, fileCount: entries.length, downloadCount: 0 },
+      skillId: owned.id, name, ...owned.displayName === undefined ? {} : { displayName: owned.displayName }, version: { id: versionId, version, description: '', uploaderName: '李雷', uploadedAt: '2026-10-04T00:00:00.000Z', sizeBytes: 1, fileCount: entries.length, downloadCount: 0 },
       status, reviewPath: status === 'pending' ? `/skills/review/${versionId}` : null,
       reviewUrl: status === 'pending' ? `${mock.origin}/skills/review/${versionId}` : null,
     })
@@ -267,7 +272,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
       json(200, mock.owned.map((skill) => {
         const published = skill.versions.filter(v => v.status === 'published').at(-1)
         const working = skill.versions.find(v => v.status === 'pending')
-        return { id: skill.id, name: skill.name, highestVersion: skill.versions.at(-1)!.version, currentVersion: published?.version ?? null, workingStatus: working === undefined ? null : 'pending' }
+        return { id: skill.id, name: skill.name, ...skill.displayName === undefined ? {} : { displayName: skill.displayName }, highestVersion: skill.versions.at(-1)!.version, currentVersion: published?.version ?? null, workingStatus: working === undefined ? null : 'pending' }
       }))
       return
     }
@@ -284,7 +289,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
       const categoryId = url.searchParams.get('categoryId')
       const page = Number(url.searchParams.get('page') ?? 1)
       const pageSize = Number(url.searchParams.get('pageSize') ?? 20)
-      const matched = mock.skills.filter(skill => (q === '' || skill.name.includes(q) || skill.description.toLowerCase().includes(q))
+      const matched = mock.skills.filter(skill => (q === '' || skill.name.includes(q) || (skill.displayName ?? '').includes(q) || skill.description.toLowerCase().includes(q))
         && (categoryId === null || skill.category?.id === categoryId))
       json(200, { items: matched.slice((page - 1) * pageSize, page * pageSize).map(summary), total: matched.length, page, pageSize })
       return

@@ -9,7 +9,7 @@ import { pageProps } from './page-props.client.ts'
 afterEach(cleanup)
 
 function card(name: string, extra: Partial<MarketSkillCard> = {}): MarketSkillCard {
-  return { id: `id-${name}`, name, description: `${name} description`, category: null, version: '1.0.0', updatedAt: '2026-10-01T08:00:00.000Z', installedVersion: null, updateAvailable: false, conflict: false, ...extra }
+  return { id: `id-${name}`, name, displayName: name, description: `${name} description`, category: null, version: '1.0.0', updatedAt: '2026-10-01T08:00:00.000Z', installedVersion: null, updateAvailable: false, conflict: false, ...extra }
 }
 
 const detail: MarketSkillDetail = {
@@ -37,6 +37,20 @@ describe('Market view', () => {
     expect(screen.getByText('本地已有同名 Skill', { selector: 'span' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '加载更多（剩 2 个）' }))
     expect(props.onLoadMore).toHaveBeenCalledOnce()
+  })
+
+  it('names cards and the detail by display name, initials from it, and shows the slug in the detail', () => {
+    const named = card('tmall-publish', { displayName: '天猫发品' })
+    const { props, marketStore } = pageProps({}, { items: [named], total: 1 })
+    render(<MarketView {...props} onShowInstalled={() => {}} />)
+    expect(screen.getByRole('button', { name: '天猫发品' })).toBeTruthy()
+    expect(screen.queryByText('tmall-publish')).toBeNull()
+    expect(screen.getByText('天', { selector: 'span' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '安装 天猫发品' })).toBeTruthy()
+    act(() => { marketStore.set({ ...marketStore.getSnapshot(), detail: { status: 'ready', id: named.id, value: { ...detail, ...named } } }) })
+    const dialog = screen.getByRole('dialog', { name: '天猫发品' })
+    expect(within(dialog).getByText('tmall-publish')).toBeTruthy()
+    expect(within(dialog).getByText('标识')).toBeTruthy()
   })
 
   it('searches and filters by category', () => {
@@ -88,7 +102,7 @@ describe('Market view', () => {
   it('names a conflicting Skill in its detail, and marks an install in flight', () => {
     const { props } = pageProps({}, {
       items: [card('pdf-tools')], total: 1, installing: ['id-pdf-tools'],
-      detail: { status: 'ready', id: 'id-x', value: { ...detail, id: 'id-x', name: 'x-skill', conflict: true, category: null } },
+      detail: { status: 'ready', id: 'id-x', value: { ...detail, id: 'id-x', name: 'x-skill', displayName: 'x-skill', conflict: true, category: null } },
     })
     render(<MarketView {...props} onShowInstalled={() => {}} />)
     expect(screen.getByRole('button', { name: '安装 pdf-tools' }).textContent).toBe('安装中…')
@@ -154,9 +168,9 @@ describe('Market view', () => {
     const market = (name: string) => ({ name, description: `${name} description`, group: 'market' as const, source: 'market', path: `/m/${name}/SKILL.md`, enabled: true })
     const { props, marketStore } = pageProps({ skills: [market('pdf-tools'), market('old-skill'), market('fresh')] }, {
       statuses: {
-        'pdf-tools': { name: 'pdf-tools', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.1.0', state: 'update' },
-        'old-skill': { name: 'old-skill', hubSkillId: 's-old', installedVersion: '1.0.0', latestVersion: null, state: 'unavailable' },
-        'fresh': { name: 'fresh', hubSkillId: 's-fresh', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' },
+        'pdf-tools': { name: 'pdf-tools', displayName: 'PDF 工具', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.1.0', state: 'update' },
+        'old-skill': { name: 'old-skill', displayName: 'old-skill', hubSkillId: 's-old', installedVersion: '1.0.0', latestVersion: null, state: 'unavailable' },
+        'fresh': { name: 'fresh', displayName: 'fresh', hubSkillId: 's-fresh', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' },
       },
     })
     render(<InstalledView {...props} onBack={() => {}} />)
@@ -164,10 +178,10 @@ describe('Market view', () => {
     expect(screen.getByText('可更新到 v1.1.0')).toBeTruthy()
     expect(screen.getByText('市场已不可用')).toBeTruthy()
     expect(screen.getAllByRole('button', { name: /^更新 / })).toHaveLength(1)
-    fireEvent.click(screen.getByRole('button', { name: '更新 pdf-tools' }))
+    fireEvent.click(screen.getByRole('button', { name: '更新 PDF 工具' }))
     expect(props.onInstall).toHaveBeenCalledWith('s-pdf')
     act(() => { marketStore.set({ ...marketStore.getSnapshot(), installing: ['s-pdf'] }) })
-    expect(screen.getByRole('button', { name: '更新 pdf-tools' }).textContent).toBe('安装中…')
+    expect(screen.getByRole('button', { name: '更新 PDF 工具' }).textContent).toBe('安装中…')
   })
 
   it('asks before overwriting local edits', () => {

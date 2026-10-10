@@ -21,6 +21,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'skill-market/upload-rejected': { readonly status: number }
     /** The local folder cannot be uploaded (no SKILL.md, invalid frontmatter, unreadable). */
     'skill-market/invalid-folder': { readonly problems: readonly MarketFolderProblem[] }
+    /** A new Skill's display name breaks the Skill Hub's rule (see `displayNameProblem`). */
+    'skill-market/invalid-display-name': { readonly name: string; readonly problem: DisplayNameProblem }
   }
 }
 
@@ -46,7 +48,10 @@ export interface MarketSkillQuery {
 export interface MarketSkillCard {
   /** Skill Hub Skill id. */
   readonly id: string
+  /** Kebab-case Skill name (slug): the install directory and the name the model sees. */
   readonly name: string
+  /** Name shown to people; the slug when the Skill Hub has none. */
+  readonly displayName: string
   readonly description: string
   readonly category: MarketCategory | null
   /** Current version on the Skill Hub. */
@@ -102,6 +107,8 @@ export type MarketInstalledState = 'current' | 'update' | 'unavailable' | 'unkno
 /** One installed market Skill of the signed-in tenant and its Skill Hub state. */
 export interface MarketInstalledStatus {
   readonly name: string
+  /** The Hub's current display name, else the one recorded at install, else the slug. */
+  readonly displayName: string
   readonly hubSkillId: string
   readonly installedVersion: string
   /** Current version on the Skill Hub; null unless the Hub answered with the Skill. */
@@ -139,6 +146,8 @@ export interface MarketUploadPreview {
   /** The employee's own Skill of the same name on the Hub: the upload becomes its new version. */
   readonly existing: {
     readonly skillId: string
+    /** The existing Skill's display name (the slug when the Hub has none). */
+    readonly displayName: string
     readonly highestVersion: string
     readonly currentVersion: string | null
     readonly workingStatus: 'draft' | 'pending' | null
@@ -146,6 +155,9 @@ export interface MarketUploadPreview {
   /** `1.0.0` for a new Skill, otherwise the next patch after the highest existing version. */
   readonly suggestedVersion: string
 }
+
+/** Why a display name cannot be used: none given, over 40 characters, or a line break or invisible character. */
+export type DisplayNameProblem = 'missing' | 'too-long' | 'invisible'
 
 /** Who can see an uploaded Skill: the tenant, chosen departments or employees, or only the uploader. */
 export type MarketVisibility = 'tenant' | 'departments' | 'employees' | 'private'
@@ -161,6 +173,8 @@ export interface MarketUploadOptions {
 export interface MarketUploadRequest {
   readonly dir: string
   readonly version: string
+  /** Display name; required for a new Skill, ignored for a new version. Trimmed before sending. */
+  readonly displayName?: string
   readonly visibility?: MarketVisibility
   readonly departmentIds?: readonly string[]
   readonly employeeIds?: readonly string[]
@@ -171,6 +185,7 @@ export interface MarketUploadRequest {
 export interface MarketUploadResult {
   readonly skillId: string
   readonly name: string
+  readonly displayName: string
   readonly version: string
   /** `create` for a new Skill, `version` for a new version of the employee's existing one. */
   readonly mode: 'create' | 'version'
@@ -184,6 +199,8 @@ export interface MarketUploadResult {
 export interface MarketInstallRecord {
   readonly hubSkillId: string
   readonly name: string
+  /** Display name at install; absent in records written before T94. */
+  readonly displayName?: string | undefined
   readonly version: string
   /** ISO timestamp of the install. */
   readonly installedAt: string

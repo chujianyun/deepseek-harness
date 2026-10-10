@@ -11,7 +11,7 @@ function deps() {
     uploadSources: vi.fn<UploadDependencies['uploadSources']>(() => ok([{ name: 'report-writer', description: 'd', dir: '/s/report-writer', source: 'user-dsh' }])),
     inspectFolder: vi.fn<UploadDependencies['inspectFolder']>(dir => ok(preview(dir))),
     uploadOptions: vi.fn<UploadDependencies['uploadOptions']>(() => ok({ categories: [], departments: [], employees: [] })),
-    uploadSkill: vi.fn<UploadDependencies['uploadSkill']>(() => ok({ skillId: 's', name: 'report-writer', version: '1.0.0', mode: 'create', status: 'pending', reviewUrl: 'https://hub/r/1' })),
+    uploadSkill: vi.fn<UploadDependencies['uploadSkill']>(() => ok({ skillId: 's', name: 'report-writer', displayName: '周报助手', version: '1.0.0', mode: 'create', status: 'pending', reviewUrl: 'https://hub/r/1' })),
     pickDirectory: vi.fn<UploadDependencies['pickDirectory']>(async () => '/picked'),
     copy: vi.fn<UploadDependencies['copy']>(async () => true),
     published: vi.fn<UploadDependencies['published']>(),
@@ -39,7 +39,7 @@ describe('upload source', () => {
 
   it('refreshes the market after a published upload, and ignores a copy without a link', async () => {
     const d = deps()
-    d.uploadSkill.mockReturnValueOnce(ok({ skillId: 's', name: 'report-writer', version: '1.0.0', mode: 'create', status: 'published', reviewUrl: null }))
+    d.uploadSkill.mockReturnValueOnce(ok({ skillId: 's', name: 'report-writer', displayName: '周报助手', version: '1.0.0', mode: 'create', status: 'published', reviewUrl: null }))
     const source = createUploadSource(d)
     await source.onSubmitUpload({ version: '1.0.0' })
     expect(d.uploadSkill).not.toHaveBeenCalled()
