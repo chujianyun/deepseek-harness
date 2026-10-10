@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { chromium } from 'playwright'
 import { expect, it } from 'vitest'
 import type {} from '@deepseek-ai/dsh-assistants'
 import type {} from '@deepseek-ai/dsh-automation-tasks'
@@ -12,7 +13,8 @@ import type {} from '@deepseek-ai/dsh-hub-account'
 import type {} from '@deepseek-ai/dsh-session-title'
 import type {} from '@deepseek-ai/dsh-workspace'
 import { browse, startMockUserCenter } from '../../../packages/credentials/hub-account/tests/mock-user-center.ts'
-import { launchWebScaffold } from './scaffold.ts'
+import { launchWebScaffold, watchConsole } from './scaffold.ts'
+import { connectFreshWorkspaceZh, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
 
 const OVERLAYS = ['./hub-account.overlay.yml', './assistants.overlay.yml', './automation-tasks.overlay.yml']
   .map(path => fileURLToPath(new URL(path, import.meta.url)))
@@ -83,6 +85,67 @@ it('creates the task\'s Session with its assistant and permission, schedules it,
     await expect.poll(() => ctx.workspaceRegistry.archivedSessionIds).toEqual(refused)
     expect((await ctx.schedule.catalog()).map(item => item.id)).toEqual([created.record.id])
   } finally {
+    await close()
+  }
+})
+
+it('opens the Add automation task form from New, saves a task with its assistant, and lists it selected', async () => {
+  const { scaffold, close } = await launch()
+  const browser = await chromium.launch()
+  const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
+  try {
+    const ctx = scaffold.ctx
+    await page.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+    const tripwire = watchConsole(page)
+    await page.goto(scaffold.authenticatedUrl)
+    await connectFreshWorkspaceZh(page, scaffold.workspaceCwd, 'automation')
+    const workspace = ctx.workspaceRegistry.list()[0]!
+    const daily = (await ctx.assistants.getState()).assistants[0]!
+
+    // New opens the form in place, not a Session.
+    await page.getByRole('button', { name: '自动化任务', exact: true }).click()
+    await page.getByRole('heading', { level: 1, name: '自动化任务' }).waitFor()
+    const sessionsBefore = (await ctx.sessionController.list({}, new AbortController().signal)).items.length
+    await page.getByRole('button', { name: '新建自动化任务' }).click()
+    const form = page.getByRole('form', { name: '添加自动化任务' })
+    await form.waitFor()
+    await expect.poll(() => form.getByRole('note').textContent()).toContain('请勿关闭电脑')
+    expect((await ctx.sessionController.list({}, new AbortController().signal)).items.length).toBe(sessionsBefore)
+
+    // Saving without a name or prompt explains both and creates nothing.
+    await form.getByRole('button', { name: '保存' }).click()
+    await expect.poll(() => form.getByRole('alert').allTextContents()).toEqual(['请输入名称', '请输入提示词'])
+
+    await form.getByLabel('名称', { exact: true }).fill('每日简报')
+    await form.getByLabel('提示词', { exact: true }).fill('整理昨天的待办并给出今天的建议')
+    await form.getByLabel('智能体').selectOption(daily.id)
+    await form.getByLabel('重复').selectOption('weekdays')
+    await form.getByLabel('时间', { exact: true }).fill('08:30')
+    await form.getByLabel('结束日期').fill('2099-12-31')
+    const shots = process.env['DSH_E2E_SHOT_DIR']
+    if (shots !== undefined && shots !== '') await page.screenshot({ path: join(shots, 'automation-task-form.png') })
+    await form.getByRole('button', { name: '保存' }).click()
+
+    // Back on the list, the new task is selected; its Session carries the name and the assistant.
+    await form.waitFor({ state: 'detached' })
+    const detail = page.getByRole('complementary', { name: '任务详情' })
+    await expect.poll(() => detail.getByRole('textbox', { name: '自动化任务名称' }).inputValue()).toBe('每日简报')
+    const [task] = await ctx.schedule.catalog()
+    expect(task).toMatchObject({
+      title: '每日简报', prompt: '整理昨天的待办并给出今天的建议', kind: 'weekly', time: '08:30:00.000', weekdays: [1, 2, 3, 4, 5],
+      window: { end: '2099-12-31' },
+    })
+    expect(ctx.workspaceRegistry.get(workspace.id)?.sessionIds).toContain(task!.sessionId)
+    const resolved = await ctx.sessionController.resolveAgent(task!.sessionId)
+    if ('error' in resolved) throw resolved.error
+    expect(ctx.sessionTitle.get(resolved.agent.session)?.title).toBe('每日简报')
+    expect(ctx.sessionProjections.stateOf(resolved.agent.session, 'assistant')?.assistantId).toBe(daily.id)
+    expect(tripwire.pageErrors).toEqual([])
+  } catch (error) {
+    await saveFailureShot(page, 'automation-task-form')
+    throw error
+  } finally {
+    await browser.close()
     await close()
   }
 })

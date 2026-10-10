@@ -520,6 +520,11 @@
     - id: ui-schedule
       name: '@deepseek-ai/dsh-client-ui-schedule'
 
+    # Add automation task form in the Automation tasks page, over the automation-tasks row.
+    - id: ui-automation-tasks
+      name: '@deepseek-ai/dsh-client-ui-automation-tasks'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     # Goal surface: GoalBar in the input dock over the goal session projection.
     - id: ui-goal
       name: '@deepseek-ai/dsh-client-ui-goal'

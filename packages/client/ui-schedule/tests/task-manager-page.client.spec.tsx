@@ -10,6 +10,7 @@ import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controlle
 import type { ScheduleCatalogEntry, ScheduleDeleteResult, ScheduleId, ScheduleUpdateResult } from '@deepseek-ai/dsh-schedule/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { TaskManagerPage, type TaskManagerPageProps } from '../src/client/TaskManagerPage.tsx'
+import type { TaskFormOwnerProps } from '../src/client/task-form-slot.ts'
 import { TaskManagerIcon } from '../src/client/TaskManagerIcon.tsx'
 import { createCatalogSource, type CatalogSnapshot } from '../src/client/catalog-source.ts'
 import {
@@ -174,6 +175,8 @@ function mount(
     onDelete: vi.fn<TaskManagerPageProps['onDelete']>(async () => 'deleted'),
     onRetry: vi.fn(async () => {}),
     onNewTask: vi.fn(),
+    taskFormAvailable: vi.fn(() => false),
+    renderSlot: () => null,
     onUpdateTiming: vi.fn<TaskManagerPageProps['onUpdateTiming']>(async ({ expected }) => ({
       ok: true, value: { id: expected.id, updated: false, record: expected },
     })),
@@ -612,6 +615,36 @@ it('updates original Session navigation as metadata arrives and archive state ch
 })
 
 describe('Task manager catalog', () => {
+  it('opens the creation form in place of the list, and selects the task it created once listed', () => {
+    let done: ((created: { sessionId: SessionId; id: ScheduleId } | undefined) => void) | undefined
+    const renderSlot = ((_key: string, owner: TaskFormOwnerProps) => {
+      done = owner.onDone
+      return <form aria-label="Task form" />
+    }) as TaskManagerPageProps['renderSlot']
+    const h = mount({ records: [at] }, en, { taskFormAvailable: () => true, renderSlot })
+    fireEvent.click(screen.getByRole('button', { name: en['new.action'] }))
+    expect(h.props.onNewTask).not.toHaveBeenCalled()
+    expect(screen.getByRole('form', { name: 'Task form' })).toBeDefined()
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+    // Cancelling returns to the list.
+    act(() => { done!(undefined) })
+    expect(screen.queryByRole('form')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en['new.action'] }))
+    // A created task is selected once the catalog lists it.
+    act(() => { done!({ sessionId: daily.sessionId, id: daily.id }) })
+    expect(screen.queryByRole('complementary', { name: en['detail.label'] })).toBeNull()
+    h.update({ records: [at, daily] })
+    expect(screen.getByRole('complementary', { name: en['detail.label'] })).toBeDefined()
+    expect(nameField().value).toBe('Daily weather')
+  })
+
+  it('opens the creation form from the empty state too', () => {
+    const renderSlot: TaskManagerPageProps['renderSlot'] = () => <form aria-label="Task form" />
+    mount({ records: [] }, en, { taskFormAvailable: () => true, renderSlot })
+    fireEvent.click(emptyNewTaskButton())
+    expect(screen.getByRole('form', { name: 'Task form' })).toBeDefined()
+  })
+
   it('starts a new Session instead of offering a page creation form', () => {
     const h = mount({ records: [at] })
     // The heading's compact action and the empty state's named action are the

@@ -169,6 +169,7 @@ flowchart TD
     pkg_client_ui_approval["client-ui-approval"]
     pkg_client_ui_assistants["client-ui-assistants"]
     pkg_client_ui_attachment["client-ui-attachment"]
+    pkg_client_ui_automation_tasks["client-ui-automation-tasks"]
     pkg_client_ui_brand_mo["client-ui-brand-mo"]
     pkg_client_ui_brand_official["client-ui-brand-official"]
     pkg_client_ui_chat["client-ui-chat"]
@@ -1513,6 +1514,7 @@ flowchart TD
 | [`client-ui-approval`](../packages/client/ui-approval) | `client` | — |
 | [`client-ui-assistants`](../packages/client/ui-assistants) | `client` | — |
 | [`client-ui-attachment`](../packages/client/ui-attachment) | `client` | — |
+| [`client-ui-automation-tasks`](../packages/client/ui-automation-tasks) | `client` | — |
 | [`client-ui-brand-mo`](../packages/client/ui-brand-mo) | `client` | — |
 | [`client-ui-brand-official`](../packages/client/ui-brand-official) | `client` | — |
 | [`client-ui-chat`](../packages/client/ui-chat) | `client` | — |

@@ -4753,6 +4753,7 @@ export interface Config {
 | `@deepseek-ai/dsh-client-ui-approval` | — | [`packages/client/ui-approval/src/index.ts`](../packages/client/ui-approval/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-assistants` | — | [`packages/client/ui-assistants/src/index.ts`](../packages/client/ui-assistants/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-attachment` | — | [`packages/client/ui-attachment/src/index.ts`](../packages/client/ui-attachment/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-automation-tasks` | — | [`packages/client/ui-automation-tasks/src/index.ts`](../packages/client/ui-automation-tasks/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-brand-mo` | — | [`packages/client/ui-brand-mo/src/index.ts`](../packages/client/ui-brand-mo/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-brand-official` | — | [`packages/client/ui-brand-official/src/index.ts`](../packages/client/ui-brand-official/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-chat` | — | [`packages/client/ui-chat/src/index.ts`](../packages/client/ui-chat/src/index.ts) |

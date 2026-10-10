@@ -2,3 +2,5 @@
 # the Hub sign-in (`hub-account.overlay.yml`) and assistant (`assistants.overlay.yml`) rows.
 - id: automation-tasks
   disabled: false
+- id: ui-automation-tasks
+  disabled: false
