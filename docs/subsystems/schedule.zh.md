@@ -471,6 +471,28 @@ Session 获取、消息入队或持久化确认失败时，任务继续保存在
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxautomationtasks--automationtasksservice"></a>
+
+### `ctx.automationTasks` — `AutomationTasksService`
+
+Host owner of the `automationTasks` Remote namespace.
+
+```ts cordis-catalog
+/**
+ * Create one automation task: a new Session in the workspace, named after the task, with the
+ * requested assistant, model, permission preset, and connector grant, then the schedule bound to
+ * it. The assistant, connectors, and permission presets are optional services; asking for one a
+ * deployment lacks is `automation-tasks/unavailable`. A step's refusal passes through unchanged,
+ * except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an
+ * unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.
+ * @param request - the task as the form submits it.
+ * @returns the new Session and the stored schedule.
+ */
+@Remote('create') async create(request: AutomationTaskCreateRequest): Promise<AutomationTaskCreateValue>
+```
+
+Source: [`packages/schedule/automation-tasks/src/index.ts`](../../packages/schedule/automation-tasks/src/index.ts)
+
 <a id="ctxschedule--scheduleservice"></a>
 
 ### `ctx.schedule` — `ScheduleService`

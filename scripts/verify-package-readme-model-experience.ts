@@ -226,6 +226,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-settings-embedding': { kind: 'none', reason: 'The section renders embedding model state only.' },
   'packages/knowledge/knowledge-base': { kind: 'none', reason: 'Knowledge bases are managed and searched outside any Session; no model request carries them yet.' },
   'packages/client/ui-knowledge': { kind: 'none', reason: 'The page only renders and edits knowledge bases.' },
+  'packages/schedule/automation-tasks': { kind: 'none', reason: 'Creates a Session and its schedule; the Session and the schedule own everything the model sees.' },
   'packages/connector/connectors': { kind: 'indirect', reason: 'Connected connectors reach the model through the skill catalog and the bash tool.' },
   'packages/client/ui-connectors': { kind: 'none', reason: 'The page only installs and uninstalls connector CLIs.' },
   'packages/ecommerce/ecommerce-accounts': { kind: 'indirect', reason: 'The accounts reach the model through the skill catalog and the dsh-ecommerce command in bash.' },

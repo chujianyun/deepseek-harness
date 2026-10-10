@@ -207,6 +207,12 @@
       name: '@deepseek-ai/dsh-connectors'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
+    # Automation tasks created from the Automation tasks form: a named Session with its assistant,
+    # model, permission, and connector grant, and the schedule bound to it.
+    - id: automation-tasks
+      name: '@deepseek-ai/dsh-automation-tasks'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     # Assistants for Desktop, per tenant of the Hub sign-in: named roles whose core
     # files reach the model in the sessions bound to them.
     - id: assistants

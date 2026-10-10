@@ -1,0 +1,4 @@
+# Enables the automation-task composer for the keyless Web e2e (`automation-task-form.e2e.ts`), beside
+# the Hub sign-in (`hub-account.overlay.yml`) and assistant (`assistants.overlay.yml`) rows.
+- id: automation-tasks
+  disabled: false

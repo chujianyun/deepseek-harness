@@ -674,6 +674,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'automationTasks',
+    summary: 'Host owner of the `automationTasks` Remote namespace.',
+    description: 'Host owner of the `automationTasks` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote(\'create\') async create(request: AutomationTaskCreateRequest): Promise<AutomationTaskCreateValue>',
+        description: 'Create one automation task: a new Session in the workspace, named after the task, with the requested assistant, model, permission preset, and connector grant, then the schedule bound to it. The assistant, connectors, and permission presets are optional services; asking for one a deployment lacks is `automation-tasks/unavailable`. A step\'s refusal passes through unchanged, except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.',
+        parameters: [{ name: 'request', description: 'the task as the form submits it.' }],
+        returns: 'the new Session and the stored schedule.',
+      },
+    ],
+  },
+  {
     key: 'browserUse',
     summary: 'Owns one optional provider registration in the shared browser-use service.',
     description: 'Owns one optional provider registration in the shared browser-use service.',
@@ -5577,6 +5590,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AuthorizationStatus',
     declaration: 'export type AuthorizationStatus = \'authorized\' | \'cancelled\';',
+  },
+  {
+    name: 'AutomationTaskCreateRequest',
+    declaration: 'export interface AutomationTaskCreateRequest {\n    readonly title: string;\n    readonly prompt: string;\n    readonly workspaceId?: WorkspaceId;\n    readonly assistantId?: string;\n    readonly model?: ModelSelection;\n    readonly permission?: string;\n    readonly connectors?: readonly string[];\n    readonly timing: ScheduleTimingChange;\n    readonly window?: ScheduleWindowInput;\n}',
+  },
+  {
+    name: 'AutomationTaskCreateValue',
+    declaration: 'export interface AutomationTaskCreateValue {\n    readonly sessionId: SessionId;\n    readonly record: ScheduleRecord;\n}',
   },
   {
     name: 'BackendRegistry',

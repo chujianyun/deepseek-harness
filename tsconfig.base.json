@@ -375,6 +375,7 @@
       "@deepseek-ai/dsh-attachment": ["./packages/attachment/attachment/src"],
       "@deepseek-ai/dsh-attachment-local": ["./packages/attachment/attachment-local/src"],
       "@deepseek-ai/dsh-authorization": ["./packages/credentials/authorization/src"],
+      "@deepseek-ai/dsh-automation-tasks": ["./packages/schedule/automation-tasks/src"],
       "@deepseek-ai/dsh-base": ["./packages/bundle/base/src"],
       "@deepseek-ai/dsh-bash-local": ["./packages/shell/bash-local/src"],
       "@deepseek-ai/dsh-bash-sandbox": ["./packages/shell/bash-sandbox/src"],

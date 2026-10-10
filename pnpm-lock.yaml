@@ -1250,6 +1250,9 @@ importers:
       '@deepseek-ai/dsh-assistants':
         specifier: workspace:*
         version: link:../../assistant/assistants
+      '@deepseek-ai/dsh-automation-tasks':
+        specifier: workspace:*
+        version: link:../../schedule/automation-tasks
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:*
         version: link:../../client/connection
@@ -2550,6 +2553,9 @@ importers:
       '@deepseek-ai/dsh-assistants':
         specifier: workspace:*
         version: link:../../assistant/assistants
+      '@deepseek-ai/dsh-automation-tasks':
+        specifier: workspace:*
+        version: link:../../schedule/automation-tasks
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:*
         version: link:../../client/connection
@@ -11598,6 +11604,36 @@ importers:
       '@deepseek-ai/dsh-subprocess-local':
         specifier: workspace:*
         version: link:../../subprocess/subprocess-local
+
+  packages/schedule/automation-tasks:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: workspace:*
+        version: link:../../api/session-controller
+      '@deepseek-ai/dsh-assistants':
+        specifier: workspace:*
+        version: link:../../assistant/assistants
+      '@deepseek-ai/dsh-connectors':
+        specifier: workspace:*
+        version: link:../../connector/connectors
+      '@deepseek-ai/dsh-permission-presets':
+        specifier: workspace:*
+        version: link:../../interaction/permission-presets
+      '@deepseek-ai/dsh-schedule':
+        specifier: workspace:*
+        version: link:../schedule
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:*
+        version: link:../../core/session
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:*
+        version: link:../../typert/protocol
+      '@deepseek-ai/dsh-workspace':
+        specifier: workspace:*
+        version: link:../../workspace/workspace
 
   packages/schedule/schedule:
     dependencies:
