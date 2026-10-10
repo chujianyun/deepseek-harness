@@ -59,6 +59,8 @@ describe('accounts source', () => {
     expect(await h.source.onStartSignIn('e1')).toEqual({ kind: 'browser-busy' })
     h.deps.remove.mockReturnValueOnce(refused(new RemoteError('ecommerce-accounts/in-use', 'busy', { accountId: 'e1' })))
     expect(await h.source.onDelete('e1')).toEqual({ kind: 'in-use' })
+    h.deps.remove.mockReturnValueOnce(refused(new RemoteError('ecommerce-accounts/delete-failed', 'locked', { accountId: 'e1', reason: 'EBUSY' })))
+    expect(await h.source.onDelete('e1')).toEqual({ kind: 'delete-failed' })
     h.deps.remove.mockReturnValueOnce(refused(new RemoteError('ecommerce-accounts/not-found', 'gone', { accountId: 'e1' })))
     expect(await h.source.onDelete('e1')).toEqual({ kind: 'other', message: 'gone' })
   })

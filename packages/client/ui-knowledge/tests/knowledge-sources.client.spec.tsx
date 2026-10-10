@@ -124,6 +124,16 @@ describe('knowledge sources', () => {
     expect(props.onReprocess).toHaveBeenCalledWith('b1', 'd2')
   })
 
+  it('words a page the security policy refused apart from an unreachable one, and an address with credentials', () => {
+    const { store } = mount([...ITEMS, item({ id: 'u3', kind: 'url', name: 'http://127.0.0.1:5181/page', source: 'http://127.0.0.1:5181/page', size: 0, status: 'failed', error: 'blocked', chunkCount: 0 })])
+    source('网址')
+    const rows = within(pane()).getAllByRole('row').slice(1)
+    expect(rows[0]!.textContent).toContain(zh['error.unreachable'])
+    expect(rows[2]!.textContent).toContain(zh['error.blocked'])
+    act(() => { store.set({ ...store.getSnapshot(), failure: { reason: 'credentials-in-url' } }) })
+    expect(document.body.textContent).toContain('网址中不能包含账号或密码。')
+  })
+
   it('adds a web page, and shows a page\'s title, address, and kept content after it became unreachable', async () => {
     const { props } = mount()
     source('网址')

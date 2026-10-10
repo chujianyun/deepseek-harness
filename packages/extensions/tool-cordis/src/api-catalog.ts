@@ -1288,10 +1288,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async deleteAccount(accountId: string): Promise<EcommerceAccountsState>',
-        description: 'Delete an account and its browser data, closing its Chrome first.',
+        description: 'Delete an account and its browser data, closing its Chrome first and waiting for its process to end.',
         parameters: [{ name: 'accountId', description: 'the account.' }],
         returns: 'the state without it.',
-        throws: ['RemoteError `hub-account/signed-out` or `ecommerce-accounts/not-found`.'],
+        throws: ['RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`, or `ecommerce-accounts/delete-failed` when the browser data cannot be removed; the account then stays, signed out.'],
       },
     ],
   },
@@ -1870,7 +1870,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Add a web page, fetched on this machine when processed; only that page is read.',
         parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'url', description: 'an http or https address.' }],
         returns: 'the state with the page last.',
-        throws: ['RemoteError `knowledge/not-found` or `knowledge/invalid-url`.'],
+        throws: ['RemoteError `knowledge/not-found`, `knowledge/invalid-url`, or `knowledge/credentials-in-url` for an address carrying a user name or password.'],
       },
       {
         signature: '@Remote createNote(id: string, title: string, content: string): Promise<KnowledgeState>',
@@ -5794,7 +5794,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectorInstallError',
-    declaration: 'export type ConnectorInstallError = \'network\' | \'verification\' | \'storage\' | \'launch\';',
+    declaration: 'export type ConnectorInstallError = \'network\' | \'verification\' | \'storage\' | \'busy\' | \'launch\';',
   },
   {
     name: 'ConnectorLoginError',
@@ -6654,7 +6654,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KnowledgeItemError',
-    declaration: 'export type KnowledgeItemError = \'unreadable\' | \'empty\' | \'embedding\' | \'interrupted\' | \'storage\' | \'folder-missing\' | \'unreachable\';',
+    declaration: 'export type KnowledgeItemError = \'unreadable\' | \'empty\' | \'embedding\' | \'interrupted\' | \'storage\' | \'folder-missing\' | \'unreachable\' | \'blocked\';',
   },
   {
     name: 'KnowledgeItemKind',

@@ -8,7 +8,7 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -123,6 +123,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('pwsh-sandbox real ACL confinement
     expect(existsSync(privateTemp ?? '')).toBe(false)
     expect(result.sandbox).toEqual({ mode: 'workspace-write', denied: false, enforcement: 'partial' })
   }, 60_000)
+
   it('workspace-write: a workspace the user created under the drive root, granting users only Modify, is writable', async () => {
     // Folders under C:\\ inherit Authenticated Users: Modify and give their owner no WRITE_OWNER.
     const driveRoot = mkdtempSync(join(`${process.env.SystemDrive ?? 'C:'}\\`, 'dsh-pwsh-sandbox-root-'))
@@ -139,5 +140,19 @@ describe.skipIf(!isWin32 || !pwshAvailable())('pwsh-sandbox real ACL confinement
     } finally {
       rmSync(driveRoot, { recursive: true, force: true })
     }
+  }, 60_000)
+
+  it('explains a confined command that exits with 0xC0000142, mirroring the code without starting it again', async () => {
+    const policy: SandboxExecutionPolicy = { mode: 'workspace-write', workspaceRoot: writableDir }
+    // `exit -1073741502` ends PowerShell with 0xC0000142, as a process that failed DLL initialization does.
+    const counter = join(writableDir, 'dll-init-starts.txt')
+    const result = await run(executor, executor.resolve({
+      command: `Add-Content -Path '${counter}' -Value start; exit -1073741502`,
+      sandboxPolicy: policy,
+    }))
+    expect(result.exitCode).toBe(0xC0000142)
+    expect(result.stderr.text).toContain('windows-acl-run: the confined process exited with 0xC0000142 (STATUS_DLL_INIT_FAILED): Windows could not initialize it, so the command most likely did not run.')
+    expect(result.sandbox).toEqual({ mode: 'workspace-write', denied: false, enforcement: 'partial' })
+    expect(readFileSync(counter, 'utf8').trim().split(/\r?\n/u)).toEqual(['start'])
   }, 60_000)
 })

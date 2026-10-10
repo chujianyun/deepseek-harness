@@ -16,7 +16,7 @@
 import { randomUUID } from 'node:crypto'
 import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
-import type {} from '@deepseek-ai/dsh-web'
+import type { WebError } from '@deepseek-ai/dsh-web'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { EmbeddingState } from '@deepseek-ai/dsh-embedding'
 import type {} from '@deepseek-ai/dsh-hub-account'
@@ -50,6 +50,8 @@ export interface Config {
   dshHome?: string
   /** Largest file accepted, in bytes. */
   maxFileBytes?: number
+  /** Most data rows read from one Excel workbook; later rows are left out and its text says so. */
+  maxWorkbookRows?: number
   /** Chunk size of a new knowledge base, in estimated tokens. */
   chunkSize?: number
   /** Tokens a new knowledge base's chunks carry over from the previous chunk. */
@@ -70,6 +72,7 @@ export interface Config {
 export const Config: Schema<Config> = Schema.object({
   dshHome: Schema.string(),
   maxFileBytes: Schema.natural().min(1).default(100 * 1024 * 1024),
+  maxWorkbookRows: Schema.natural().min(1).default(50_000),
   chunkSize: Schema.natural().min(16).default(1024),
   chunkOverlap: Schema.natural().default(200),
   embedBatch: Schema.natural().min(1).max(256).default(16),
@@ -437,7 +440,8 @@ export class KnowledgeBaseService extends TypertRemoteService {
    * @param id - knowledge base id.
    * @param url - an http or https address.
    * @returns the state with the page last.
-   * @throws RemoteError `knowledge/not-found` or `knowledge/invalid-url`.
+   * @throws RemoteError `knowledge/not-found`, `knowledge/invalid-url`, or `knowledge/credentials-in-url` for an
+   *   address carrying a user name or password.
    */
   @Remote
   addUrl(id: string, url: string): Promise<KnowledgeState> {
@@ -452,6 +456,10 @@ export class KnowledgeBaseService extends TypertRemoteService {
       }
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
         throw new RemoteError('knowledge/invalid-url', `${url} is not an http or https address`, { url })
+      }
+      // Never fetched by the web service, and not to be kept or shown: the error does not repeat the address.
+      if (parsed.username !== '' || parsed.password !== '') {
+        throw new RemoteError('knowledge/credentials-in-url', 'A web address must not carry a user name or password', {})
       }
       base.store.addItem({
         id: randomUUID(), kind: 'url', name: parsed.href, source: parsed.href, size: 0,
@@ -935,13 +943,13 @@ export class KnowledgeBaseService extends TypertRemoteService {
   ): Promise<void> {
     const itemId = item.id
     // A page that cannot be fetched again is indexed from its last fetched copy, then marked failed.
-    let unreachable: unknown
-    if (item.kind === 'url') unreachable = await this.fetchPage(base, item, signal)
+    const unfetched = item.kind === 'url' ? await this.fetchPage(base, item, signal) : undefined
     let text: string
     try {
-      text = await readDocument(this.copyPath(base, item))
+      text = await readDocument(this.copyPath(base, item), { maxWorkbookRows: this.config.maxWorkbookRows })
     } catch (error) {
-      fail(unreachable === undefined ? 'unreadable' : 'unreachable', unreachable ?? error)
+      if (unfetched === undefined) fail('unreadable', error)
+      else fail(unfetched.reason, unfetched.error)
       return
     }
     // A note's title is part of what it says.
@@ -968,14 +976,17 @@ export class KnowledgeBaseService extends TypertRemoteService {
       return
     }
     base.store.complete(itemId, embedded)
-    if (unreachable !== undefined) fail('unreachable', unreachable)
+    if (unfetched !== undefined) fail(unfetched.reason, unfetched.error)
   }
 
   /**
    * Fetch a page into its copy, renaming the item to the page title.
-   * @returns why it could not be fetched; undefined when it was.
+   * @returns why it could not be fetched, `blocked` when the web service refused its address by policy;
+   *   undefined when it was fetched.
    */
-  private async fetchPage(base: OpenBase, item: ItemRow, signal: AbortSignal): Promise<unknown> {
+  private async fetchPage(
+    base: OpenBase, item: ItemRow, signal: AbortSignal,
+  ): Promise<{ reason: 'blocked' | 'unreachable'; error: unknown } | undefined> {
     // A page item always records its address.
     const url = item.source as string
     try {
@@ -988,7 +999,9 @@ export class KnowledgeBaseService extends TypertRemoteService {
       base.store.updateItem(item.id, { name: title === '' ? url : title, size: Buffer.byteLength(markdown) })
       return undefined
     } catch (error) {
-      return error
+      // Matched by name and code, not instanceof: the web service and its providers may load another copy of dsh-web.
+      const blocked = error instanceof Error && error.name === 'WebError' && (error as WebError).code === 'WEB_BLOCKED_URL'
+      return { reason: blocked ? 'blocked' : 'unreachable', error }
     }
   }
 }

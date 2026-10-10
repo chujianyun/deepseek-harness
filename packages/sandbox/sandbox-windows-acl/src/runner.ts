@@ -40,7 +40,10 @@
  * Failure contract: every runner-side failure (bad args, missing
  * directories, token/grant/spawn errors) prints `windows-acl-run: <detail>`
  * to stderr and exits 127 — the seam's RUNNER_FAILURE_RULES matches that
- * signature. The child is NEVER spawned unrestricted.
+ * signature. The child is NEVER spawned unrestricted. A child that exits with
+ * STATUS_DLL_INIT_FAILED (0xC0000142) gets one more `windows-acl-run:` line that
+ * explains it, beside its mirrored exit code; that is a command result, not a
+ * runner failure, and the command is not started again, since only the code is known.
  * @module @deepseek-ai/dsh-sandbox-windows-acl/runner
  */
 
@@ -54,6 +57,8 @@ import { tempWriteSid, workspaceWriteSid } from './workspace-sid.ts'
 
 const RUNNER_SIGNATURE = 'windows-acl-run'
 const RUNNER_FAILURE_EXIT = 127
+/** STATUS_DLL_INIT_FAILED: Windows could not initialize the child's DLLs, which usually means none of its command ran. */
+const STATUS_DLL_INIT_FAILED = 0xC0000142
 
 class RunnerFailure extends Error {}
 
@@ -187,6 +192,11 @@ async function main(): Promise<number> {
     })
     if (process.env[SUBPROCESS_CONTROL_ENV] === 'pipe') closeSync(SUBPROCESS_CONTROL_FD)
     const result = await child.wait()
+    if (result.exitCode === STATUS_DLL_INIT_FAILED) {
+      process.stderr.write(`${RUNNER_SIGNATURE}: the confined process exited with 0xC0000142 (STATUS_DLL_INIT_FAILED): `
+        + 'Windows could not initialize it, so the command most likely did not run. This usually passes once system '
+        + 'resources free up: run the command again if that is safe, or ask the user to restart DSH if it keeps failing.\n')
+    }
     return result.exitCode
   } finally {
     // Cleanup failures must not mask the child's exit code: report and keep going.

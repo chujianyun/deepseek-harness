@@ -10,6 +10,8 @@ vi.mock('@deepseek-ai/dsh-native-command', () => ({
   openNativeAssociatedPath: (path: string) => { opened.paths.push(path); return Promise.resolve() },
 }))
 import { Context } from '@deepseek-ai/cordis'
+import ExcelJS from 'exceljs'
+import { WebError } from '@deepseek-ai/dsh-web'
 import type { EmbeddingState } from '@deepseek-ai/dsh-embedding'
 import { RemoteError, remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import KnowledgeBaseService, { type Config, type KnowledgeState } from '../src/index.ts'
@@ -182,6 +184,29 @@ describe('knowledge bases', () => {
       dimensions: 64,
       settings: { chunkStrategy: 'structured', chunkSeparator: '\\n\\n', chunkSize: 1024, chunkOverlap: 200, documentCount: 6, threshold: 0 },
     })
+  })
+
+  it('indexes a workbook\'s rows so recall finds a row with its sheet and row number, and fails an empty one as empty', async () => {
+    const { service, until } = await boot()
+    const { id } = (await service.createBase('商品库', LOCAL)).bases[0]!
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-knowledge-xlsx-'))
+    const book = new ExcelJS.Workbook()
+    const sheet = book.addWorksheet('规格')
+    sheet.addRow(['型号', '容量', '单价'])
+    sheet.addRow(['名流 500mg', '12 只', 39.9])
+    sheet.addRow(['名流 超薄', '10 只', 29.9])
+    await book.xlsx.writeFile(join(dir, '商品 规格.xlsx'))
+    const empty = new ExcelJS.Workbook()
+    empty.addWorksheet('Sheet1')
+    await empty.xlsx.writeFile(join(dir, '空表.xlsx'))
+    await service.addFiles(id, [join(dir, '商品 规格.xlsx'), join(dir, '空表.xlsx')])
+    const state = await until(next => next.bases[0]!.items.length === 2 && settled(next))
+    expect(state.bases[0]!.items.map(item => [item.name, item.status, item.error])).toEqual([
+      ['商品 规格.xlsx', 'completed', null], ['空表.xlsx', 'failed', 'empty'],
+    ])
+    const { hits } = await service.recall(id, '名流 500mg 单价')
+    expect(hits[0]).toMatchObject({ itemName: '商品 规格.xlsx' })
+    expect(hits[0]!.text).toContain('规格 第 2 行: 型号=名流 500mg; 容量=12 只; 单价=39.9')
   })
 
   it('validates settings, and the recall test follows the retrieval settings', async () => {
@@ -727,6 +752,23 @@ describe('knowledge bases', () => {
     for (const bad of ['ftp://example.com/x', 'not a url']) {
       expect(remoteErrorOf(await service.addUrl(id, bad).catch((error: unknown) => error))).toMatchObject({ code: 'knowledge/invalid-url' })
     }
+    // An address with credentials is refused before it is kept, and the error does not repeat it.
+    for (const secret of ['https://admin:pw@intra.example.com/wiki', 'https://:pw@intra.example.com/']) {
+      const refused = remoteErrorOf(await service.addUrl(id, secret).catch((error: unknown) => error))
+      expect(refused).toMatchObject({ code: 'knowledge/credentials-in-url' })
+      expect(JSON.stringify(refused)).not.toContain('pw')
+    }
+    expect((await service.getState()).bases[0]!.items).toHaveLength(3)
+  })
+
+  it('fails a page the web service blocks, such as an intranet address, as blocked rather than unreachable', async () => {
+    const { service, until, web } = await boot()
+    const { id } = (await service.createBase('网页库', LOCAL)).bases[0]!
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const url = 'http://127.0.0.1:5181/page.html'
+    web.pages.set(url, new WebError('URL hostname "127.0.0.1" resolves to a non-public IP address', 'WEB_BLOCKED_URL'))
+    await service.addUrl(id, url)
+    expect((await until(next => settled(next) && next.bases[0]!.items.length === 1)).bases[0]!.items[0]).toMatchObject({ status: 'failed', error: 'blocked' })
   })
 
   it('fails a page as unreachable when this Host cannot fetch the web', async () => {

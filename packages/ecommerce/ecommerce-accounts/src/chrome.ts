@@ -204,11 +204,16 @@ export async function launchChrome(options: LaunchOptions): Promise<ChromeProces
   return record
 }
 
+/** How long each signal waits for Chrome's process to end. */
+const SIGNAL_WAIT_MS = 2000
+
 /**
- * Close an account's Chrome through `Browser.close`, so it writes its cookies, and wait until it
- * stops answering; signal the process only when that fails.
+ * Close an account's Chrome through `Browser.close`, so it writes its cookies, and wait until its
+ * process has ended; signal it (`SIGTERM`, then `SIGKILL`) only when that fails. Only a Chrome that
+ * answers on its recorded port is known to own the recorded pid, so a Chrome that no longer answers
+ * is not waited for: an old record's pid may belong to another process by now.
  * @param dir - the account's browser directory.
- * @param timeoutMs - how long to wait for each step.
+ * @param timeoutMs - how long to wait for Chrome to close itself.
  */
 export async function closeChrome(dir: string, timeoutMs: number): Promise<void> {
   const record = await readRecord(dir)
@@ -221,17 +226,38 @@ export async function closeChrome(dir: string, timeoutMs: number): Promise<void>
     } catch {
       // The connection failed; the signals below still stop Chrome.
     }
-    const deadline = Date.now() + timeoutMs
-    while (await alive(record.port) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 200))
-    for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
-      if (!await alive(record.port)) break
-      try {
-        process.kill(record.pid, signal)
-      } catch {
-        // The process is already gone.
+    // Chrome stops answering before its process ends and lets go of its files, which on Windows
+    // keeps the browser data from being deleted, so each step waits for the process, not the port.
+    if (!await exited(record.pid, timeoutMs)) {
+      for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
+        await signalChrome(record.pid, signal)
+        if (await exited(record.pid, SIGNAL_WAIT_MS)) break
       }
-      await new Promise(resolve => setTimeout(resolve, 1000))
     }
   }
   await rm(join(dir, RECORD), { force: true })
+}
+
+/** Signal Chrome; on Windows `SIGKILL` ends the whole process tree, since its child processes keep the profile's files open. */
+async function signalChrome(pid: number, signal: 'SIGTERM' | 'SIGKILL'): Promise<void> {
+  try {
+    if (signal === 'SIGKILL' && process.platform === 'win32') await run('taskkill', ['/PID', String(pid), '/T', '/F'])
+    else process.kill(pid, signal)
+  } catch {
+    // The process is already gone.
+  }
+}
+
+/** Wait until the process is gone; resolves to whether it went within the time. */
+async function exited(pid: number, timeoutMs: number): Promise<boolean> {
+  for (const deadline = Date.now() + timeoutMs; ;) {
+    try {
+      process.kill(pid, 0)
+    } catch (error) {
+      // EPERM: the process exists but may not be signalled; only ESRCH means it is gone.
+      if ((error as NodeJS.ErrnoException).code !== 'EPERM') return true
+    }
+    if (Date.now() >= deadline) return false
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
 }

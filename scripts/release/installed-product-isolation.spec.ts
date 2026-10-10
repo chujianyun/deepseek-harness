@@ -92,6 +92,15 @@ describe('installed default-product isolation', () => {
     expect(() => verifyInstalledProductIsolation(entry)).toThrow(experimental)
   })
 
+  it('follows installed packages that share a Node builtin module name', () => {
+    const root = fixture()
+    const entry = writePackage(root, '@deepseek-ai/dsh', { dependencies: { 'readable-stream': '2.3.8' } })
+    writePackage(root, 'readable-stream', { dependencies: { string_decoder: '1.1.1' } })
+    writePackage(root, 'string_decoder', { dependencies: { [experimental]: '1.0.0' } })
+
+    expect(() => verifyInstalledProductIsolation(entry)).toThrow(`string_decoder -> ${experimental}`)
+  })
+
   it('permits missing optional packages and optional peers but rejects missing dependencies', () => {
     const root = fixture()
     const entry = writePackage(root, '@deepseek-ai/dsh', {

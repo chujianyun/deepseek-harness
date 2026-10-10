@@ -6,11 +6,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { chunkText, estimateTokens, unescapeSeparator } from '../src/chunk.ts'
 import { MAX_LISTED_SKIPPED, scanFolder } from '../src/folder.ts'
 import { pageToMarkdown } from '../src/page.ts'
+import ExcelJS from 'exceljs'
 import { isSupported, readDocument } from '../src/readers.ts'
 import { BaseStore } from '../src/store.ts'
 import { matchExpression, terms } from '../src/terms.ts'
 
 const FIXTURES = join(import.meta.dirname, 'fixtures')
+const LIMITS = { maxWorkbookRows: 1000 }
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup() })
 async function temp(): Promise<string> {
@@ -92,21 +94,110 @@ describe('chunking', () => {
 
 describe('readers', () => {
   it('reads Word, PDF, Markdown, and text, normalizing compatibility characters', async () => {
-    expect(await readDocument(join(FIXTURES, 'annual-leave.docx'))).toContain('每年享有 5 天带薪年假')
-    const pdf = await readDocument(join(FIXTURES, 'expense-policy.pdf'))
+    expect(await readDocument(join(FIXTURES, 'annual-leave.docx'), LIMITS)).toContain('每年享有 5 天带薪年假')
+    const pdf = await readDocument(join(FIXTURES, 'expense-policy.pdf'), LIMITS)
     expect(pdf).toContain('十五个工作日内报销')
     expect(pdf).toContain('approval from the department')
-    expect(await readDocument(join(FIXTURES, 'product-manual.md'))).toContain('## 常见问题')
+    expect(await readDocument(join(FIXTURES, 'product-manual.md'), LIMITS)).toContain('## 常见问题')
     const dir = await temp()
     await writeFile(join(dir, 'bom.txt'), '﻿会议纪要')
-    expect(await readDocument(join(dir, 'bom.txt'))).toBe('会议纪要')
+    expect(await readDocument(join(dir, 'bom.txt'), LIMITS)).toBe('会议纪要')
     await writeFile(join(dir, 'broken.pdf'), 'not a pdf')
-    await expect(readDocument(join(dir, 'broken.pdf'))).rejects.toThrow()
+    await expect(readDocument(join(dir, 'broken.pdf'), LIMITS)).rejects.toThrow()
+  })
+
+  it('reads a workbook row by row, each row with its sheet, row number, and column headers', async () => {
+    const dir = await temp()
+    const path = join(dir, '商品 规格.xlsx')
+    const book = new ExcelJS.Workbook()
+    const spec = book.addWorksheet('规格')
+    spec.addRow(['型号', '容量', '单价'])
+    spec.addRow(['名流 500mg', '12 只', 39.9])
+    spec.addRow(['名流 超薄', { formula: 'B2', result: '12 只' }, { formula: 'C2*2', result: 79.8 }])
+    spec.mergeCells('A5:B5')
+    spec.getCell('A5').value = '合并单元格的说明'
+    spec.getCell('C6').value = new Date(Date.UTC(2026, 9, 1))
+    spec.getCell('D6').value = { richText: [{ text: '无表头' }, { text: '的列' }] }
+    book.addWorksheet('空表')
+    book.addWorksheet('只有表头').addRow(['日期', '渠道'])
+    await book.xlsx.writeFile(path)
+    expect(await readDocument(path, LIMITS)).toBe([
+      '# 工作表: 规格',
+      '规格 第 2 行: 型号=名流 500mg; 容量=12 只; 单价=39.9',
+      '规格 第 3 行: 型号=名流 超薄; 容量=12 只; 单价=79.8',
+      '规格 第 5 行: 型号=合并单元格的说明',
+      '规格 第 6 行: 单价=2026-10-01; D=无表头的列',
+      '',
+      '# 工作表: 只有表头',
+      '列: 日期、渠道',
+    ].join('\n'))
+    // A workbook without any cell reads as no text; a file that is no workbook does not read.
+    const empty = new ExcelJS.Workbook()
+    empty.addWorksheet('Sheet1')
+    await empty.xlsx.writeFile(join(dir, 'empty.xlsx'))
+    expect(await readDocument(join(dir, 'empty.xlsx'), LIMITS)).toBe('')
+    await writeFile(join(dir, 'broken.xlsx'), 'not a workbook')
+    await expect(readDocument(join(dir, 'broken.xlsx'), LIMITS)).rejects.toThrow()
+  })
+
+  it('reads what a workbook shows: titles above the header, merged ranges, formulas without values, formats, and hidden parts', async () => {
+    const dir = await temp()
+    const path = join(dir, 'report.xlsx')
+    const book = new ExcelJS.Workbook()
+    const sales = book.addWorksheet('销售')
+    sales.mergeCells('A1:D1')
+    sales.getCell('A1').value = '2026年10月销售报表'
+    sales.addRow(['品类', '型号', '单价', '占比'])
+    sales.addRow(['避孕套', '超薄', 29.9, 0.15])
+    sales.addRow([null, '延时', { formula: 'C3*2' }, 0.1 * 3])
+    sales.mergeCells('A3:A4')
+    sales.getCell('D3').numFmt = '0%'
+    sales.getCell('D4').numFmt = '0%'
+    sales.addRow(['编号', '00123', 'x', 'y']).getCell(2).value = 123
+    sales.getRow(5).getCell(2).numFmt = '00000'
+    const hiddenRow = sales.addRow(['内部', '成本价', 9.9, 0])
+    hiddenRow.hidden = true
+    sales.getColumn(5).hidden = true
+    sales.getCell('E3').value = '内部备注'
+    sales.getCell('B7').value = new Date(Date.UTC(1899, 11, 30, 9, 30))
+    sales.getCell('A7').value = '营业时间'
+    const cost = book.addWorksheet('成本')
+    cost.state = 'hidden'
+    cost.addRow(['型号', '成本']).commit()
+    cost.addRow(['超薄', 5])
+    await book.xlsx.writeFile(path)
+    expect(await readDocument(path, LIMITS)).toBe([
+      '# 工作表: 销售',
+      '说明: 2026年10月销售报表',
+      '销售 第 3 行: 品类=避孕套; 型号=超薄; 单价=29.9; 占比=15%',
+      '销售 第 4 行: 品类=避孕套; 型号=延时; 单价==C3*2; 占比=30%',
+      '销售 第 5 行: 品类=编号; 型号=00123; 单价=x; 占比=y',
+      '销售 第 7 行: 品类=营业时间; 型号=09:30',
+    ].join('\n'))
+  })
+
+  it('reads at most the configured data rows of a workbook, and says the rest were left out', async () => {
+    const dir = await temp()
+    const path = join(dir, 'big.xlsx')
+    const book = new ExcelJS.Workbook()
+    const first = book.addWorksheet('一')
+    first.addRow(['编号', '名称'])
+    for (let index = 1; index <= 3; index++) first.addRow([index, `商品${String(index)}`])
+    book.addWorksheet('二').addRow(['编号', '名称'])
+    book.getWorksheet('二')!.addRow([9, '不会读到'])
+    await book.xlsx.writeFile(path)
+    expect(await readDocument(path, { maxWorkbookRows: 2 })).toBe([
+      '# 工作表: 一',
+      '一 第 2 行: 编号=1; 名称=商品1',
+      '一 第 3 行: 编号=2; 名称=商品2',
+      '',
+      '(只读取了前 2 行数据, 其余行没有读取)',
+    ].join('\n'))
   })
 
   it('accepts only the supported extensions, case-insensitively', () => {
-    expect(['a.DOCX', 'b.pdf', 'c.md', 'd.markdown', 'e.txt'].every(isSupported)).toBe(true)
-    expect(['f.doc', 'g.png', 'h'].some(isSupported)).toBe(false)
+    expect(['a.DOCX', 'b.pdf', 'c.md', 'd.markdown', 'e.txt', 'f.XLSX'].every(isSupported)).toBe(true)
+    expect(['f.doc', 'g.png', 'h', 'i.xls'].some(isSupported)).toBe(false)
   })
 })
 

@@ -64,7 +64,8 @@ function rejectExperimental(name: string, chain: readonly string[]): void {
 /** Resolve a dependency directory through the installed package's ancestor node_modules. */
 function installedPackage(from: string, name: string): string | undefined {
   const resolver = createRequire(join(from, 'package.json'))
-  for (const directory of resolver.resolve.paths(name) ?? []) {
+  // A bare builtin name such as `string_decoder` yields null search paths; a subpath request does not.
+  for (const directory of resolver.resolve.paths(`${name}/package.json`) ?? []) {
     const candidate = join(directory, name)
     if (existsSync(join(candidate, 'package.json'))) return candidate
   }
