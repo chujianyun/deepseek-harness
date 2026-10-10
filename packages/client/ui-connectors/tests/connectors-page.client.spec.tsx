@@ -70,7 +70,7 @@ describe('connectors page', () => {
     expect(within(card('飞书')).getByText('正在下载 0%')).toBeTruthy()
   })
 
-  it.each(['network', 'verification', 'storage', 'launch'] as const)('explains a failed install (%s) and offers + again', (error) => {
+  it.each(['network', 'verification', 'storage', 'busy', 'launch'] as const)('explains a failed install (%s) and offers + again', (error) => {
     mount({ connectors: [feishu({ error })] })
     expect(within(card('飞书')).getByRole('alert').textContent).toBe(zh[`error.${error}`].replace('{cli}', 'lark-cli'))
     expect(within(card('飞书')).getByRole('button', { name: '安装飞书' })).toBeTruthy()
