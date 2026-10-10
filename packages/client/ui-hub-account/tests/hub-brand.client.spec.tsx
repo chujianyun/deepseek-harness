@@ -36,7 +36,7 @@ it('shows the tenant logo without the build version, and nothing beside it in th
 })
 
 it('shows the company name without a logo, and its first character on the rail', () => {
-  const name = render(<HubBrandName {...standard} {...hooks('甲公司', null)} t={makeTranslate(zh)} version="1.0.0-735e8dd" />)
+  const name = render(<HubBrandName {...standard} {...hooks('甲公司', null)} t={makeTranslate(zh)} version="1.0.0-local" />)
   expect(name.container.textContent).toBe('甲公司')
   const rail = render(<HubBrandMark {...standard} {...hooks('甲公司', null)} size={24} placement="rail" />)
   expect(rail.container.textContent).toBe('甲')

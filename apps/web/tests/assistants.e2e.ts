@@ -150,7 +150,7 @@ it('creates the default assistant, carries its core files into the chat, and let
   try {
     const { defaultId } = await scaffold.ctx.assistants.getState()
     expect(defaultId).not.toBe(SHOP_ID)
-    expect(JSON.parse(await readFile(join(tenantDir, 'tenant.json'), 'utf8'))).toEqual({ version: 1, defaultId, seeded: true })
+    expect(JSON.parse(await readFile(join(tenantDir, 'tenant.json'), 'utf8'))).toEqual({ version: 1, defaultId, seeded: true, seededTemplates: ['daily'] })
 
     // The sidebar entry opens the cards: the Daily Assistant is the default, and search narrows the list.
     await page.getByRole('button', { name: '智能体', exact: true }).click()

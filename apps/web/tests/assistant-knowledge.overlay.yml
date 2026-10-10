@@ -3,5 +3,8 @@
 # into the home profile patch.
 - id: assistants
   disabled: false
+  # These flows start from the single Daily Assistant; seeding the E-commerce Manager is covered by the package spec.
+  config:
+    seedTemplates: [daily]
 - id: ui-assistants
   disabled: false

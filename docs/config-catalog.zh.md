@@ -353,7 +353,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-assistants`
 
 - `inject`: `hubAccount` · `sessionProjections` · `agents`
-- `source`: [`packages/assistant/assistants/src/index.ts:61`](../packages/assistant/assistants/src/index.ts)
+- `source`: [`packages/assistant/assistants/src/index.ts:62`](../packages/assistant/assistants/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -368,7 +368,16 @@ export interface Config {
   maxAvatarLength?: number
   /** Longest core file the detail page may save, in characters; every turn carries the core files. */
   maxCoreFileLength?: number
+  /**
+   * Templates each tenant gets an assistant from when it signs in on this machine, in this order; each
+   * template is seeded once per tenant, so one added later reaches tenants seeded before it, and one the
+   * user deleted is not created again.
+   */
+  seedTemplates?: SeedTemplateId[]
 }
+
+/** Templates an assistant can be seeded from. */
+export type SeedTemplateId = 'daily' | 'ecommerce'
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-assistants -->
 

@@ -6878,7 +6878,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MarketInstalledStatus',
-    declaration: 'export interface MarketInstalledStatus {\n    readonly name: string;\n    readonly hubSkillId: string;\n    readonly installedVersion: string;\n    readonly latestVersion: string | null;\n    readonly state: MarketInstalledState;\n}',
+    declaration: 'export interface MarketInstalledStatus {\n    readonly name: string;\n    readonly displayName: string;\n    readonly hubSkillId: string;\n    readonly installedVersion: string;\n    readonly latestVersion: string | null;\n    readonly state: MarketInstalledState;\n}',
   },
   {
     name: 'MarketInstallOptions',
@@ -6886,11 +6886,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MarketInstallRecord',
-    declaration: 'export interface MarketInstallRecord {\n    readonly hubSkillId: string;\n    readonly name: string;\n    readonly version: string;\n    readonly installedAt: string;\n    readonly files: readonly {\n        readonly path: string;\n        readonly sha256: string;\n    }[];\n}',
+    declaration: 'export interface MarketInstallRecord {\n    readonly hubSkillId: string;\n    readonly name: string;\n    readonly displayName?: string | undefined;\n    readonly version: string;\n    readonly installedAt: string;\n    readonly files: readonly {\n        readonly path: string;\n        readonly sha256: string;\n    }[];\n}',
   },
   {
     name: 'MarketSkillCard',
-    declaration: 'export interface MarketSkillCard {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly category: MarketCategory | null;\n    readonly version: string;\n    readonly updatedAt: string;\n    readonly installedVersion: string | null;\n    readonly updateAvailable: boolean;\n    readonly conflict: boolean;\n}',
+    declaration: 'export interface MarketSkillCard {\n    readonly id: string;\n    readonly name: string;\n    readonly displayName: string;\n    readonly description: string;\n    readonly category: MarketCategory | null;\n    readonly version: string;\n    readonly updatedAt: string;\n    readonly installedVersion: string | null;\n    readonly updateAvailable: boolean;\n    readonly conflict: boolean;\n}',
   },
   {
     name: 'MarketSkillDetail',
@@ -6914,15 +6914,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MarketUploadPreview',
-    declaration: 'export interface MarketUploadPreview {\n    readonly dir: string;\n    readonly name: string | null;\n    readonly description: string | null;\n    readonly fileCount: number;\n    readonly sizeBytes: number;\n    readonly problems: readonly MarketFolderProblem[];\n    readonly existing: {\n        readonly skillId: string;\n        readonly highestVersion: string;\n        readonly currentVersion: string | null;\n        readonly workingStatus: \'draft\' | \'pending\' | null;\n    } | null;\n    readonly suggestedVersion: string;\n}',
+    declaration: 'export interface MarketUploadPreview {\n    readonly dir: string;\n    readonly name: string | null;\n    readonly description: string | null;\n    readonly fileCount: number;\n    readonly sizeBytes: number;\n    readonly problems: readonly MarketFolderProblem[];\n    readonly existing: {\n        readonly skillId: string;\n        readonly displayName: string;\n        readonly highestVersion: string;\n        readonly currentVersion: string | null;\n        readonly workingStatus: \'draft\' | \'pending\' | null;\n    } | null;\n    readonly suggestedVersion: string;\n}',
   },
   {
     name: 'MarketUploadRequest',
-    declaration: 'export interface MarketUploadRequest {\n    readonly dir: string;\n    readonly version: string;\n    readonly visibility?: MarketVisibility;\n    readonly departmentIds?: readonly string[];\n    readonly employeeIds?: readonly string[];\n    readonly categoryId?: string;\n}',
+    declaration: 'export interface MarketUploadRequest {\n    readonly dir: string;\n    readonly version: string;\n    readonly displayName?: string;\n    readonly visibility?: MarketVisibility;\n    readonly departmentIds?: readonly string[];\n    readonly employeeIds?: readonly string[];\n    readonly categoryId?: string;\n}',
   },
   {
     name: 'MarketUploadResult',
-    declaration: 'export interface MarketUploadResult {\n    readonly skillId: string;\n    readonly name: string;\n    readonly version: string;\n    readonly mode: \'create\' | \'version\';\n    readonly status: \'pending\' | \'published\';\n    readonly reviewUrl: string | null;\n}',
+    declaration: 'export interface MarketUploadResult {\n    readonly skillId: string;\n    readonly name: string;\n    readonly displayName: string;\n    readonly version: string;\n    readonly mode: \'create\' | \'version\';\n    readonly status: \'pending\' | \'published\';\n    readonly reviewUrl: string | null;\n}',
   },
   {
     name: 'MarketUploadSource',
