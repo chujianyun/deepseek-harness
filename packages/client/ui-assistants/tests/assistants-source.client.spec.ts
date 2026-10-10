@@ -56,6 +56,31 @@ describe('assistants source', () => {
     expect(shownAssistant(h.snapshot())).toBe('a2')
   })
 
+  it('picks the first assistant created from a template, keeps a current one from it, and reports a missing template', async () => {
+    const h = harness({ id: sid('s1'), assistantId: null })
+    h.source.publish({
+      ...state, revision: 2,
+      assistants: [state.assistants[0]!, { ...state.assistants[1]!, templateId: 'ecommerce' }, { ...state.assistants[1]!, id: 'a3', templateId: 'ecommerce' }],
+    })
+    expect(await h.source.pickTemplate('ecommerce')).toBe(true)
+    expect(h.select).toHaveBeenCalledWith('s1', 'a2')
+    // Already showing an assistant from the template (here the copy a3): left as is.
+    h.setBlank({ id: sid('s1'), assistantId: 'a3' })
+    await h.source.sessionsChanged()
+    h.select.mockClear()
+    expect(await h.source.pickTemplate('ecommerce')).toBe(true)
+    expect(h.select).not.toHaveBeenCalled()
+    expect(await h.source.pickTemplate('daily')).toBe(false)
+    expect(h.select).not.toHaveBeenCalled()
+  })
+
+  it('reports no template before the first state frame', async () => {
+    const source = createAssistantsSource({
+      select: vi.fn(), startSession: vi.fn(), blankSession: () => undefined, create: vi.fn(), ...unused,
+    })
+    expect(await source.pickTemplate('ecommerce')).toBe(false)
+  })
+
   it('binds no assistant to the blank session when none is picked', async () => {
     const h = harness({ id: sid('s1'), assistantId: 'a1' })
     await h.source.onPick(null)

@@ -16,11 +16,14 @@ export { BRAND_SETTINGS_NAMESPACE, QUICK_TASK_IDS, type QuickTaskId } from './qu
 export interface Config {
   /** Quick tasks shown under the new-session composer, in order; empty shows none. */
   quickTasks: Volatile<QuickTaskId[]>
+  /** Template id of the assistant a quick task picks for the new session (`ecommerce` is 电商管家); empty keeps the current pick. */
+  quickTaskAssistant: Volatile<string>
 }
 
 /** Brand configuration projected to the browser. */
 export const Config = z.object({
   quickTasks: z.array(z.union(QUICK_TASK_IDS.map(id => z.const(id)))).default([]).volatile(),
+  quickTaskAssistant: z.string().default('').volatile(),
 })
 
 /**

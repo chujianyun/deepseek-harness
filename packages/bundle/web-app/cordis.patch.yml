@@ -453,6 +453,8 @@
       config:
         # Quick tasks under the blank new-session composer, in order.
         quickTasks: [multi-publish, business-report, product-research, asset-organize]
+        # The tasks need 电商管家's Skills: a card also picks the assistant created from the `ecommerce` template.
+        quickTaskAssistant: ecommerce
 
     - id: ui-attachment
       name: '@deepseek-ai/dsh-client-ui-attachment'

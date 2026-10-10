@@ -113,8 +113,19 @@ export interface AssistantsInjected {
   readonly onOpenSession: (sessionId: SessionSummary['id']) => void
 }
 
+/** Picks for other plugins, provided as the `assistantPicker` service. */
+export interface AssistantPicker {
+  /**
+   * Pick, for the session about to start, the first assistant of the signed-in tenant created from a template, as the
+   * new-session picker does; a picked or bound assistant already created from it is kept.
+   * @param templateId - template id, for example `ecommerce` (电商管家).
+   * @returns false when the tenant has no assistant from the template, or before the first state frame.
+   */
+  readonly pickTemplate: (templateId: string) => Promise<boolean>
+}
+
 /** The face plus the entry points of the Host stream and of session-list changes. */
-export interface AssistantsSource extends AssistantsInjected {
+export interface AssistantsSource extends AssistantsInjected, AssistantPicker {
   readonly publish: (state: AssistantsState) => void
   /** Re-read the main view's blank session and bind a staged pick to it. */
   readonly sessionsChanged: () => Promise<void>
@@ -240,6 +251,17 @@ export function createAssistantsSource(deps: AssistantsDependencies): Assistants
     onPick: async (assistantId) => {
       set({ staged: assistantId })
       await apply()
+    },
+    pickTemplate: async (templateId) => {
+      const snapshot = store.getSnapshot()
+      const assistants = snapshot.state?.assistants ?? []
+      const shown = shownAssistant(snapshot)
+      if (assistants.some(item => item.id === shown && item.templateId === templateId)) return true
+      const match = assistants.find(item => item.templateId === templateId)
+      if (match === undefined) return false
+      set({ staged: match.id })
+      await apply()
+      return true
     },
     onChat: async (assistantId) => {
       set({ staged: assistantId })

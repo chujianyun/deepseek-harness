@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { Context } from '@deepseek-ai/cordis'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { apply, inject } from '../src/client/index.ts'
 import { MoBrandMark, MoWordmark } from '../src/client/Brand.tsx'
-import { QuickTasks } from '../src/client/QuickTasks.tsx'
+import { QuickTasks, type QuickTasksInjected } from '../src/client/QuickTasks.tsx'
 import { MO_MARK } from '../src/mark.ts'
 import { MO_WORDMARK } from '../src/wordmark.ts'
 
@@ -47,7 +47,14 @@ it('occupies both sidebar brand slots and the quick-task dock until unloaded', a
   const [dock] = slots.entries('conversation.hero.dock')
   expect(dock?.component).toBe(QuickTasks)
   expect(dock?.options).toMatchObject({ id: 'mo-quick-tasks' })
-  expect(Object.keys((dock!.inject!() as { hooks: object }).hooks)).toEqual(['brandSettings'])
+  const face = dock!.inject!() as { hooks: object; pickAssistant: QuickTasksInjected['pickAssistant'] }
+  expect(Object.keys(face.hooks)).toEqual(['brandSettings'])
+  // Without the assistants UI a card only fills the draft; with it, the card picks by template.
+  face.pickAssistant('ecommerce')
+  const pickTemplate = vi.fn(async () => true)
+  ctx.provide('assistantPicker', { pickTemplate })
+  face.pickAssistant('ecommerce')
+  expect(pickTemplate).toHaveBeenCalledWith('ecommerce')
   await fiber.dispose()
   expect(slots.entries('sidebar.brand.mark')).toEqual([])
   expect(slots.entries('sidebar.brand.name')).toEqual([])

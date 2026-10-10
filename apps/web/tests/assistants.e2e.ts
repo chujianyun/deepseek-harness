@@ -27,7 +27,7 @@ import { browse, startMockUserCenter } from '../../../packages/credentials/hub-a
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
 import { connectFreshWorkspaceZh, saveFailureShot, writeComposerDraft, ZH_BROWSER_LOCALE } from './support.ts'
 
-const OVERLAYS = ['./hub-account.overlay.yml', './assistants.overlay.yml'].map(path => fileURLToPath(new URL(path, import.meta.url)))
+const OVERLAYS = ['./hub-account.overlay.yml', './assistants.overlay.yml', './brand-mo.overlay.yml'].map(path => fileURLToPath(new URL(path, import.meta.url)))
 const ANSWER = 'ASSISTANT_ANSWER'
 const SHOP_ID = 'shop-keeper'
 /** A 3x2 PNG, so the wizard has a non-square image to crop. */
@@ -254,7 +254,19 @@ it('seeds the Daily Assistant, starts new sessions with no assistant, carries a 
     await card.locator('img[src^="data:image/webp"]').waitFor()
     expect(await readFile(join(tenantDir, created.id, 'USER.md'), 'utf8')).toContain('- **称呼**：小明 USER_NAME')
 
+    // A quick task on a blank session in General mode picks the assistant created from the e-commerce template and fills the draft.
+    await page.getByRole('button', { name: '新建会话' }).first().click()
+    await picker.click()
+    await page.getByRole('menuitem', { name: /通用模式/ }).click()
+    await expect.poll(() => picker.textContent()).toContain('通用模式')
+    await page.locator('[data-quick-tasks] button[data-task="multi-publish"]').click()
+    await expect.poll(() => picker.textContent()).toContain('名流电商管家')
+    await expect.poll(() => page.locator('[data-composer-input][contenteditable="true"]').first().textContent()).toContain('发到多个店铺')
+    await page.locator('[data-quick-tasks]').waitFor({ state: 'detached' })
+    await writeComposerDraft(page, page.locator('[data-composer-input][contenteditable="true"]').first(), '')
+
     // Chat with it: the first request runs on the assistant's model and carries its core files and the user information.
+    await page.getByRole('button', { name: '智能体', exact: true }).click()
     await card.getByRole('button', { name: '对话' }).click()
     await expect.poll(() => picker.textContent()).toContain('名流电商管家')
     await send('帮我看看店铺')

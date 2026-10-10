@@ -18,10 +18,12 @@ interface MountOptions {
   draft?: string
   occurrences?: number
   attachments?: number
+  assistant?: string
 }
 
 function mount(options: MountOptions = {}) {
   const setDraft = vi.fn()
+  const pickAssistant = vi.fn()
   const input = {
     draft: options.draft ?? '',
     occurrences: Array.from({ length: options.occurrences ?? 0 }),
@@ -30,7 +32,13 @@ function mount(options: MountOptions = {}) {
   const session = { blank: options.blank ?? true, promptAttempted: options.promptAttempted ?? false, running: false }
   const settings = options.loading === true
     ? { status: 'loading' as const, value: undefined }
-    : { status: 'ready' as const, value: { quickTasks: options.tasks ?? ['multi-publish', 'business-report', 'product-research', 'asset-organize'] } }
+    : {
+      status: 'ready' as const,
+      value: {
+        quickTasks: options.tasks ?? ['multi-publish', 'business-report', 'product-research', 'asset-organize'],
+        quickTaskAssistant: options.assistant ?? 'ecommerce',
+      },
+    }
   // Only the props the cards read; the rest of the Session-scope runtime is not exercised.
   const props: Partial<QuickTasksProps> = {
     t: makeTranslate(options.copy ?? zh),
@@ -38,18 +46,27 @@ function mount(options: MountOptions = {}) {
     useInput: bindSnapshotSelector(createSnapshotStore(input)) as Partial<QuickTasksProps['useInput']> as QuickTasksProps['useInput'],
     inputActions: { setDraft } as Partial<QuickTasksProps['inputActions']> as QuickTasksProps['inputActions'],
     useBrandSettings: bindSnapshotSelector(createSnapshotStore(settings)) as QuickTasksProps['useBrandSettings'],
+    pickAssistant,
   }
   render(<QuickTasks {...props as QuickTasksProps} />)
-  return { setDraft }
+  return { setDraft, pickAssistant }
 }
 
-it('offers the configured tasks in order on a blank Session and fills the draft without sending', () => {
-  const { setDraft } = mount({ tasks: ['asset-organize', 'multi-publish'] })
+it('offers the configured tasks in order on a blank Session, picks the configured assistant, and fills the draft without sending', () => {
+  const { setDraft, pickAssistant } = mount({ tasks: ['asset-organize', 'multi-publish'] })
   const cards = screen.getAllByRole('button')
   expect(cards.map(card => card.getAttribute('data-task'))).toEqual(['asset-organize', 'multi-publish'])
   expect(cards[0]!.textContent).toBe(`商${zh['asset-organize.title']}${zh['asset-organize.description']}`)
   fireEvent.click(cards[1]!)
   expect(setDraft).toHaveBeenCalledWith(zh['multi-publish.prompt'])
+  expect(pickAssistant).toHaveBeenCalledWith('ecommerce')
+})
+
+it('keeps the current assistant when no template is configured', () => {
+  const { setDraft, pickAssistant } = mount({ assistant: '' })
+  fireEvent.click(screen.getAllByRole('button')[0]!)
+  expect(setDraft).toHaveBeenCalledOnce()
+  expect(pickAssistant).not.toHaveBeenCalled()
 })
 
 it('writes the prompt in the active language', () => {

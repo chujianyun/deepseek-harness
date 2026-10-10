@@ -4,3 +4,5 @@
   disabled: false
   config:
     quickTasks: [multi-publish, business-report, product-research, asset-organize]
+    # The tasks need 电商管家's Skills: a card also picks the assistant created from the `ecommerce` template.
+    quickTaskAssistant: ecommerce

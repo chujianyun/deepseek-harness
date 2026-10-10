@@ -1,19 +1,20 @@
 /** MO WorkAI brand, browser half: the 名流蓝 token layer and the sidebar brand row. */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-assistants/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
-import { BRAND_SETTINGS_NAMESPACE, type QuickTaskId } from '../quick-tasks.ts'
+import { BRAND_SETTINGS_NAMESPACE } from '../quick-tasks.ts'
 import { MoBrandMark, MoWordmark } from './Brand.tsx'
 import { en, zh, type BrandLocaleKey } from './locales.ts'
-import { QuickTasks, type QuickTasksInjected } from './QuickTasks.tsx'
+import { QuickTasks, type BrandSettings, type QuickTasksInjected } from './QuickTasks.tsx'
 import { MO_THEME_TOKENS } from './tokens.ts'
 
 export type { BrandLocaleKey } from './locales.ts'
-export type { QuickTasksInjected, QuickTasksProps } from './QuickTasks.tsx'
+export type { BrandSettings, QuickTasksInjected, QuickTasksProps } from './QuickTasks.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -45,8 +46,12 @@ export function apply(ctx: ClientContext): void {
   }))
   ctx.inject(['locale', 'configForms'], (scope: ClientContext) => {
     scope.effect(() => scope.locale.register(NS, { zh, en }), 'ui-brand-mo: dictionaries')
-    const brandSettings = scope.configForms.get<{ quickTasks?: readonly QuickTaskId[] }>(BRAND_SETTINGS_NAMESPACE)
-    const quickTasksFace: QuickTasksInjected = { hooks: { brandSettings } }
+    const brandSettings = scope.configForms.get<BrandSettings>(BRAND_SETTINGS_NAMESPACE)
+    const quickTasksFace: QuickTasksInjected = {
+      hooks: { brandSettings },
+      // The assistants UI is optional; read it at click time.
+      pickAssistant: (templateId) => { void ctx.get('assistantPicker')?.pickTemplate(templateId) },
+    }
     scope.slots.inject('conversation.hero.dock', () => scope.slots.register({
       name: 'conversation.hero.dock', id: 'mo-quick-tasks', order: 10, locale: NS, inject: () => quickTasksFace,
     }, QuickTasks))
