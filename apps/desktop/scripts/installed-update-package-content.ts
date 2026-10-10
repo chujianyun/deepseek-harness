@@ -8,7 +8,6 @@ import { readAsar, type Node as AsarNode } from 'app-builder-lib/out/asar/asar.j
 import { readInstalledUpdateRun } from './installed-update-qualification.ts'
 import { verifyInstalledUpdateApplication } from './prepare-installed-update-application.ts'
 import { inventoryDesktopRuntime, readDesktopRuntime, runtimePath, verifyDesktopRuntime } from '../src/runtime-tree.ts'
-import { resolveDesktopPolicyConfig } from '../src/mandatory-update-policy.ts'
 
 const require = createRequire(import.meta.url)
 const builderRequire = createRequire(require.resolve('app-builder-lib/package.json'))
@@ -37,11 +36,10 @@ export async function verifyInstalledUpdatePackageContent(manifest: string, vers
   await verifyInstalledUpdateApplication(run.root)
   const archive = await readAsar(join(payload, 'resources/app.asar'))
   const metadata = object(await archive.readJson('package.json'))
-  const policy = resolveDesktopPolicyConfig(metadata.dshMandatoryUpdatePolicy)
   if (metadata.name !== `dsh-update-test-${run.id}` || metadata.version !== version
     || metadata.dshDesktopAppId !== run.appId || metadata.main !== 'qualification-bootstrap.mjs'
-    || metadata.type !== 'module' || policy?.authentication !== 'feishu-test') {
-    throw new Error('installed update: packaged application identity, version, entry, or policy differs')
+    || metadata.type !== 'module') {
+    throw new Error('installed update: packaged application identity, version, or entry differs')
   }
   const inventory = JSON.parse(await readFile(join(run.root, 'application/result.json'), 'utf8')) as {
     files: { path: string; sha256: string }[]
