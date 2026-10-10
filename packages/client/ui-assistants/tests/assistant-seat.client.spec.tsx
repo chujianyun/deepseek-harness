@@ -78,10 +78,10 @@ describe('assistant picker', () => {
     expect(screen.getByRole('button', { name: '选择这个会话的智能体' })).toBeTruthy()
   })
 
-  it('shows no assistant when the shown assistant is gone, and is disabled while binding', () => {
+  it('shows the neutral label when bound to an id the tenant lacks, and is disabled while binding', () => {
     mount({ bound: 'gone', busy: true })
     const chip = screen.getByRole('button', { name: '选择这个会话的智能体' }) as HTMLButtonElement
-    expect(chip.textContent).toContain('不使用智能体')
+    expect(chip.textContent).toBe('智能体')
     expect(chip.disabled).toBe(true)
   })
 

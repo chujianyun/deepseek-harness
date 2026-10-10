@@ -34,6 +34,8 @@ export function AssistantSeat({ sessionId, useSessionRetainInfo, useAssistants, 
   useEffect(() => { if (assistants.length === 0) setOpen(false) }, [assistants.length])
   if (!main || assistants.length === 0) return null
   const current = assistants.find(item => item.id === shown)
+  // Bound to an id the tenant lacks (another company's assistant): neither that assistant nor "No assistant".
+  const unknown = shown !== null && current === undefined
   return (
     <>
       <Menu
@@ -60,7 +62,7 @@ export function AssistantSeat({ sessionId, useSessionRetainInfo, useAssistants, 
             ),
           })),
         ]}
-        selectedId={current?.id ?? NONE}
+        selectedId={unknown ? undefined : current?.id ?? NONE}
         onSelect={(id) => {
           setOpen(false)
           void onPick(id === NONE ? null : id)
@@ -81,7 +83,7 @@ export function AssistantSeat({ sessionId, useSessionRetainInfo, useAssistants, 
             onClick={() => { setOpen(value => !value) }}
           >
             {current !== undefined && <AssistantAvatar avatar={current.avatar} name={current.name} size={18} />}
-            <span className={css.seatLabel}>{current?.name ?? t('noAssistant')}</span>
+            <span className={css.seatLabel}>{current?.name ?? (unknown ? t('panel') : t('noAssistant'))}</span>
             <IconChevronDownOutlineRegular className={css.chevron} />
           </button>
         )}

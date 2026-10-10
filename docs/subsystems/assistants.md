@@ -6,11 +6,11 @@ Assistants let a Desktop user turn the roles they work with into named assistant
 
 ## Storage
 
-Assistants belong to the tenant of the current Hub sign-in and live under `<dshHome>/assistants/<tenantId>/<assistantId>/`, with `assistant.json` and the core files `IDENTITY.md`, `SOUL.md`, `USER.md`, and `AGENTS.md`. The tenant's `tenant.json` records its default assistant and that its first assistant was created: the first sign-in of a tenant creates one from the Daily Assistant template and makes it the default, and no later sign-in creates another.
+Assistants belong to the tenant of the current Hub sign-in and live under `<dshHome>/assistants/<tenantId>/<assistantId>/`, with `assistant.json` and the core files `IDENTITY.md`, `SOUL.md`, `USER.md`, and `AGENTS.md`. The tenant's `tenant.json` records the templates it was seeded from: when a tenant signs in, Desktop creates one assistant from each configured seed template not seeded yet — by default the Daily Assistant and the E-commerce Manager — so each is created once per tenant, and one the user deleted is not created again.
 
 ## Managing assistants
 
-The detail page edits an assistant's fields and its four core files through the `assistants` Remote. Saved core files and a new name reach every session bound to the assistant on its next step, including sessions in progress; a new model or preset applies to sessions bound afterward. Setting another default moves blank sessions bound to the previous default to it. A copy carries the configuration and core files under the name `<name> 副本`, without sessions. Deleting an assistant keeps its sessions, which continue without its core files: since earlier turns stay in the conversation, their next turn tells the model that those core files no longer apply; the first remaining assistant becomes the default, and with none left new sessions bind no assistant.
+The detail page edits an assistant's fields and its four core files through the `assistants` Remote. Saved core files and a new name reach every session bound to the assistant on its next step, including sessions in progress; a new model or preset applies to sessions bound afterward. A copy carries the configuration and core files under the name `<name> 副本`, without sessions. Deleting an assistant keeps its sessions, which continue without its core files: since earlier turns stay in the conversation, their next turn tells the model that those core files no longer apply; blank sessions bound to it bind none.
 
 ## Sessions and their assistant
 
@@ -22,7 +22,7 @@ An assistant can limit the Skills, connectors, and knowledge bases of its sessio
 
 ## Session binding
 
-A main session binds one assistant while it is blank, recorded as `assistant/selected`; a blank session without one takes the tenant's default, and the new-session picker binds another before the first turn. An assistant with an Agent preset switches the session to it first. Before each turn step, the bound assistant's core files are read and, when they changed, recorded as `assistant/instructions`; the `assistant:core-files` prompt section after the deployment persona carries the recorded text, so the model sees an edit on the next step and the session log reconstructs every prompt. Subagent sessions bind no assistant.
+A new main session binds no assistant. Before the first turn the new-session picker binds one, or goes back to No assistant, recorded as `assistant/selected` (an empty id for none). An assistant with an Agent preset switches the session to it first. Before each turn step, the bound assistant's core files are read and, when they changed, recorded as `assistant/instructions`; the `assistant:core-files` prompt section after the deployment persona carries the recorded text, so the model sees an edit on the next step and the session log reconstructs every prompt. Subagent sessions bind no assistant.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

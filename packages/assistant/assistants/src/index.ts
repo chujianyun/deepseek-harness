@@ -122,7 +122,7 @@ const assistantFileSchema = z.object({
 
 const tenantFileSchema = z.object({
   version: z.literal(1),
-  // No longer used: new sessions bind no assistant. Kept, and written as null, so earlier builds still read the file.
+  // Ignored: new sessions bind no assistant. Kept so earlier builds still read the file; seeding writes it as null.
   defaultId: z.string().nullable(),
   // True once any assistant was seeded; a file without seededTemplates was written when only the Daily Assistant was.
   seeded: z.boolean(),
@@ -141,13 +141,14 @@ export const assistantProjectionDefinition = {
   stateSchema: projectionStateSchema,
   init: () => ({ assistantId: null, instructions: null }),
   apply: (state, event) => {
-    // An empty id records going back to no assistant; no assistant has it, so earlier builds read it as none too.
+    // An empty id records going back to no assistant. Earlier builds keep it as an id no assistant has, so they carry no core files either.
     if (event.type === 'assistant/selected') return { ...state, assistantId: event.data.assistantId === '' ? null : event.data.assistantId }
     if (event.type === 'assistant/instructions') return { ...state, instructions: event.data.text }
     return state
   },
   wire: { viewSchema: projectionViewSchema, view: state => state.assistantId },
-  stateVersion: 1,
+  // 2: an empty assistant/selected id folds to null.
+  stateVersion: 2,
 } satisfies ProjectionDefinition<'assistant', AssistantProjectionState>
 
 /**
@@ -584,11 +585,8 @@ export class AssistantsService extends TypertRemoteService {
     // An unavailable model, such as one removed from Settings, leaves the session on the global default.
     if (model !== undefined) await this.ctx.get('sessionController')?.useModel(agent, model)
     const assistantId = assistant?.id ?? null
-    if (assistantId === this.boundId(agent)) {
-      if (assistant !== undefined) return
-    } else {
-      agent.session.append('assistant/selected', { assistantId: assistantId ?? '' })
-    }
+    if (assistantId === this.boundId(agent)) return
+    agent.session.append('assistant/selected', { assistantId: assistantId ?? '' })
     await this.preselectKnowledge(agent, assistant)
   }
 
