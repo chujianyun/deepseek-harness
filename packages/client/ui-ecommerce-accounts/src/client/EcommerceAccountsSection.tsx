@@ -55,6 +55,7 @@ function refusalText(t: T, refusal: Refusal): string {
     case 'duplicate': return t('duplicate')
     case 'browser-busy': return t('browserBusy')
     case 'in-use': return t('inUse')
+    case 'delete-failed': return t('deleteFailed')
     case 'other': return t('failed', { message: refusal.message })
   }
 }
