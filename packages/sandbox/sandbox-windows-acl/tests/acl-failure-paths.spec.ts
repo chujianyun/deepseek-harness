@@ -347,7 +347,8 @@ describe('mergeAndApply failure paths', () => {
 
   it('frees the merged ACL and the label ACL and reports when SetNamedSecurityInfoW fails', () => {
     const localFree = vi.fn(() => 0n as NativePtr)
-    const api = aclApi({ setNamedSecurityInfoW: vi.fn(() => 5), localFree })
+    // ERROR_INVALID_OWNER: a failure other than a denied apply, which grantWrite reports as is.
+    const api = aclApi({ setNamedSecurityInfoW: vi.fn(() => 1307), localFree })
     const sid = craftSid(1, 0)
     let caught: unknown
     try {
@@ -359,6 +360,84 @@ describe('mergeAndApply failure paths', () => {
     expect((caught as Win32Error).api).toBe('SetNamedSecurityInfoW')
     expect(localFree).toHaveBeenCalledWith(9n) // merged DACL
     expect(localFree).toHaveBeenCalledWith(11n) // label ACL
+  })
+
+  /** Bindings for currentUserSid (the process token names `user`) and an owner read naming `owner`. */
+  function tokenUser(user: NativePtr, owner: NativePtr = user): Partial<Win32Bindings> {
+    return {
+      openProcess: vi.fn<Win32Bindings['openProcess']>(() => 7n as NativePtr),
+      openProcessToken: vi.fn<Win32Bindings['openProcessToken']>((_process, _access, slot) => {
+        koffi.encode(slot, PVOID, 8n)
+        return 1
+      }),
+      getTokenInformation: vi.fn<Win32Bindings['getTokenInformation']>((_token, _class, buffer, _length, needed) => {
+        koffi.encode(needed, 'uint32', 16)
+        if (buffer === null) return 0
+        buffer.writeBigUInt64LE(ptrAddress(user), 0)
+        return 1
+      }),
+      // The crafted SIDs carry no sub-authorities: 8 bytes.
+      getLengthSid: vi.fn<Win32Bindings['getLengthSid']>(() => 8),
+      copySid: vi.fn<Win32Bindings['copySid']>((length, destination, source) => {
+        for (let offset = 0; offset < length; offset++) koffi.encode(destination, offset, 'uint8', koffi.decode(source, offset, 'uint8') as number)
+        return 1
+      }),
+      getNamedSecurityInfoW: vi.fn<Win32Bindings['getNamedSecurityInfoW']>((_path, _type, info, ownerSlot, _group, dacl, sacl, descriptor) => {
+        if (info === abi.OWNER_SECURITY_INFORMATION) koffi.encode(ownerSlot, PVOID, ptrAddress(owner))
+        else {
+          koffi.encode(dacl, PVOID, 0n)
+          koffi.encode(sacl, PVOID, 0n)
+        }
+        koffi.encode(descriptor, PVOID, 0n)
+        return 0
+      }),
+    }
+  }
+
+  it('gives the owning user WRITE_OWNER on the directory alone and grants again when the labelled apply is denied', () => {
+    const apply = vi.fn<Win32Bindings['setNamedSecurityInfoW']>().mockReturnValueOnce(abi.ERROR_ACCESS_DENIED).mockReturnValue(0)
+    const merge = vi.fn<Win32Bindings['setEntriesInAclW']>((_count, _entries, _old, newAcl) => {
+      koffi.encode(newAcl, PVOID, 9n)
+      return 0
+    })
+    const api = aclApi({ ...tokenUser(craftSid(1, 0)), setNamedSecurityInfoW: apply, setEntriesInAclW: merge })
+    grantWrite(api, 'C:\\work', craftSid(1, 0), craftLowLabelSid(), craftWorldSid())
+    // The owner-right edit changes the DACL only; both grant attempts also apply the label.
+    expect(apply.mock.calls.map(call => call[2])).toEqual([
+      abi.DACL_SECURITY_INFORMATION | abi.LABEL_SECURITY_INFORMATION,
+      abi.DACL_SECURITY_INFORMATION,
+      abi.DACL_SECURITY_INFORMATION | abi.LABEL_SECURITY_INFORMATION,
+    ])
+    const ownerEntry = merge.mock.calls[1]![1]
+    expect(merge.mock.calls[1]![0]).toBe(1)
+    expect(ownerEntry.readUInt32LE(0)).toBe(abi.WRITE_OWNER)
+    expect(ownerEntry.readUInt32LE(4)).toBe(abi.GRANT_ACCESS)
+    expect(ownerEntry.readUInt32LE(8)).toBe(abi.NO_INHERITANCE)
+  })
+
+  /** The error a denied grant throws. */
+  function refusal(api: Win32Bindings, path: string): Win32Error {
+    try {
+      grantWrite(api, path, craftSid(1, 0), craftLowLabelSid(), craftWorldSid())
+    } catch (error) {
+      return error as Win32Error
+    }
+    throw new Error('grantWrite did not throw')
+  }
+
+  it('says the directory belongs to another account, changing nothing, when another account owns it', () => {
+    const apply = vi.fn<Win32Bindings['setNamedSecurityInfoW']>(() => abi.ERROR_ACCESS_DENIED)
+    const error = refusal(aclApi({ ...tokenUser(craftSid(1, 0), craftSid(1, 0, [0, 0, 0, 0, 0, 9])), setNamedSecurityInfoW: apply }), 'C:\\dsh-test\\fixtures')
+    expect(error).toBeInstanceOf(Win32Error)
+    expect(error.win32Code).toBe(abi.ERROR_ACCESS_DENIED)
+    expect(error.message).toContain('the directory belongs to another account, such as an administrator')
+    expect(error.message).toContain('have an administrator give the user Full Control of C:\\dsh-test\\fixtures')
+    expect(apply).toHaveBeenCalledOnce()
+  })
+
+  it('says Windows refused the change when the user owns the directory and the grant is still denied', () => {
+    const error = refusal(aclApi({ ...tokenUser(craftSid(1, 0)), setNamedSecurityInfoW: vi.fn(() => abi.ERROR_ACCESS_DENIED) }), '\\\\server\\share\\work')
+    expect(error.message).toContain('Windows refused to change the permissions of this directory although the user owns it')
   })
 
   it('reports a failed descriptor LocalFree after a successful apply', () => {

@@ -124,6 +124,24 @@ describe.skipIf(!isWin32 || !pwshAvailable())('pwsh-sandbox real ACL confinement
     expect(result.sandbox).toEqual({ mode: 'workspace-write', denied: false, enforcement: 'partial' })
   }, 60_000)
 
+  it('workspace-write: a workspace the user created under the drive root, granting users only Modify, is writable', async () => {
+    // Folders under C:\\ inherit Authenticated Users: Modify and give their owner no WRITE_OWNER.
+    const driveRoot = mkdtempSync(join(`${process.env.SystemDrive ?? 'C:'}\\`, 'dsh-pwsh-sandbox-root-'))
+    try {
+      const policy: SandboxExecutionPolicy = { mode: 'workspace-write', workspaceRoot: driveRoot }
+      const result = await run(executor, executor.resolve({
+        command: `Set-Content -Path '${driveRoot}\\root-write.txt' -Value ok; 'ROOT-WRITE: OK'`,
+        workdir: driveRoot,
+        sandboxPolicy: policy,
+      }))
+      expect(result.exitCode, `stderr: ${result.stderr.text}`).toBe(0)
+      expect(result.stdout.text).toContain('ROOT-WRITE: OK')
+      expect(existsSync(join(driveRoot, 'root-write.txt'))).toBe(true)
+    } finally {
+      rmSync(driveRoot, { recursive: true, force: true })
+    }
+  }, 60_000)
+
   it('explains a confined command that exits with 0xC0000142, mirroring the code without starting it again', async () => {
     const policy: SandboxExecutionPolicy = { mode: 'workspace-write', workspaceRoot: writableDir }
     // `exit -1073741502` ends PowerShell with 0xC0000142, as a process that failed DLL initialization does.

@@ -25,8 +25,10 @@ import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import { allocOverlapped, allocPtrSlot, decodePtr, decodeUint8At, decodeUint16At, decodeUint32At, getTempPath, isInvalidHandle, isNullPtr, ptrAddress, sameSidAt, throwLastError, throwWin32 } from './ffi.ts'
+import { allocOverlapped, allocPtrSlot, decodePtr, freeBytes, decodeUint8At, decodeUint16At, decodeUint32At, getTempPath, isInvalidHandle, isNullPtr, ptrAddress, sameSidAt, throwLastError, throwWin32 } from './ffi.ts'
 import type { NativePtr, Win32Bindings } from './ffi.ts'
+import { Win32Error } from '@deepseek-ai/dsh-win32-process'
+import { currentUserSid } from './process-token.ts'
 import * as abi from './win32-abi.ts'
 
 /**
@@ -367,7 +369,11 @@ function hasForeignGrant(oldAcl: NativePtr, sidPtr: NativePtr): boolean {
  * survive (same shape as {@link revokeWrite}). Runs under the per-path lock.
  * The directory must be owned by the caller AND grant WRITE_OWNER (the label
  * lives in the SACL; owner-implicit rights cover only READ_CONTROL and
- * WRITE_DAC) — a Full-control workspace satisfies both.
+ * WRITE_DAC) — a Full-control workspace satisfies both. A directory the caller
+ * owns without WRITE_OWNER, as one created under `C:\` or `D:\` that grants
+ * users only Modify, first gets an explicit WRITE_OWNER ACE for the caller's
+ * user alone (through the owner's WRITE_DAC), which stays; when even that is
+ * denied, the error says the directory belongs to another account.
  * @param api - the binding table.
  * @param path - the directory whose DACL and label gain the grant (the workspace or temp root).
  * @param sidPtr - the capability SID the ACE names.
@@ -382,35 +388,101 @@ export function grantWrite(
   worldSidPtr: NativePtr,
 ): void {
   withPathLock(api, path, () => {
-    const { oldAcl, labelAcl, descriptor } = readCurrentSecurity(api, path)
-    if (oldAcl !== null && labelAcl !== null
-      && hasExactGrant(oldAcl, sidPtr) && hasExactDeny(oldAcl, worldSidPtr)
-      && hasExactLabel(labelAcl, lowLabelSidPtr)) {
-      // The exact ACE, deny, and label stand: releasing the descriptor is the whole operation.
-      if (descriptor !== null) {
-        const freed = api.localFree(descriptor)
-        if (!isNullPtr(freed)) throwLastError(api, 'LocalFree', `grantWrite(${path}) descriptor`)
-      }
-      return
-    }
-    let label: NativePtr
     try {
-      label = buildLowLabelAcl(api, lowLabelSidPtr)
+      applyGrant(api, path, sidPtr, lowLabelSidPtr, worldSidPtr)
     } catch (error) {
-      // The read already owns a descriptor allocation; release it before the
-      // label failure propagates.
-      if (descriptor !== null) api.localFree(descriptor)
-      throw error
+      if (!deniedApply(error)) throw error
+      const userSid = currentUserSid(api)
+      try {
+        if (!ownedBy(api, path, userSid)) {
+          refuse(api, path, 'the directory belongs to another account, such as an administrator, so the sandbox cannot grant writes in it. '
+            + `Use a workspace inside the user's own folders, or have an administrator give the user Full Control of ${path}`)
+        }
+        try {
+          allowUserWriteOwner(api, path, userSid)
+          applyGrant(api, path, sidPtr, lowLabelSidPtr, worldSidPtr)
+        } catch (retryError) {
+          if (!deniedApply(retryError)) throw retryError
+          refuse(api, path, 'Windows refused to change the permissions of this directory although the user owns it, as a network share '
+            + 'or a security policy may. Use a workspace on a local disk inside the user\'s own folders')
+        }
+      } finally {
+        freeBytes(userSid)
+      }
     }
-    mergeAndApply(
-      api, path,
-      Buffer.concat([
-        buildExplicitAccess(worldSidPtr, abi.DENY_ACCESS, abi.FILE_DELETE_CHILD, abi.CONTAINER_INHERIT_ACE),
-        buildExplicitAccess(sidPtr, abi.GRANT_ACCESS, abi.GRANT_MASK),
-      ]),
-      oldAcl, { kind: 'apply', acl: label }, descriptor, 'grantWrite',
-    )
   })
+}
+
+/** Whether a security edit failed because the caller lacks the right to apply it. */
+function deniedApply(error: unknown): boolean {
+  return error instanceof Win32Error && error.api === 'SetNamedSecurityInfoW' && error.win32Code === abi.ERROR_ACCESS_DENIED
+}
+
+/** Throw the denied grant with what the user can do about it. */
+function refuse(api: Win32Bindings, path: string, reason: string): never {
+  throwWin32(api, 'SetNamedSecurityInfoW', abi.ERROR_ACCESS_DENIED, `grantWrite(${path}): ${reason}`)
+}
+
+/** Whether `userSid` owns the directory. */
+function ownedBy(api: Win32Bindings, path: string, userSid: NativePtr): boolean {
+  const ownerSlot = allocPtrSlot()
+  const descriptorSlot = allocPtrSlot()
+  const readResult = api.getNamedSecurityInfoW(
+    path, abi.SE_FILE_OBJECT, abi.OWNER_SECURITY_INFORMATION, ownerSlot, allocPtrSlot(), allocPtrSlot(), allocPtrSlot(), descriptorSlot,
+  )
+  if (readResult !== abi.ERROR_SUCCESS) throwWin32(api, 'GetNamedSecurityInfoW', readResult, `${path} owner`)
+  const owner = decodePtr(ownerSlot)
+  const descriptor = decodePtr(descriptorSlot)
+  try {
+    return owner !== null && sameSidAt(owner, 0, userSid, 0)
+  } finally {
+    if (descriptor !== null) api.localFree(descriptor)
+  }
+}
+
+/** One read-merge-write of the grant; see {@link grantWrite}. */
+function applyGrant(api: Win32Bindings, path: string, sidPtr: NativePtr, lowLabelSidPtr: NativePtr, worldSidPtr: NativePtr): void {
+  const { oldAcl, labelAcl, descriptor } = readCurrentSecurity(api, path)
+  if (oldAcl !== null && labelAcl !== null
+    && hasExactGrant(oldAcl, sidPtr) && hasExactDeny(oldAcl, worldSidPtr)
+    && hasExactLabel(labelAcl, lowLabelSidPtr)) {
+    // The exact ACE, deny, and label stand: releasing the descriptor is the whole operation.
+    if (descriptor !== null) {
+      const freed = api.localFree(descriptor)
+      if (!isNullPtr(freed)) throwLastError(api, 'LocalFree', `grantWrite(${path}) descriptor`)
+    }
+    return
+  }
+  let label: NativePtr
+  try {
+    label = buildLowLabelAcl(api, lowLabelSidPtr)
+  } catch (error) {
+    // The read already owns a descriptor allocation; release it before the
+    // label failure propagates.
+    if (descriptor !== null) api.localFree(descriptor)
+    throw error
+  }
+  mergeAndApply(
+    api, path,
+    Buffer.concat([
+      buildExplicitAccess(worldSidPtr, abi.DENY_ACCESS, abi.FILE_DELETE_CHILD, abi.CONTAINER_INHERIT_ACE),
+      buildExplicitAccess(sidPtr, abi.GRANT_ACCESS, abi.GRANT_MASK),
+    ]),
+    oldAcl, { kind: 'apply', acl: label }, descriptor, 'grantWrite',
+  )
+}
+
+/**
+ * Give the owning user WRITE_OWNER on the directory alone, through the owner's implicit WRITE_DAC, so the
+ * Low label can be applied. The ACE stays; a workspace under the user's profile inherits Full Control, which
+ * already includes this right.
+ */
+function allowUserWriteOwner(api: Win32Bindings, path: string, userSid: NativePtr): void {
+  const { oldAcl, descriptor } = readCurrentSecurity(api, path)
+  mergeAndApply(
+    api, path, buildExplicitAccess(userSid, abi.GRANT_ACCESS, abi.WRITE_OWNER, abi.NO_INHERITANCE),
+    oldAcl, { kind: 'keep' }, descriptor, 'grantWrite owner right',
+  )
 }
 
 /**
