@@ -36,6 +36,9 @@
       "path": "../../shell/shell-env"
     },
     {
+      "path": "../../session/session-projection"
+    },
+    {
       "path": "../../settings/settings"
     },
     {

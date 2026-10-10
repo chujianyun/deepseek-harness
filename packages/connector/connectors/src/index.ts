@@ -38,10 +38,13 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-shell-env'
 import type {} from '@deepseek-ai/dsh-skill'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { Session } from '@deepseek-ai/dsh-session'
+import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { PreToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { bytesOnDisk } from '@deepseek-ai/dsh-verified-download'
 import Schema from '@deepseek-ai/schemastery'
+import { z } from 'zod'
 import { DWS_CLI, LARK_CLI } from './catalog.ts'
 import { LoginError, writeWrapper, type Health, type LoginStep, type TenantCli, type WrapperMode } from './cli.ts'
 import { dingtalk } from './dingtalk.ts'
@@ -293,9 +296,18 @@ function idle(epoch: number): Connection {
   return { state: 'disconnected', account: null, problem: null, login: null, loginError: null, controller: undefined, running: undefined, epoch }
 }
 
+/** The `connectorGrants` Session projection: connectors whose plain writes run without asking in the session. */
+export const connectorGrantsProjection = {
+  key: 'connectorGrants',
+  stateSchema: z.object({ connectors: z.array(z.string()) }),
+  init: () => ({ connectors: [] }),
+  apply: (state, event) => event.type === 'connectors/session-allowed' ? { connectors: [...event.data.connectors] } : state,
+  stateVersion: 1,
+} satisfies ProjectionDefinition<'connectorGrants', { connectors: string[] }>
+
 /** Host owner of the connectors and of the `connectors` Remote namespace. */
 export class ConnectorsService extends TypertRemoteService {
-  static inject = ['hubAccount', 'skills', 'shellEnv']
+  static inject = ['hubAccount', 'skills', 'shellEnv', 'sessionProjections']
   static Config = Config
 
   /** The supported connectors, in display order. */
@@ -325,6 +337,7 @@ export class ConnectorsService extends TypertRemoteService {
   /** @param ctx - Host context with the Hub sign-in. @param config - home, pinned CLIs, and the check interval. */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'connectors', { namespace: 'connectors' })
+    ctx.sessionProjections.register(connectorGrantsProjection)
     // The live lists arrive as Volatile handles; the schema validates the rest.
     const { disabled, alwaysAllowed, ...rest } = config
     const resolved = Config(rest) as Config & { feishu: CliSpec; dingtalk: CliSpec; checkIntervalMs: number }
@@ -397,9 +410,13 @@ export class ConnectorsService extends TypertRemoteService {
       // Only plain writes the CLI runs unconfirmed can be always allowed; a call that holds anything else always asks.
       const asked = parts.flatMap(part => part.classification.invocations.filter(item => item.risk !== 'read').map(item => ({ ...item, id: part.id, cli: part.cli })))
       const tenant = this.tenantId
-      const rememberable = tenant !== null && asked.every(item => item.risk === 'write' && !item.confirm)
+      const plainWrites = asked.every(item => item.risk === 'write' && !item.confirm)
+      const rememberable = tenant !== null && plainWrites
       const granted = new Set(this.alwaysAllowedList())
-      if (rememberable && exec.agent !== undefined && asked.every(item => granted.has(grantKey(tenant, item.id, item.command)))) {
+      // Plain writes through connectors the session was granted, as an automation task's session is.
+      const sessionGrants = plainWrites && exec.agent !== undefined ? this.sessionGrants(exec.agent.session) : []
+      if (exec.agent !== undefined && ((plainWrites && asked.every(item => sessionGrants.includes(item.id)))
+        || (rememberable && asked.every(item => granted.has(grantKey(tenant, item.id, item.command)))))) {
         exec.agent.session.append('connectors/always-allowed', { callId: exec.callId, commands: [...new Set(asked.map(item => `${item.cli} ${item.command}`))] })
         return decision
       }
@@ -624,6 +641,27 @@ export class ConnectorsService extends TypertRemoteService {
     const key = grantKey(this.requireTenant(), entry.id, command)
     await this.updateList('alwaysAllowed', current => current.filter(item => item !== key))
     return this.getState()
+  }
+
+  /**
+   * Let a session's plain connector writes through these connectors run without asking, as the
+   * session of an unattended automation task needs: appends `connectors/session-allowed`, which
+   * replaces the session's earlier grant and survives a restart with the session log. High-risk
+   * writes, commands the CLI runs only confirmed, and commands of unknown risk still ask.
+   * @param session - the session to grant.
+   * @param ids - connectors to allow, each a built-in connector id; an empty list withdraws the grant.
+   */
+  allowInSession(session: Session, ids: readonly string[]): void {
+    for (const id of ids) {
+      if (!this.installables.has(id as ConnectorId)) throw new RemoteError('connectors/not-found', `no connector ${id}`, { id })
+    }
+    session.append('connectors/session-allowed', { connectors: [...new Set(ids)] })
+  }
+
+  /** Connectors whose plain writes run without asking in the session. */
+  private sessionGrants(session: Session): readonly string[] {
+    /* v8 ignore next -- this service registers the projection, so its state is always there. */
+    return this.ctx.sessionProjections.stateOf(session, 'connectorGrants')?.connectors ?? []
   }
 
   /** A connector this platform can install, with its archive. */

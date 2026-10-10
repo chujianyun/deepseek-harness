@@ -1,0 +1,80 @@
+{
+  "formatVersion": 2,
+  "roots": [
+    {
+      "key": "event:connectors/session-allowed",
+      "kind": "event",
+      "event": "connectors/session-allowed",
+      "surface": false,
+      "digest": "956295ef80fc57b1eb589c8b9106ae2f5f5bd81af3b129c5fd4abee0c4527962",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "connectors",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 3
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "connectors/session-allowed"
+          }
+        ]
+      }
+    }
+  ],
+  "types": []
+}

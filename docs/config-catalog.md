@@ -804,9 +804,9 @@ export interface ToolResultPruneConfig {
 
 ## `@deepseek-ai/dsh-connectors`
 
-- `inject`: `hubAccount` · `skills` · `shellEnv`
+- `inject`: `hubAccount` · `skills` · `shellEnv` · `sessionProjections`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/connector/connectors/src/index.ts:103`](../packages/connector/connectors/src/index.ts)
+- `source`: [`packages/connector/connectors/src/index.ts:106`](../packages/connector/connectors/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */

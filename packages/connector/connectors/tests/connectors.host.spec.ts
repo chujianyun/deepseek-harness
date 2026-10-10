@@ -9,6 +9,7 @@ import { create } from 'tar'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
@@ -113,6 +114,7 @@ async function boot(home: string, feishu?: CliSpec, options: BootOptions = {}) {
   ctx.provide('hubAccount', hub.service as never)
   await ctx.plugin(SkillRegistry)
   await ctx.plugin(ShellEnv, { dshHome: home })
+  await ctx.plugin(SessionProjectionRegistry)
   const live = await liveConfig(ctx, ConnectorsService, {
     dshHome: home, ...feishu === undefined ? {} : { feishu }, ...options.dingtalk === undefined ? {} : { dingtalk: options.dingtalk },
     ...options.checkIntervalMs === undefined ? {} : { checkIntervalMs: options.checkIntervalMs },

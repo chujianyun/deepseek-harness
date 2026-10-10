@@ -988,6 +988,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
       },
       {
+        signature: 'allowInSession(session: Session, ids: readonly string[]): void',
+        description: 'Let a session\'s plain connector writes through these connectors run without asking, as the session of an unattended automation task needs: appends `connectors/session-allowed`, which replaces the session\'s earlier grant and survives a restart with the session log. High-risk writes, commands the CLI runs only confirmed, and commands of unknown risk still ask.',
+        parameters: [{ name: 'session', description: 'the session to grant.' }, { name: 'ids', description: 'connectors to allow, each a built-in connector id; an empty list withdraws the grant.' }],
+      },
+      {
         signature: 'restrict(filter: ConnectorFilter): () => void',
         description: 'Keep sessions from using connectors. Every added filter applies to each model shell call: a connector a filter refuses for the call\'s agent puts no CLI on that call\'s `PATH`, gives the session none of its Skills, and a call that names its CLI is denied. Calls without an agent and reads without a session are not filtered.',
         parameters: [{ name: 'filter', description: 'returns false for a connector the agent\'s session must not use.' }],

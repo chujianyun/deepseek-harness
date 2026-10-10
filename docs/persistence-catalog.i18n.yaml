@@ -9,8 +9,8 @@
   en: e7c80d1de4d328b4
   zh: d9f368c27fd9f998
 /session-persistence-event-catalog/persistence-type-fingerprints:
-  en: 5b2774ea6bdf500e
-  zh: e85ef612c9b52bf7
+  en: e2e6846fde7343ab
+  zh: 1c7c37596a10b095
 /session-persistence-event-catalog/event-envelope:
   en: 7ebb1a2e0dd1f916
   zh: 8946f415dda5c1b8
@@ -84,8 +84,11 @@
   en: b25a2042e3adc414
   zh: b25a2042e3adc414
 /session-persistence-event-catalog/events/connectors/connectors-always-allowed-log-only:
-  en: 331f7f92f4dff86c
-  zh: 8cd6bf6001978993
+  en: 87aad687ccd91d3c
+  zh: 4ea4308161bfbdcd
+/session-persistence-event-catalog/events/connectors/connectors-session-allowed-log-only:
+  en: 3124c0e9455738d2
+  zh: 263334f2d1b5b999
 /session-persistence-event-catalog/events/deliverables:
   en: 501dcee7db8f8117
   zh: 501dcee7db8f8117
@@ -438,8 +441,11 @@
   en: ec56b0d2c4eba98e
   zh: ec56b0d2c4eba98e
 /session-persistence-event-catalog/resolved-persistence-types/connectors-always-allowed:
-  en: e9086487abd34c2b
-  zh: e9086487abd34c2b
+  en: 9fd683667ddd79fd
+  zh: 9fd683667ddd79fd
+/session-persistence-event-catalog/resolved-persistence-types/connectors-session-allowed:
+  en: d99542ed6f2db2c7
+  zh: d99542ed6f2db2c7
 /session-persistence-event-catalog/resolved-persistence-types/continuable:
   en: 36e1cf82ed9683c4
   zh: 36e1cf82ed9683c4
@@ -1389,8 +1395,8 @@
   en: 623c7ca3ddb37002
   zh: 12bc02769556c6ed
 /session-persistence-event-catalog/resolved-persistence-types/callid-commands:
-  en: aacc2a4316112f83
-  zh: 4108a6f8729ef278
+  en: b27e0424f5db0636
+  zh: 35f4b6b5f5e2e066
 /session-persistence-event-catalog/resolved-persistence-types/callid-files-turn:
   en: 5f4d3f66ed86a14d
   zh: 7c729360fa1279e6
@@ -1434,8 +1440,11 @@
   en: 45f1d815198508e1
   zh: 5c2818b0e38e1356
 /session-persistence-event-catalog/resolved-persistence-types/compactionid-sourcecommandid-turn:
-  en: 4ba70efccc268763
-  zh: 06ba9b3e824c80a7
+  en: baea75d3ea8d6c62
+  zh: dee2f802f5e6659e
+/session-persistence-event-catalog/resolved-persistence-types/connectors:
+  en: 78bff08fb9862ccc
+  zh: ce0d5912d94886d0
 /session-persistence-event-catalog/resolved-persistence-types/decision-durationms-exitcode-handlerid:
   en: ed8ca43bb7622393
   zh: 697e1ccbe9439aa9
@@ -1947,8 +1956,11 @@
   en: 1a4ad7e5d30915c2
   zh: c04117b4bbbcfe5d
 /session-persistence-event-catalog/resolved-persistence-types/type-connectors-always-allowed:
-  en: 4820133c8d5c95af
-  zh: 2ad030bf281eb8b8
+  en: 8859fc3d1ac67a07
+  zh: 8e5720feab183641
+/session-persistence-event-catalog/resolved-persistence-types/type-connectors-session-allowed:
+  en: 231d1528fd5d50b7
+  zh: 3645f40a771093f1
 /session-persistence-event-catalog/resolved-persistence-types/type-deliverables-presented:
   en: ec7e9f13864db847
   zh: 694e948cd52387ea

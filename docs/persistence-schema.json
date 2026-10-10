@@ -6669,6 +6669,80 @@
       }
     },
     {
+      "key": "event:connectors/session-allowed",
+      "kind": "event",
+      "event": "connectors/session-allowed",
+      "surface": false,
+      "digest": "956295ef80fc57b1eb589c8b9106ae2f5f5bd81af3b129c5fd4abee0c4527962",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "connectors",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 3
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "connectors/session-allowed"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:deliverables/presented",
       "kind": "event",
       "event": "deliverables/presented",
@@ -22222,6 +22296,11 @@
       "sources": []
     },
     {
+      "digest": "0a8f1ad8ee5886204198463216c5e0a873a2fb635258db9a760e2a00c5d32e25",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "0aa62ab51b36c0e64b134bd03ba8725d758744180a1a447da49beaad194f219f",
       "names": [],
       "sources": []
@@ -22807,7 +22886,7 @@
       "digest": "2bcf34ac7dc95d34676ac2da19c692bd1fb17a58c54164fb904c8cd1b83c243b",
       "names": [],
       "sources": [
-        "packages/connector/connectors/src/types.ts:17"
+        "packages/connector/connectors/src/types.ts:18"
       ]
     },
     {
@@ -23046,6 +23125,13 @@
       "digest": "3c2535ca0a2062f172f15344f8040755002b5ac506cf94fc4ebaa822b15feb8c",
       "names": [],
       "sources": []
+    },
+    {
+      "digest": "3c619e01d10893a5e0d91a0e4538e83d6d76e4112282daec05681cab6aa9de33",
+      "names": [],
+      "sources": [
+        "packages/connector/connectors/src/types.ts:27"
+      ]
     },
     {
       "digest": "3cfc3a56502da1f8c6153c2c56657bab4b749056968634dd0991d325ec1c919f",
@@ -24351,6 +24437,11 @@
       "sources": [
         "packages/llm/llm/src/types.ts:491"
       ]
+    },
+    {
+      "digest": "956295ef80fc57b1eb589c8b9106ae2f5f5bd81af3b129c5fd4abee0c4527962",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "95c0e88fcf0bafb2087f912ad9e2369de6ae6530cc0c4c2772c96205b57f7f60",

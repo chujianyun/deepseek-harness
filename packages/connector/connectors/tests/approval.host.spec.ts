@@ -186,3 +186,41 @@ describe('always allowing connector writes', () => {
     await expect(t.service.revokeAlwaysAllowed('feishu', 'im +messages-send')).rejects.toMatchObject({ code: 'hub-account/signed-out' })
   })
 })
+
+describe('allowing connectors for a session', () => {
+  runs('runs the session\'s plain writes unasked with an audit record, and still asks for the rest', async () => {
+    const t = await connected()
+    const { agent, appended } = await auditedAgent()
+    const other = await auditedAgent()
+    t.service.allowInSession(agent.session, ['feishu', 'feishu'])
+    expect(appended()).toEqual([{ type: 'connectors/session-allowed', data: { connectors: ['feishu'] } }])
+    expect(t.ctx.sessionProjections.stateOf(agent.session, 'connectorGrants')).toEqual({ connectors: ['feishu'] })
+    // A plain write runs unasked and is recorded, whatever its arguments.
+    expect(await t.gate(bash('lark-cli im +messages-send --text hi', 'call-1', agent))).toEqual({ kind: 'allow' })
+    expect(appended().at(-1)).toEqual({ type: 'connectors/always-allowed', data: { callId: 'call-1', commands: ['lark-cli im +messages-send'] } })
+    // A high-risk write and a command of unknown risk still ask.
+    expect(await t.gate(bash('lark-cli drive +delete --file-token box_1', 'call-2', agent))).toMatchObject({ kind: 'ask' })
+    expect(await t.gate(bash('lark-cli calendar list', 'call-3', agent))).toMatchObject({ kind: 'ask' })
+    // Another session, and a call without a session, ask as before.
+    expect(await t.gate(bash('lark-cli im +messages-send', 'call-4', other.agent))).toMatchObject({ kind: 'ask' })
+    expect(await t.gate(bash('lark-cli im +messages-send', 'call-5'))).toMatchObject({ kind: 'ask' })
+    // A later empty grant withdraws it.
+    t.service.allowInSession(agent.session, [])
+    expect(await t.gate(bash('lark-cli im +messages-send', 'call-6', agent))).toMatchObject({ kind: 'ask' })
+  })
+
+  runs('keeps the grant in the session log, so a restarted service still honors it', async () => {
+    const first = await connected()
+    const { agent } = await auditedAgent()
+    first.service.allowInSession(agent.session, ['feishu'])
+    const second = await connected()
+    expect(await second.gate(bash('lark-cli im +messages-send', 'call-1', agent))).toEqual({ kind: 'allow' })
+  })
+
+  runs('refuses an unknown connector and grants nothing', async () => {
+    const t = await connected()
+    const { agent, appended } = await auditedAgent()
+    expect(() => { t.service.allowInSession(agent.session, ['feishu', 'wecom']) }).toThrow(expect.objectContaining({ code: 'connectors/not-found' }))
+    expect(appended()).toEqual([])
+  })
+})
