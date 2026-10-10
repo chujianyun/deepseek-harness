@@ -93,6 +93,11 @@ describe('assistants storage', () => {
     expect((await fourth.settle(s => s.tenantId === 't-a')).assistants.map(a => a.templateId)).toEqual(['daily'])
   })
 
+  it('seeds a template listed twice only once', async () => {
+    const env = await setup({ config: { seedTemplates: ['daily', 'ecommerce', 'daily'] } })
+    expect((await env.settle(s => s.assistants.length >= 2)).assistants.map(a => a.templateId)).toEqual(['daily', 'ecommerce'])
+  })
+
   it('defaults to seeding the Daily Assistant and the E-commerce Manager', () => {
     expect(AssistantsConfig({})).toMatchObject({ seedTemplates: ['daily', 'ecommerce'] })
   })

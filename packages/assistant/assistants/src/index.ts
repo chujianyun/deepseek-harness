@@ -2,9 +2,10 @@
  * Assistants for Desktop, behind one Host service and the `assistants` Remote namespace. An
  * assistant is a named role with its own core files, kept per tenant of the current Hub sign-in
  * under `<dshHome>/assistants/<tenantId>/<assistantId>/`: `assistant.json` and the Markdown core
- * files. The tenant's `tenant.json` records its default assistant and that its first assistant
- * was created; the first time a tenant signs in, the service creates one from the Daily Assistant
- * template and makes it the default, and never again after the user deletes it. Deleting the
+ * files. The tenant's `tenant.json` records its default assistant and the templates it was seeded
+ * from; when a tenant signs in, the service creates one assistant from each configured seed template
+ * not seeded yet (the first seeding's first assistant becomes the default), so each template is
+ * seeded once per tenant and never again after the user deletes it. Deleting the
  * default makes the first remaining assistant the default; with none left, new sessions bind none.
  *
  * A main session binds one assistant while it is blank: a new session takes the tenant's default,
@@ -789,7 +790,12 @@ export class AssistantsService extends TypertRemoteService {
       await mkdir(join(this.root, tenantId), { recursive: true })
       this.tenant = await this.readTenant(tenantId)
       this.list = await this.readAssistants(tenantId)
-      await this.seed(tenantId)
+      try {
+        await this.seed(tenantId)
+      } catch (error) {
+        // A failed seed (a full disk, say) leaves the tenant usable; the next sign-in tries the missing templates again.
+        this.ctx.logger.warn(`assistants: seeding ${tenantId} failed: ${String(error)}`)
+      }
     }
     this.changed()
   }
@@ -800,22 +806,22 @@ export class AssistantsService extends TypertRemoteService {
    */
   private async seed(tenantId: string): Promise<void> {
     const done = this.tenant.seededTemplates ?? (this.tenant.seeded ? [DAILY_ASSISTANT.id] : [])
-    const missing = this.seedTemplates.filter(id => !done.includes(id))
-    if (missing.length === 0) return
-    const created: AssistantView[] = []
+    const missing = [...new Set(this.seedTemplates)].filter(id => !done.includes(id))
     // One millisecond apart, so the creation order (the list order) survives a reload.
     const start = Date.now()
     for (const [index, id] of missing.entries()) {
       const template = TEMPLATES.get(id)
       // Config admits only template ids, so every seed id names a template.
-      if (template !== undefined) created.push(await this.createFrom(tenantId, template, new Date(start + index)))
+      if (template === undefined) continue
+      const created = await this.createFrom(tenantId, template, new Date(start + index))
+      this.list = [...this.list, created]
+      // Recorded right after each creation, so an interrupted seeding never creates one twice.
+      this.tenant = {
+        version: 1, defaultId: this.tenant.seeded ? this.tenant.defaultId : created.id, seeded: true,
+        seededTemplates: [...this.tenant.seededTemplates ?? done, id],
+      }
+      await this.writeAtomic(join(this.root, tenantId, 'tenant.json'), jsonText(this.tenant))
     }
-    this.list = [...this.list, ...created]
-    this.tenant = {
-      version: 1, defaultId: this.tenant.seeded ? this.tenant.defaultId : created[0]?.id ?? null, seeded: true,
-      seededTemplates: [...done, ...missing],
-    }
-    await this.writeAtomic(join(this.root, tenantId, 'tenant.json'), jsonText(this.tenant))
   }
 
   private async readTenant(tenantId: string): Promise<TenantFile> {
