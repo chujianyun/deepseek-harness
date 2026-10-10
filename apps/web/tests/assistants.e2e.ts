@@ -288,7 +288,8 @@ it('edits core files on the detail page, copies, and deletes assistants', async 
   }
   const card = (id: string) => page.locator(`li[data-assistant-id="${id}"]`)
   const deleteCard = async (id: string, sessions: number) => {
-    await card(id).getByRole('button', { name: '删除' }).click()
+    await card(id).getByRole('button', { name: /的更多操作$/u }).click()
+    await page.getByRole('menuitem', { name: '删除' }).click()
     const dialog = page.getByRole('dialog', { name: '删除智能体' })
     await expect.poll(() => dialog.textContent()).toContain(`它有 ${String(sessions)} 个会话`)
     await dialog.getByRole('button', { name: '删除' }).click()
@@ -366,7 +367,7 @@ it('edits core files on the detail page, copies, and deletes assistants', async 
     await openAssistants()
     await deleteCard(copy.id, 0)
     await deleteCard(dailyId, 0)
-    await page.getByText('还没有智能体。').waitFor()
+    await page.getByText('智能体把常用的模型、Skill 和知识库存成一个角色，建好后一键开始对话。').waitFor()
     await page.getByRole('button', { name: '新建会话' }).first().click()
     await page.locator('[data-composer-card]').waitFor()
     expect(await picker.count()).toBe(0)

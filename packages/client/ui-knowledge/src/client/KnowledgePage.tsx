@@ -2,7 +2,9 @@
 
 import { useState } from 'react'
 import type { KnowledgeBaseView } from '@deepseek-ai/dsh-knowledge-base/types'
-import { Button, Input, Modal, SegmentedTabs } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button, IconDatabaseOutlineRegular, IconUserOutlineRegular, Input, Modal, SegmentedTabs,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import { KnowledgeRecallPanel } from './KnowledgeRecall.tsx'
 import { KnowledgeSettingsPanel } from './KnowledgeSettings.tsx'
 import { KnowledgeSources } from './KnowledgeSources.tsx'
@@ -23,7 +25,15 @@ export function KnowledgePage(props: KnowledgePageProps) {
   const [dialog, setDialog] = useState<'create' | 'rename' | 'delete' | null>(null)
   if (state === undefined) return <div className={css.page} />
   if (state.tenantId === null) {
-    return <div className={css.page}><Header t={t} /><p className={css.muted}>{t('signedOut')}</p></div>
+    return (
+      <div className={css.page}>
+        <Header t={t} />
+        <div className={css.empty} role="status">
+          <IconUserOutlineRegular size={24} className={css.emptyGlyph} />
+          <p>{t('signedOut')}</p>
+        </div>
+      </div>
+    )
   }
   const selected = state.bases.find(base => base.id === selectedId) ?? state.bases[0]
   return (
@@ -43,7 +53,13 @@ export function KnowledgePage(props: KnowledgePageProps) {
           ))}
         </nav>
         {selected === undefined
-          ? <div className={css.detail}><p className={css.muted}>{t('detailEmpty')}</p></div>
+          ? (
+            <div className={css.empty} role="status">
+              <IconDatabaseOutlineRegular size={24} className={css.emptyGlyph} />
+              <p>{t('detailEmpty')}</p>
+              <Button variant="primary" className={css.emptyAction} onClick={() => { setDialog('create') }}>{t('create')}</Button>
+            </div>
+          )
           : <Detail key={selected.id} {...props} base={selected} openRename={() => { setDialog('rename') }} openDelete={() => { setDialog('delete') }} />}
       </div>
       <CreateDialog {...props} open={dialog === 'create'} onClose={() => { setDialog(null) }} />

@@ -41,11 +41,35 @@
 }
 
 .intro,
-.empty,
 .count {
   margin: 0;
   font-size: 13px;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* Empty states: a 24px glyph, one line on what the page is for, and the primary action. */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 20px;
+  text-align: center;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.empty p {
+  margin: 0;
+}
+
+.emptyGlyph {
+  margin-bottom: 12px;
+  color: var(--dsw-alias-label-caption);
+}
+
+.emptyAction {
+  margin-top: 16px;
 }
 
 .alert {
@@ -147,8 +171,16 @@
 .actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 6px;
+}
+
+/* The ⋯ trigger: a square icon button beside the primary 对话. */
+.more {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
 }
 
 /* Header intro, as on the Plugins page. */

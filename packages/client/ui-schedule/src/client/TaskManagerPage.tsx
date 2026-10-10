@@ -153,7 +153,7 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
               {status === 'ready' && rows.length === 0 && <div className={css.empty} role="status">
                 <IconClockOutlineRegular size={24} className={css.emptyGlyph} />
                 <h2>{t(emptyTitle)}</h2>
-                <Button variant="outline" className={css.emptyAction} onClick={onNewTask}>
+                <Button variant="primary" className={css.emptyAction} onClick={onNewTask}>
                   {t('empty.action')}
                 </Button>
               </div>}
