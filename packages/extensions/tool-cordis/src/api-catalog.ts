@@ -2465,9 +2465,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Shared management service; reads, deletion, and timing edits never activate a Session.\n\n`sessionPersistence` is a load-order requirement rather than a directly called service: a delivery commits only when `ctx.sessions.flush()` reports that a `session/flush` listener participated, and the persistence backend providing this service is the plugin that registers that listener.',
     methods: [
       {
-        signature: 'async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal): Promise<ScheduleRecord>',
+        signature: 'async create( sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal, window?: ScheduleWindowInput, ): Promise<ScheduleRecord>',
         description: 'Create a reminder bound to the caller-selected Session without activating it.\n\nThe request must supply a title; a missing, blank-after-trim, or over-long title rejects with `invalid_prompt` instead of deriving one from the prompt. A Session a delegated child owns rejects with `subagent_session`, because delivery can never reach it: the child is one whose delegation depth is above zero. The record is built from the clock reading taken before the request joins the serialized queue, so a create that waits behind a longer operation keeps its request-time anchor and may already be due when the queue reaches it.',
-        parameters: [{ name: 'sessionId', description: 'Original Session receiving the reminder.' }, { name: 'request', description: 'Validated tool selector, required title, and reminder content.' }, { name: 'signal', description: 'Optional cancellation checked before persistence begins, including after FIFO waits.' }],
+        parameters: [{ name: 'sessionId', description: 'Original Session receiving the reminder.' }, { name: 'request', description: 'Validated tool selector, required title, and reminder content.' }, { name: 'signal', description: 'Optional cancellation checked before persistence begins, including after FIFO waits.' }, { name: 'window', description: 'Optional effective dates: occurrences before the start date are skipped, and the task ends after its end date; a rule with no occurrence inside them rejects with `invalid_rule`.' }],
         returns: 'The durably stored schedule. Cancellation does not roll back an in-flight write.',
       },
       {
@@ -7603,7 +7603,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScheduleCatalogEntry',
-    declaration: 'export type ScheduleCatalogEntry = ScheduleRecord & {\n    readonly sessionId: SessionId;\n    readonly status: \'active\' | \'inactive\';\n    readonly lastDelivery?: ScheduleDeliveryReceipt;\n};',
+    declaration: 'export type ScheduleCatalogEntry = ScheduleRecord & {\n    readonly sessionId: SessionId;\n    readonly status: \'active\' | \'inactive\';\n    readonly lastDelivery?: ScheduleDeliveryReceipt;\n    readonly window?: ScheduleWindow;\n};',
   },
   {
     name: 'ScheduleCreateRequest',
@@ -7676,6 +7676,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScheduleUpdateResult',
     declaration: 'export type ScheduleUpdateResult = {\n    readonly id: ScheduleId;\n    readonly updated: boolean;\n    readonly record: ScheduleRecord;\n} | ScheduleUpdateMiss | ScheduleToolError;',
+  },
+  {
+    name: 'ScheduleWindow',
+    declaration: 'export interface ScheduleWindow {\n    readonly start?: string;\n    readonly end?: string;\n    readonly timeZone: string;\n}',
+  },
+  {
+    name: 'ScheduleWindowInput',
+    declaration: 'export interface ScheduleWindowInput {\n    readonly start?: string;\n    readonly end?: string;\n    readonly time_zone: string;\n}',
   },
   {
     name: 'Scoped',

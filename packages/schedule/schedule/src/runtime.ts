@@ -8,10 +8,17 @@ declare module '@deepseek-ai/dsh-llm' {
 }
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
-import { isRecurringScheduleRecord, renderReminderFraming, renderRecurringReminderBatchFraming, resolveRecurringOccurrence } from './domain.ts'
+import {
+  isRecurringScheduleRecord, renderReminderFraming, renderRecurringReminderBatchFraming, resolveRecurringOccurrence, windowClosesAt,
+} from './domain.ts'
 import type { DeliveryRetentionBounds, RecurringScheduleRecord } from './types.ts'
 import type { ScheduleTask } from './storage.ts'
 import { appendDelivery } from './delivery-history.ts'
+
+/** The first instant after a task's effective dates, or undefined without an end date. */
+function closesAt(task: ScheduleTask): number | undefined {
+  return task.window === undefined ? undefined : windowClosesAt(task.window)
+}
 
 /** Largest delay Node timers represent without clamping. */
 export const MAX_TIMER_DELAY_MS = 2_147_483_647
@@ -87,7 +94,14 @@ export class ScheduleRuntime {
     const failed = new Set<string>()
     const handled = new Set<string>()
     const scanNow = Date.now()
-    const due = this.tasks().filter(task => task.status === 'active' && Date.parse(task.record.scheduledAt) <= scanNow)
+    const due: ScheduleTask[] = []
+    for (const task of this.tasks()) {
+      if (task.status !== 'active' || Date.parse(task.record.scheduledAt) > scanNow) continue
+      const closes = closesAt(task)
+      // A target at or after the end date never runs: the task ends without a delivery.
+      if (closes !== undefined && Date.parse(task.record.scheduledAt) >= closes) await this.commit({ ...task, status: 'inactive' })
+      else due.push(task)
+    }
     for (const task of due) {
       if (this.stopping) return
       if (handled.has(task.record.id)) continue
@@ -108,9 +122,15 @@ export class ScheduleRuntime {
         if (admitted.length === 0) continue
         const recurring = admitted.filter((member): member is ScheduleTask & { record: RecurringScheduleRecord } =>
           isRecurringScheduleRecord(member.record))
-        const occurrences = recurring.map(member => ({
-          task: member, occurrence: resolveRecurringOccurrence(member.record, now),
-        }))
+        // A missed run is caught up only with the latest occurrence before the end date.
+        const occurrences = recurring.map((member) => {
+          const closes = closesAt(member)
+          const occurrence = resolveRecurringOccurrence(member.record, closes === undefined ? now : Math.min(now, closes - 1))
+          const next = occurrence.nextScheduledAt
+          return next === undefined || (closes !== undefined && Date.parse(next) >= closes)
+            ? { task: member, occurrence, ended: true, scheduledAt: occurrence.occurrenceAt }
+            : { task: member, occurrence, ended: false, scheduledAt: next }
+        })
         const text = isRecurringScheduleRecord(task.record)
           ? renderRecurringReminderBatchFraming(occurrences.map(({ task: member, occurrence }) => ({
             record: member.record, occurrenceAt: occurrence.occurrenceAt,
@@ -131,11 +151,11 @@ export class ScheduleRuntime {
           })
           committed.add(task.record.id)
         }
-        for (const { task: member, occurrence } of occurrences) {
+        for (const { task: member, occurrence, ended, scheduledAt } of occurrences) {
           await this.commit({
             ...member,
-            record: { ...member.record, scheduledAt: occurrence.nextScheduledAt ?? occurrence.occurrenceAt },
-            status: occurrence.nextScheduledAt === undefined ? 'inactive' : 'active',
+            record: { ...member.record, scheduledAt },
+            status: ended ? 'inactive' : 'active',
             ...appendDelivery(member, { scheduledAt: occurrence.occurrenceAt, deliveredAt, messageId: message.id }, this.retention),
           })
           committed.add(member.record.id)

@@ -11,7 +11,7 @@ import type { CatalogSnapshot } from './catalog-source.ts'
 import { CatalogFeedback } from './CatalogFeedback.tsx'
 import { TaskDetail, useTaskDetail, type TaskDetailInjected } from './TaskDetail.tsx'
 import { useRelativeClock } from './relative-clock.ts'
-import { formatScheduleFrequency, nextRunParts, taskName, zoneLabel } from './schedule-format.ts'
+import { formatScheduleFrequency, formatScheduleWindow, nextRunParts, taskName, zoneLabel } from './schedule-format.ts'
 import type { FrequencyZone } from './schedule-format.ts'
 import css from './TaskManagerPage.module.css'
 
@@ -184,6 +184,8 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
                             {record.status === 'inactive'
                               && <span className={css.metadata}>{t('status.inactive')}</span>}
                             <span className={css.metadata}>{frequency(record)}</span>
+                            {record.window !== undefined
+                              && <span className={css.metadata}>{formatScheduleWindow(record.window, t)}</span>}
                             {record.status === 'active' && <span className={css.metadata}>
                               {t('list.nextPrefix')}<time dateTime={record.scheduledAt}>
                                 {nextRun.absolute}

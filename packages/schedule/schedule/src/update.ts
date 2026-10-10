@@ -3,10 +3,10 @@ import { isDeepStrictEqual } from 'node:util'
 import {
   canonicalizeCronExpression, canonicalizeTimeZone, createAtScheduleRecord, createCronScheduleRecord,
   createDailyScheduleRecord, createEveryScheduleRecord, createWeeklyScheduleRecord, decodeScheduleRecord,
-  decodeStoredTitle, parseAtInput, parseCronInput, parseDailyInput, parseWeeklyInput,
+  decodeStoredTitle, parseAtInput, parseCronInput, parseDailyInput, parseWeeklyInput, requireInWindow,
   ScheduleInputError, ScheduleLogError, scheduleTitle,
 } from './domain.ts'
-import type { ScheduleRecord, ScheduleTimingChange, ScheduleUpdateContent, ScheduleUpdateResult } from './types.ts'
+import type { ScheduleRecord, ScheduleTimingChange, ScheduleUpdateContent, ScheduleUpdateResult, ScheduleWindow } from './types.ts'
 
 /** Name the exact selector property each timing kind must carry, or undefined for an unknown discriminant. */
 function timingSelector(kind: string): string | undefined {
@@ -147,6 +147,8 @@ function changedRecord(
  * @param change - Strict timing selector, whose kind may differ from the current record's kind, or undefined to keep timing.
  * @param now - Single wall-clock sample from the accepted FIFO slot.
  * @param content - Untrusted replacement name and instruction; each omitted field keeps its stored value.
+ * @param window - The task's effective dates: a retimed record skips to its first occurrence inside them, and a
+ *   timing with none inside them is `invalid_rule`.
  * @returns Current/new record or a bounded input/conflict result; unrelated failures throw.
  */
 export function resolveScheduleUpdate(
@@ -155,6 +157,7 @@ export function resolveScheduleUpdate(
   change: ScheduleTimingChange | undefined,
   now: number,
   content: ScheduleUpdateContent = {},
+  window?: ScheduleWindow,
 ): ScheduleUpdateResult {
   let decoded: ScheduleRecord
   try {
@@ -170,7 +173,8 @@ export function resolveScheduleUpdate(
     const retained = retainedTitle(current)
     const title = content.title === undefined ? retained : scheduleTitle(content.title)
     const prompt = content.prompt === undefined ? current.prompt : schedulePrompt(content.prompt)
-    const record = changedRecord(current, title, prompt, change, now)
+    const changed = changedRecord(current, title, prompt, change, now)
+    const record = change === undefined || changed === current ? changed : requireInWindow(changed, window)
     return { id: current.id, updated: record !== current, record }
   } catch (error) {
     if (!(error instanceof ScheduleInputError)) throw error

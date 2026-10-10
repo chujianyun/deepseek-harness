@@ -660,6 +660,17 @@ describe('Task manager catalog', () => {
     expect(list.querySelector(`.${css.row!}`)?.querySelector(`.${css.rowTitle!}`)?.textContent).toBe('Send summary')
   })
 
+  it.each([en, zh])('shows a task\'s effective dates in its row and its detail', (dictionary) => {
+    const windowed: ScheduleCatalogEntry = { ...daily, window: { start: '2026-09-20', end: '2026-10-31', timeZone: 'Asia/Shanghai' } }
+    mount({ records: [windowed, every] }, dictionary)
+    const text = dictionary['window.range'].replace('{start}', '2026-09-20').replace('{end}', '2026-10-31')
+    const row = screen.getByRole('button', { name: 'Daily weather' })
+    expect(within(row).getByText(text)).toBeDefined()
+    expect(within(screen.getByRole('button', { name: 'Check metrics' })).queryByText(/2026-09-20/u)).toBeNull()
+    fireEvent.click(row)
+    expect(within(screen.getByRole('complementary', { name: dictionary['detail.label'] })).getByText(text)).toBeDefined()
+  })
+
   it('lists cross-session active records by target time without unsupported actions', () => {
     mount()
     expect(screen.getByRole('heading', { level: 1, name: 'Automation tasks' })).toBeDefined()

@@ -22477,7 +22477,7 @@
         "packages/schedule/schedule/src/types.ts#ScheduleDeleteChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:230"
+        "packages/schedule/schedule/src/types.ts:252"
       ]
     },
     {
@@ -22838,7 +22838,7 @@
         "packages/schedule/schedule/src/types.ts#ScheduleChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:256"
+        "packages/schedule/schedule/src/types.ts:278"
       ]
     },
     {
@@ -24272,7 +24272,7 @@
         "packages/schedule/schedule/src/types.ts#OneShotScheduleDispatchChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:237"
+        "packages/schedule/schedule/src/types.ts:259"
       ]
     },
     {
@@ -25442,7 +25442,7 @@
         "packages/schedule/schedule/src/types.ts#EveryScheduleDispatchChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:244"
+        "packages/schedule/schedule/src/types.ts:266"
       ]
     },
     {
@@ -25534,7 +25534,7 @@
         "packages/schedule/schedule/src/types.ts#ScheduleCreateChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:223"
+        "packages/schedule/schedule/src/types.ts:245"
       ]
     },
     {

@@ -334,6 +334,32 @@ type ScheduleCatalogEntry = ScheduleRecord & {
   readonly status: 'active' | 'inactive'
   /** Most recent durably acknowledged inbox delivery, when available. */
   readonly lastDelivery?: ScheduleDeliveryReceipt
+  /** Effective dates, when the task was created with them. */
+  readonly window?: ScheduleWindow
+}
+```
+
+```ts type-equiv
+/** Effective dates of one Host task: local calendar dates in `timeZone`, both inclusive; at least one is set. */
+interface ScheduleWindow {
+  /** First local date an occurrence may run, `YYYY-MM-DD`. */
+  readonly start?: string
+  /** Last local date an occurrence may run, `YYYY-MM-DD`. */
+  readonly end?: string
+  /** Canonical IANA zone the dates are read in. */
+  readonly timeZone: string
+}
+```
+
+```ts type-equiv
+/** Effective dates accepted at creation; an empty start and end mean no window. */
+interface ScheduleWindowInput {
+  /** First local date, `YYYY-MM-DD`. */
+  readonly start?: string
+  /** Last local date, `YYYY-MM-DD`, not before `start`. */
+  readonly end?: string
+  /** UTC or IANA Area/Location zone the dates are read in. */
+  readonly time_zone: string
 }
 ```
 
@@ -467,9 +493,11 @@ Shared management service; reads, deletion, and timing edits never activate a Se
  * @param sessionId - Original Session receiving the reminder.
  * @param request - Validated tool selector, required title, and reminder content.
  * @param signal - Optional cancellation checked before persistence begins, including after FIFO waits.
+ * @param window - Optional effective dates: occurrences before the start date are skipped, and the task ends
+ *   after its end date; a rule with no occurrence inside them rejects with `invalid_rule`.
  * @returns The durably stored schedule. Cancellation does not roll back an in-flight write.
  */
-async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal): Promise<ScheduleRecord>
+async create( sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal, window?: ScheduleWindowInput, ): Promise<ScheduleRecord>
 
 /**
  * Read the selected Session's active tasks without resuming its Agent.

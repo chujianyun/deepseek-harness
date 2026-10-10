@@ -4,7 +4,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import { decodeScheduleRecord } from './domain.ts'
-import type { ScheduleId, ScheduleRecord } from './types.ts'
+import type { ScheduleId, ScheduleRecord, ScheduleWindow } from './types.ts'
 
 const recordSchema = z.unknown().transform((value, context): ScheduleRecord => {
   try {
@@ -33,6 +33,23 @@ const deliveryHistorySchema = z.object({
   message: 'Delivery history message identities must be unique within a task',
 })
 
+const windowDateSchema = z.iso.date()
+
+/** Effective dates; the zone is canonical and at least one date is set. */
+const windowSchema = z.object({
+  start: windowDateSchema.optional(),
+  end: windowDateSchema.optional(),
+  timeZone: z.string().min(1),
+}).strict().refine(window => window.start !== undefined || window.end !== undefined, {
+  message: 'A window sets a start or an end date',
+}).refine(window => window.start === undefined || window.end === undefined || window.start <= window.end, {
+  message: 'A window ends on or after its start date',
+}).transform((window): ScheduleWindow => ({
+  ...(window.start === undefined ? {} : { start: window.start }),
+  ...(window.end === undefined ? {} : { end: window.end }),
+  timeZone: window.timeZone,
+}))
+
 /** Stored task binds one schedule to its original Session; absent status decodes as active. */
 export const scheduleTaskSchema = z.object({
   sessionId: z.string().min(1).transform(SessionId),
@@ -40,6 +57,8 @@ export const scheduleTaskSchema = z.object({
   status: z.enum(['active', 'inactive']).default('active'),
   lastDelivery: deliveryReceiptSchema.optional(),
   deliveryHistory: deliveryHistorySchema.optional(),
+  /** Effective dates; absent means the task always runs. */
+  window: windowSchema.optional(),
 }).strict().refine((task) => {
   if (task.deliveryHistory === undefined) return true
   const latest = task.deliveryHistory.records.at(-1)

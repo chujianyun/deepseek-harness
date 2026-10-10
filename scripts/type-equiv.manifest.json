@@ -359,6 +359,16 @@
     },
     {
       "doc": "docs/subsystems/schedule.md",
+      "symbol": "ScheduleWindow",
+      "source": "packages/schedule/schedule/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/schedule.md",
+      "symbol": "ScheduleWindowInput",
+      "source": "packages/schedule/schedule/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/schedule.md",
       "symbol": "ScheduleCreateChange",
       "source": "packages/schedule/schedule/src/types.ts"
     },

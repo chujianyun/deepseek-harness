@@ -24,7 +24,7 @@ import type { CatalogDeleteOutcome, CatalogSnapshot } from './catalog-source.ts'
 import { draftZone, secondPrecision, slashDate, timingDraft, timingError, timingSnapshot, zonedWallClock } from './task-timing.ts'
 import type { TaskTimingInjected, TimingDraft } from './task-timing.ts'
 import { useRelativeClock } from './relative-clock.ts'
-import { formatScheduleFrequency, nextRunParts, recordTimeZone, zoneChoices, zoneLabel, zoneName } from './schedule-format.ts'
+import { formatScheduleFrequency, formatScheduleWindow, nextRunParts, recordTimeZone, zoneChoices, zoneLabel, zoneName } from './schedule-format.ts'
 import type { FrequencyZone } from './schedule-format.ts'
 import { cronPreview, cronShapeExpression, parseCronExpression, recognizeCronShape } from './task-cron.ts'
 import type { CronBuilderState } from './task-cron.ts'
@@ -836,6 +836,7 @@ export function TaskDetail({
               <span className={css.nextRunRelative}>{nextRun.relative}</span>
             </p>
             : <p>{t('status.inactive')}</p>}
+          {task.window !== undefined && <p className={css.window}>{formatScheduleWindow(task.window, t)}</p>}
         </div>}
         <div role="tabpanel" id={`${id}-rule-panel`} aria-labelledby={`${id}-rule-tab`}
           hidden={tab !== 'rule' || deleted} tabIndex={0}>
