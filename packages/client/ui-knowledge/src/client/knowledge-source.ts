@@ -10,7 +10,7 @@ import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 
 /** A refused action: a known reason the page words itself, or the Host's message. */
 export type KnowledgeFailure =
-  | { readonly reason: 'duplicate-name' | 'invalid-name' | 'rebuilding' | 'not-a-folder' | 'invalid-url' }
+  | { readonly reason: 'duplicate-name' | 'invalid-name' | 'rebuilding' | 'not-a-folder' | 'invalid-url' | 'credentials-in-url' }
   | { readonly reason: 'invalid-note'; readonly field: 'title' | 'content'; readonly max: number }
   | { readonly reason: 'probe-failed' | 'other'; readonly message: string }
 
@@ -100,6 +100,7 @@ function failureOf(error: RemoteFailure): KnowledgeFailure {
     case 'knowledge/rebuilding': return { reason: 'rebuilding' }
     case 'knowledge/not-a-folder': return { reason: 'not-a-folder' }
     case 'knowledge/invalid-url': return { reason: 'invalid-url' }
+    case 'knowledge/credentials-in-url': return { reason: 'credentials-in-url' }
     case 'knowledge/invalid-note': return { reason: 'invalid-note', field: error.details.field, max: error.details.max }
     case 'knowledge/embedding-probe-failed': return { reason: 'probe-failed', message: error.details.message }
     default: return { reason: 'other', message: error.message }

@@ -18,6 +18,11 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'ecommerce-accounts/browser-failed': { readonly accountId: string; readonly reason: string }
     /** Another Chrome, not started by DSH, is using this account's browser data. */
     'ecommerce-accounts/browser-busy': { readonly accountId: string }
+    /**
+     * The account's browser data could not be removed, such as while files in it are still held open; the account
+     * stays, signed out. `reason` is the error code.
+     */
+    'ecommerce-accounts/delete-failed': { readonly accountId: string; readonly reason: string }
     /** A task of the model is using this account's browser now. */
     'ecommerce-accounts/in-use': { readonly accountId: string }
   }

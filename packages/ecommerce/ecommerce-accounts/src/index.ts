@@ -365,10 +365,10 @@ export class EcommerceAccountsService extends TypertRemoteService {
         if (await this.heldElsewhere(current)) {
           throw new RemoteError('ecommerce-accounts/browser-busy', 'Another Chrome is using this account\'s browser data', { accountId })
         }
-        const port = await this.ensureChrome(current, chrome, false, 'about:blank')
+        const { port, started } = await this.ensureChrome(current, chrome, false, 'about:blank')
         const cdp = await Cdp.connect(port, this.options.chromeTimeoutMs)
         try {
-          return await showSignIn(cdp, spec.loginUrl)
+          return await showSignIn(cdp, spec.loginUrl, started)
         } finally {
           cdp.close()
         }
@@ -474,10 +474,11 @@ export class EcommerceAccountsService extends TypertRemoteService {
   }
 
   /**
-   * Delete an account and its browser data, closing its Chrome first.
+   * Delete an account and its browser data, closing its Chrome first and waiting for its process to end.
    * @param accountId - the account.
    * @returns the state without it.
-   * @throws RemoteError `hub-account/signed-out` or `ecommerce-accounts/not-found`.
+   * @throws RemoteError `hub-account/signed-out`, `ecommerce-accounts/not-found`, or `ecommerce-accounts/delete-failed`
+   *   when the browser data cannot be removed; the account then stays, signed out.
    */
   @Remote
   async deleteAccount(accountId: string): Promise<EcommerceAccountsState> {
@@ -488,7 +489,16 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const dir = this.dirOf(entry.id)
     return this.queued(entry.id, async () => {
       await closeChrome(dir, this.options.chromeTimeoutMs)
-      await rm(dir, { recursive: true, force: true })
+      try {
+        // Windows reports a file a process just let go of as busy for a moment; rm retries EBUSY and EPERM.
+        await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+      } catch (error) {
+        // Its Chrome is closed and part of its data may be gone, so its sign-in is no longer known; the error
+        // names only the cause, not the path.
+        this.setStatus(entry.id, 'signed-out')
+        const reason = (error as NodeJS.ErrnoException).code ?? 'unknown'
+        throw new RemoteError('ecommerce-accounts/delete-failed', 'The account\'s browser data could not be removed', { accountId: entry.id, reason })
+      }
       return this.serialized(async () => {
         const tenantId = this.requireTenant()
         this.entries = this.entries.filter(item => item.id !== entry.id)
@@ -597,7 +607,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     if (port === undefined) {
       if (entry.everSignedIn !== true || this.chrome === undefined) return { kind: 'signed-out' }
       if (await profileHolder(dir) !== undefined) return { kind: 'busy' }
-      port = await this.ensureChrome(entry, this.chrome, true, 'about:blank')
+      port = (await this.ensureChrome(entry, this.chrome, true, 'about:blank')).port
     }
     await ensureTab(port)
     const cdp = await Cdp.connect(port, this.options.chromeTimeoutMs)
@@ -860,11 +870,11 @@ export class EcommerceAccountsService extends TypertRemoteService {
     return this.entries.some(item => item.id === accountId)
   }
 
-  /** Reattach to the account's running Chrome, or start one; returns its port. */
-  private async ensureChrome(entry: Entry, chrome: ChromeInfo, hidden: boolean, url: string): Promise<number> {
+  /** Reattach to the account's running Chrome, or start one; returns its port and whether it was started here. */
+  private async ensureChrome(entry: Entry, chrome: ChromeInfo, hidden: boolean, url: string): Promise<{ port: number; started: boolean }> {
     const dir = this.dirOf(entry.id)
     const record = await readRecord(dir)
-    if (record !== undefined && await alive(record.port)) return record.port
+    if (record !== undefined && await alive(record.port)) return { port: record.port, started: false }
     const timeoutMs = this.options.chromeTimeoutMs
     const started = await launchChrome({ chrome: chrome.path, dir, url, hidden, timeoutMs, env: scrubbedParentEnv() })
     const cdp = await Cdp.connect(started.port, timeoutMs)
@@ -873,7 +883,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     } finally {
       cdp.close()
     }
-    return started.port
+    return { port: started.port, started: true }
   }
 
   private chromeView(): ChromeView {

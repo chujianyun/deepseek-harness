@@ -25,6 +25,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'knowledge/not-a-folder': { readonly path: string }
     /** The address to add is not an http or https URL. */
     'knowledge/invalid-url': { readonly url: string }
+    /** The web address carries a user name or password, which is neither fetched nor kept. */
+    'knowledge/credentials-in-url': Record<string, never>
     /** The item has no copy to open (a folder, or a page never fetched), or this Host cannot open files. */
     'knowledge/cannot-open': { readonly id: string }
     /** A note needs a title of 1 to `maxNoteTitleLength` characters and a body of at most `max` characters. */
@@ -50,8 +52,10 @@ export type KnowledgeItemStatus = 'pending' | 'processing' | 'completed' | 'fail
  * - `storage`: the chunks could not be written to the base's index.
  * - `folder-missing`: a folder's path is gone or no longer a folder; its files stay as they were.
  * - `unreachable`: a page could not be fetched; the last fetched content stays.
+ * - `blocked`: the web service refused the page's address by policy (`WEB_BLOCKED_URL`): it resolved to an intranet,
+ *   loopback, or other non-public address, or carried credentials; the last fetched content stays.
  */
-export type KnowledgeItemError = 'unreadable' | 'empty' | 'embedding' | 'interrupted' | 'storage' | 'folder-missing' | 'unreachable'
+export type KnowledgeItemError = 'unreadable' | 'empty' | 'embedding' | 'interrupted' | 'storage' | 'folder-missing' | 'unreachable' | 'blocked'
 
 /**
  * What a knowledge item is.

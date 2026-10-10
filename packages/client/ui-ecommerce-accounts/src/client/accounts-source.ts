@@ -19,6 +19,7 @@ export type Refusal =
   | { readonly kind: 'duplicate' }
   | { readonly kind: 'browser-busy' }
   | { readonly kind: 'in-use' }
+  | { readonly kind: 'delete-failed' }
   | { readonly kind: 'other'; readonly message: string }
 
 /** Remote calls the source drives. */
@@ -69,6 +70,7 @@ function refusalOf(error: Extract<RemoteResult<unknown>, { ok: false }>['error']
     case 'ecommerce-accounts/duplicate': return { kind: 'duplicate' }
     case 'ecommerce-accounts/browser-busy': return { kind: 'browser-busy' }
     case 'ecommerce-accounts/in-use': return { kind: 'in-use' }
+    case 'ecommerce-accounts/delete-failed': return { kind: 'delete-failed' }
     default: return { kind: 'other', message: error.message }
   }
 }

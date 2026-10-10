@@ -18,7 +18,54 @@ export class InstallError extends Error {
    * @param code - which step failed.
    * @param message - detail for logs.
    */
-  constructor(readonly code: 'network' | 'verification' | 'storage' | 'launch', message: string) { super(message) }
+  constructor(readonly code: 'network' | 'verification' | 'storage' | 'busy' | 'launch', message: string) { super(message) }
+}
+
+/** How long moving the checked CLI into place keeps retrying while another process holds its files. */
+const HELD_RETRY_MS = 3000
+
+/**
+ * Whether a file operation may succeed when tried again: `EBUSY`, and on Windows `EPERM` and `EACCES`,
+ * which it also reports while another process, such as a virus scanner, holds the files.
+ */
+function transient(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code
+  return code === 'EBUSY' || (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES'))
+}
+
+/**
+ * Run a file operation, retrying it while another process holds the files until `deadline`. Node's own
+ * `rm` retries are not used: on Windows they wait for as long as the file stays held.
+ */
+async function retrying(operation: () => Promise<void>, deadline: number, signal: AbortSignal): Promise<void> {
+  for (let delay = 100; ; delay = Math.min(delay * 2, 800)) {
+    try {
+      await operation()
+      return
+    } catch (error) {
+      const left = deadline - Date.now()
+      if (!transient(error) || left <= 0) throw error
+      await new Promise(resolve => setTimeout(resolve, Math.min(delay, left)))
+      signal.throwIfAborted()
+    }
+  }
+}
+
+/**
+ * Why files under a writable `root` could not be moved: Windows reports a held file and a missing
+ * permission with the same codes, so a directory that takes a new file is taken to be held.
+ */
+async function blockedBy(root: string, error: unknown): Promise<'busy' | 'storage'> {
+  if (!transient(error)) return 'storage'
+  const probe = join(root, '.write-check')
+  try {
+    await writeFile(probe, '')
+    await rm(probe, { force: true })
+    return 'busy'
+  } catch {
+    // The connector's directory takes no file: a permission or disk problem.
+    return 'storage'
+  }
 }
 
 /** Longest wait for the unpacked CLI to report its version. */
@@ -125,23 +172,28 @@ export async function installCli(
     await unpack(archivePath, archive.file, name, staging)
     if (skillsPath !== undefined) await unpackSkills(skillsPath, join(staging, SKILLS_DIR))
   } catch (error) {
-    await rm(staging, { recursive: true, force: true })
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined)
     throw new InstallError('storage', `${archive.file}: ${String(error)}`)
   }
+  // The version check runs from the final directory: renaming a directory right after its executable ran
+  // fails on Windows while the exited process or a virus scanner still holds the file.
+  const deadline = Date.now() + HELD_RETRY_MS
   try {
-    const { stdout } = await runNativeCommand(join(staging, name), ['--version'], AbortSignal.any([signal, AbortSignal.timeout(LAUNCH_TIMEOUT_MS)]), 'hidden')
-    if (!stdout.includes(spec.version)) throw new Error(`reported ${JSON.stringify(stdout.trim())}`)
+    await retrying(() => rm(target, { recursive: true, force: true }), deadline, signal)
+    await retrying(() => rename(staging, target), deadline, signal)
   } catch (error) {
-    await rm(staging, { recursive: true, force: true })
+    // Cleanup is best effort: the next install clears the staging directory first.
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined)
     signal.throwIfAborted()
-    throw new InstallError('launch', `${name} --version: ${String(error)}`)
+    throw new InstallError(await blockedBy(root, error), `${target}: ${String(error)}`)
   }
   try {
-    await rm(target, { recursive: true, force: true })
-    await rename(staging, target)
+    const { stdout } = await runNativeCommand(join(target, name), ['--version'], AbortSignal.any([signal, AbortSignal.timeout(LAUNCH_TIMEOUT_MS)]), 'hidden')
+    if (!stdout.includes(spec.version)) throw new Error(`reported ${JSON.stringify(stdout.trim())}`)
   } catch (error) {
-    await rm(staging, { recursive: true, force: true })
-    throw new InstallError('storage', `${target}: ${String(error)}`)
+    await rm(target, { recursive: true, force: true }).catch(() => undefined)
+    signal.throwIfAborted()
+    throw new InstallError('launch', `${name} --version: ${String(error)}`)
   }
   await rm(archivePath, { force: true })
   if (skillsPath !== undefined) await rm(skillsPath, { force: true })
