@@ -1,12 +1,10 @@
-.mark { display: block; object-fit: contain; }
-.initial { display: flex; align-items: center; justify-content: center; border-radius: var(--dsw-radius-sm); corner-shape: round;
-  background: var(--dsw-alias-label-primary); color: var(--dsw-alias-label-primary-inverted); font-size: 13px; font-weight: 600; }
 /* The row is 24px tall. */
 .name { display: inline-flex; flex-direction: column; align-items: flex-start; justify-content: center; min-width: 0; }
 .logo { display: block; max-width: 200px; height: 22px; object-fit: contain; object-position: left center; }
 /* A dark theme inverts the sidebar logo, since a dark logo drawn for a light page vanishes on a dark sidebar. */
-:global(body[data-ds-dark-theme]) .mark, :global(body[data-ds-dark-theme]) .logo { filter: invert(1); }
+:global(body[data-ds-dark-theme]) .logo { filter: invert(1); }
 .tenant { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 600; line-height: 20px; }
+.product { font-size: 10.5px; font-weight: 600; line-height: 14px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dsw-alias-label-tertiary); }
 /* New-session hero: the logo at the mark's height, as wide as its proportions need up to the
    composer's half width. A dark theme backs it with a light plate, since a logo drawn for a light
    page can vanish on a dark one; the plate stays within the mark's height so the row never grows. */

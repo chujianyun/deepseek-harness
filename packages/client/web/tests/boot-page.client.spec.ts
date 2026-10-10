@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
-import { BootPage } from '../src/boot-page.ts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { BOOT_BRAND_GLOBAL, BootPage } from '../src/boot-page.ts'
 
 afterEach(() => { document.body.innerHTML = '' })
 
@@ -57,5 +57,98 @@ describe('BootPage', () => {
     const { el, page } = mount()
     page.dispose()
     expect(el.childNodes).toHaveLength(0)
+  })
+})
+
+describe('BootPage brand', () => {
+  const BRAND = {
+    mark: 'data:image/png;base64,iVBORw0KGgo=',
+    name: 'MO WorkAI',
+    hint: { en: 'Starting MO WorkAI…', zh: '正在启动 MO WorkAI…' },
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(globalThis, BOOT_BRAND_GLOBAL)
+    document.documentElement.removeAttribute('lang')
+    document.documentElement.removeAttribute('data-dsh-locale-explicit')
+  })
+
+  it('reads the global that deployment index injections set', () => {
+    expect(BOOT_BRAND_GLOBAL).toBe('__DSH_BOOT_BRAND__')
+  })
+
+  it('shows the injected mark, name, and the hint for the document language', () => {
+    Reflect.set(globalThis, BOOT_BRAND_GLOBAL, BRAND)
+    document.documentElement.lang = 'zh-CN'
+    document.documentElement.dataset.dshLocaleExplicit = ''
+    const { el, page } = mount()
+    expect(el.querySelector('[data-dsh-boot-mark]')?.getAttribute('src')).toBe(BRAND.mark)
+    expect(el.querySelector('[data-dsh-boot-wordmark]')?.textContent).toBe('MO WorkAI')
+    expect(el.querySelector('[data-dsh-boot-hint]')?.textContent).toBe('正在启动 MO WorkAI…')
+    expect(el.textContent).not.toContain('HARNESS')
+    page.setState('x', 'failed')
+    expect(el.querySelector('[data-dsh-boot-mark]')).not.toBeNull()
+  })
+
+  it('falls back to English for an explicit language it has no hint for', () => {
+    Reflect.set(globalThis, BOOT_BRAND_GLOBAL, BRAND)
+    document.documentElement.lang = 'pt-BR'
+    document.documentElement.dataset.dshLocaleExplicit = ''
+    expect(mount().el.querySelector('[data-dsh-boot-hint]')?.textContent).toBe('Starting MO WorkAI…')
+  })
+
+  it('follows the browser languages when no explicit preference marked <html lang>', () => {
+    Reflect.set(globalThis, BOOT_BRAND_GLOBAL, BRAND)
+    document.documentElement.lang = 'en'
+    const languages = vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['fr-FR', 'zh-CN'])
+    expect(mount().el.querySelector('[data-dsh-boot-hint]')?.textContent).toBe('正在启动 MO WorkAI…')
+    document.body.innerHTML = ''
+    languages.mockReturnValue(['fr-FR'])
+    expect(mount().el.querySelector('[data-dsh-boot-hint]')?.textContent).toBe('Starting MO WorkAI…')
+    languages.mockRestore()
+  })
+
+  it('does not rebuild a brand that is already shown', () => {
+    Reflect.set(globalThis, BOOT_BRAND_GLOBAL, BRAND)
+    const { el, page } = mount()
+    const heading = el.querySelector('[data-dsh-boot-mark]')
+    page.applyBrand()
+    expect(el.querySelector('[data-dsh-boot-mark]')).toBe(heading)
+  })
+
+  it('keeps the default page when the injected brand is malformed', () => {
+    Reflect.set(globalThis, BOOT_BRAND_GLOBAL, { name: 42 })
+    const { el } = mount()
+    expect(el.textContent).toContain('HARNESS')
+    expect(el.querySelector('[data-dsh-boot-mark]')).toBeNull()
+  })
+})
+
+describe('BootPage brand applied after construction', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(globalThis, BOOT_BRAND_GLOBAL)
+    document.documentElement.removeAttribute('lang')
+    document.documentElement.removeAttribute('data-dsh-locale-explicit')
+  })
+
+  it('swaps in a brand and language that index rows set after the page was drawn', () => {
+    const { el, page } = mount()
+    expect(el.textContent).toContain('HARNESS')
+    Reflect.set(globalThis, BOOT_BRAND_GLOBAL, { mark: 'data:image/png;base64,AA==', name: 'MO WorkAI', hint: { en: 'Starting', zh: '正在启动' } })
+    document.documentElement.lang = 'zh-CN'
+    document.documentElement.dataset.dshLocaleExplicit = ''
+    page.applyBrand()
+    expect(el.querySelector('[data-dsh-boot-wordmark]')?.textContent).toBe('MO WorkAI')
+    expect(el.querySelector('[data-dsh-boot-hint]')?.textContent).toBe('正在启动')
+    expect(el.textContent).not.toContain('HARNESS')
+    page.setState('x', 'failed')
+    expect(el.querySelector('[data-dsh-boot-mark]')).not.toBeNull()
+  })
+
+  it('leaves the default page when no brand arrived', () => {
+    const { el, page } = mount()
+    page.applyBrand()
+    expect(el.textContent).toContain('HARNESS')
+    expect(el.textContent).toContain('Loading plugins…')
   })
 })

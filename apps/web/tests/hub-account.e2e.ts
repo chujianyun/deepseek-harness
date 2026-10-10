@@ -3,7 +3,8 @@
 // section says so and new prompts are refused; browser sign-in from Settings lets
 // the user in; a refused refresh signs out while a running turn keeps streaming; signing in
 // again restores prompts; Settings switches tenant, signs out, and signs in again. The sidebar brand
-// row shows the signed-in tenant's logo, or its name when it set none, never the build version. The Desktop welcome window
+// row shows the MO WorkAI mark beside the signed-in tenant's logo, or its name when it set none, above
+// the product name, never the build version. The Desktop welcome window
 // that keeps the workspace closed while signed out is covered by the Desktop specs.
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -19,7 +20,8 @@ import { startMockUserCenter } from '../../../packages/credentials/hub-account/t
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, openSettings, saveFailureShot, writeComposerDraft } from './support.ts'
 
-const OVERLAY = fileURLToPath(new URL('./hub-account.overlay.yml', import.meta.url))
+// Composed with the MO brand row like the Desktop product, which owns the mark beside the tenant name.
+const OVERLAY = ['./hub-account.overlay.yml', './brand-mo.overlay.yml'].map(path => fileURLToPath(new URL(path, import.meta.url)))
 const FIRST = 'HUB_ACCOUNT_STREAM_FIRST'
 const DONE = 'HUB_ACCOUNT_STREAM_DONE'
 const DELTAS = [`${FIRST} `, ...Array.from({ length: 40 }, (_, index) => `chunk-${String(index).padStart(2, '0')} `), `${DONE}.`]
@@ -99,7 +101,8 @@ it('signs in from Settings, survives a refused refresh without stopping a runnin
     const brandName = page.locator('[data-slot="sidebar.brand.name"]')
     await expect.poll(() => brandName.locator('img').getAttribute('src'), { timeout: 10_000 }).toMatch(/^data:image\/svg\+xml;base64,/u)
     expect(await brandName.locator('img').getAttribute('alt')).toBe('甲公司')
-    expect(await brandName.textContent()).toBe('')
+    expect(await brandName.textContent()).toBe('MO WorkAI')
+    expect(await page.locator('[data-slot="sidebar.brand.mark"] img').getAttribute('src')).toMatch(/^data:image\/png;base64,/u)
     const launcher = page.getByRole('button', { name: 'Account menu', exact: true })
     await expect.poll(() => launcher.textContent()).toBe('李李雷甲公司')
     await launcher.click()
@@ -139,7 +142,7 @@ it('signs in from Settings, survives a refused refresh without stopping a runnin
     expect(center.revoked.length).toBeGreaterThan(0)
     await expect.poll(() => section.textContent()).toContain('Tenant：乙公司')
     // 乙公司 set no branding: its name replaces the logo.
-    await expect.poll(() => brandName.textContent()).toBe('乙公司')
+    await expect.poll(() => brandName.textContent()).toBe('乙公司MO WorkAI')
     expect(await brandName.locator('img').count()).toBe(0)
     await section.getByRole('button', { name: 'Sign out' }).click()
     await section.getByText('Not signed in to Skill Hub').waitFor({ timeout: 10_000 })

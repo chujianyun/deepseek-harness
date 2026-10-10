@@ -295,3 +295,27 @@ it('draws the shared boot page before Host injections and resumes without replac
     vi.unstubAllGlobals()
   }
 })
+
+it('applies a boot brand that the Host injections set before the readiness gate resolves', async () => {
+  const gate = Promise.withResolvers<undefined>()
+  vi.stubGlobal('__DSH_BOOT_READY__', gate)
+  const container = document.createElement('div')
+  document.body.append(container)
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  const entry = new AppWebEntry(container)
+  const boot = entry.run()
+  try {
+    expect(container.textContent).toContain('HARNESS')
+    vi.stubGlobal('__DSH_BOOT_BRAND__', { mark: 'data:image/png;base64,AA==', name: 'MO WorkAI', hint: { en: 'Starting MO WorkAI…' } })
+    installFacade(vi.fn(() => { throw new Error('injections consumed') }))
+    gate.resolve(undefined)
+    await boot
+    expect(container.querySelector('[data-dsh-boot-wordmark]')?.textContent).toBe('MO WorkAI')
+    expect(container.textContent).not.toContain('HARNESS')
+  } finally {
+    gate.resolve(undefined)
+    await boot
+    await entry.dispose()
+    vi.unstubAllGlobals()
+  }
+})

@@ -3,14 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/client/ui-brand-mo/README.md
 /:
-  en: 315cd4e160df67a9
-  zh: f99a9c717d73267c
+  en: a5804c851226537e
+  zh: a82180eef9905988
 /deepseek-ai-dsh-client-ui-brand-mo:
   en: 6dccd4fd297dac9b
   zh: a5948f5282ec3a65
 /deepseek-ai-dsh-client-ui-brand-mo/summary:
-  en: 646e50f11754f60b
-  zh: cdc8f2b71535deab
+  en: 46e805ccd8ba32e1
+  zh: 69023889a3f060df
 /deepseek-ai-dsh-client-ui-brand-mo/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
@@ -21,11 +21,11 @@
   en: 6a5d3f27b095ef1a
   zh: caa747e5e7643c9a
 /deepseek-ai-dsh-client-ui-brand-mo/understand-the-implementation:
-  en: f777800776882bd2
-  zh: b0e4dee34eeec7a0
+  en: e1b5a6c2787b54fb
+  zh: 7ae3c0a9f1b85679
 /deepseek-ai-dsh-client-ui-brand-mo/further-exploration:
-  en: 2b6210e154b9c9df
-  zh: 405a817b7272b0b3
+  en: 6058eb62875f19f9
+  zh: f08dbfdbf97fcec6
 /deepseek-ai-dsh-client-ui-brand-mo/model-experience:
   en: 6dc44ee2cdab0691
   zh: 7233febb4d92ccfb
@@ -33,8 +33,8 @@
   en: ca75c51c89c2c9b0
   zh: f57cc48a1b5cbfa9
 /deepseek-ai-dsh-client-ui-brand-mo/known-limitations-and-deferred-work:
-  en: 1f28001c9d25d4dd
-  zh: 62dd1048842dd98d
+  en: cc02e6dad008afee
+  zh: b69cbddb846f0822
 /deepseek-ai-dsh-client-ui-brand-mo/known-limitations-and-deferred-work/dev-note:
   en: 279d01435256cd2a
   zh: 3bb0c20c93f16f98

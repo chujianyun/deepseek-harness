@@ -1,11 +1,8 @@
-/** Sidebar brand row: the signed-in tenant's logo, or its name. */
+/** Sidebar brand name: the signed-in tenant's logo or name above the product name. */
 
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { HubBrandInjected } from './brand-source.ts'
 import css from './HubBrand.module.css'
-
-/** Props of the `sidebar.brand.mark` occupant. */
-export type HubBrandMarkProps = PropsRuntime<'sidebar.brand.mark'> & InjectFace<HubBrandInjected>
 
 /** Props of the `sidebar.brand.name` occupant. */
 export type HubBrandNameProps = PropsRuntime<'sidebar.brand.name'> & PropsLocale<'hub-account'> & InjectFace<HubBrandInjected>
@@ -17,23 +14,8 @@ export type HubHeroMarkProps = PropsRuntime<'conversation.hero.brand.mark'> & Pr
 export type HubHeroHeadlineProps = PropsRuntime<'conversation.hero.brand.headline'> & InjectFace<HubBrandInjected>
 
 /**
- * Render the collapsed rail's brand: the tenant logo scaled into the square, or the company
- * name's first character. Beside the expanded name, which already carries the brand, nothing.
- * @param props - requested size and placement, and the branding hooks.
- * @returns the mark, or null.
- */
-export function HubBrandMark({ size, placement, useHub, useBrand }: HubBrandMarkProps) {
-  const tenantName = useHub(snapshot => snapshot.view?.profile?.tenantName ?? null)
-  const logo = useBrand(brand => brand?.logo ?? null)
-  if (placement === 'row') return null
-  if (logo !== null) return <img className={css.mark} src={logo} alt="" width={size} height={size} draggable={false} />
-  if (tenantName === null) return null
-  return <span className={css.initial} style={{ width: size, height: size }}>{tenantName.slice(0, 1)}</span>
-}
-
-/**
- * Render the expanded brand: the tenant logo scaled into the sidebar width, or the company name.
- * The build version is not shown here; General Settings shows it.
+ * Render the expanded brand: the tenant logo scaled into the sidebar width, or the company name,
+ * above the product name. The build version is not shown here; General Settings shows it.
  * @param props - the `hub-account` translator and the branding hooks.
  * @returns the brand name.
  */
@@ -45,6 +27,7 @@ export function HubBrandName({ t, useHub, useBrand }: HubBrandNameProps) {
       {logo === null
         ? <span className={css.tenant}>{tenantName}</span>
         : <img className={css.logo} src={logo} alt={tenantName ?? t('brandLogo')} draggable={false} />}
+      <span className={css.product}>{t('productName')}</span>
     </span>
   )
 }

@@ -89,7 +89,7 @@ The provisional locale comes from the browser (`navigator.languages` matched by 
 
 ### Dictionary lookup
 
-Document language synchronization writes `<html lang>` only when its value changes; dictionary-only revisions leave the attribute untouched.
+Document language synchronization writes `<html lang>` only when its value changes; dictionary-only revisions leave the attribute untouched. The host half also writes an explicit preference into `<html lang>` on every index render, so pages that run before the client plugin (the boot page) already read the user's language; without a preference it adds nothing.
 
 The typed object form requires complete dictionaries for both built-in locales. The per-locale form lets language packs register each namespace independently. For each key, lookup walks the active language's declared fallback chain in the requested namespace, repeats that chain in `common`, then displays the key itself. Bound translate functions retain stable identity per namespace so they can ride inject surfaces without breaking memoization.
 

@@ -16,14 +16,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
 import { createBrandSource } from './brand-source.ts'
 import { createHubSource } from './hub-source.ts'
-import { HubBrandMark, HubBrandName, HubHeroHeadline, HubHeroMark } from './HubBrand.tsx'
+import { HubBrandName, HubHeroHeadline, HubHeroMark } from './HubBrand.tsx'
 import { HubAccountSection } from './HubAccountSection.tsx'
 import { HubLauncher } from './HubLauncher.tsx'
 import { en, zh, type HubAccountLocaleKey } from './locales.ts'
 
 export type { HubBrandInjected } from './brand-source.ts'
 export type { HubAccountInjected, HubSnapshot } from './hub-source.ts'
-export type { HubBrandMarkProps, HubBrandNameProps, HubHeroHeadlineProps, HubHeroMarkProps } from './HubBrand.tsx'
+export type { HubBrandNameProps, HubHeroHeadlineProps, HubHeroMarkProps } from './HubBrand.tsx'
 export type { HubAccountLocaleKey } from './locales.ts'
 export type { HubAccountSectionProps } from './HubAccountSection.tsx'
 export type { HubLauncherProps } from './HubLauncher.tsx'
@@ -75,10 +75,8 @@ export function apply(ctx: ClientContext): void {
     name: 'settings.launcher', locale: NS, inject: () => source,
   }, HubLauncher))
   const brandFace = { hooks: { hub: source.hooks.hub, brand: brand.brand } }
-  ctx.slots.inject('sidebar.brand.mark', () => ctx.slots.inject('sidebar.brand.name', function* () {
-    yield ctx.slots.register({ name: 'sidebar.brand.mark', inject: () => brandFace }, HubBrandMark)
-    yield ctx.slots.register({ name: 'sidebar.brand.name', locale: NS, inject: () => brandFace }, HubBrandName)
-  }))
+  // The product mark beside the name belongs to the deployment's brand plugin (ui-brand-mo).
+  ctx.slots.inject('sidebar.brand.name', () => ctx.slots.register({ name: 'sidebar.brand.name', locale: NS, inject: () => brandFace }, HubBrandName))
   // The new-session hero shows the same tenant's logo and slogan, or nothing at all.
   ctx.slots.inject('conversation.hero.brand.mark', () => ctx.slots.inject('conversation.hero.brand.headline', function* () {
     yield ctx.slots.register({ name: 'conversation.hero.brand.mark', locale: NS, inject: () => brandFace }, HubHeroMark)

@@ -6,21 +6,17 @@
     "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
   },
   "files": [
+    "src/boot.ts",
+    "src/client/tokens.ts",
     "src/index.ts",
-    "src/locale-settings.ts"
+    "src/mark.ts"
   ],
   "references": [
     {
       "path": "../../../vendor/cordis"
     },
     {
-      "path": "../../../vendor/schemastery"
-    },
-    {
       "path": "../../host/webserver"
-    },
-    {
-      "path": "../../settings/settings"
     }
   ]
 }

@@ -1,7 +1,8 @@
 // The assembled MO WorkAI brand theme over the real theme runtime: with the row mounted, the Plugins
 // panel's primary button, the composer's send button, and the active sidebar panel take 名流蓝 in the
 // light palette and the lifted blue in the dark palette; without it the platform palette stays (ink
-// primary button, hover-grey active panel).
+// primary button, hover-grey active panel). The mounted row's index render carries the boot page brand
+// and a stylesheet that paints the boot page navy and seeds the palette before the client loads.
 import { fileURLToPath } from 'node:url'
 import { chromium, type Locator, type Page } from 'playwright'
 import { expect, it } from 'vitest'
@@ -60,6 +61,16 @@ async function paint(page: Page): Promise<{ light: { send: string } & PanelPaint
   return { light: { send: lightSend, ...await panelPaint(page) }, dark: { send: darkSend, ...dark } }
 }
 
+/** What the index render injected for the boot page: the brand name and the navy boot stylesheet. */
+function bootRows(page: Page): Promise<{ brand: string | null; navyBoot: boolean }> {
+  return page.evaluate(() => {
+    const brand: unknown = Reflect.get(globalThis, '__DSH_BOOT_BRAND__')
+    const name = typeof brand === 'object' && brand !== null && 'name' in brand && typeof brand.name === 'string' ? brand.name : null
+    const navyBoot = [...document.querySelectorAll('head style')].some(style => style.textContent.includes('[data-dsh-boot]{background:#0E1430'))
+    return { brand: name, navyBoot }
+  })
+}
+
 async function run(overlay: string | undefined, check: (page: Page) => Promise<void>, name: string): Promise<void> {
   const scaffold = await launchWebScaffold(overlay === undefined ? {} : { extraOverlayPath: overlay })
   const browser = await chromium.launch()
@@ -87,6 +98,7 @@ it('paints primary buttons, send, and the active panel 名流蓝 in both palette
       light: { send: 'rgb(42, 85, 249)', addPlugin: 'rgb(42, 85, 249)', activePanel: 'rgb(230, 236, 254)', activePanelLabel: 'rgb(42, 85, 249)' },
       dark: { send: 'rgb(92, 124, 255)', addPlugin: 'rgb(92, 124, 255)', activePanel: 'rgba(92, 124, 255, 0.18)', activePanelLabel: 'rgb(169, 186, 255)' },
     })
+    expect(await bootRows(page)).toEqual({ brand: 'MO WorkAI', navyBoot: true })
     // The collapsed rail keeps the active panel's blue label.
     await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
     const railPanel = page.getByRole('navigation', { name: 'Global panels' }).getByRole('button', { name: 'Plugins', exact: true })
@@ -101,5 +113,6 @@ it('keeps the platform palette when the brand row is not mounted', async () => {
     expect(light.activePanel).toBe('rgba(38, 49, 72, 0.06)')
     expect(light.activePanelLabel).toBe('rgb(15, 17, 21)')
     expect(light.send).not.toBe('rgb(42, 85, 249)')
+    expect(await bootRows(page)).toEqual({ brand: null, navyBoot: false })
   }, 'brand-mo-absent')
 })
