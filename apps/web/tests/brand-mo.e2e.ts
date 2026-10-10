@@ -2,7 +2,8 @@
 // panel's primary button, the composer's send button, and the active sidebar panel take 名流蓝 in the
 // light palette and the lifted blue in the dark palette; without it the platform palette stays (ink
 // primary button, hover-grey active panel). The mounted row's index render carries the boot page brand
-// and a stylesheet that paints the boot page navy and seeds the palette before the client loads.
+// and a stylesheet that paints the boot page navy and seeds the palette before the client loads. The
+// sidebar brand row is the MO wordmark (inverted on the light theme); the collapsed rail shows the app icon.
 import { fileURLToPath } from 'node:url'
 import { chromium, type Locator, type Page } from 'playwright'
 import { expect, it } from 'vitest'
@@ -99,10 +100,21 @@ it('paints primary buttons, send, and the active panel 名流蓝 in both palette
       dark: { send: 'rgb(92, 124, 255)', addPlugin: 'rgb(92, 124, 255)', activePanel: 'rgba(92, 124, 255, 0.18)', activePanelLabel: 'rgb(169, 186, 255)' },
     })
     expect(await bootRows(page)).toEqual({ brand: 'MO WorkAI', navyBoot: true })
+    // The expanded brand row is the MO wordmark: inverted to dark on the light theme, as drawn on the dark one.
+    const wordmark = page.locator('[data-slot="sidebar.brand.name"] img')
+    expect(await wordmark.getAttribute('src')).toMatch(/^data:image\/png;base64,/u)
+    const filter = () => wordmark.evaluate(element => getComputedStyle(element).filter)
+    expect(await filter()).toBe('invert(1)')
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await expect.poll(filter).toBe('none')
+    await page.emulateMedia({ colorScheme: 'light' })
+    await expect.poll(filter).toBe('invert(1)')
     // The collapsed rail keeps the active panel's blue label.
     await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
     const railPanel = page.getByRole('navigation', { name: 'Global panels' }).getByRole('button', { name: 'Plugins', exact: true })
     expect(await settled(() => railPanel.evaluate(element => getComputedStyle(element).color))).toBe('rgb(42, 85, 249)')
+    // ... and shows the app icon as its mark.
+    expect(await page.locator('[data-slot="sidebar.brand.mark"] img').count()).toBe(1)
   }, 'brand-mo')
 })
 

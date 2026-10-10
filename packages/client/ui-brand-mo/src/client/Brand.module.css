@@ -1,0 +1,5 @@
+/* The wire-frame wordmark is drawn light for dark grounds; the light theme inverts it to a dark mark. */
+/* 24px matches the sidebar brand row height. */
+.wordmark { display: block; height: 24px; width: auto; }
+:global(body:not([data-ds-dark-theme])) .wordmark { filter: invert(1); }
+.mark { display: block; border-radius: 22%; }

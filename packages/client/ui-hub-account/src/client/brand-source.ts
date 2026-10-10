@@ -1,11 +1,11 @@
-/** The signed-in tenant's cached login-page branding for the sidebar brand row. */
+/** The signed-in tenant's cached login-page branding for the new-session hero. */
 
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { HubAccountView, HubBrandingView } from '@deepseek-ai/dsh-hub-account/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 
-/** Business face injected into the sidebar brand occupants. */
+/** Business face injected into the new-session hero occupants. */
 export interface HubBrandInjected {
   readonly hooks: {
     /** Sign-in state: the tenant name comes from the signed-in profile. */

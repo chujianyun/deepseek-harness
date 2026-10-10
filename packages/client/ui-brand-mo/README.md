@@ -1,5 +1,5 @@
 ---
-description: "MO WorkAI brand for the enterprise Desktop client: the 名流蓝 palette, the product mark in the sidebar, and the branded boot page; for maintainers composing or changing the enterprise look."
+description: "MO WorkAI brand for the enterprise Desktop client: the 名流蓝 palette, the wordmark in the sidebar, and the branded boot page; for maintainers composing or changing the enterprise look."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package gives the MO WorkAI enterprise Desktop client its brand. While it is mounted, primary buttons, the composer's send button, links, focus rings, and the active sidebar panel use 名流蓝 (`#2A55F9` light, `#5C7CFF` dark), body text uses the brand greys, the sidebar brand row and collapsed rail show the MO app icon, and the boot page shows the icon, **MO WorkAI**, and a loading hint in the user's language on navy. It has no runtime state and does not affect model requests.
+This package gives the MO WorkAI enterprise Desktop client its brand. While it is mounted, primary buttons, the composer's send button, links, focus rings, and the active sidebar panel use 名流蓝 (`#2A55F9` light, `#5C7CFF` dark), body text uses the brand greys, the sidebar brand row shows the MO wire-frame wordmark (inverted to dark on the light theme) and the collapsed rail the MO app icon, and the boot page shows the icon, **MO WorkAI**, and a loading hint in the user's language on navy. It has no runtime state and does not affect model requests.
 
 ## Table of Contents
 
@@ -47,7 +47,7 @@ The ink tokens (`--dsw-alias-brand-primary`, `--dsw-alias-brand-text`), which te
 <details>
 <summary>Implementation details — click to expand</summary>
 
-The browser half calls `ctx.theme.overrideTokens()` once inside `ctx.effect()`, so the layer exists for exactly the plugin lifetime and disappears on unload or HMR. It also occupies `sidebar.brand.mark` with the MO icon for both placements; the tenant's logo or name beside it is [ui-hub-account](../ui-hub-account/README.md)'s `sidebar.brand.name`. The host half adds two rows to every index render through `webserver/index-inject`: the `__DSH_BOOT_BRAND__` global that the [boot page](../web/README.md) reads (icon, name, hint keyed by language), and a stylesheet that paints `[data-dsh-boot]` navy and declares the token table under `html body` and `html body[data-ds-dark-theme]`, which outrank the platform palette, so the first frame already uses the brand values the client layer later sets inline. The boot page picks the hint from `<html lang>`, which the [locale](../locale/README.md) host writes from an explicit language preference. The theme presenter writes the folded tokens as inline variables on `body`, which take precedence over the stylesheet palette in both color schemes. Replacing the platform accent ramp (`--dsw-static-deepseek-*`) recolors every alias that reads it; primary buttons read `--dsw-alias-button-primary-fill`, which the layer sets directly. The active sidebar panel reads `--dsw-specific-sidebar-panel-active` and `--dsw-specific-sidebar-panel-active-label`, which `ui-sidebar` falls back to its hover look when no theme sets them. The token table lives in [`src/client/tokens.ts`](src/client/tokens.ts) and the icon in [`src/mark.ts`](src/mark.ts); both faces read them.
+The browser half calls `ctx.theme.overrideTokens()` once inside `ctx.effect()`, so the layer exists for exactly the plugin lifetime and disappears on unload or HMR. It also occupies both sidebar brand slots: `sidebar.brand.name` with the wordmark ([`src/wordmark.ts`](src/wordmark.ts), decorative: the sidebar hides the brand row from assistive technology), which a `body:not([data-ds-dark-theme])` rule inverts to dark, and `sidebar.brand.mark` with the app icon on the collapsed rail only; the tenant does not change the row. The host half adds two rows to every index render through `webserver/index-inject`: the `__DSH_BOOT_BRAND__` global that the [boot page](../web/README.md) reads (icon, name, hint keyed by language), and a stylesheet that paints `[data-dsh-boot]` navy and declares the token table under `html body` and `html body[data-ds-dark-theme]`, which outrank the platform palette, so the first frame already uses the brand values the client layer later sets inline. The boot page picks the hint from `<html lang>`, which the [locale](../locale/README.md) host writes from an explicit language preference. The theme presenter writes the folded tokens as inline variables on `body`, which take precedence over the stylesheet palette in both color schemes. Replacing the platform accent ramp (`--dsw-static-deepseek-*`) recolors every alias that reads it; primary buttons read `--dsw-alias-button-primary-fill`, which the layer sets directly. The active sidebar panel reads `--dsw-specific-sidebar-panel-active` and `--dsw-specific-sidebar-panel-active-label`, which `ui-sidebar` falls back to its hover look when no theme sets them. The token table lives in [`src/client/tokens.ts`](src/client/tokens.ts) and the icon in [`src/mark.ts`](src/mark.ts); both faces read them.
 
 </details>
 
@@ -81,7 +81,7 @@ None; this package neither assembles nor sends a provider request.
 - **Fixed palette** — the values are the 名流 brand's; another enterprise brand needs its own token table.
 - **Dark values are copies** — an override cannot defer to the stylesheet value it replaces, so dark values the brand keeps repeat the platform's current references and must follow later palette changes by hand.
 - **Boot stylesheet lifetime** — the host's seeded palette stays in the served page until it reloads, so unloading only the browser half (HMR, a disabled row) keeps the brand colors until then.
-- **Product name** — **MO WorkAI** is written here for the boot page and in ui-hub-account for the sidebar product line; a rename touches both.
+- **Inline artwork** — the app icon and the wordmark ship as data URIs in the host and client bundles (about 40 KB together); the wordmark is a downscaled copy of the Desktop welcome page's `mo-logo.png`, so a redesign updates both.
 
 <a id="dev-note"></a>
 ### Dev Note

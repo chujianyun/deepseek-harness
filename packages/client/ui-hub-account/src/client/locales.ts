@@ -27,7 +27,6 @@ export const zh = {
   switchTenant: '切换租户',
   signOut: '退出登录',
   brandLogo: '公司 Logo',
-  productName: 'MO WorkAI',
 }
 
 /** Typed key union derived from the zh source of truth. */
@@ -60,5 +59,4 @@ export const en = {
   switchTenant: 'Switch tenant',
   signOut: 'Sign out',
   brandLogo: 'Company logo',
-  productName: 'MO WorkAI',
 } satisfies Record<HubAccountLocaleKey, string>

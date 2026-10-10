@@ -1,4 +1,4 @@
-/** The sidebar account launcher: the signed-in employee and company, with Settings and sign-out. */
+/** The sidebar account launcher: the signed-in employee, with Settings and sign-out. */
 
 import { useRef, useState } from 'react'
 import { IconSettingsOutlineMedium, IconUserOutlineMedium, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -10,7 +10,7 @@ import css from './HubLauncher.module.css'
 export type HubLauncherProps = PropsRuntime<'settings.launcher'> & PropsLocale<'hub-account'> & InjectFace<HubAccountInjected>
 
 /**
- * Render the employee's initial, nickname and company; its menu opens Settings or signs out.
+ * Render the employee's initial and nickname (the company shows in the Settings section); its menu opens Settings or signs out.
  * @param props - sidebar geometry, Settings navigation, the `hub-account` translator and the sign-in face.
  * @returns the launcher.
  */
@@ -31,7 +31,6 @@ export function HubLauncher({ t, wide, settingsShortcut, openSettings, useHub, o
             {wide && (
               <span className={css.identity}>
                 <span className={css.name}>{profile?.nickname ?? t('signedOut')}</span>
-                {profile !== null && <span className={css.tenant}>{profile.tenantName ?? t('noTenant')}</span>}
               </span>
             )}
           </button>
