@@ -119,6 +119,7 @@
     "apps/web/tests/present-svg.e2e.ts",
     "apps/web/tests/composer-draft-scroll.e2e.ts",
     "apps/web/tests/composer-placeholder.e2e.ts",
+    "apps/web/tests/brand-mo.e2e.ts",
     "apps/web/tests/hub-account.e2e.ts",
     "apps/web/tests/embedding-settings.e2e.ts",
     "apps/web/tests/knowledge.e2e.ts",
