@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-alpha.2/built-in-telemetry-egress-removal/guide.md
+/:
+  en: 71c2bb80336a26b2
+  zh: ba2c4ecc9a786850
+/shipped-profiles-drop-built-in-telemetry-egress:
+  en: 3c4c946617fdbd71
+  zh: 97f09a36bb114a42
+/shipped-profiles-drop-built-in-telemetry-egress/change:
+  en: 20067c8aecce05ef
+  zh: 09fd1f5b6430da90
+/shipped-profiles-drop-built-in-telemetry-egress/migration:
+  en: 9f5b6bfdbb233b9b
+  zh: 08284b78f4741264
