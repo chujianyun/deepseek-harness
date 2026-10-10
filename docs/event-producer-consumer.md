@@ -54,7 +54,7 @@ This matrix shows which packages dispatch each harness-owned event and which pac
 | `hmr/change` | `emit` | [`packages/boot/hmr/src/index.ts:32`](../packages/boot/hmr/src/index.ts) | [`hmr`](../packages/boot/hmr) (`emit`) | - |
 | `hmr/reload` | `emit` | [`packages/boot/hmr/src/index.ts:37`](../packages/boot/hmr/src/index.ts) | [`hmr`](../packages/boot/hmr) (`emit`) | - |
 | `llm/adapters-updated` | `emit` | [`packages/llm/llm/src/types.ts:23`](../packages/llm/llm/src/types.ts) | [`llm`](../packages/llm/llm) (`events.dispatch`) | [`acp`](../packages/acp/acp), `remotes` |
-| `llm/stream` | `waterfall` | [`packages/llm/llm/src/index.ts:75`](../packages/llm/llm/src/index.ts) | [`llm`](../packages/llm/llm) (`waterfall`) | [`llm-replay`](../packages/test-support/llm-replay), [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy), [`session-title`](../packages/session/session-title) |
+| `llm/stream` | `waterfall` | [`packages/llm/llm/src/index.ts:76`](../packages/llm/llm/src/index.ts) | [`llm`](../packages/llm/llm) (`waterfall`) | [`llm-replay`](../packages/test-support/llm-replay), [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy), [`session-title`](../packages/session/session-title) |
 | `permission-presets/catalog-changed` | `emit` | [`packages/interaction/permission-presets/src/types.ts:48`](../packages/interaction/permission-presets/src/types.ts) | [`permission-presets`](../packages/interaction/permission-presets) (`events.dispatch`) | `remotes` |
 | `plugin-manager/changed` | `emit` | [`packages/boot/plugin-manager/src/types.ts:258`](../packages/boot/plugin-manager/src/types.ts) | [`plugin-manager`](../packages/boot/plugin-manager) (`emit`) | `remotes` |
 | `plugin-manager/install-log` | `emit` | [`packages/boot/plugin-manager/src/types.ts:264`](../packages/boot/plugin-manager/src/types.ts) | [`plugin-manager`](../packages/boot/plugin-manager) (`emit`) | `remotes` |
@@ -102,7 +102,7 @@ This matrix shows which packages dispatch each harness-owned event and which pac
 | `internal/service` | - | `gateway` |
 | `internal/status` | - | [`agent`](../packages/core/agent), `inspector`, `translator`, [`web`](../packages/web/web) |
 | `internal/update` | - | [`app-boot`](../packages/boot/app-boot) |
-| `loader/volatile-update` | - | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `product-analytics`, `speech-to-text` |
+| `loader/volatile-update` | - | [`embedding`](../packages/llm/embedding), [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `product-analytics`, `speech-to-text` |
 | `slots/changed` | `ui-renderer` (`emit`) | - |
 <!-- END GENERATED event-producer-consumer:undeclared -->
 
