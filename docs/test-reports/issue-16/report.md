@@ -3,6 +3,7 @@
 - **工单**：[#16 [个人版 03/09] Embedding 模型设置与可恢复初始化](https://github.com/chujianyun/deepseek-harness/issues/16)
 - **评审基线（review base）**：`personal-edition/integration` @ `d53159dea8`（合并前 tip）
 - **被测修订（integration tip，未含本证据提交）**：`personal-edition/integration` @ `72de679a1f42c3dd1b649d609a3884548bf70fbf`（clean tree）
+- **评审修复修订**：`personal-edition/integration` @ `185b09064d`（`72de679a1f` 验收之后的双轴评审修复；复测见「代码评审修复与复测」）
 - **平台**：macOS (darwin arm64)，Node 26 / pnpm workspace，Electron 44.7.0（Desktop）
 - **结论**：#16 的实现已合并进 integration；本次验收在其上跑通聚焦测试、keyless Web 全旅程 e2e 与真实 macOS Desktop 初始化 smoke。除下述「验证范围说明」外，9 条验收标准均有对应通过证据。
 
@@ -45,6 +46,29 @@
 - **doc-sync**：43 gates 通过、0 失败（含 capability-seams 双语配对、doc 图、persistence 目录、README 模型体验）。
 - **构建**：`pnpm run dev:desktop` 构建 embedding / ui-settings-embedding bundle，输出「No broken requirements found」。
 - **macOS Desktop 初始化 smoke**（真实模型，非替身）：`pnpm run start:desktop` 实启当前 tip——web server 绑定、无 fatal/unclean；后台真实下载 `model_quantized.onnx` 613,527,631 字节（`.part→rename` 证明 size+sha256 校验通过）并解压 `onnxruntime-1.25.1`；重启后仍 installed 不重下（AC-7）；以 `DSH_DESKTOP_RENDERER_DEBUG_PORT=9333` 经 CDP（playwright-core connectOverCDP）导航 账号菜单→设置→嵌入模型，截图确认本地模型「已安装 / 1024 维 / 删除」、API 嵌入模型空态「去配置模型」，版本徽章 `0.2.1-alpha.2-72de679`（= 被测修订）。
+
+## 代码评审修复与复测
+
+对 `d53159dea8...HEAD` 的双轴评审（Standards / Spec）提出发现项；in-scope 缺陷已在 `185b09064d` 修复并复测，其余为判断题或超出本工单范围，记录如下。
+
+**已修复（in-scope）：**
+
+- 进度溢出（Standards 对称性 / Spec 镜像策略）：`verified-download` 在校验失败丢弃 `.part` 时回退已计字节；`run()` 成功与失败分支对称重算 `received`。复测：`skips a mirror whose bytes fail verification, keeping progress within the total` 断言全程 `receivedBytes <= totalBytes` 且终值相等；`verified-download` 断言校验失败后净字节为 0。
+- runtime 损坏死循环（Spec AC2/AC5 最严重项）：`runtimeInstalled` / `installRuntime` 改为要求本平台原生绑定目录存在，缺失即整体重装，而非 `damaged → installed → damaged` 循环。复测：新增 `reinstalls a runtime whose native bindings are gone instead of staying damaged`。
+- 凭据缺失直穿 `gateway/internal`（Spec AC5 / 错误处理）：`api.ts` 将 `resolveApiKey()` 的抛出映射为 `embedding/request-failed` 领域码，消息不再泄漏凭据环境变量名。
+- API 维度不校验（Spec AC6）：`embed()` 将端点返回维度与测量值比对，不符即报 `embedding/request-failed`。
+- ORT 会话不释放（Spec AC7 资源释放）：`OrtSession.release?` + `LocalEmbedder.release()`；移除 / 重下 / dispose 时释放。
+- 客户端硬编码顿号（Standards locale-owned）：`inUse` 名单分隔符改由 locale 字典 `list.separator` 提供（zh「、」/ en「, 」）。
+
+**复测（在 `185b09064d` 上）：** 聚焦 5 文件 58 通过（embedding.host 30、verified-download 10、ui-settings-embedding 18）；keyless Web e2e 1 通过；llm + llm-pi-ai 52 文件 1267 通过；typecheck 退出 0；lint 0 错误；doc-sync 43/43。`72de679a1f` 的验收证据保持不变，本节为其后的增量修复与复测。
+
+**记录为判断题 / 超出范围（不修）：**
+
+- `registerUsage` 无生产注册方：唯一消费者（知识库）在本工单 Out of scope；seam 与其测试保留，待知识库工单接入。
+- 「更新设置 UI 快照」无 `snapshots/` 产物：仓库快照树仅保留 session-driven 用例（snapshots/AGENTS.md）；设置 UI 的回归面为 client spec + Web e2e + 本报告截图。
+- `writeApiModels` 的裸 `Error`：仅在 settings/entryId 缺失的不可达不变量下触发，属「misconfiguration fails loud」，保留。
+- `index.ts` 体量（Divergent Change）、`EmbeddingSection` 状态级联（Repeated Switches）、`installRuntime` 参数组（Data Clumps）、dispose 未 await（同步 disposer 约束）：重构类判断题，不改变可观察行为，留待后续简化提案。
+- `damaged` 无原因码：状态与修复入口已可观察（AC5 满足）；区分「加载失败 / 文件损坏」的细化留待后续。
 
 ## 验证范围说明（诚实记录）
 
