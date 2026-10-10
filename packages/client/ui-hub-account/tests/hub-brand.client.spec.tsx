@@ -5,7 +5,7 @@ import type { HubAccountView, HubBrandingView } from '@deepseek-ai/dsh-hub-accou
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { HubBrandMark, HubBrandName, HubHeroHeadline, HubHeroMark } from '../src/client/HubBrand.tsx'
+import { HubBrandName, HubHeroHeadline, HubHeroMark } from '../src/client/HubBrand.tsx'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -23,30 +23,22 @@ function hooks(tenantName: string | null, logo: string | null, slogan: string | 
 }
 const standard = {} as GlobalStandardProps
 
-it('shows the tenant logo without the build version, and nothing beside it in the expanded row', () => {
+it('shows the tenant logo above the product line, without the build version', () => {
   const name = render(<HubBrandName {...standard} {...hooks('甲公司', LOGO)} t={makeTranslate(zh)} version="0.2.0-rc.2-abc1234" />)
   const logo = name.container.querySelector('img')!
   expect(logo.getAttribute('src')).toBe(LOGO)
   expect(logo.alt).toBe('甲公司')
-  expect(name.container.textContent).toBe('')
-  const row = render(<HubBrandMark {...standard} {...hooks('甲公司', LOGO)} size={24} placement="row" />)
-  expect(row.container.innerHTML).toBe('')
-  const rail = render(<HubBrandMark {...standard} {...hooks('甲公司', LOGO)} size={24} placement="rail" />)
-  expect(rail.container.querySelector('img')).toMatchObject({ width: 24, height: 24 })
+  expect(name.container.textContent).toBe(zh.productName)
 })
 
-it('shows the company name without a logo, and its first character on the rail', () => {
+it('shows the company name above the product line without a logo', () => {
   const name = render(<HubBrandName {...standard} {...hooks('甲公司', null)} t={makeTranslate(zh)} version="1.0.0-local" />)
-  expect(name.container.textContent).toBe('甲公司')
-  const rail = render(<HubBrandMark {...standard} {...hooks('甲公司', null)} size={24} placement="rail" />)
-  expect(rail.container.textContent).toBe('甲')
+  expect(name.container.textContent).toBe(`甲公司${zh.productName}`)
 })
 
-it('names the logo generically and draws no rail mark when the profile has no company', () => {
+it('names the logo generically when the profile has no company', () => {
   const name = render(<HubBrandName {...standard} {...hooks(null, LOGO)} t={makeTranslate(zh)} version="1.0.0" />)
   expect(name.container.querySelector('img')!.alt).toBe(zh.brandLogo)
-  const rail = render(<HubBrandMark {...standard} {...hooks(null, null)} size={24} placement="rail" />)
-  expect(rail.container.innerHTML).toBe('')
 })
 
 it('leads the new-session hero with the tenant logo at the requested height, and nothing without one', () => {

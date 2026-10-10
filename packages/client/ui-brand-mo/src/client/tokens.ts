@@ -1,5 +1,17 @@
 /** MO WorkAI theme tokens: the 名流蓝 accent and the brand greys over the platform palette. */
-import type { ThemeTokenOverrides } from '@deepseek-ai/dsh-client-ui-theme/client'
+/**
+ * One token's value per palette; structurally the theme runtime's override entry, declared here so
+ * the host-side boot stylesheet can read the table without the browser theme package.
+ */
+interface TokenModes {
+  /** Value in the light palette. */
+  light: string
+  /** Value in the dark palette. */
+  dark: string
+}
+
+/** Token name to its per-palette values. */
+type ThemeTokenOverrides = Readonly<Record<string, TokenModes>>
 
 /** Repeat one value for both palettes. */
 const both = (value: string) => ({ light: value, dark: value })

@@ -36,6 +36,19 @@
   color: var(--dsw-alias-label-primary, var(--dsh-boot-label-primary));
 }
 
+.heading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.mark {
+  display: block;
+  width: 56px;
+  height: 56px;
+}
+
 .hint {
   font-size: 12px;
   line-height: 18px;

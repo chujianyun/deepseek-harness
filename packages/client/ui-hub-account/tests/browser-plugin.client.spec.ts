@@ -11,7 +11,7 @@ import { apply as applyNode } from '../src/index.ts'
 import type { HubAccountInjected } from '../src/client/hub-source.ts'
 import { HubAccountSection } from '../src/client/HubAccountSection.tsx'
 import { HubLauncher } from '../src/client/HubLauncher.tsx'
-import { HubBrandMark, HubBrandName, HubHeroHeadline, HubHeroMark } from '../src/client/HubBrand.tsx'
+import { HubBrandName, HubHeroHeadline, HubHeroMark } from '../src/client/HubBrand.tsx'
 import type { HubBrandInjected } from '../src/client/brand-source.ts'
 
 usePinnedBrowserLanguages('zh-CN')
@@ -97,7 +97,8 @@ describe('ui-hub-account browser plugin', () => {
     expect(section?.component).toBe(HubAccountSection)
     expect(section!.options).toMatchObject({ id: 'hub-account', order: -20 })
     expect(resolveSlotLabel(section!.options.label)).toMatch(/^Skill Hub/)
-    expect(b.slots.entries('sidebar.brand.mark')[0]?.component).toBe(HubBrandMark)
+    // The product mark beside the name is the brand plugin's.
+    expect(b.slots.entries('sidebar.brand.mark')).toEqual([])
     expect(b.slots.entries('sidebar.brand.name')[0]?.component).toBe(HubBrandName)
     expect(b.slots.entries('conversation.hero.brand.mark')[0]?.component).toBe(HubHeroMark)
     expect(b.slots.entries('conversation.hero.brand.headline')[0]?.component).toBe(HubHeroHeadline)
@@ -138,7 +139,6 @@ describe('ui-hub-account browser plugin', () => {
     if (!('hooks' in brand)) throw new Error('brand name injected no face')
     const { hooks } = brand as HubBrandInjected
     expect(hooks.hub).toBe((face(b.slots) as HubAccountInjected).hooks.hub)
-    expect(b.slots.entries('sidebar.brand.mark')[0]!.inject!()).toBe(brand)
     // The new-session hero reads the same branding.
     expect(b.slots.entries('conversation.hero.brand.mark')[0]!.inject!()).toBe(brand)
     expect(b.slots.entries('conversation.hero.brand.headline')[0]!.inject!()).toBe(brand)

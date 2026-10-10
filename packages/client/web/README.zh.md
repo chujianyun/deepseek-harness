@@ -37,7 +37,7 @@ kind: "package-library"
 
 ### 启动页
 
-启动页只使用原生 DOM 与本地 CSS，因此 bundle 与插件激活失败保持可见：它显示一个 spinner 节点，其 CSS 圆弧随 entry 激活而增长，并逐 entry 报告状态。spinner 及其动画相位会一直保留，直到完整 UI 替换启动页。导入或激活失败的插件会按名称报告并给出原因（缺失服务、导入失败或状态），而不是白屏。控制台包含原始导入错误。不属于 `@deepseek-ai` 作用域的 entry 是用户 profile 中安装的第三方插件：它未能激活时，控制台输出警告，应用照常挂载。
+启动页只使用原生 DOM 与本地 CSS，因此 bundle 与插件激活失败保持可见：它显示一个 spinner 节点，其 CSS 圆弧随 entry 激活而增长，并逐 entry 报告状态。spinner 及其动画相位会一直保留，直到完整 UI 替换启动页。导入或激活失败的插件会按名称报告并给出原因（缺失服务、导入失败或状态），而不是白屏。控制台包含原始导入错误。不属于 `@deepseek-ai` 作用域的 entry 是用户 profile 中安装的第三方插件：它未能激活时，控制台输出警告，应用照常挂载。部署可通过首页注入把 `globalThis.__DSH_BOOT_BRAND__` 设为 `{ mark, name, hint }` 来品牌化启动页：页面把标志图片叠在名称上方，替代 **HARNESS** 字标，并按 `<html lang>`、其主子标签、`en` 的顺序选择提示。值缺失或格式不对时保持默认页面。字标、提示和标志带有 `data-dsh-boot-wordmark`、`data-dsh-boot-hint`、`data-dsh-boot-mark`，供部署样式使用。
 
 ### 共享模块表
 

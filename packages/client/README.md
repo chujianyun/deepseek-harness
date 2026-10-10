@@ -50,7 +50,7 @@ The kernel packages boot and serve the page; the UI feature packages present it.
 | [`ui-sidebar-browser/`](ui-sidebar-browser/README.md) | Browses sandboxed HTTP(S) pages, including loopback services, in right-Sidebar tabs | — |
 | [`resources/`](resources/README.md) | Unified resource model: protocol providers behind the `useResource` session standard hook | `ctx.resources` |
 | [`ui-sidebar-files/`](ui-sidebar-files/README.md) | Right-Sidebar workspace file tree tab type | — |
-| [`ui-brand-mo/`](ui-brand-mo/README.md) | Layers the MO WorkAI 名流蓝 palette over the theme for enterprise Desktop | — |
+| [`ui-brand-mo/`](ui-brand-mo/README.md) | MO WorkAI brand for enterprise Desktop: 名流蓝 palette, sidebar mark, boot page | — |
 | [`ui-brand-official/`](ui-brand-official/README.md) | Fills the generic browser-brand slots with the official name and marks | — |
 | [`ui-workspace/`](ui-workspace/README.md) | Provides workspace selection and creation surfaces | — |
 | [`ui-conversation/`](ui-conversation/README.md) | Presents the active conversation and its input surface | — |

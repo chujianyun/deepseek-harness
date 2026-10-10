@@ -1,5 +1,5 @@
 ---
-description: "MO WorkAI brand theme for the enterprise Desktop client: the 名流蓝 accent and brand greys layered over the platform palette; for maintainers composing or changing the enterprise look."
+description: "MO WorkAI brand for the enterprise Desktop client: the 名流蓝 palette, the product mark in the sidebar, and the branded boot page; for maintainers composing or changing the enterprise look."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package gives the MO WorkAI enterprise Desktop client the 名流 brand palette. While it is mounted, primary buttons, the composer's send button, links, focus rings, and the active sidebar panel use 名流蓝 (`#2A55F9` light, `#5C7CFF` dark), and body text uses the brand greys. It changes colors only through a theme token layer; it has no runtime state and does not affect model requests.
+This package gives the MO WorkAI enterprise Desktop client its brand. While it is mounted, primary buttons, the composer's send button, links, focus rings, and the active sidebar panel use 名流蓝 (`#2A55F9` light, `#5C7CFF` dark), body text uses the brand greys, the sidebar brand row and collapsed rail show the MO app icon, and the boot page shows the icon, **MO WorkAI**, and a loading hint in the user's language on navy. It has no runtime state and does not affect model requests.
 
 ## Table of Contents
 
@@ -47,7 +47,7 @@ The ink tokens (`--dsw-alias-brand-primary`, `--dsw-alias-brand-text`), which te
 <details>
 <summary>Implementation details — click to expand</summary>
 
-The browser half calls `ctx.theme.overrideTokens()` once inside `ctx.effect()`, so the layer exists for exactly the plugin lifetime and disappears on unload or HMR. The theme presenter writes the folded tokens as inline variables on `body`, which take precedence over the stylesheet palette in both color schemes. Replacing the platform accent ramp (`--dsw-static-deepseek-*`) recolors every alias that reads it; primary buttons read `--dsw-alias-button-primary-fill`, which the layer sets directly. The active sidebar panel reads `--dsw-specific-sidebar-panel-active` and `--dsw-specific-sidebar-panel-active-label`, which `ui-sidebar` falls back to its hover look when no theme sets them. The token table lives in [`src/client/tokens.ts`](src/client/tokens.ts); the node half is an empty Loader seat.
+The browser half calls `ctx.theme.overrideTokens()` once inside `ctx.effect()`, so the layer exists for exactly the plugin lifetime and disappears on unload or HMR. It also occupies `sidebar.brand.mark` with the MO icon for both placements; the tenant's logo or name beside it is [ui-hub-account](../ui-hub-account/README.md)'s `sidebar.brand.name`. The host half adds two rows to every index render through `webserver/index-inject`: the `__DSH_BOOT_BRAND__` global that the [boot page](../web/README.md) reads (icon, name, hint keyed by language), and a stylesheet that paints `[data-dsh-boot]` navy and declares the token table under `html body` and `html body[data-ds-dark-theme]`, which outrank the platform palette, so the first frame already uses the brand values the client layer later sets inline. The boot page picks the hint from `<html lang>`, which the [locale](../locale/README.md) host writes from an explicit language preference. The theme presenter writes the folded tokens as inline variables on `body`, which take precedence over the stylesheet palette in both color schemes. Replacing the platform accent ramp (`--dsw-static-deepseek-*`) recolors every alias that reads it; primary buttons read `--dsw-alias-button-primary-fill`, which the layer sets directly. The active sidebar panel reads `--dsw-specific-sidebar-panel-active` and `--dsw-specific-sidebar-panel-active-label`, which `ui-sidebar` falls back to its hover look when no theme sets them. The token table lives in [`src/client/tokens.ts`](src/client/tokens.ts) and the icon in [`src/mark.ts`](src/mark.ts); both faces read them.
 
 </details>
 
@@ -59,6 +59,7 @@ The browser half calls `ctx.theme.overrideTokens()` once inside `ctx.effect()`, 
 - [ui-theme](../ui-theme/README.md) — owns the theme runtime and the override-layer contract.
 - [ui-sidebar](../ui-sidebar/README.md) — reads the active-panel tokens.
 - [ui-brand-official](../ui-brand-official/README.md) — the official brand occupants that enterprise Desktop leaves out.
+- [web](../web/README.md) — the boot page that reads the injected brand.
 
 -----
 
@@ -76,10 +77,11 @@ None; this package neither assembles nor sends a provider request.
 <a id="known-limitations-and-deferred-work"></a>
 
 
-- **Colors only** — the sidebar mark, the boot screen, and page layouts are outside this package's token layer.
+- **Page layouts** — page headers, cards, and empty states keep their own components; this package changes colors, the mark, and the boot page only.
 - **Fixed palette** — the values are the 名流 brand's; another enterprise brand needs its own token table.
 - **Dark values are copies** — an override cannot defer to the stylesheet value it replaces, so dark values the brand keeps repeat the platform's current references and must follow later palette changes by hand.
-- **First paint** — the layer applies once the client plugins load, so the boot frame shows the platform palette for a moment.
+- **Boot stylesheet lifetime** — the host's seeded palette stays in the served page until it reloads, so unloading only the browser half (HMR, a disabled row) keeps the brand colors until then.
+- **Product name** — **MO WorkAI** is written here for the boot page and in ui-hub-account for the sidebar product line; a rename touches both.
 
 <a id="dev-note"></a>
 ### Dev Note

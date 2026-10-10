@@ -31,5 +31,14 @@ export const LocaleSettingsFields = {
   [LOCALE_PREFERENCE_FIELD]: z.string().pattern(LOCALE_ID_PATTERN).required(false),
 }
 
+/**
+ * `<html lang>` value for a locale id: the built-in `zh` pack is Simplified Chinese as used in mainland China.
+ * @param id - locale id.
+ * @returns the BCP 47 tag for the document element.
+ */
+export function documentLanguage(id: LocaleId): string {
+  return id === 'zh' ? 'zh-CN' : id
+}
+
 /** Schema for the shared locale preference. */
 export const LocaleSettingsSchema = z.object(LocaleSettingsFields)
