@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Registers the sidebar account launcher (`settings.launcher`): the employee's initial, nickname, and company, with **Settings** and **Sign out**. Fills the sidebar brand row with the tenant's logo or name, without the build version, which General Settings shows, and the new-session hero (its logo and slogan). Adds a **Skill Hub account** section to Settings: the nickname, tenant, and phone with **Switch tenant** and **Sign out**, or, signed out, the sign-in state with **Sign in to Skill Hub**. It works through the [`hubAccount` Remote](../../credentials/hub-account/README.md). The Desktop [welcome window](../../../apps/desktop/README.md) keeps the workspace closed while signed out, so the renderer has no sign-in gate of its own.
+Registers the sidebar account launcher (`settings.launcher`): the employee's initial, nickname, and company, with **Settings** and **Sign out**. Fills the sidebar brand row with the tenant's logo or name (General Settings shows the build version) and the new-session hero (its logo and slogan). Adds a **Skill Hub account** section to Settings: the nickname, tenant, and phone with **Switch tenant** and **Sign out**, or, signed out, the sign-in state with **Sign in to Skill Hub**. It works through the [`hubAccount` Remote](../../credentials/hub-account/README.md). The Desktop [welcome window](../../../apps/desktop/README.md) keeps the workspace closed while signed out, so the renderer has no sign-in gate of its own.
 
 ## Table of Contents
 
