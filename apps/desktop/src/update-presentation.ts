@@ -1,6 +1,7 @@
 /** Semantic content for the Web-localized optional Desktop status indicator. */
 import type { DesktopUpdateFailureKind, DesktopUpdatePresentation, DesktopUpdateState } from './ipc.ts'
 import type { DesktopMessages } from './locale.ts'
+import type { DesktopPolicyState } from './mandatory-update-policy.ts'
 
 const NETWORK_FAILURE = /\b(?:ERR_CONNECTION_CLOSED|ERR_CONNECTION_RESET|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ETIMEDOUT)\b/u
 
@@ -48,4 +49,15 @@ export function presentDesktopUpdate(state: DesktopUpdateState): DesktopUpdatePr
     ...(state.percent === undefined ? {} : { percent: Math.floor(state.percent) }),
     ...(state.phase === 'error' ? { failure: desktopUpdateFailureKind(state) } : {}),
   }
+}
+
+/**
+ * Combine the updater with a release the Hub offers for manual download.
+ * @param update - Updater presentation; any non-idle phase wins.
+ * @param policy - Latest policy decision; a forced update hides the offer.
+ * @returns The updater presentation, or `available` for the offered version.
+ */
+export function presentDesktopStatus(update: DesktopUpdatePresentation, policy: DesktopPolicyState | undefined): DesktopUpdatePresentation {
+  return update.phase === 'idle' && policy?.blocking === false && policy.available !== undefined
+    ? { phase: 'available', version: policy.available.version } : update
 }

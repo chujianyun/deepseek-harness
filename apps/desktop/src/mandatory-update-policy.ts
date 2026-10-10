@@ -1,6 +1,6 @@
 /** Mandatory-update policy, independent of local business traffic and updater artifacts. */
 
-import { valid } from 'semver'
+import { gt, valid } from 'semver'
 import { platformClientHeaders, type AccountClientMetadata } from '@deepseek-ai/dsh-deepseek-account'
 
 /** Installed release identity; no field is supplied by a renderer. */
@@ -30,6 +30,16 @@ export interface DesktopPolicyState {
   readonly detail?: string
   readonly page?: string
   readonly error?: 'unavailable' | 'authentication-required'
+  /** Newer release the Hub offers without forcing it; only a no-force success carries one. */
+  readonly available?: DesktopAvailableRelease
+}
+
+/** A newer release offered for manual download. */
+export interface DesktopAvailableRelease {
+  readonly version: string
+  /** Allowed download page. */
+  readonly page: string
+  readonly detail?: string
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -109,7 +119,16 @@ function text(value: unknown, limit: number): string | undefined {
   return typeof value === 'string' && value.trim() !== '' && value.length <= limit ? value : undefined
 }
 
-function parsePolicy(body: unknown, ok: boolean, config: DesktopPolicyConfig): DesktopPolicyState {
+function parseAvailable(value: unknown, current: string, config: DesktopPolicyConfig): DesktopAvailableRelease | undefined {
+  const offer = record(value)
+  const version = typeof offer?.version === 'string' ? valid(offer.version) : null
+  const page = desktopPolicyPage(offer?.desktop_app_link, config.allowedPageOrigins)
+  if (version === null || page === undefined || !gt(version, current)) return undefined
+  const detail = text(offer?.detail, 16_384)
+  return { version, page, ...(detail === undefined ? {} : { detail }) }
+}
+
+function parsePolicy(body: unknown, ok: boolean, config: DesktopPolicyConfig, current: string): DesktopPolicyState {
   const root = record(body)
   const data = record(root?.data)
   if (root?.code === 40005) {
@@ -120,7 +139,10 @@ function parsePolicy(body: unknown, ok: boolean, config: DesktopPolicyConfig): D
     return { blocking: true, checking: false,
       ...(title === undefined ? {} : { title }), ...(detail === undefined ? {} : { detail }), ...(page === undefined ? {} : { page }) }
   }
-  if (ok && root?.code === 0 && data?.biz_code === 0 && data.biz_data === null) return { blocking: false, checking: false }
+  if (ok && root?.code === 0 && data?.biz_code === 0 && data.biz_data === null) {
+    const available = parseAvailable(data.available, current, config)
+    return { blocking: false, checking: false, ...(available === undefined ? {} : { available }) }
+  }
   throw new Error('desktop policy: response does not contain a valid mandatory or no-force decision')
 }
 
@@ -195,7 +217,7 @@ export class DesktopMandatoryUpdatePolicy {
           this.setState({ ...this.current, checking: false, error: 'authentication-required' })
           return this.current
         }
-        const state = parsePolicy(body, response.ok, this.config)
+        const state = parsePolicy(body, response.ok, this.config, this.client().version)
         this.failures = 0
         this.setState(state)
       } catch {

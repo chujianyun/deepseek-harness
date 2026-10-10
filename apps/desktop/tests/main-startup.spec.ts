@@ -52,6 +52,7 @@ const harness = await vi.hoisted(async () => {
   let embeddedHub: unknown
   let closeWindowsOnQuit = false
   let updateState: DesktopUpdateState = { phase: 'idle' }
+  let hasUpdateSource = true
   let platformDisposeDeferred: ReturnType<typeof deferred> | undefined
   // The native Platform view owns persistent browser storage; Desktop startup tests replace it so
   // each quit can control when that cleanup settles.
@@ -206,6 +207,8 @@ const harness = await vi.hoisted(async () => {
     ipcOn: vi.fn<(channel: string, listener: (event: { sender: unknown; senderFrame: unknown }, ...args: unknown[]) => void) => void>(),
     get updateState() { return updateState },
     set updateState(value: DesktopUpdateState) { updateState = value },
+    get hasUpdateSource() { return hasUpdateSource },
+    set hasUpdateSource(value: boolean) { hasUpdateSource = value },
     get prepareUpdate() { return prepareUpdate! },
     set prepareUpdate(value: () => Promise<boolean>) { prepareUpdate = value },
     get publishUpdate() { return publishUpdate! },
@@ -246,6 +249,7 @@ const harness = await vi.hoisted(async () => {
       prepareUpdate = undefined
       publishUpdate = undefined
       updateState = { phase: 'idle' }
+      hasUpdateSource = true
       updateCheck.mockReset().mockImplementation(async () => updateState)
       loginShell.mockReset().mockImplementation(base => readLoginShell(base))
       updateDownload.mockReset().mockImplementation(async () => updateState)
@@ -341,6 +345,7 @@ vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: class
     harness.publishUpdate = publish
   }
   get state() { return harness.updateState }
+  get hasUpdateSource() { return harness.hasUpdateSource }
   readonly check = harness.updateCheck
   readonly download = harness.updateDownload
   readonly install = harness.updateInstall
@@ -1495,6 +1500,41 @@ describe('desktop main startup', () => {
     await invoke(DESKTOP_IPC.updatesOpen, 'app')
     expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'error',
       message: en.updateDownloadFailed, technicalDetails: 'desktop update: download confirmation is stale' }))
+  })
+
+  it('offers a Hub release for manual download when the updater has nothing newer', async () => {
+    harness.embeddedPolicy = { origin: 'https://policy.example.com', allowedPageOrigins: ['https://downloads.example.com'] }
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ code: 0, data: { biz_code: 0, biz_data: null,
+      available: { version: '1.3.0', desktop_app_link: 'https://downloads.example.com/download', detail: 'Faster sign-in' } } })))
+    await readyForUpdate()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(await invoke(DESKTOP_IPC.updatesStatus, 'app')).toEqual({ phase: 'available', version: '1.3.0' })
+    harness.dialog.showMessageBox.mockClear()
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 }).mockResolvedValueOnce({ response: 0 })
+    harness.updateCheck.mockResolvedValueOnce({ phase: 'idle' })
+    await invoke(DESKTOP_IPC.updatesOpen, 'app')
+    expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({
+      message: 'New version available: 1.3.0', buttons: [en.updateOpenDownloadPage, en.later],
+      detail: 'Faster sign-in\n\nCurrent version: 1.2.3. Download the new version from the download page and install it.' }))
+    expect(harness.openExternal).toHaveBeenCalledExactlyOnceWith('https://downloads.example.com/download')
+    expect(harness.updateDownload).not.toHaveBeenCalled()
+  })
+
+  it('offers the Hub release on a build without an update source instead of reporting a failed check', async () => {
+    harness.embeddedPolicy = { origin: 'https://policy.example.com', allowedPageOrigins: ['https://downloads.example.com'] }
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ code: 0, data: { biz_code: 0, biz_data: null,
+      available: { version: '1.3.0', desktop_app_link: 'https://downloads.example.com/download' } } })))
+    await readyForUpdate()
+    await vi.advanceTimersByTimeAsync(0)
+    harness.hasUpdateSource = false
+    harness.updateCheck.mockClear()
+    harness.dialog.showMessageBox.mockClear()
+    harness.dialog.showMessageBox.mockResolvedValue({ response: 1 })
+    await invoke(DESKTOP_IPC.updatesOpen, 'app')
+    expect(harness.updateCheck).not.toHaveBeenCalled()
+    expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({ message: 'New version available: 1.3.0' }))
+    expect(harness.openExternal).not.toHaveBeenCalled()
+    expect(await invoke(DESKTOP_IPC.updatesStatus, 'app')).toEqual({ phase: 'available', version: '1.3.0' })
   })
 
   it('keeps policy failures silent while an ordinary update proceeds', async () => {

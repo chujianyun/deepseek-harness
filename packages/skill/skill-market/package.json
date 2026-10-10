@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-skill-market",
   "description": "Skill Hub market for Desktop: the per-tenant market skill source, browsing the Hub, and validated one-click install",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },

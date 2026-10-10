@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-knowledge",
   "description": "Knowledge page of the dsh Desktop client: the sidebar entry and the knowledge bases with their files, over the knowledgeBases Remote",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
