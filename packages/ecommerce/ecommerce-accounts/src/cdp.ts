@@ -188,13 +188,20 @@ export async function pageTabs(cdp: Cdp): Promise<{ readonly targetId: string; r
 }
 
 /**
- * Open the sign-in page in a new tab and bring its window on screen, in front.
+ * Open the sign-in page in a new tab and bring its window on screen, in front. In a Chrome DSH has just
+ * started, the blank tabs open before the sign-in tab, the page it started on among them, are closed once
+ * the sign-in tab exists; a running Chrome's blank tabs may be the user's or a page's, and stay.
  * @param cdp - the browser connection.
  * @param url - the sign-in page.
+ * @param startedHere - whether DSH has just started this Chrome.
  * @returns the tab id.
  */
-export async function showSignIn(cdp: Cdp, url: string): Promise<string> {
+export async function showSignIn(cdp: Cdp, url: string, startedHere: boolean): Promise<string> {
+  // Listed before the sign-in tab exists: Chrome lists a new tab as about:blank until its page commits.
+  const blank = startedHere ? (await pageTabs(cdp)).filter(tab => tab.url === 'about:blank') : []
   const { targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', { url })
+  // A tab that closed meanwhile, or one Chrome refuses to close, leaves the sign-in page usable.
+  await Promise.all(blank.map(tab => cdp.send('Target.closeTarget', { targetId: tab.targetId }).catch(() => undefined)))
   const { windowId } = await cdp.send<{ windowId: number }>('Browser.getWindowForTarget', { targetId })
   await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } })
   await cdp.send('Browser.setWindowBounds', { windowId, bounds: { left: 80, top: 80, width: 1280, height: 880 } })

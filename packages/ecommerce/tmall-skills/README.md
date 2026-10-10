@@ -22,7 +22,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-`packSkills(outDir)` builds every skill in `SKILLS` into `<outDir>/<name>/` — its `SKILL.md` from `skills/<name>/` and one self-contained ES module per script under `scripts/`, bundled with tsdown from `src/` — and zips each folder as `<outDir>/<name>.zip` around `<name>/`, the layout Skill Hub accepts; earlier builds are replaced. From the repository root:
+`packSkills(outDir)` builds every skill in `SKILLS` into `<outDir>/<name>/` — its `SKILL.md` from `skills/<name>/` and one self-contained ES module per script under `scripts/`, bundled with tsdown from `src/` — and zips each folder as `<outDir>/<name>.zip` around `<name>/`, the layout Skill Hub accepts, with `/`-separated entry names on every platform; earlier builds are replaced. From the repository root:
 
 ```sh
 node --input-type=module -e "import { packSkills } from './packages/ecommerce/tmall-skills/src/index.ts'; console.log(await packSkills('dist/tmall-skills'))"

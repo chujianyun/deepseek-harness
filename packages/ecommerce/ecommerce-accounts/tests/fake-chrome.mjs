@@ -10,7 +10,7 @@
 // and a page whose address has risk=1 also loads a risk-control frame.
 // FAKE_CHROME_VERSION sets the reported version (empty prints none); FAKE_CHROME_SILENT never sends
 // the check response; FAKE_CHROME_BASE64 encodes bodies; FAKE_CHROME_STUBBORN ignores Browser.close; FAKE_CHROME_LINGER_MS keeps running that long after its port closes;
-// FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs. For the Tmall
+// FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs; FAKE_CHROME_LATE_COMMIT lists a new tab as about:blank for a moment. For the Tmall
 // data skills, Alimama's report page sends its scene query, and `Runtime.evaluate` answers the page
 // APIs those skills call — Alimama's report query and Business Advisor's self-service export, whose
 // .xlsx this server hands out — with one day's figures for scenes 371 and 436. An item page renders its
@@ -358,7 +358,13 @@ wss.on('connection', (socket) => {
     const reply = result => { socket.send(JSON.stringify({ id, result })) }
     const target = sessionId === undefined ? undefined : targets.get(sessionId.slice(2))
     switch (method) {
-      case 'Target.createTarget': return reply({ targetId: addTarget(params.url) })
+      case 'Target.createTarget': {
+        if (process.env.FAKE_CHROME_LATE_COMMIT === undefined) return reply({ targetId: addTarget(params.url) })
+        // As Chrome does, the new tab is listed as about:blank until its page commits.
+        const targetId = addTarget('about:blank')
+        setTimeout(() => { const target = targets.get(targetId); if (target !== undefined) { target.url = params.url; saveTabs() } }, 300)
+        return reply({ targetId })
+      }
       case 'Target.attachToTarget': return reply({ sessionId: `s-${params.targetId}` })
       case 'Target.closeTarget':
         if (process.env.FAKE_CHROME_NO_CLOSE !== undefined) return socket.send(JSON.stringify({ id, error: { message: 'No target with given id found' } }))

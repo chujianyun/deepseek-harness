@@ -365,10 +365,10 @@ export class EcommerceAccountsService extends TypertRemoteService {
         if (await this.heldElsewhere(current)) {
           throw new RemoteError('ecommerce-accounts/browser-busy', 'Another Chrome is using this account\'s browser data', { accountId })
         }
-        const port = await this.ensureChrome(current, chrome, false, 'about:blank')
+        const { port, started } = await this.ensureChrome(current, chrome, false, 'about:blank')
         const cdp = await Cdp.connect(port, this.options.chromeTimeoutMs)
         try {
-          return await showSignIn(cdp, spec.loginUrl)
+          return await showSignIn(cdp, spec.loginUrl, started)
         } finally {
           cdp.close()
         }
@@ -607,7 +607,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     if (port === undefined) {
       if (entry.everSignedIn !== true || this.chrome === undefined) return { kind: 'signed-out' }
       if (await profileHolder(dir) !== undefined) return { kind: 'busy' }
-      port = await this.ensureChrome(entry, this.chrome, true, 'about:blank')
+      port = (await this.ensureChrome(entry, this.chrome, true, 'about:blank')).port
     }
     await ensureTab(port)
     const cdp = await Cdp.connect(port, this.options.chromeTimeoutMs)
@@ -870,11 +870,11 @@ export class EcommerceAccountsService extends TypertRemoteService {
     return this.entries.some(item => item.id === accountId)
   }
 
-  /** Reattach to the account's running Chrome, or start one; returns its port. */
-  private async ensureChrome(entry: Entry, chrome: ChromeInfo, hidden: boolean, url: string): Promise<number> {
+  /** Reattach to the account's running Chrome, or start one; returns its port and whether it was started here. */
+  private async ensureChrome(entry: Entry, chrome: ChromeInfo, hidden: boolean, url: string): Promise<{ port: number; started: boolean }> {
     const dir = this.dirOf(entry.id)
     const record = await readRecord(dir)
-    if (record !== undefined && await alive(record.port)) return record.port
+    if (record !== undefined && await alive(record.port)) return { port: record.port, started: false }
     const timeoutMs = this.options.chromeTimeoutMs
     const started = await launchChrome({ chrome: chrome.path, dir, url, hidden, timeoutMs, env: scrubbedParentEnv() })
     const cdp = await Cdp.connect(started.port, timeoutMs)
@@ -883,7 +883,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     } finally {
       cdp.close()
     }
-    return started.port
+    return { port: started.port, started: true }
   }
 
   private chromeView(): ChromeView {

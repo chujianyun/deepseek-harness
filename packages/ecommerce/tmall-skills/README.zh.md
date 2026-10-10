@@ -22,7 +22,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-`packSkills(outDir)` 把 `SKILLS` 中的每个技能构建到 `<outDir>/<name>/`：`SKILL.md` 取自 `skills/<name>/`，`scripts/` 下每个脚本是用 tsdown 从 `src/` 打包出的单个自包含 ES 模块；再把每个文件夹以 `<name>/` 为根压缩成 `<outDir>/<name>.zip`，即 Skill Hub 接受的格式；之前的构建会被替换。在仓库根目录运行：
+`packSkills(outDir)` 把 `SKILLS` 中的每个技能构建到 `<outDir>/<name>/`：`SKILL.md` 取自 `skills/<name>/`，`scripts/` 下每个脚本是用 tsdown 从 `src/` 打包出的单个自包含 ES 模块；再把每个文件夹以 `<name>/` 为根压缩成 `<outDir>/<name>.zip`，即 Skill Hub 接受的格式，条目名在所有平台上都用 `/` 分隔；之前的构建会被替换。在仓库根目录运行：
 
 ```sh
 node --input-type=module -e "import { packSkills } from './packages/ecommerce/tmall-skills/src/index.ts'; console.log(await packSkills('dist/tmall-skills'))"
