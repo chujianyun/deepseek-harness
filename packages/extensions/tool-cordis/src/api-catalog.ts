@@ -674,6 +674,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'automationTasks',
+    summary: 'Host owner of the `automationTasks` Remote namespace.',
+    description: 'Host owner of the `automationTasks` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote(\'create\') async create(request: AutomationTaskCreateRequest): Promise<AutomationTaskCreateValue>',
+        description: 'Create one automation task: a new Session in the workspace, named after the task, with the requested assistant, model, permission preset, and connector grant, then the schedule bound to it. The assistant, connectors, and permission presets are optional services; asking for one a deployment lacks is `automation-tasks/unavailable`. A step\'s refusal passes through unchanged, except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.',
+        parameters: [{ name: 'request', description: 'the task as the form submits it.' }],
+        returns: 'the new Session and the stored schedule.',
+      },
+    ],
+  },
+  {
     key: 'browserUse',
     summary: 'Owns one optional provider registration in the shared browser-use service.',
     description: 'Owns one optional provider registration in the shared browser-use service.',
@@ -986,6 +999,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'id', description: 'the connector.' }, { name: 'command', description: 'the command words, as the view lists them.' }],
         returns: 'the state once the setting is saved.',
         throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
+      },
+      {
+        signature: 'allowInSession(session: Session, ids: readonly string[]): void',
+        description: 'Let a session\'s plain connector writes through these connectors run without asking while the signed-in tenant stays signed in, as the session of an unattended automation task needs: appends `connectors/session-allowed`, which replaces the session\'s earlier grant and survives a restart with the session log; an unchanged grant appends nothing. High-risk writes, commands the CLI runs only confirmed, and commands of unknown risk still ask.',
+        parameters: [{ name: 'session', description: 'the session to grant.' }, { name: 'ids', description: 'connectors to allow; an empty list withdraws the grant. Refuses an unknown id with `connectors/not-found`, one unsupported here with `connectors/unavailable`, and a signed-out Hub with `hub-account/signed-out`.' }],
       },
       {
         signature: 'restrict(filter: ConnectorFilter): () => void',
@@ -2465,10 +2483,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Shared management service; reads, deletion, and timing edits never activate a Session.\n\n`sessionPersistence` is a load-order requirement rather than a directly called service: a delivery commits only when `ctx.sessions.flush()` reports that a `session/flush` listener participated, and the persistence backend providing this service is the plugin that registers that listener.',
     methods: [
       {
-        signature: 'async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal): Promise<ScheduleRecord>',
+        signature: 'async create( sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal, window?: ScheduleWindowInput, ): Promise<ScheduleRecord>',
         description: 'Create a reminder bound to the caller-selected Session without activating it.\n\nThe request must supply a title; a missing, blank-after-trim, or over-long title rejects with `invalid_prompt` instead of deriving one from the prompt. A Session a delegated child owns rejects with `subagent_session`, because delivery can never reach it: the child is one whose delegation depth is above zero. The record is built from the clock reading taken before the request joins the serialized queue, so a create that waits behind a longer operation keeps its request-time anchor and may already be due when the queue reaches it.',
-        parameters: [{ name: 'sessionId', description: 'Original Session receiving the reminder.' }, { name: 'request', description: 'Validated tool selector, required title, and reminder content.' }, { name: 'signal', description: 'Optional cancellation checked before persistence begins, including after FIFO waits.' }],
+        parameters: [{ name: 'sessionId', description: 'Original Session receiving the reminder.' }, { name: 'request', description: 'Validated tool selector, required title, and reminder content.' }, { name: 'signal', description: 'Optional cancellation checked before persistence begins, including after FIFO waits.' }, { name: 'window', description: 'Optional effective dates: occurrences before the start date are skipped, and the task ends after its end date; a rule with no occurrence inside them rejects with `invalid_rule`.' }],
         returns: 'The durably stored schedule. Cancellation does not roll back an in-flight write.',
+      },
+      {
+        signature: 'validate(request: ScheduleCreateRequest, window?: ScheduleWindowInput): void',
+        description: 'Check a creation request as `create` would, without storing anything: the same name, instruction, selector, timing, and effective-date rules, at the current clock.',
+        parameters: [{ name: 'request', description: 'Selector, required title, and reminder content.' }, { name: 'window', description: 'Optional effective dates.' }],
+        throws: ['ScheduleInputError for the first rule the request breaks.'],
       },
       {
         signature: '@Remote(\'list\') async list(request: ScheduleListRequest): Promise<ScheduleRecord[]>',
@@ -5574,6 +5598,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AuthorizationStatus = \'authorized\' | \'cancelled\';',
   },
   {
+    name: 'AutomationTaskCreateRequest',
+    declaration: 'export interface AutomationTaskCreateRequest {\n    readonly title: string;\n    readonly prompt: string;\n    readonly workspaceId: WorkspaceId;\n    readonly assistantId?: string;\n    readonly model?: ModelSelection;\n    readonly permission?: string;\n    readonly connectors?: readonly string[];\n    readonly timing: ScheduleTimingChange;\n    readonly window?: ScheduleWindowInput;\n}',
+  },
+  {
+    name: 'AutomationTaskCreateValue',
+    declaration: 'export interface AutomationTaskCreateValue {\n    readonly sessionId: SessionId;\n    readonly record: ScheduleRecord;\n}',
+  },
+  {
     name: 'BackendRegistry',
     declaration: 'export class BackendRegistry {\n    register(name: string, backend: StorageBackend): () => void;\n    get(name: string): StorageBackend;\n    names(): string[];\n}',
   },
@@ -7603,7 +7635,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ScheduleCatalogEntry',
-    declaration: 'export type ScheduleCatalogEntry = ScheduleRecord & {\n    readonly sessionId: SessionId;\n    readonly status: \'active\' | \'inactive\';\n    readonly lastDelivery?: ScheduleDeliveryReceipt;\n};',
+    declaration: 'export type ScheduleCatalogEntry = ScheduleRecord & {\n    readonly sessionId: SessionId;\n    readonly status: \'active\' | \'inactive\';\n    readonly lastDelivery?: ScheduleDeliveryReceipt;\n    readonly window?: ScheduleWindow;\n};',
   },
   {
     name: 'ScheduleCreateRequest',
@@ -7676,6 +7708,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ScheduleUpdateResult',
     declaration: 'export type ScheduleUpdateResult = {\n    readonly id: ScheduleId;\n    readonly updated: boolean;\n    readonly record: ScheduleRecord;\n} | ScheduleUpdateMiss | ScheduleToolError;',
+  },
+  {
+    name: 'ScheduleWindow',
+    declaration: 'export interface ScheduleWindow {\n    readonly start?: string;\n    readonly end?: string;\n    readonly timeZone: string;\n}',
+  },
+  {
+    name: 'ScheduleWindowInput',
+    declaration: 'export interface ScheduleWindowInput {\n    readonly start?: string;\n    readonly end?: string;\n    readonly time_zone: string;\n}',
   },
   {
     name: 'Scoped',

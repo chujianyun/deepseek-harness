@@ -334,6 +334,12 @@ describe('ui-schedule browser half', () => {
       const panel = injectedFace(ctx.slots.entries('main')[0]!, undefined as never) as TaskManagerInjected
       panel.onNewTask()
       expect(startSession).toHaveBeenCalledOnce()
+      // The page offers a creation form only while a plugin occupies its slot.
+      expect(panel.taskFormAvailable()).toBe(false)
+      const disposeForm = ctx.slots.register({ name: 'schedule.task.form' }, () => null)
+      expect(panel.taskFormAvailable()).toBe(true)
+      disposeForm()
+      expect(panel.taskFormAvailable()).toBe(false)
     } finally {
       await fiber.dispose()
       owner()

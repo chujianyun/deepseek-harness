@@ -673,6 +673,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Stores tasks independently of Session activation and queues due messages in the original Session.',
   },
   {
+    key: 'automationTasks',
+    pkg: 'automation-tasks',
+    title: 'Automation tasks',
+    mode: 'core',
+    note: 'Creates a form-made automation task in one call: its named Session with assistant, model, permission, and connector grant, and the schedule bound to it.',
+  },
+  {
     key: 'goals',
     pkg: 'goal',
     title: 'Same-session goal domain',

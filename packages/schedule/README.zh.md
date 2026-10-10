@@ -28,6 +28,7 @@ kind: "package-group"
 |---|---|
 | [`schedule/`](schedule/README.zh.md) | Host 拥有的提醒持久化、调度、查询与显式删除 |
 | [`tool-schedule/`](tool-schedule/README.zh.md) | 基于宿主 `ctx.schedule` 服务的 preset 级 `schedule_create`、`schedule_list`、`schedule_update` 和 `schedule_delete` 工具 |
+| [`automation-tasks/`](automation-tasks/README.zh.md) | 一次调用创建表单填写的自动化任务：以任务命名、绑定智能体、模型、权限与连接器授权的会话，以及绑定到它的调度 |
 
 -----
 

@@ -36,6 +36,7 @@ The [format references](persistence-changes/historical-formats/README.md) cover 
 | `event:compaction/start` | event | `db874d463b0fdec77e9da1c4568f37cb70bd6596781eb93800db44fb8a116965` | [`{ type: "compaction/start" }`](#persistence-type-sha256-db874d463b0fdec77e9da1c4568f37cb70bd6596781eb93800db44fb8a116965) |
 | `event:compaction/summary` | event | `e2f9a41e0989f54ed8cee80f8db2bcf9d60a5c810dc9d45b83fa050b9dce7602` | [`{ type: "compaction/summary" }`](#persistence-type-sha256-e2f9a41e0989f54ed8cee80f8db2bcf9d60a5c810dc9d45b83fa050b9dce7602) |
 | `event:connectors/always-allowed` | event | `492954dcf5c71ab11312adacc10f9de45eed6bbe90549ec10c21c7e7386efa27` | [`{ type: "connectors/always-allowed" }`](#persistence-type-sha256-492954dcf5c71ab11312adacc10f9de45eed6bbe90549ec10c21c7e7386efa27) |
+| `event:connectors/session-allowed` | event | `b9e2081c4ef6696227ffc8421e6d1bfa65eb15193c5fd82223a830952842cdf1` | [`{ type: "connectors/session-allowed" }`](#persistence-type-sha256-b9e2081c4ef6696227ffc8421e6d1bfa65eb15193c5fd82223a830952842cdf1) |
 | `event:deliverables/presented` | event | `13d3d180f977bf78081d487ffa0ecb75857349bcab29a5a3fb48189fca2a6176` | [`{ type: "deliverables/presented" }`](#persistence-type-sha256-13d3d180f977bf78081d487ffa0ecb75857349bcab29a5a3fb48189fca2a6176) |
 | `event:developer/message` | event | `186159f5f6f67a0b8cd095b8fe55bef42d4f25ca1a1c248f859867af2ece0467` | [`{ type: "developer/message" }`](#persistence-type-sha256-186159f5f6f67a0b8cd095b8fe55bef42d4f25ca1a1c248f859867af2ece0467) |
 | `event:feedback/message-delete` | event | `3ee93b06f3a125850337602bcdf155d2538c43a5c944ec55b1b3c365152d6796` | [`{ type: "feedback/message-delete" }`](#persistence-type-sha256-3ee93b06f3a125850337602bcdf155d2538c43a5c944ec55b1b3c365152d6796) |
@@ -509,7 +510,8 @@ Source: [`packages/compaction/compaction/src/types.ts:34`](../packages/compactio
 ```ts persistence-catalog
 /**
  * A bash call ran connector writes without asking, because the user had always allowed each of
- * them for the signed-in tenant — log-only audit, never in the model transcript. `commands`
+ * them for the signed-in tenant, or allowed their connectors for this session — log-only audit,
+ * never in the model transcript. `commands`
  * names them as `<cli> <command words>`, such as `lark-cli im +messages-send`.
  */
 'connectors/always-allowed': {
@@ -520,7 +522,26 @@ Source: [`packages/compaction/compaction/src/types.ts:34`](../packages/compactio
 
 Types: [ToolCallId](subsystems/core.md)
 
-Source: [`packages/connector/connectors/src/types.ts:17`](../packages/connector/connectors/src/types.ts)
+Source: [`packages/connector/connectors/src/types.ts:18`](../packages/connector/connectors/src/types.ts)
+
+<a id="connectorssession-allowed--log-only"></a>
+
+#### `connectors/session-allowed` — log-only
+
+```ts persistence-catalog
+/**
+ * The session's plain connector writes run without asking for these connectors from now on,
+ * while the granting tenant stays signed in, as granted when an automation task created the
+ * session; replaces the earlier grant, and an empty list withdraws it. Log-only, never in the
+ * model transcript.
+ */
+'connectors/session-allowed': {
+  connectors: string[]
+  tenantId: string
+}
+```
+
+Source: [`packages/connector/connectors/src/types.ts:28`](../packages/connector/connectors/src/types.ts)
 
 ### `deliverables/*`
 
@@ -845,7 +866,7 @@ Source: [`packages/sandbox/sandbox-policy/src/session-mode.ts:33`](../packages/s
 
 Types: [ScheduleChange](subsystems/schedule.md)
 
-Source: [`packages/schedule/schedule/src/types.ts:365`](../packages/schedule/schedule/src/types.ts)
+Source: [`packages/schedule/schedule/src/types.ts:387`](../packages/schedule/schedule/src/types.ts)
 
 ### `session/*`
 
@@ -1698,6 +1719,14 @@ SHA-256: `1ebc6f9ff3aa9e3a38f8695f49bacdab1f8b7a3832741853ca46f40af56ccd01`
 SHA-256: `08019d166cdeb2620c50b42b194045f07eb848ed042b40acee6cb1270457e4a1`
 
 `"connectors/always-allowed"`
+
+<a id="persistence-type-sha256-0a8f1ad8ee5886204198463216c5e0a873a2fb635258db9a760e2a00c5d32e25"></a>
+
+### `"connectors/session-allowed"`
+
+SHA-256: `0a8f1ad8ee5886204198463216c5e0a873a2fb635258db9a760e2a00c5d32e25`
+
+`"connectors/session-allowed"`
 
 <a id="persistence-type-sha256-e5d3828df1ec3e2a66879de0659e0f4866d9cfffc00825ee731a66f8a0c03d98"></a>
 
@@ -3377,7 +3406,7 @@ Sources: [`packages/core/session/src/types.ts:240`](../packages/core/session/src
 
 SHA-256: `e6063d0451dc02026fd9b54ad3f77c7b1b6392ad3e872a7737ac84e13ca72344`
 
-Sources: [`packages/schedule/schedule/src/types.ts:244`](../packages/schedule/schedule/src/types.ts)
+Sources: [`packages/schedule/schedule/src/types.ts:266`](../packages/schedule/schedule/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -4257,7 +4286,7 @@ Sources: [`packages/api/session-controller/src/types.ts:101`](../packages/api/se
 
 SHA-256: `8e8e91646a5cae3fc78f7532a0013ff2088ae47077642c2edd507a508209b8af`
 
-Sources: [`packages/schedule/schedule/src/types.ts:237`](../packages/schedule/schedule/src/types.ts)
+Sources: [`packages/schedule/schedule/src/types.ts:259`](../packages/schedule/schedule/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -4469,7 +4498,7 @@ One of:
 
 SHA-256: `2e3523541e942ef6cc9fbc5b91f242e0ca4c6ada479b79b96025b797f6e41f3f`
 
-Sources: [`packages/schedule/schedule/src/types.ts:256`](../packages/schedule/schedule/src/types.ts)
+Sources: [`packages/schedule/schedule/src/types.ts:278`](../packages/schedule/schedule/src/types.ts)
 
 One of:
 
@@ -4488,7 +4517,7 @@ One of:
 
 SHA-256: `eea687d437880bd5f55fb447a561112800ca34334c0724d9cecb98493059d9e4`
 
-Sources: [`packages/schedule/schedule/src/types.ts:223`](../packages/schedule/schedule/src/types.ts)
+Sources: [`packages/schedule/schedule/src/types.ts:245`](../packages/schedule/schedule/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -4506,7 +4535,7 @@ Sources: [`packages/schedule/schedule/src/types.ts:223`](../packages/schedule/sc
 
 SHA-256: `18dc21f12bbac8ade8377e6fbb54179e20c3d955d73fba3244c57fb6bf001df0`
 
-Sources: [`packages/schedule/schedule/src/types.ts:230`](../packages/schedule/schedule/src/types.ts)
+Sources: [`packages/schedule/schedule/src/types.ts:252`](../packages/schedule/schedule/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -5727,7 +5756,7 @@ Sources: [`packages/knowledge/knowledge-selection/src/types.ts:53`](../packages/
 
 SHA-256: `2bcf34ac7dc95d34676ac2da19c692bd1fb17a58c54164fb904c8cd1b83c243b`
 
-Sources: [`packages/connector/connectors/src/types.ts:17`](../packages/connector/connectors/src/types.ts)
+Sources: [`packages/connector/connectors/src/types.ts:18`](../packages/connector/connectors/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -5961,6 +5990,19 @@ Sources: [`packages/compaction/compaction/src/types.ts:24`](../packages/compacti
 | `compactionId` | required | `string` |
 | `sourceCommandId` | optional | `string` |
 | `turn` | required | [`OptionalSessionSeq`](#persistence-type-sha256-3bd652ebfa8726b3ce3937a4f1bd2759e02f86b3a08a20f9e41a8513656fbc5f) |
+
+<a id="persistence-type-sha256-48446dd2b7709930b04f7a7e907698e46143203ba15ca8b20638b5f478895253"></a>
+
+### `{ connectors, tenantId }`
+
+SHA-256: `48446dd2b7709930b04f7a7e907698e46143203ba15ca8b20638b5f478895253`
+
+Sources: [`packages/connector/connectors/src/types.ts:28`](../packages/connector/connectors/src/types.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `connectors` | required | [`string[]`](#persistence-type-sha256-93c33d9687613293f8c95d46c4d922fe9ceae83b84c384beff5c3315abe005f2) |
+| `tenantId` | required | `string` |
 
 <a id="persistence-type-sha256-8ad45ad053b4d89f8865c17cc9ff3b8748e86045f3f0fb816269a34af2619141"></a>
 
@@ -8101,6 +8143,22 @@ SHA-256: `492954dcf5c71ab11312adacc10f9de45eed6bbe90549ec10c21c7e7386efa27`
 | `seq` | required | `number` |
 | `time` | required | `number` |
 | `type` | required | `"connectors/always-allowed"` |
+
+<a id="persistence-type-sha256-b9e2081c4ef6696227ffc8421e6d1bfa65eb15193c5fd82223a830952842cdf1"></a>
+
+<a id="persistence-type-eventconnectorssession-allowed"></a>
+
+### `{ type: "connectors/session-allowed" }`
+
+SHA-256: `b9e2081c4ef6696227ffc8421e6d1bfa65eb15193c5fd82223a830952842cdf1`
+
+| Property | Presence | Type |
+|---|---|---|
+| `data` | required | [`{ connectors, tenantId }`](#persistence-type-sha256-48446dd2b7709930b04f7a7e907698e46143203ba15ca8b20638b5f478895253) |
+| `ignorable` | optional | `true` |
+| `seq` | required | `number` |
+| `time` | required | `number` |
+| `type` | required | `"connectors/session-allowed"` |
 
 <a id="persistence-type-sha256-13d3d180f977bf78081d487ffa0ecb75857349bcab29a5a3fb48189fca2a6176"></a>
 

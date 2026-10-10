@@ -8,10 +8,17 @@ declare module '@deepseek-ai/dsh-llm' {
 }
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
-import { isRecurringScheduleRecord, renderReminderFraming, renderRecurringReminderBatchFraming, resolveRecurringOccurrence } from './domain.ts'
+import {
+  isRecurringScheduleRecord, renderReminderFraming, renderRecurringReminderBatchFraming, resolveRecurringOccurrence, windowClosesAt,
+} from './domain.ts'
 import type { DeliveryRetentionBounds, RecurringScheduleRecord } from './types.ts'
 import type { ScheduleTask } from './storage.ts'
 import { appendDelivery } from './delivery-history.ts'
+
+/** The first instant after a task's effective dates, or undefined without an end date. */
+function closesAt(task: ScheduleTask): number | undefined {
+  return task.window === undefined ? undefined : windowClosesAt(task.window)
+}
 
 /** Largest delay Node timers represent without clamping. */
 export const MAX_TIMER_DELAY_MS = 2_147_483_647
@@ -87,7 +94,25 @@ export class ScheduleRuntime {
     const failed = new Set<string>()
     const handled = new Set<string>()
     const scanNow = Date.now()
-    const due = this.tasks().filter(task => task.status === 'active' && Date.parse(task.record.scheduledAt) <= scanNow)
+    const due: ScheduleTask[] = []
+    /** End instants of the due tasks with an end date, computed once per drive. */
+    const closing = new Map<string, number>()
+    for (const task of this.tasks()) {
+      if (task.status !== 'active' || Date.parse(task.record.scheduledAt) > scanNow) continue
+      const closes = closesAt(task)
+      if (closes === undefined || scanNow < closes) {
+        if (closes !== undefined) closing.set(task.record.id, closes)
+        due.push(task)
+        continue
+      }
+      // Past the end date nothing runs, not even a missed occurrence: the task ends without a delivery.
+      try {
+        await this.commit({ ...task, status: 'inactive' })
+      } catch (error: unknown) {
+        failed.add(task.record.id)
+        this.ctx.logger.warn(`schedule: could not end reminder ${JSON.stringify(task.record.id)} after its effective dates: ${String(error)}`)
+      }
+    }
     for (const task of due) {
       if (this.stopping) return
       if (handled.has(task.record.id)) continue
@@ -108,9 +133,15 @@ export class ScheduleRuntime {
         if (admitted.length === 0) continue
         const recurring = admitted.filter((member): member is ScheduleTask & { record: RecurringScheduleRecord } =>
           isRecurringScheduleRecord(member.record))
-        const occurrences = recurring.map(member => ({
-          task: member, occurrence: resolveRecurringOccurrence(member.record, now),
-        }))
+        // A task whose next occurrence falls after its end date ends with this delivery.
+        const occurrences = recurring.map((member) => {
+          const closes = closing.get(member.record.id)
+          const occurrence = resolveRecurringOccurrence(member.record, now)
+          const next = occurrence.nextScheduledAt
+          return next === undefined || (closes !== undefined && Date.parse(next) >= closes)
+            ? { task: member, occurrence, ended: true, scheduledAt: occurrence.occurrenceAt }
+            : { task: member, occurrence, ended: false, scheduledAt: next }
+        })
         const text = isRecurringScheduleRecord(task.record)
           ? renderRecurringReminderBatchFraming(occurrences.map(({ task: member, occurrence }) => ({
             record: member.record, occurrenceAt: occurrence.occurrenceAt,
@@ -131,11 +162,11 @@ export class ScheduleRuntime {
           })
           committed.add(task.record.id)
         }
-        for (const { task: member, occurrence } of occurrences) {
+        for (const { task: member, occurrence, ended, scheduledAt } of occurrences) {
           await this.commit({
             ...member,
-            record: { ...member.record, scheduledAt: occurrence.nextScheduledAt ?? occurrence.occurrenceAt },
-            status: occurrence.nextScheduledAt === undefined ? 'inactive' : 'active',
+            record: { ...member.record, scheduledAt },
+            status: ended ? 'inactive' : 'active',
             ...appendDelivery(member, { scheduledAt: occurrence.occurrenceAt, deliveredAt, messageId: message.id }, this.retention),
           })
           committed.add(member.record.id)

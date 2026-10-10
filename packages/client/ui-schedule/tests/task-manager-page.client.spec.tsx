@@ -10,6 +10,7 @@ import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controlle
 import type { ScheduleCatalogEntry, ScheduleDeleteResult, ScheduleId, ScheduleUpdateResult } from '@deepseek-ai/dsh-schedule/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { TaskManagerPage, type TaskManagerPageProps } from '../src/client/TaskManagerPage.tsx'
+import type { TaskFormOwnerProps } from '../src/client/task-form-slot.ts'
 import { TaskManagerIcon } from '../src/client/TaskManagerIcon.tsx'
 import { createCatalogSource, type CatalogSnapshot } from '../src/client/catalog-source.ts'
 import {
@@ -174,6 +175,8 @@ function mount(
     onDelete: vi.fn<TaskManagerPageProps['onDelete']>(async () => 'deleted'),
     onRetry: vi.fn(async () => {}),
     onNewTask: vi.fn(),
+    taskFormAvailable: vi.fn(() => false),
+    renderSlot: () => null,
     onUpdateTiming: vi.fn<TaskManagerPageProps['onUpdateTiming']>(async ({ expected }) => ({
       ok: true, value: { id: expected.id, updated: false, record: expected },
     })),
@@ -612,6 +615,46 @@ it('updates original Session navigation as metadata arrives and archive state ch
 })
 
 describe('Task manager catalog', () => {
+  it('opens the creation form in place of the list, and selects the task it created once listed', () => {
+    let done: ((created: { sessionId: SessionId; id: ScheduleId } | undefined) => void) | undefined
+    const renderSlot = ((_key: string, owner: TaskFormOwnerProps) => {
+      done = owner.onDone
+      return <form aria-label="Task form" />
+    }) as TaskManagerPageProps['renderSlot']
+    let available = true
+    const h = mount({ records: [at] }, en, { taskFormAvailable: () => available, renderSlot })
+    fireEvent.click(within(screen.getByRole('group', { name: en['statusFilter.label'] })).getByRole('button', { name: en['status.inactive'] }))
+    fireEvent.click(screen.getByRole('button', { name: en['new.action'] }))
+    expect(h.props.onNewTask).not.toHaveBeenCalled()
+    expect(screen.getByRole('form', { name: 'Task form' })).toBeDefined()
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+    // Cancelling returns to the list.
+    act(() => { done!(undefined) })
+    expect(screen.queryByRole('form')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en['new.action'] }))
+    // A created task is selected once the catalog lists it.
+    act(() => { done!({ sessionId: daily.sessionId, id: daily.id }) })
+    expect(screen.queryByRole('complementary', { name: en['detail.label'] })).toBeNull()
+    h.update({ records: [at, daily] })
+    expect(screen.getByRole('complementary', { name: en['detail.label'] })).toBeDefined()
+    expect(nameField().value).toBe('Daily weather')
+    // The filter returned to All, so the new row shows.
+    expect(screen.getByRole('button', { name: 'Daily weather' })).toBeDefined()
+    // A form whose plugin went away leaves the page on its list.
+    fireEvent.click(screen.getByRole('button', { name: en['new.action'] }))
+    available = false
+    h.update({ records: [at, daily] })
+    expect(screen.queryByRole('form')).toBeNull()
+    expect(screen.getByRole('heading', { level: 1 })).toBeDefined()
+  })
+
+  it('opens the creation form from the empty state too', () => {
+    const renderSlot: TaskManagerPageProps['renderSlot'] = () => <form aria-label="Task form" />
+    mount({ records: [] }, en, { taskFormAvailable: () => true, renderSlot })
+    fireEvent.click(emptyNewTaskButton())
+    expect(screen.getByRole('form', { name: 'Task form' })).toBeDefined()
+  })
+
   it('starts a new Session instead of offering a page creation form', () => {
     const h = mount({ records: [at] })
     // The heading's compact action and the empty state's named action are the
@@ -658,6 +701,19 @@ describe('Task manager catalog', () => {
     expect(wraps).toHaveLength(3)
     for (const wrap of wraps) expect(wrap.querySelector(`.${css.row!}`)).not.toBeNull()
     expect(list.querySelector(`.${css.row!}`)?.querySelector(`.${css.rowTitle!}`)?.textContent).toBe('Send summary')
+  })
+
+  it.each([en, zh])('shows a task\'s effective dates in its row and its detail', (dictionary) => {
+    const windowed: ScheduleCatalogEntry = {
+      ...daily, window: { start: '2026-09-20', end: '2026-10-31', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+    }
+    mount({ records: [windowed, every] }, dictionary)
+    const text = dictionary['window.range'].replace('{start}', '2026-09-20').replace('{end}', '2026-10-31')
+    const row = screen.getByRole('button', { name: 'Daily weather' })
+    expect(within(row).getByText(text)).toBeDefined()
+    expect(within(screen.getByRole('button', { name: 'Check metrics' })).queryByText(/2026-09-20/u)).toBeNull()
+    fireEvent.click(row)
+    expect(within(screen.getByRole('complementary', { name: dictionary['detail.label'] })).getByText(text)).toBeDefined()
   })
 
   it('lists cross-session active records by target time without unsupported actions', () => {
@@ -2507,6 +2563,28 @@ describe('Task detail rule header and run-time card', () => {
       sessionId: daily.sessionId, id: daily.id, expected: timingSnapshot(daily),
       change: { kind: 'at', at: { date: '2026-10-01', time: '23:00:00.000', time_zone: DEVICE_ZONE } },
     })
+  })
+
+  it.each([en, zh])('explains a time refused by the task\'s effective dates, and keeps the generic message without them', async (dictionary) => {
+    const windowed: ScheduleCatalogEntry = { ...daily, window: { end: '2026-10-31', timeZone: 'Asia/Shanghai' } }
+    const h = mount({ records: [windowed, every] }, dictionary)
+    h.updateTiming.mockResolvedValue({ ok: true, value: { code: 'invalid_rule', message: 'No occurrence of this rule falls within the effective dates.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Daily weather' }))
+    chooseTime('10', '23', '00', dictionary)
+    clickSave(dictionary)
+    await act(async () => { await h.updateTiming.mock.results[0]!.value })
+    expect(h.updateTiming).toHaveBeenCalledOnce()
+    // On the rule tab the refusal shows in the Run time card's hint slot.
+    expect(screen.getByText(dictionary['rule.error.outsideWindow'])).toBeDefined()
+    cleanup()
+    const plain = mount({ records: [daily] }, dictionary)
+    plain.updateTiming.mockResolvedValue({ ok: true, value: { code: 'invalid_rule', message: 'Invalid.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Daily weather' }))
+    chooseTime('10', '23', '00', dictionary)
+    clickSave(dictionary)
+    await act(async () => { await plain.updateTiming.mock.results[0]!.value })
+    expect(plain.updateTiming).toHaveBeenCalledOnce()
+    expect(screen.queryByText(dictionary['rule.error.outsideWindow'])).toBeNull()
   })
 
   it('reports a resolved Remote failure as an unconfirmed update', async () => {

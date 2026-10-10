@@ -1,6 +1,6 @@
 /** Browser-safe formatting shared by Session and Host reminder catalogs. */
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ScheduleRecord } from '@deepseek-ai/dsh-schedule/client'
+import type { ScheduleRecord, ScheduleWindow } from '@deepseek-ai/dsh-schedule/client'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { CronDescriptionKey } from './task-cron.ts'
 import { cronPreview, parseCronExpression } from './task-cron.ts'
@@ -453,4 +453,24 @@ export function orderScheduleRecords(records: readonly ScheduleRecord[], now: nu
     if (leftOverdue !== rightOverdue) return Number(rightOverdue) - Number(leftOverdue)
     return leftTime - rightTime || left.index - right.index
   }).map(({ record }) => record)
+}
+
+/** Dictionary keys of a task's effective dates. */
+export type WindowKey = 'window.range' | 'window.from' | 'window.until' | 'window.zone'
+
+/**
+ * Describe a task's effective dates as stored, local dates in the task's zone, naming the zone
+ * when it is not the browser's.
+ * @param window - Effective dates with at least one date set.
+ * @param t - Translator owning the window keys.
+ * @param systemZone - The browser's zone.
+ * @returns One line such as `生效日期 2026-09-20 至 2026-09-30`.
+ */
+export function formatScheduleWindow(
+  window: ScheduleWindow, t: Translate<WindowKey>, systemZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+): string {
+  const dates = window.start !== undefined && window.end !== undefined
+    ? t('window.range', { start: window.start, end: window.end })
+    : window.start !== undefined ? t('window.from', { start: window.start }) : t('window.until', { end: String(window.end) })
+  return window.timeZone === systemZone ? dates : t('window.zone', { dates, zone: window.timeZone })
 }

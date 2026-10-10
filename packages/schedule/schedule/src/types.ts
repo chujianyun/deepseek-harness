@@ -209,6 +209,26 @@ export interface ScheduleDeliveryRecord extends ScheduleDeliveryReceipt {
   readonly prompt?: string
 }
 
+/** Effective dates of one Host task: local calendar dates in `timeZone`, both inclusive; at least one is set. */
+export interface ScheduleWindow {
+  /** First local date an occurrence may run, `YYYY-MM-DD`. */
+  readonly start?: string
+  /** Last local date an occurrence may run, `YYYY-MM-DD`. */
+  readonly end?: string
+  /** Canonical IANA zone the dates are read in. */
+  readonly timeZone: string
+}
+
+/** Effective dates accepted at creation; an empty start and end mean no window. */
+export interface ScheduleWindowInput {
+  /** First local date, `YYYY-MM-DD`. */
+  readonly start?: string
+  /** Last local date, `YYYY-MM-DD`, not before `start`. */
+  readonly end?: string
+  /** UTC or IANA Area/Location zone the dates are read in. */
+  readonly time_zone: string
+}
+
 /** Browser-safe retained reminder with its original Session binding. */
 export type ScheduleCatalogEntry = ScheduleRecord & {
   /** Session receiving this reminder when it becomes due. */
@@ -217,6 +237,8 @@ export type ScheduleCatalogEntry = ScheduleRecord & {
   readonly status: 'active' | 'inactive'
   /** Most recent durably acknowledged inbox delivery, when available. */
   readonly lastDelivery?: ScheduleDeliveryReceipt
+  /** Effective dates, when the task was created with them. */
+  readonly window?: ScheduleWindow
 }
 
 /** Creates one durable reminder record. */

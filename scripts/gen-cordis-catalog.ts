@@ -93,6 +93,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   fs: 'filesystem.md',
   goals: 'goal.md',
   schedule: 'schedule.md',
+  automationTasks: 'schedule.md',
   inspector: 'extensions.md',
   webServer: 'web-server.md',
   llm: 'llm-streaming.md',
@@ -537,6 +538,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ScheduleDeliveryHistoryRequest: 'schedule.md',
   ScheduleDeliveryHistoryResult: 'schedule.md',
   ScheduleCreateRequest: 'schedule.md',
+  ScheduleWindow: 'schedule.md',
+  ScheduleWindowInput: 'schedule.md',
   ScheduleListRequest: 'schedule.md',
   ScheduleDeleteRequest: 'schedule.md',
   ScheduleDeleteResult: 'schedule.md',
@@ -911,6 +914,8 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
+  AutomationTaskCreateRequest: 'the automation-task request is owned by packages/schedule/automation-tasks/README.md and src/types.ts',
+  AutomationTaskCreateValue: 'the automation-task result is owned by packages/schedule/automation-tasks/README.md and src/types.ts',
   ProductEvent: 'Desktop event fields are owned by packages/client/product-analytics/README.md and src/events.ts',
   ConnectionFetchHandler: 'shared Fetch dispatch is owned by packages/client/connection/src/rpc.ts',
   ConnectionRequestRejection: 'transport rejection status is owned by packages/client/connection/src/rpc.ts',

@@ -24,7 +24,7 @@ import type { CatalogDeleteOutcome, CatalogSnapshot } from './catalog-source.ts'
 import { draftZone, secondPrecision, slashDate, timingDraft, timingError, timingSnapshot, zonedWallClock } from './task-timing.ts'
 import type { TaskTimingInjected, TimingDraft } from './task-timing.ts'
 import { useRelativeClock } from './relative-clock.ts'
-import { formatScheduleFrequency, nextRunParts, recordTimeZone, zoneChoices, zoneLabel, zoneName } from './schedule-format.ts'
+import { formatScheduleFrequency, formatScheduleWindow, nextRunParts, recordTimeZone, zoneChoices, zoneLabel, zoneName } from './schedule-format.ts'
 import type { FrequencyZone } from './schedule-format.ts'
 import { cronPreview, cronShapeExpression, parseCronExpression, recognizeCronShape } from './task-cron.ts'
 import type { CronBuilderState } from './task-cron.ts'
@@ -670,7 +670,7 @@ export function TaskDetail({
       return
     }
     if ('code' in result.value) {
-      setFailure(ruleError(result.value.code))
+      setFailure(ruleError(result.value.code, task.window !== undefined))
       return
     }
     const saved = ruleValues(result.value.record)
@@ -836,6 +836,7 @@ export function TaskDetail({
               <span className={css.nextRunRelative}>{nextRun.relative}</span>
             </p>
             : <p>{t('status.inactive')}</p>}
+          {task.window !== undefined && <p className={css.window}>{formatScheduleWindow(task.window, t)}</p>}
         </div>}
         <div role="tabpanel" id={`${id}-rule-panel`} aria-labelledby={`${id}-rule-tab`}
           hidden={tab !== 'rule' || deleted} tabIndex={0}>
@@ -1219,9 +1220,12 @@ const RULE_ERROR_OVERRIDES: Readonly<Partial<Record<TaskManagerKey, TaskManagerK
 /**
  * Localize a rejected rule update without exposing transport or storage diagnostics.
  * @param code - error code returned by the compare-and-update.
+ * @param windowed - whether the task has effective dates; the card validates the rule fields before
+ *   saving, so the Host's `invalid_rule` for such a task means no run falls within them.
  * @returns dictionary key describing the recovery action.
  */
-function ruleError(code: Extract<ScheduleUpdateResult, { code: string }>['code']): TaskManagerKey {
+function ruleError(code: Extract<ScheduleUpdateResult, { code: string }>['code'], windowed: boolean): TaskManagerKey {
+  if (code === 'invalid_rule' && windowed) return 'rule.error.outsideWindow'
   const key = timingError(code)
   return RULE_ERROR_OVERRIDES[key] ?? key
 }

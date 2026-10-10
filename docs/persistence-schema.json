@@ -6669,6 +6669,85 @@
       }
     },
     {
+      "key": "event:connectors/session-allowed",
+      "kind": "event",
+      "event": "connectors/session-allowed",
+      "surface": false,
+      "digest": "b9e2081c4ef6696227ffc8421e6d1bfa65eb15193c5fd82223a830952842cdf1",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "connectors",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "tenantId",
+                "type": 3,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 3
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "connectors/session-allowed"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:deliverables/presented",
       "kind": "event",
       "event": "deliverables/presented",
@@ -22222,6 +22301,11 @@
       "sources": []
     },
     {
+      "digest": "0a8f1ad8ee5886204198463216c5e0a873a2fb635258db9a760e2a00c5d32e25",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "0aa62ab51b36c0e64b134bd03ba8725d758744180a1a447da49beaad194f219f",
       "names": [],
       "sources": []
@@ -22477,7 +22561,7 @@
         "packages/schedule/schedule/src/types.ts#ScheduleDeleteChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:230"
+        "packages/schedule/schedule/src/types.ts:252"
       ]
     },
     {
@@ -22807,7 +22891,7 @@
       "digest": "2bcf34ac7dc95d34676ac2da19c692bd1fb17a58c54164fb904c8cd1b83c243b",
       "names": [],
       "sources": [
-        "packages/connector/connectors/src/types.ts:17"
+        "packages/connector/connectors/src/types.ts:18"
       ]
     },
     {
@@ -22838,7 +22922,7 @@
         "packages/schedule/schedule/src/types.ts#ScheduleChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:256"
+        "packages/schedule/schedule/src/types.ts:278"
       ]
     },
     {
@@ -23181,6 +23265,13 @@
       ],
       "sources": [
         "packages/llm/llm/src/types.ts:489"
+      ]
+    },
+    {
+      "digest": "48446dd2b7709930b04f7a7e907698e46143203ba15ca8b20638b5f478895253",
+      "names": [],
+      "sources": [
+        "packages/connector/connectors/src/types.ts:28"
       ]
     },
     {
@@ -24272,7 +24363,7 @@
         "packages/schedule/schedule/src/types.ts#OneShotScheduleDispatchChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:237"
+        "packages/schedule/schedule/src/types.ts:259"
       ]
     },
     {
@@ -24991,6 +25082,11 @@
       "sources": []
     },
     {
+      "digest": "b9e2081c4ef6696227ffc8421e6d1bfa65eb15193c5fd82223a830952842cdf1",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "ba4c40b4381e0dcdfab8fc9fc75b5c9b3e8f09ef56deeb1bec8e703b0ef8cd6d",
       "names": [],
       "sources": []
@@ -25442,7 +25538,7 @@
         "packages/schedule/schedule/src/types.ts#EveryScheduleDispatchChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:244"
+        "packages/schedule/schedule/src/types.ts:266"
       ]
     },
     {
@@ -25534,7 +25630,7 @@
         "packages/schedule/schedule/src/types.ts#ScheduleCreateChange"
       ],
       "sources": [
-        "packages/schedule/schedule/src/types.ts:223"
+        "packages/schedule/schedule/src/types.ts:245"
       ]
     },
     {

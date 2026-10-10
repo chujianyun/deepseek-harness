@@ -67,6 +67,7 @@ The kernel packages boot and serve the page; the UI feature packages present it.
 | [`ui-subagent/`](ui-subagent/README.md) | Provides subagent navigation, child transcript states, and inline references | — |
 | [`ui-jobs/`](ui-jobs/README.md) | Lists this session's background jobs with on-demand streaming record panels | — |
 | [`ui-schedule/`](ui-schedule/README.md) | Lists the current Session's active reminders in a read-only header catalog | — |
+| [`ui-automation-tasks/`](ui-automation-tasks/README.md) | Add automation task form that New on the Automation tasks page opens in place | — |
 | [`ui-skills/`](ui-skills/README.md) | Desktop Skills page: installed skills as cards with an on/off switch and chat, edit, reveal, and uninstall actions | — |
 | [`ui-model-selection/`](ui-model-selection/README.md) | Provides model selection in conversation surfaces | — |
 | [`ui-permission-presets/`](ui-permission-presets/README.md) | Configures default permissions and switches the current session's access | — |

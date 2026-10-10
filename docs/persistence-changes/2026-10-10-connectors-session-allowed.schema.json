@@ -1,0 +1,85 @@
+{
+  "formatVersion": 2,
+  "roots": [
+    {
+      "key": "event:connectors/session-allowed",
+      "kind": "event",
+      "event": "connectors/session-allowed",
+      "surface": false,
+      "digest": "b9e2081c4ef6696227ffc8421e6d1bfa65eb15193c5fd82223a830952842cdf1",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "connectors",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "tenantId",
+                "type": 3,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 3
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "connectors/session-allowed"
+          }
+        ]
+      }
+    }
+  ],
+  "types": []
+}

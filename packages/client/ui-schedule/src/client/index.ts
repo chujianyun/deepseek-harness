@@ -58,6 +58,9 @@ import { TaskManagerPage, type TaskManagerInjected } from './TaskManagerPage.tsx
 import type { TaskDetailInjected } from './TaskDetail.tsx'
 import { TaskManagerIcon } from './TaskManagerIcon.tsx'
 import { sessionLinkState } from './session-link.ts'
+import type {} from './task-form-slot.ts'
+
+export type { TaskFormCreated, TaskFormOwnerProps } from './task-form-slot.ts'
 import { en, NS, zh, type ScheduleCatalogKey } from './locales.ts'
 import { en as managerEn, zh as managerZh, type TaskManagerKey } from './task-manager-locales.ts'
 
@@ -171,9 +174,11 @@ export function apply(ctx: ClientContext): void {
     locale: MANAGER_NS,
     inject: (): TaskManagerInjected => ({
       ...detail,
-      // The page has no creation form: a new reminder starts in a Session.
+      // Without a creation form, a new reminder starts in a Session.
       onNewTask: () => { ctx.uiWorkspace.startSession() },
+      taskFormAvailable: () => ctx.slots.entries('schedule.task.form').length > 0,
     }),
+    children: { 'schedule.task.form': { kind: 'single', scope: 'root' } },
   }, TaskManagerPage))
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
     name: 'sidebar.panellist',

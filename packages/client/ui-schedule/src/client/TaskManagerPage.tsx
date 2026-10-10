@@ -4,15 +4,16 @@ import clsx from 'clsx'
 import {
   Button, IconClockOutlineRegular, IconCloseOutlineRegular, IconPlusOutlineRegular, IconSearchOutlineRegular, Input,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ScheduleCatalogEntry, ScheduleId } from '@deepseek-ai/dsh-schedule/client'
 import type { CatalogSnapshot } from './catalog-source.ts'
 import { CatalogFeedback } from './CatalogFeedback.tsx'
 import { TaskDetail, useTaskDetail, type TaskDetailInjected } from './TaskDetail.tsx'
 import { useRelativeClock } from './relative-clock.ts'
-import { formatScheduleFrequency, nextRunParts, taskName, zoneLabel } from './schedule-format.ts'
+import { formatScheduleFrequency, formatScheduleWindow, nextRunParts, taskName, zoneLabel } from './schedule-format.ts'
 import type { FrequencyZone } from './schedule-format.ts'
+import type { TaskFormCreated } from './task-form-slot.ts'
 import css from './TaskManagerPage.module.css'
 
 /** Injected catalog and task actions for the management page. */
@@ -21,15 +22,18 @@ export interface TaskManagerInjected extends TaskDetailInjected {
   readonly hooks: { readonly catalog: HostObservable<CatalogSnapshot<ScheduleCatalogEntry>> }
   /**
    * Start a new Session, where a reminder is created by asking the model to
-   * schedule it. The page deliberately has no creation form of its own.
+   * schedule it; New does this when no plugin occupies `schedule.task.form`.
    */
   readonly onNewTask: () => void
+  /** Whether a plugin occupies `schedule.task.form`, read when New is pressed. */
+  readonly taskFormAvailable: () => boolean
 }
 
 /** Root-scoped task catalog props derived from the framework and injected actions. */
 export type TaskManagerPageProps = PropsRuntime<'main'>
   & InjectFace<TaskManagerInjected>
   & PropsLocale<'schedule.manager'>
+  & PropsRenderSlots<'schedule.task.form'>
 
 type StatusFilter = 'all' | ScheduleCatalogEntry['status']
 
@@ -39,7 +43,7 @@ type StatusFilter = 'all' | ScheduleCatalogEntry['status']
  * @returns the searchable task list beside the selected task's detail.
  */
 export function TaskManagerPage(props: TaskManagerPageProps) {
-  const { useCatalog, onNewTask, onRetry, t } = props
+  const { useCatalog, onNewTask, taskFormAvailable, renderSlot, onRetry, t } = props
   const catalog = useCatalog(snapshot => snapshot)
   const { records, status } = catalog
   const [search, setSearch] = useState('')
@@ -96,6 +100,37 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
     setSelectedId(null)
   }
 
+  // New opens the creation form in place of the list when a plugin provides one.
+  const [creating, setCreating] = useState(false)
+  const [created, setCreated] = useState<TaskFormCreated | null>(null)
+  const startNewTask = (): void => {
+    if (taskFormAvailable()) setCreating(true)
+    else onNewTask()
+  }
+  // A created task is selected once the catalog lists it.
+  useEffect(() => {
+    if (created === null || !records.some(record => record.id === created.id)) return
+    setSelectedId(created.id)
+    setCreated(null)
+  }, [created, records])
+  // A form whose plugin has gone leaves the page on its list.
+  if (creating && taskFormAvailable()) {
+    return (
+      <section className={css.page} aria-label={t('title')} data-testid="task-manager-page">
+        {renderSlot('schedule.task.form', {
+          onDone: (task) => {
+            setCreating(false)
+            if (task === undefined) return
+            // The new task's row shows whatever the list was filtered to before.
+            setSearch('')
+            setStatusFilter('all')
+            setCreated(task)
+          },
+        })}
+      </section>
+    )
+  }
+
   return (
     <section
       className={clsx(css.page, selected !== undefined && css.hasDetails)}
@@ -117,7 +152,7 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
             <div className={css.pageHeading}>
               <h1 ref={headingRef} tabIndex={-1}>{t('title')}</h1>
               <div className={css.creationActions}>
-                <Button variant="primary" size="sm" className={css.newButton} icon={<IconPlusOutlineRegular size={13} />} onClick={onNewTask}>{t('new.action')}</Button>
+                <Button variant="primary" size="sm" className={css.newButton} icon={<IconPlusOutlineRegular size={13} />} onClick={startNewTask}>{t('new.action')}</Button>
               </div>
             </div>
             <div className={css.filters}>
@@ -153,7 +188,7 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
               {status === 'ready' && rows.length === 0 && <div className={css.empty} role="status">
                 <IconClockOutlineRegular size={24} className={css.emptyGlyph} />
                 <h2>{t(emptyTitle)}</h2>
-                <Button variant="primary" className={css.emptyAction} onClick={onNewTask}>
+                <Button variant="primary" className={css.emptyAction} onClick={startNewTask}>
                   {t('empty.action')}
                 </Button>
               </div>}
@@ -184,6 +219,8 @@ export function TaskManagerPage(props: TaskManagerPageProps) {
                             {record.status === 'inactive'
                               && <span className={css.metadata}>{t('status.inactive')}</span>}
                             <span className={css.metadata}>{frequency(record)}</span>
+                            {record.window !== undefined
+                              && <span className={css.metadata}>{formatScheduleWindow(record.window, t)}</span>}
                             {record.status === 'active' && <span className={css.metadata}>
                               {t('list.nextPrefix')}<time dateTime={record.scheduledAt}>
                                 {nextRun.absolute}

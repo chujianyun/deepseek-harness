@@ -522,6 +522,12 @@
   overflow-wrap: anywhere;
 }
 
+/* The effective dates follow the next run on the same line, after a dot. */
+.window::before {
+  content: '·';
+  margin-right: 6px;
+}
+
 /* The countdown beside the absolute next run reads in the same color as the
    stamp it follows, one sentence in one step. */
 .nextRunRelative {

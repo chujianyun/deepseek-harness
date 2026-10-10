@@ -334,6 +334,32 @@ type ScheduleCatalogEntry = ScheduleRecord & {
   readonly status: 'active' | 'inactive'
   /** Most recent durably acknowledged inbox delivery, when available. */
   readonly lastDelivery?: ScheduleDeliveryReceipt
+  /** Effective dates, when the task was created with them. */
+  readonly window?: ScheduleWindow
+}
+```
+
+```ts type-equiv
+/** Effective dates of one Host task: local calendar dates in `timeZone`, both inclusive; at least one is set. */
+interface ScheduleWindow {
+  /** First local date an occurrence may run, `YYYY-MM-DD`. */
+  readonly start?: string
+  /** Last local date an occurrence may run, `YYYY-MM-DD`. */
+  readonly end?: string
+  /** Canonical IANA zone the dates are read in. */
+  readonly timeZone: string
+}
+```
+
+```ts type-equiv
+/** Effective dates accepted at creation; an empty start and end mean no window. */
+interface ScheduleWindowInput {
+  /** First local date, `YYYY-MM-DD`. */
+  readonly start?: string
+  /** Last local date, `YYYY-MM-DD`, not before `start`. */
+  readonly end?: string
+  /** UTC or IANA Area/Location zone the dates are read in. */
+  readonly time_zone: string
 }
 ```
 
@@ -445,6 +471,28 @@ Session 获取、消息入队或持久化确认失败时，任务继续保存在
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxautomationtasks--automationtasksservice"></a>
+
+### `ctx.automationTasks` — `AutomationTasksService`
+
+Host owner of the `automationTasks` Remote namespace.
+
+```ts cordis-catalog
+/**
+ * Create one automation task: a new Session in the workspace, named after the task, with the
+ * requested assistant, model, permission preset, and connector grant, then the schedule bound to
+ * it. The assistant, connectors, and permission presets are optional services; asking for one a
+ * deployment lacks is `automation-tasks/unavailable`. A step's refusal passes through unchanged,
+ * except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an
+ * unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.
+ * @param request - the task as the form submits it.
+ * @returns the new Session and the stored schedule.
+ */
+@Remote('create') async create(request: AutomationTaskCreateRequest): Promise<AutomationTaskCreateValue>
+```
+
+Source: [`packages/schedule/automation-tasks/src/index.ts`](../../packages/schedule/automation-tasks/src/index.ts)
+
 <a id="ctxschedule--scheduleservice"></a>
 
 ### `ctx.schedule` — `ScheduleService`
@@ -467,9 +515,20 @@ Shared management service; reads, deletion, and timing edits never activate a Se
  * @param sessionId - Original Session receiving the reminder.
  * @param request - Validated tool selector, required title, and reminder content.
  * @param signal - Optional cancellation checked before persistence begins, including after FIFO waits.
+ * @param window - Optional effective dates: occurrences before the start date are skipped, and the task ends
+ *   after its end date; a rule with no occurrence inside them rejects with `invalid_rule`.
  * @returns The durably stored schedule. Cancellation does not roll back an in-flight write.
  */
-async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal): Promise<ScheduleRecord>
+async create( sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal, window?: ScheduleWindowInput, ): Promise<ScheduleRecord>
+
+/**
+ * Check a creation request as `create` would, without storing anything: the same name,
+ * instruction, selector, timing, and effective-date rules, at the current clock.
+ * @param request - Selector, required title, and reminder content.
+ * @param window - Optional effective dates.
+ * @throws ScheduleInputError for the first rule the request breaks.
+ */
+validate(request: ScheduleCreateRequest, window?: ScheduleWindowInput): void
 
 /**
  * Read the selected Session's active tasks without resuming its Agent.

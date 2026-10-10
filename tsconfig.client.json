@@ -117,6 +117,7 @@
     { "path": "./packages/client/ui-hub-account" },
     { "path": "./packages/client/ui-settings-embedding" },
     { "path": "./packages/client/ui-knowledge" },
+    { "path": "./packages/client/ui-automation-tasks" },
     { "path": "./packages/client/ui-connectors" },
     { "path": "./packages/client/ui-assistants" },
     { "path": "./packages/client/ui-ecommerce-accounts" },

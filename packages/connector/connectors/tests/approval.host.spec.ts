@@ -12,6 +12,7 @@ import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deep
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { PreToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import { connectorGrantsProjection } from '../src/index.ts'
 import { cleanups, setup } from './support.ts'
 
 const runs = it.skipIf(process.platform === 'win32')
@@ -184,5 +185,79 @@ describe('always allowing connector writes', () => {
     t.hub.set(null)
     await t.until(view => view.status === 'disconnected')
     await expect(t.service.revokeAlwaysAllowed('feishu', 'im +messages-send')).rejects.toMatchObject({ code: 'hub-account/signed-out' })
+  })
+})
+
+describe('allowing connectors for a session', () => {
+  runs('runs the session\'s plain writes unasked with an audit record, and still asks for the rest', async () => {
+    const t = await connected()
+    const { agent, appended } = await auditedAgent()
+    const other = await auditedAgent()
+    t.service.allowInSession(agent.session, ['feishu', 'feishu'])
+    expect(appended()).toEqual([{ type: 'connectors/session-allowed', data: { connectors: ['feishu'], tenantId: 't-a' } }])
+    expect(t.ctx.sessionProjections.stateOf(agent.session, 'connectorGrants')).toEqual({ connectors: ['feishu'], tenantId: 't-a' })
+    // The same grant again appends nothing.
+    t.service.allowInSession(agent.session, ['feishu'])
+    expect(appended()).toHaveLength(1)
+    // A plain write runs unasked and is recorded, whatever its arguments.
+    expect(await t.gate(bash('lark-cli im +messages-send --text hi', 'call-1', agent))).toEqual({ kind: 'allow' })
+    expect(appended().at(-1)).toEqual({ type: 'connectors/always-allowed', data: { callId: 'call-1', commands: ['lark-cli im +messages-send'] } })
+    // A high-risk write and a command of unknown risk still ask.
+    expect(await t.gate(bash('lark-cli drive +delete --file-token box_1', 'call-2', agent))).toMatchObject({ kind: 'ask' })
+    expect(await t.gate(bash('lark-cli calendar list', 'call-3', agent))).toMatchObject({ kind: 'ask' })
+    // Another session, and a call without a session, ask as before.
+    expect(await t.gate(bash('lark-cli im +messages-send', 'call-4', other.agent))).toMatchObject({ kind: 'ask' })
+    expect(await t.gate(bash('lark-cli im +messages-send', 'call-5'))).toMatchObject({ kind: 'ask' })
+    // A later empty grant withdraws it.
+    t.service.allowInSession(agent.session, [])
+    expect(await t.gate(bash('lark-cli im +messages-send', 'call-6', agent))).toMatchObject({ kind: 'ask' })
+  })
+
+  runs('holds only while the granting tenant is signed in', async () => {
+    const t = await connected()
+    const { agent } = await auditedAgent()
+    t.service.allowInSession(agent.session, ['feishu'])
+    t.hub.set('t-b')
+    await t.until(item => item.status === 'disconnected')
+    await t.service.connect('feishu')
+    await t.until(view => view.login?.url != null)
+    await t.answer('app', 'ok')
+    await t.until(view => view.login?.step === 'authorize' && view.login.url !== null)
+    await t.answer('user', 'ok')
+    await t.until(view => view.status === 'connected')
+    expect(await t.gate(bash('lark-cli im +messages-send', 'call-1', agent))).toMatchObject({ kind: 'ask' })
+    t.hub.set(null)
+    await t.until(item => item.status === 'disconnected')
+    expect(() => { t.service.allowInSession(agent.session, ['feishu']) }).toThrow(expect.objectContaining({ code: 'hub-account/signed-out' }))
+  })
+
+  runs('folds the grant from the session log alone', async () => {
+    const { agent } = await auditedAgent()
+    agent.session.append('connectors/session-allowed', { connectors: ['feishu'], tenantId: 't-a' })
+    agent.session.append('connectors/always-allowed', { callId: ToolCallId('x'), commands: [] })
+    const state = agent.session.ownEvents()
+      .reduce<{ connectors: string[]; tenantId: string | null }>(
+        (folded, event) => connectorGrantsProjection.apply(folded, event), connectorGrantsProjection.init())
+    expect(state).toEqual({ connectors: ['feishu'], tenantId: 't-a' })
+    // A restarted service reads the same grant from that log.
+    const t = await connected()
+    expect(await t.gate(bash('lark-cli im +messages-send', 'call-1', agent))).toEqual({ kind: 'allow' })
+  })
+
+  runs('refuses an unknown or unsupported connector and grants nothing', async () => {
+    const t = await connected()
+    const { agent, appended } = await auditedAgent()
+    expect(() => { t.service.allowInSession(agent.session, ['feishu', 'wecom']) }).toThrow(expect.objectContaining({ code: 'connectors/not-found' }))
+    expect(() => { t.service.allowInSession(agent.session, ['dingtalk']) }).toThrow(expect.objectContaining({ code: 'connectors/unavailable' }))
+    expect(appended()).toEqual([])
+  })
+
+  runs('withdraws the projection with the service', async () => {
+    const t = await connected()
+    const { agent } = await auditedAgent()
+    const projections = t.ctx.sessionProjections
+    expect(projections.stateOf(agent.session, 'connectorGrants')).toEqual({ connectors: [], tenantId: null })
+    await t.fiber.dispose()
+    expect(projections.stateOf(agent.session, 'connectorGrants')).toBeUndefined()
   })
 })

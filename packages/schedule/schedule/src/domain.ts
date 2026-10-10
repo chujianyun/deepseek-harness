@@ -28,6 +28,8 @@ import type {
   ScheduleId as ScheduleIdType,
   ScheduleRecord,
   ScheduleView,
+  ScheduleWindow,
+  ScheduleWindowInput,
 } from './types.ts'
 
 /** Durable Schedule protocol version implemented by this package. */
@@ -1841,6 +1843,94 @@ export function parseCronInput(cron: CronInput): { readonly expression: string; 
     expression: parseCronExpression(cron['expression']).expression,
     timeZone: canonicalizeTimeZone(cron['time_zone']),
   }
+}
+
+/** Parse one strict `YYYY-MM-DD` calendar date of a window. */
+function windowDate(value: string, field: 'start' | 'end'): string {
+  if (LOCAL_DATE.exec(value) === null) {
+    throw new ScheduleInputError('invalid_rule', `window.${field} must be a date YYYY-MM-DD.`)
+  }
+  try {
+    return Temporal.PlainDate.from(value, { overflow: 'reject' }).toString()
+  } catch (error: unknown) {
+    throw new ScheduleInputError('invalid_rule', `window.${field} must be a real calendar date.`, { cause: error })
+  }
+}
+
+/**
+ * Validate effective dates received at creation.
+ * @param input - Optional start and end dates with the zone they are read in.
+ * @returns The canonical window, or undefined when neither date is set.
+ */
+export function parseWindowInput(input: ScheduleWindowInput): ScheduleWindow | undefined {
+  const start = input.start === undefined || input.start === '' ? undefined : windowDate(input.start, 'start')
+  const end = input.end === undefined || input.end === '' ? undefined : windowDate(input.end, 'end')
+  if (start === undefined && end === undefined) return undefined
+  if (start !== undefined && end !== undefined && Temporal.PlainDate.compare(start, end) > 0) {
+    throw new ScheduleInputError('invalid_rule', 'window.end must not be before window.start.')
+  }
+  const timeZone = canonicalizeTimeZone(input.time_zone)
+  return Object.freeze({ ...(start === undefined ? {} : { start }), ...(end === undefined ? {} : { end }), timeZone })
+}
+
+/** First instant of a local date, at the earlier of two midnights and after a skipped one. */
+function startOfDate(date: Temporal.PlainDate, timeZone: string): number {
+  return date.toZonedDateTime({ timeZone }).epochMilliseconds
+}
+
+/**
+ * The first instant at which a window admits occurrences.
+ * @param window - Effective dates.
+ * @returns Epoch milliseconds of the start date's first local instant, or undefined without a start date.
+ */
+export function windowOpensAt(window: ScheduleWindow): number | undefined {
+  return window.start === undefined ? undefined : startOfDate(Temporal.PlainDate.from(window.start), window.timeZone)
+}
+
+/**
+ * The first instant after a window's last date.
+ * @param window - Effective dates.
+ * @returns Epoch milliseconds of the first local instant after the end date, or undefined without an end date.
+ */
+export function windowClosesAt(window: ScheduleWindow): number | undefined {
+  return window.end === undefined
+    ? undefined
+    : startOfDate(Temporal.PlainDate.from(window.end).add({ days: 1 }), window.timeZone)
+}
+
+/**
+ * Move a record's target into its window: a recurring rule skips occurrences before the start date.
+ * @param record - Record whose target is the earliest unaccepted occurrence.
+ * @param window - Effective dates of its task.
+ * @returns The record with its first target inside the window, or undefined when no occurrence falls inside it.
+ */
+export function placeInWindow(record: ScheduleRecord, window: ScheduleWindow): ScheduleRecord | undefined {
+  let placed = record
+  const opens = windowOpensAt(window)
+  if (opens !== undefined && Date.parse(record.scheduledAt) < opens) {
+    if (!isRecurringScheduleRecord(record)) return undefined
+    const next = resolveRecurringOccurrence(record, opens - 1).nextScheduledAt
+    /* v8 ignore next -- a start date has a later occurrence unless the rule outruns the four-digit-year range. */
+    if (next === undefined) return undefined
+    placed = { ...record, scheduledAt: next }
+  }
+  const closes = windowClosesAt(window)
+  return closes !== undefined && Date.parse(placed.scheduledAt) >= closes ? undefined : placed
+}
+
+/**
+ * Place a new or retimed record in its window, refusing one that would never run.
+ * @param record - New or retimed record.
+ * @param window - Effective dates, or undefined for none.
+ * @returns The record to store.
+ */
+export function requireInWindow(record: ScheduleRecord, window: ScheduleWindow | undefined): ScheduleRecord {
+  if (window === undefined) return record
+  const placed = placeInWindow(record, window)
+  if (placed === undefined) {
+    throw new ScheduleInputError('invalid_rule', 'No occurrence of this rule falls within the effective dates.')
+  }
+  return placed
 }
 
 /**

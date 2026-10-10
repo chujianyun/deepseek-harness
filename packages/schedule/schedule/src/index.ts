@@ -11,15 +11,16 @@ import { ScheduleRuntime } from './runtime.ts'
 import { scheduleDomain } from './storage.ts'
 import { deliveryHistoryPage } from './delivery-history.ts'
 import { resolveScheduleUpdate } from './update.ts'
+export { timingRequest } from './update.ts'
 import {
   foldScheduleEvents, ScheduleInputError, ScheduleLogError, ScheduleId, createAfterScheduleRecord, createAtScheduleRecord,
   createEveryScheduleRecord, createDailyScheduleRecord, createWeeklyScheduleRecord, createCronScheduleRecord,
-  scheduleTitle,
+  parseWindowInput, requireInWindow, scheduleTitle,
 } from './domain.ts'
 import type {
   DeliveryRetentionBounds, ScheduleCatalogEntry, ScheduleCreateRequest, ScheduleDeleteRequest, ScheduleDeleteResult,
   ScheduleDeliveryHistoryRequest, ScheduleDeliveryHistoryResult, ScheduleListRequest, ScheduleRecord,
-  ScheduleUpdateRequest, ScheduleUpdateResult, SubagentSessionError,
+  ScheduleUpdateRequest, ScheduleUpdateResult, ScheduleWindow, ScheduleWindowInput, SubagentSessionError,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -48,6 +49,10 @@ export {
   normalizeWeekdays,
   parseCronInput,
   parseWeeklyInput,
+  parseWindowInput,
+  placeInWindow,
+  windowClosesAt,
+  windowOpensAt,
   renderReminderFraming,
   renderRecurringReminderBatchFraming,
   resolveEveryOccurrence,
@@ -223,9 +228,46 @@ export class ScheduleService extends TypertRemoteService {
    * @param sessionId - Original Session receiving the reminder.
    * @param request - Validated tool selector, required title, and reminder content.
    * @param signal - Optional cancellation checked before persistence begins, including after FIFO waits.
+   * @param window - Optional effective dates: occurrences before the start date are skipped, and the task ends
+   *   after its end date; a rule with no occurrence inside them rejects with `invalid_rule`.
    * @returns The durably stored schedule. Cancellation does not roll back an in-flight write.
    */
-  async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal): Promise<ScheduleRecord> {
+  async create(
+    sessionId: SessionId, request: ScheduleCreateRequest, signal?: AbortSignal, window?: ScheduleWindowInput,
+  ): Promise<ScheduleRecord> {
+    const { record, effective } = this.build(request, window)
+    const id = record.id
+    return this.serialize(async () => {
+      const refusal = this.reminderTargetRefusal(sessionId)
+      if (refusal !== undefined) throw new ScheduleInputError('subagent_session', refusal.message)
+      const domain = await this.getDomain()
+      signal?.throwIfAborted()
+      await domain.table('tasks').put(id, {
+        sessionId, record, status: 'active', deliveryHistory: { records: [], earlierRecordsUnavailable: false },
+        ...(effective === undefined ? {} : { window: effective }),
+      })
+      this.emitChanged()
+      this.runtime?.requestDrive()
+      return record
+    })
+  }
+
+  /**
+   * Check a creation request as `create` would, without storing anything: the same name,
+   * instruction, selector, timing, and effective-date rules, at the current clock.
+   * @param request - Selector, required title, and reminder content.
+   * @param window - Optional effective dates.
+   * @throws ScheduleInputError for the first rule the request breaks.
+   */
+  validate(request: ScheduleCreateRequest, window?: ScheduleWindowInput): void {
+    this.build(request, window)
+  }
+
+  /** Build the record a creation request describes, placed in its window, from the current clock. */
+  private build(request: ScheduleCreateRequest, window: ScheduleWindowInput | undefined): {
+    record: ScheduleRecord
+    effective: ScheduleWindow | undefined
+  } {
     if (Number(request.at !== undefined) + Number(request.after_seconds !== undefined)
       + Number(request.every_seconds !== undefined) + Number(request.daily !== undefined)
       + Number(request.weekly !== undefined) + Number(request.cron !== undefined) > 1) {
@@ -248,18 +290,8 @@ export class ScheduleService extends TypertRemoteService {
     else if (request.weekly !== undefined) record = createWeeklyScheduleRecord(id, request.prompt, request.weekly, now, title)
     else if (request.cron !== undefined) record = createCronScheduleRecord(id, request.prompt, request.cron, now, title)
     else throw new ScheduleInputError('invalid_selector', 'Exactly one reminder selector is required.')
-    return this.serialize(async () => {
-      const refusal = this.reminderTargetRefusal(sessionId)
-      if (refusal !== undefined) throw new ScheduleInputError('subagent_session', refusal.message)
-      const domain = await this.getDomain()
-      signal?.throwIfAborted()
-      await domain.table('tasks').put(id, {
-        sessionId, record, status: 'active', deliveryHistory: { records: [], earlierRecordsUnavailable: false },
-      })
-      this.emitChanged()
-      this.runtime?.requestDrive()
-      return record
-    })
+    const effective = window === undefined ? undefined : parseWindowInput(window)
+    return { record: requireInWindow(record, effective), effective }
   }
 
   /**
@@ -288,6 +320,7 @@ export class ScheduleService extends TypertRemoteService {
       .map(([, task]) => ({
         ...task.record, sessionId: task.sessionId, status: task.status,
         ...(task.lastDelivery === undefined ? {} : { lastDelivery: task.lastDelivery }),
+        ...(task.window === undefined ? {} : { window: task.window }),
       }))
       .sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt) || a.id.localeCompare(b.id))
   }
@@ -364,7 +397,7 @@ export class ScheduleService extends TypertRemoteService {
         return { id: request.id, updated: false, code: 'schedule_not_found' }
       }
       if (current.status === 'inactive') return { id: request.id, updated: false, code: 'schedule_ended' }
-      const result = resolveScheduleUpdate(current.record, request.expected, request.change, Date.now(), request)
+      const result = resolveScheduleUpdate(current.record, request.expected, request.change, Date.now(), request, current.window)
       if (!('record' in result) || !result.updated) return result
       await tasks.put(request.id, { ...current, record: result.record })
       this.emitChanged()

@@ -115,6 +115,19 @@ Host owner of the connectors and of the `connectors` Remote namespace.
 @Remote async revokeAlwaysAllowed(id: string, command: string): Promise<ConnectorsState>
 
 /**
+ * Let a session's plain connector writes through these connectors run without asking while the
+ * signed-in tenant stays signed in, as the session of an unattended automation task needs: appends
+ * `connectors/session-allowed`, which replaces the session's earlier grant and survives a restart
+ * with the session log; an unchanged grant appends nothing. High-risk writes, commands the CLI
+ * runs only confirmed, and commands of unknown risk still ask.
+ * @param session - the session to grant.
+ * @param ids - connectors to allow; an empty list withdraws the grant. Refuses an unknown id with
+ *   `connectors/not-found`, one unsupported here with `connectors/unavailable`, and a signed-out Hub
+ *   with `hub-account/signed-out`.
+ */
+allowInSession(session: Session, ids: readonly string[]): void
+
+/**
  * Keep sessions from using connectors. Every added filter applies to each model shell call: a
  * connector a filter refuses for the call's agent puts no CLI on that call's `PATH`, gives the
  * session none of its Skills, and a call that names its CLI is denied. Calls without an agent
@@ -124,6 +137,8 @@ Host owner of the connectors and of the `connectors` Remote namespace.
  */
 restrict(filter: ConnectorFilter): () => void
 ```
+
+Types: [Session](session.md)
 
 Source: [`packages/connector/connectors/src/index.ts`](../../packages/connector/connectors/src/index.ts)
 <!-- END GENERATED cordis-surface -->

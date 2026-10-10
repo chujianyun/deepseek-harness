@@ -75,6 +75,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-client-ui-approval` | no | Approval composer takeover over the scoped Remote Event waterfall |
 | `@deepseek-ai/dsh-client-ui-assistants` | no | Assistants page of the dsh Desktop client: the sidebar entry, the assistant cards, and the new-session assistant picker, over the assistants Remote |
 | `@deepseek-ai/dsh-client-ui-attachment` | no | Dynamic attachment presentation plugin for conversation input, message-image, and trajectory image slots |
+| `@deepseek-ai/dsh-client-ui-automation-tasks` | no | Add automation task form of the dsh Desktop client: the Automation tasks page's New opens it in place, and Save creates the task's Session and schedule over the automationTasks Remote |
 | `@deepseek-ai/dsh-client-ui-brand-mo` | no | MO WorkAI brand for the enterprise Desktop client: the 名流蓝 palette, the sidebar wordmark, and the branded boot page |
 | `@deepseek-ai/dsh-client-ui-brand-official` | no | Official DeepSeek Harness brand occupants for the Web client's sidebar slots |
 | `@deepseek-ai/dsh-client-ui-chat` | no | Chat Conversation target, node definitions, renderers, and details surface |
@@ -371,6 +372,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 
 | Package | Config | Description |
 |---|---|---|
+| `@deepseek-ai/dsh-automation-tasks` | no | Create an automation task in one call: a named Session with its assistant, model, permission, and connector grant, and the Host schedule bound to it |
 | `@deepseek-ai/dsh-schedule` | yes | Host-wide durable reminders with shared management and original-Session delivery |
 | `@deepseek-ai/dsh-tool-schedule` | no | Model-facing reminder management tools (schedule_create, schedule_list, schedule_update, schedule_delete) over the Host ctx.schedule service |
 
