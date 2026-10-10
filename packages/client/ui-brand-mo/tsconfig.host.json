@@ -9,14 +9,21 @@
     "src/boot.ts",
     "src/client/tokens.ts",
     "src/index.ts",
-    "src/mark.ts"
+    "src/mark.ts",
+    "src/quick-tasks.ts"
   ],
   "references": [
     {
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../../vendor/schemastery"
+    },
+    {
       "path": "../../host/webserver"
+    },
+    {
+      "path": "../../settings/settings"
     }
   ]
 }

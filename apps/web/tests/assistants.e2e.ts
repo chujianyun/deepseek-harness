@@ -153,7 +153,7 @@ it('seeds the Daily Assistant, starts new sessions with no assistant, carries a 
 
     // The new-session screen starts with no assistant.
     const picker = page.getByRole('button', { name: '选择这个会话的智能体' })
-    await expect.poll(() => picker.textContent()).toContain('不使用智能体')
+    await expect.poll(() => picker.textContent()).toContain('通用模式')
 
     // The sidebar entry opens the cards, none marked default; search narrows the list.
     await page.getByRole('button', { name: '智能体', exact: true }).click()
@@ -188,7 +188,7 @@ it('seeds the Daily Assistant, starts new sessions with no assistant, carries a 
 
     // A new session picks another assistant in the hero picker; its first request carries that identity.
     await page.getByRole('button', { name: '新建会话' }).first().click()
-    await expect.poll(() => picker.textContent()).toContain('不使用智能体')
+    await expect.poll(() => picker.textContent()).toContain('通用模式')
     await picker.click()
     await page.getByRole('menuitem', { name: /店铺测试助手/ }).click()
     await expect.poll(() => picker.textContent()).toContain('店铺测试助手')
@@ -202,8 +202,8 @@ it('seeds the Daily Assistant, starts new sessions with no assistant, carries a 
     await page.getByRole('menuitem', { name: /店铺测试助手/ }).click()
     await expect.poll(() => picker.textContent()).toContain('店铺测试助手')
     await picker.click()
-    await page.getByRole('menuitem', { name: /不使用智能体/ }).click()
-    await expect.poll(() => picker.textContent()).toContain('不使用智能体')
+    await page.getByRole('menuitem', { name: /通用模式/ }).click()
+    await expect.poll(() => picker.textContent()).toContain('通用模式')
     const before = chat.chats.length
     await send('不用智能体回答')
     await expect.poll(() => chat.chats.length, { timeout: 30_000 }).toBeGreaterThan(before)
@@ -415,7 +415,7 @@ it('gives an assistant\'s sessions only the Skills it allows, and marks a Skill 
     await expect.poll(messages).toContain('e2e-alpha')
     expect(messages()).not.toContain('e2e-beta')
     await page.getByRole('button', { name: '新建会话' }).first().click()
-    await expect.poll(() => picker.textContent()).toContain('不使用智能体')
+    await expect.poll(() => picker.textContent()).toContain('通用模式')
     const before = chat.chats.length
     await send('有哪些 Skill？')
     await expect.poll(() => chat.chats.length, { timeout: 30_000 }).toBeGreaterThan(before)

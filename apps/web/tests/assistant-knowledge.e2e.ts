@@ -80,7 +80,7 @@ it('selects the knowledge bases an assistant is limited to in a new session, cle
     const checked = async (name: string) => panel.getByRole('checkbox', { name }).isChecked()
 
     // A new session binds no assistant, so it selects no knowledge base.
-    await expect.poll(() => picker.textContent()).toContain('不使用智能体')
+    await expect.poll(() => picker.textContent()).toContain('通用模式')
     await knowledgeButton('知识库').waitFor()
     await shot('01-daily-none')
 
@@ -124,7 +124,7 @@ it('selects the knowledge bases an assistant is limited to in a new session, cle
 
     // In a new session, a selection the employee changed stays when switching to the Daily Assistant and back.
     await page.getByRole('button', { name: '新建会话' }).first().click()
-    await expect.poll(() => picker.textContent()).toContain('不使用智能体')
+    await expect.poll(() => picker.textContent()).toContain('通用模式')
     await pick(/制度助手/)
     await knowledgeButton('知识库 2').click()
     await panel.getByRole('checkbox', { name: '产品资料' }).click()

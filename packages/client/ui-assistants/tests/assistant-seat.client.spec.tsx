@@ -41,13 +41,13 @@ describe('assistant picker', () => {
   it('shows no assistant, then the session\'s own and a staged pick, including a staged none', () => {
     const { store } = mount()
     const chip = screen.getByRole('button', { name: '选择这个会话的智能体' })
-    expect(chip.textContent).toContain('不使用智能体')
+    expect(chip.textContent).toContain('通用模式')
     act(() => { store.set({ ...store.getSnapshot(), bound: 'a2' }) })
     expect(chip.textContent).toContain('电商管家')
     act(() => { store.set({ ...store.getSnapshot(), staged: 'a1' }) })
     expect(chip.textContent).toContain('日常助手')
     act(() => { store.set({ ...store.getSnapshot(), staged: null }) })
-    expect(chip.textContent).toContain('不使用智能体')
+    expect(chip.textContent).toContain('通用模式')
   })
 
   it('picks another assistant from the menu', () => {
@@ -60,8 +60,8 @@ describe('assistant picker', () => {
   it('goes back to no assistant from the menu, which lists it first', () => {
     const { props } = mount({ bound: 'a1' })
     fireEvent.click(screen.getByRole('button', { name: '选择这个会话的智能体' }))
-    expect(screen.getAllByRole('menuitem')[0]!.textContent).toContain('不使用智能体')
-    fireEvent.click(screen.getByText('不使用智能体'))
+    expect(screen.getAllByRole('menuitem')[0]!.textContent).toContain('通用模式')
+    fireEvent.click(screen.getByText('通用模式'))
     expect(props.onPick).toHaveBeenCalledWith(null)
   })
 
@@ -88,7 +88,7 @@ describe('assistant picker', () => {
   it('closes its menu on Escape, and when the tenant loses every assistant', () => {
     const { store } = mount({ state: { ...state } })
     const chip = screen.getByRole('button', { name: '选择这个会话的智能体' })
-    expect(chip.textContent).toContain('智能体')
+    expect(chip.textContent).toContain('通用模式')
     fireEvent.click(chip)
     expect(chip.getAttribute('aria-expanded')).toBe('true')
     fireEvent.keyDown(document, { key: 'Escape' })

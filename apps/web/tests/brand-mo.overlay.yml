@@ -2,3 +2,5 @@
 # bundle enables it only for the `desktop` profile with a configured user center.
 - id: ui-brand-mo
   disabled: false
+  config:
+    quickTasks: [multi-publish, business-report, product-research, asset-organize]

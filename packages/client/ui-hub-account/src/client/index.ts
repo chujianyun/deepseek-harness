@@ -78,7 +78,7 @@ export function apply(ctx: ClientContext): void {
   // The new-session hero shows the same tenant's logo and slogan, or nothing at all.
   ctx.slots.inject('conversation.hero.brand.mark', () => ctx.slots.inject('conversation.hero.brand.headline', function* () {
     yield ctx.slots.register({ name: 'conversation.hero.brand.mark', locale: NS, inject: () => brandFace }, HubHeroMark)
-    yield ctx.slots.register({ name: 'conversation.hero.brand.headline', inject: () => brandFace }, HubHeroHeadline)
+    yield ctx.slots.register({ name: 'conversation.hero.brand.headline', locale: NS, inject: () => brandFace }, HubHeroHeadline)
   }))
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section', id: 'hub-account', order: -20, label: () => t('section'), locale: NS, inject: () => source,

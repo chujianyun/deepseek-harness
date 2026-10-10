@@ -1662,6 +1662,11 @@ describe('strips and variants', () => {
     expect(view.getByTestId('ri')).toBeTruthy()
     expect(view.getByTestId('foot')).toBeTruthy()
   })
+
+  it('renders the dock slot under the blank-session hero composer too', () => {
+    const { view } = bench({ variant: 'hero', footer: <i data-testid="foot" /> })
+    expect(view.getByTestId('foot')).toBeTruthy()
+  })
 })
 
 describe('command launcher chrome and control seats', () => {

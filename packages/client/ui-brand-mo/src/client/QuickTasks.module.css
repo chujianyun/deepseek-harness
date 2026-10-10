@@ -1,0 +1,17 @@
+/* Quick-task cards under the blank new-session composer: four across, two on a narrow window. */
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; width: 100%; max-width: 760px; margin-top: 12px; padding: 0; list-style: none; }
+@media (max-width: 760px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 100%; height: 100%; box-sizing: border-box; padding: 14px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-lg, 12px); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; text-align: left; cursor: pointer; transition: border-color 120ms ease, background-color 120ms ease; }
+.card:hover { border-color: var(--mo-task-tint); background: color-mix(in srgb, var(--mo-task-tint) 6%, var(--dsw-alias-bg-layer-1)); }
+.glyph { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--mo-task-tint) 14%, transparent); color: var(--mo-task-ink); font-size: 13px; font-weight: 600; }
+.title { font-size: 14px; font-weight: 500; line-height: 20px; }
+.description { font-size: 12.5px; line-height: 18px; color: var(--dsw-alias-label-tertiary); }
+/* Category tints from the MO product line: 名流蓝, 净润紫, 墨黑, 樱粉; the dark theme lifts the ink. */
+.card[data-task='multi-publish'] { --mo-task-tint: #2A55F9; --mo-task-ink: #2A55F9; }
+.card[data-task='business-report'] { --mo-task-tint: #9B7BE8; --mo-task-ink: #7A5BD6; }
+.card[data-task='product-research'] { --mo-task-tint: #1F2333; --mo-task-ink: #1F2333; }
+.card[data-task='asset-organize'] { --mo-task-tint: #EE7A9B; --mo-task-ink: #D9567D; }
+:global(body[data-ds-dark-theme]) .card[data-task='multi-publish'] { --mo-task-tint: #5C7CFF; --mo-task-ink: #A9BAFF; }
+:global(body[data-ds-dark-theme]) .card[data-task='business-report'] { --mo-task-tint: #9B7BE8; --mo-task-ink: #C7B4F5; }
+:global(body[data-ds-dark-theme]) .card[data-task='product-research'] { --mo-task-tint: #B8BEDA; --mo-task-ink: #E2E5F0; }
+:global(body[data-ds-dark-theme]) .card[data-task='asset-organize'] { --mo-task-tint: #EE7A9B; --mo-task-ink: #F5A3C7; }

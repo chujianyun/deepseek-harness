@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package gives the MO WorkAI enterprise Desktop client its brand. While it is mounted, primary buttons, the composer's send button, links, focus rings, and the active sidebar panel use 名流蓝 (`#2A55F9` light, `#5C7CFF` dark), body text uses the brand greys, the sidebar brand row shows the MO wire-frame wordmark (inverted to dark on the light theme) and the collapsed rail the MO app icon, and the boot page shows the icon, **MO WorkAI**, and a loading hint in the user's language on navy. It has no runtime state and does not affect model requests.
+This package gives the MO WorkAI enterprise Desktop client its brand. Primary buttons, the send button, links, focus rings, and the active sidebar panel use 名流蓝 (`#2A55F9` light, `#5C7CFF` dark) and text uses the brand greys. The sidebar shows the MO wordmark (dark on the light theme) and the collapsed rail the app icon; the boot page shows the icon, **MO WorkAI**, and a hint in the user's language on navy; a blank new session offers configured quick tasks. It has no runtime state and does not affect model requests.
 
 ## Table of Contents
 
@@ -38,6 +38,10 @@ The web-app bundle mounts this plugin only for the `desktop` profile with a conf
 | Text primary / secondary / tertiary, ink | `#343434` / `#4D4D4D` / `#767676`, `#343434` | platform values |
 
 The ink tokens (`--dsw-alias-brand-primary`, `--dsw-alias-brand-text`), which text and controls read as a foreground, take the primary text grey so the light palette has one primary ink. The dark palette darkens ramp steps 800/900 and lightens 500 so badges and info-button hovers stay at WCAG AA.
+
+### Quick tasks
+
+`quickTasks` lists the cards shown under the composer of a blank new session, in order: `multi-publish`, `business-report`, `product-research`, `asset-organize`. Each card's title, description, and prompt come from the `ui-brand-mo` dictionary in the UI language; a click replaces the draft with the prompt and does not send it. The default is an empty list; the web-app bundle composes all four for enterprise Desktop. The cards leave once the session is no longer blank.
 
 -----
 

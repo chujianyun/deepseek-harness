@@ -456,8 +456,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     key: 'conversation.composer.dock',
     kind: 'list',
     scope: 'session',
-    summary: 'Ambient entries below the composer card.',
-    doc: 'Ambient entries below the composer card.',
+    summary: 'Ambient entries below the composer card, in a Session and under the blank new-session hero.',
+    doc: 'Ambient entries below the composer card, in a Session and under the blank new-session hero.',
     registerOptions: [
       {
         name: 'id',
@@ -502,6 +502,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.composer.bar\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-brand-mo QuickTasks id \'mo-quick-tasks\'',
       'client-ui-chat ActivityPill id \'activity\'',
       'client-ui-chat UsagePill id \'usage\'',
     ],

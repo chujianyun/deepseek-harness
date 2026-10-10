@@ -27,6 +27,8 @@ async function mount() {
       return () => { layers.delete(source) }
     },
   } as never)
+  ctx.provide('locale', { register: () => () => {}, bind: () => (key: string) => key } as never)
+  ctx.provide('configForms', { get: () => ({ getSnapshot: () => ({ status: 'loading', value: undefined }), subscribe: () => () => {} }) } as never)
   await ctx.plugin(SlotRegistry).await()
   const fiber = await ctx.plugin({ inject, apply })
   return { layers, dispose: () => fiber.dispose() }
