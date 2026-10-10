@@ -107,6 +107,9 @@
     },
     {
       "path": "../../credentials/deepseek-account"
+    },
+    {
+      "path": "../../llm/embedding"
     }
   ]
 }
