@@ -91,7 +91,6 @@ describe('desktop welcome window', () => {
     expect(event.preventDefault).toHaveBeenCalledOnce()
     loaded.resolve(undefined)
     expect(await opening).toBe(window)
-    // Opens maximized to the screen's work area, then shows.
     expect(window.maximize).toHaveBeenCalledOnce()
     expect(window.show).toHaveBeenCalledOnce()
     expect(window.maximize.mock.invocationCallOrder[0]!).toBeLessThan(window.show.mock.invocationCallOrder[0]!)
@@ -105,6 +104,7 @@ describe('desktop welcome window', () => {
     expect(window.destroy).toHaveBeenCalledOnce()
     expect(electron.handlers.size).toBe(0)
     expect(window.show).not.toHaveBeenCalled()
+    expect(window.maximize).not.toHaveBeenCalled()
   })
 
   it('does not show a window closed while its document was loading', async () => {
@@ -113,6 +113,7 @@ describe('desktop welcome window', () => {
     electron.create.mockReturnValue(window)
     await openWelcomeWindow(resolveDesktopLocale('en'), operations)
     expect(window.show).not.toHaveBeenCalled()
+    expect(window.maximize).not.toHaveBeenCalled()
     expect(window.destroy).not.toHaveBeenCalled()
   })
 
