@@ -1,4 +1,4 @@
-/** Sidebar brand row: the signed-in tenant's logo, or its name, above the build version. */
+/** Sidebar brand row: the signed-in tenant's logo, or its name. */
 
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { HubBrandInjected } from './brand-source.ts'
@@ -32,12 +32,12 @@ export function HubBrandMark({ size, placement, useHub, useBrand }: HubBrandMark
 }
 
 /**
- * Render the expanded brand: the tenant logo scaled into the sidebar width, or the company name,
- * with the build version below.
- * @param props - build version, the `hub-account` translator, and the branding hooks.
+ * Render the expanded brand: the tenant logo scaled into the sidebar width, or the company name.
+ * The build version is not shown here; General Settings shows it.
+ * @param props - the `hub-account` translator and the branding hooks.
  * @returns the brand name.
  */
-export function HubBrandName({ version, t, useHub, useBrand }: HubBrandNameProps) {
+export function HubBrandName({ t, useHub, useBrand }: HubBrandNameProps) {
   const tenantName = useHub(snapshot => snapshot.view?.profile?.tenantName ?? null)
   const logo = useBrand(brand => brand?.logo ?? null)
   return (
@@ -45,7 +45,6 @@ export function HubBrandName({ version, t, useHub, useBrand }: HubBrandNameProps
       {logo === null
         ? <span className={css.tenant}>{tenantName}</span>
         : <img className={css.logo} src={logo} alt={tenantName ?? t('brandLogo')} draggable={false} />}
-      {version !== undefined && <span className={css.version}>{version}</span>}
     </span>
   )
 }
