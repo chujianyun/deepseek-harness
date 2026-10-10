@@ -3,14 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write apps/desktop/README.md
 /deepseek-harness-desktop:
-  en: 5b8518fd5e0030ef
-  zh: 02efee59c39647dc
+  en: cf25370ddbf82194
+  zh: 10b112190cc2b07f
 /deepseek-harness-desktop/terminal-command:
   en: bef92953c237363f
   zh: d21d6effd21b8c00
 /deepseek-harness-desktop/closing-the-window-and-quitting:
-  en: c323e02e3f0305fe
-  zh: 3c730db632136443
+  en: 3ac5fc8be0e3fd17
+  zh: 27e6ab375eb447ef
 /deepseek-harness-desktop/key-technical-decisions:
   en: 069fdfd72d2ea26a
   zh: 76ae549d43c99bb4
@@ -45,8 +45,8 @@
   en: d938302f92fc3a1a
   zh: 29df50bc8791baa7
 /deepseek-harness-desktop/package/local-macos-dmg-without-release-signing:
-  en: 57869a5e3885f843
-  zh: 7cfc01b2dcbebd78
+  en: 1046df8be09d3deb
+  zh: 1ee6c90f28297beb
 /deepseek-harness-desktop/package/local-official-bundles-from-a-loopback-registry:
   en: 5f05072ec82cc62d
   zh: a3d63b58d1ef2db7
@@ -57,8 +57,8 @@
   en: f48baa680e841b0d
   zh: 25ded1aeaac6dad1
 /deepseek-harness-desktop/package/unsigned-windows-test-installer:
-  en: fb6de542360dbae7
-  zh: 0e17d7765fb10c48
+  en: 1d75ee942e64b11c
+  zh: 9bc9f3c0009d223f
 /deepseek-harness-desktop/package/windows-installer-interface:
   en: 1fc1db8f54475c8f
   zh: dd834ed206070396
@@ -69,17 +69,11 @@
   en: 9a71990bee9867a7
   zh: 76c5c1fdff6e6908
 /deepseek-harness-desktop/updates:
-  en: 41d0f50eb7173342
-  zh: ce940ef3cbcc6fa5
-/deepseek-harness-desktop/updates/local-desktop-settings:
-  en: 2e57457c44c85b5f
-  zh: 5b8510a3dc4c6c9d
-/deepseek-harness-desktop/updates/mandatory-update-policy:
-  en: 54596bef0706d305
-  zh: 48737302dcf3c939
+  en: a910fa346d94b06d
+  zh: 0b94cef9916c5fee
 /deepseek-harness-desktop/updates/local-updater-qualification:
-  en: bc50fd8a4d96c227
-  zh: fb0a6ce80c31cda6
+  en: 4108bdba0faea878
+  zh: 468d5de46806948a
 /deepseek-harness-desktop/low-level-development-overrides:
   en: 0b225f914142ef0b
   zh: 9ffd07768d37824e

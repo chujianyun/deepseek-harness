@@ -1,8 +1,7 @@
-import type { ProductEventMap, ProductEvent } from '@deepseek-ai/dsh-client-product-analytics/types'
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
-import { readFile, writeFile } from 'node:fs/promises'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -47,13 +46,8 @@ import { DesktopUpdateSchedule, resolveDesktopUpdateScheduleConfig } from './upd
 import { desktopUpdateErrorSummary, presentDesktopUpdate } from './update-presentation.ts'
 import { desktopErrorState } from './startup-error.ts'
 import { readDesktopLoginShellEnvironment, resolveDesktopLoginShellConfig } from './login-shell-environment.ts'
-import { DesktopMandatoryUpdatePolicy, resolveDesktopPolicyConfig, type DesktopPolicyState } from './mandatory-update-policy.ts'
 import { desktopClientMetadata, desktopClientVersion } from './client-metadata.ts'
-import { DesktopMandatoryUpdateWindow } from './mandatory-update-window.ts'
-import { DesktopPolicyTestAuth } from './policy-test-auth.ts'
-import { readDesktopSettings } from './settings.ts'
 import { DesktopUpdateDialog, type UpdateDialogOptions } from './update-dialog.ts'
-import { readDesktopRuntime } from './runtime-tree.ts'
 import { DesktopBrowserGuests } from './browser-guests.ts'
 import { installDesktopShortcuts } from './keyboard.ts'
 import { DesktopUpdateOverlays } from './update-overlay.ts'
@@ -314,7 +308,6 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
 }
 
 async function main(): Promise<void> {
-  const desktopSettings = readDesktopSettings(app.getPath('userData'))
   void pruneCrashReports(app.getPath('logs'))
   const journalDirectory = process.env.DSH_DESKTOP_UPDATE_JOURNAL_DIR
   const updateJournal = journalDirectory === undefined ? undefined : new DesktopUpdateJournal(journalDirectory, app.getVersion())
@@ -354,9 +347,6 @@ async function main(): Promise<void> {
   const systemLanguages = app.getPreferredSystemLanguages()
   let locale = resolveDesktopStartupLocale(null, systemLanguages)
   windowsLanguage = locale.id
-  let mandatoryPolicy: DesktopMandatoryUpdatePolicy | undefined
-  let mandatoryUI: DesktopMandatoryUpdateWindow | undefined
-  let policyAuth: DesktopPolicyTestAuth | undefined
   let tray: DesktopTray | undefined
   /**
    * The operating system is ending the session: the quit skips its confirmation. Windows sets it
@@ -370,7 +360,6 @@ async function main(): Promise<void> {
   const currentDialogWindow = (): BrowserWindow | undefined => welcomeWindow ?? mainWindow
   const updateOverlays = new DesktopUpdateOverlays()
   const updateDialog = new DesktopUpdateDialog(fileURLToPath(new URL('./preload-update-dialog.cjs', import.meta.url)), () => locale, updateOverlays)
-  const isMandatory = (): boolean => mandatoryPolicy?.state.blocking === true
   const ordinaryMessageBox = async (options: UpdateDialogOptions): Promise<Electron.MessageBoxReturnValue> => {
     const controller = new AbortController()
     ordinaryDialogs.add(controller)
@@ -404,14 +393,6 @@ async function main(): Promise<void> {
   const browserGuests = new DesktopBrowserGuests(() => hostUrl)
   let injections: readonly unknown[] = []
   let welcomeBackend: DesktopWelcomeBackend | undefined
-  let reportedLaunch = false
-  let analyticsEnabled = false
-  const track = async <K extends keyof ProductEventMap>(eventName: K, attributes: ProductEventMap[K]): Promise<void> => {
-    const event = { eventName, attributes, timestamp: Date.now() } as ProductEvent
-    try {
-      if (analyticsEnabled) await welcomeBackend?.report(event)
-    } catch (_error) { /* Analytics cannot interrupt native actions. */ }
-  }
   let stopAccount: (() => void) | undefined
   let openedAttempt: string | undefined
   let returnedAttempt: string | undefined
@@ -455,8 +436,6 @@ async function main(): Promise<void> {
         if (ready.injections === undefined) throw new Error('Desktop Host did not provide boot injections')
         injections = ready.injections
         welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
-        analyticsEnabled = await welcomeBackend.analyticsEnabled().catch(() => false)
-        if (!reportedLaunch) { reportedLaunch = true; void track('desktop_app_launch', {}) }
         stopAccount?.()
         const accountBackend = welcomeBackend.account
         stopAccount = accountBackend.watch((state) => {
@@ -494,10 +473,9 @@ async function main(): Promise<void> {
             const state = await accountBackend.state()
             if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
           }).catch(() => undefined)
-        }, (enabled) => { analyticsEnabled = enabled })
+        })
       },
       stop: async () => {
-        analyticsEnabled = false
         stopAccount?.()
         try { await host.stop(requireCleanStop) }
         catch (error) {
@@ -517,7 +495,6 @@ async function main(): Promise<void> {
   const updateErrors = new WeakMap<DesktopUpdateState, Promise<void>>()
   const showUpdateFailure = (state: DesktopUpdateState): Promise<void> => {
     if (state.phase !== 'error') return Promise.resolve()
-    if (isMandatory()) { mandatoryUI?.sync(); return Promise.resolve() }
     let shown = updateErrors.get(state)
     if (shown === undefined) {
       shown = ordinaryMessageBox({ type: 'error', title: locale.messages.updateFailedTitle,
@@ -530,7 +507,6 @@ async function main(): Promise<void> {
   const publishUpdate = (state: DesktopUpdateState): DesktopUpdateState => {
     updateJournal?.state(state)
     updateState = state
-    mandatoryUI?.sync()
     for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(DESKTOP_IPC.updatesPresentation, presentDesktopUpdate(state))
     }
@@ -600,21 +576,15 @@ async function main(): Promise<void> {
         buttons: active ? [locale.messages.updateStopTasks, locale.messages.updateLater] : [locale.messages.installAndRestart],
         defaultId: 1, cancelId: 1,
       }
-      if (isMandatory()) {
-        if (!await mandatoryUI?.confirm(updates.state.version ?? '', active)) return false
-      } else {
-        const parent = currentDialogWindow()
-        if (parent === undefined) return false
-        const result = await updateDialog.show(parent, confirmation)
-        if (result.response !== 0 || isMandatory()) return false
-      }
-      // The update lock rejects new HTTP requests, including analytics intake.
-      await track('desktop_upgrade_install_restart_click', {})
+      const parent = currentDialogWindow()
+      if (parent === undefined) return false
+      const result = await updateDialog.show(parent, confirmation)
+      if (result.response !== 0) return false
+      // The update lock rejects new HTTP requests from the Host about to stop.
       if (backend.host !== host) throw new DesktopUpdatePreparationError('tasks-unavailable', locale.messages.updateTasksUnavailable)
       try {
         const stillActive = await host.updateTasks('lock')
         if (stillActive && !active) throw new DesktopUpdatePreparationError('tasks-changed', locale.messages.updateTasksChanged)
-        mandatoryUI?.preparingRestart(stillActive)
         // The embedded Platform document holds credentials issued by the Host that is about to stop.
         await platformView.closeAndWait()
         requireCleanStop = true
@@ -635,21 +605,18 @@ async function main(): Promise<void> {
       return true
     },
     undefined, undefined, undefined,
-    (success, reason) => { void track('desktop_upgrade_download_result', { is_success: success, ...reason === undefined ? {} : { error_reason: reason } }) },
 
   )
 
   const updateSchedule = new DesktopUpdateSchedule(updates, resolveDesktopUpdateScheduleConfig(process.env))
 
   const downloadUpdate = async (version: string): Promise<DesktopUpdateState> => {
-    void track('desktop_upgrade_click', {})
     updateJournal?.action('download-requested')
     const state = await updates.download(version)
     if (state.phase !== 'ready' || quitting) return state
     // Only a completed user-driven download opens this prompt; cancelling installation does not reopen it.
-    // A confirmation on a hidden window would go unseen, so it waits for the next show; the mandatory
-    // flow keeps its own taskbar and Dock attention instead.
-    if (!isMandatory()) await windowShown()
+    // A confirmation on a hidden window would go unseen, so it waits for the next show.
+    await windowShown()
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- A quit can begin while the show is awaited.
     if (quitting) return state
     return updates.install(version)
@@ -795,21 +762,10 @@ async function main(): Promise<void> {
   })
 
   let promptOperation: Promise<void> | undefined
-  let policyAuthenticationQueued = false
   const openUpdatePrompt = (manual = false): Promise<void> => {
-    if (authenticationOperation !== undefined) {
-      policyAuth?.focus(); updateDialog.focus()
-    }
     let failedOperation: 'check' | 'download' | 'install' = 'check'
     promptOperation ??= Promise.resolve().then(async () => {
       if (manual) updateJournal?.action('check-requested')
-      const joinedPolicyAuthentication = authenticationOperation !== undefined
-      if (joinedPolicyAuthentication) await authenticatePolicy()
-      if (isMandatory()) {
-        mandatoryUI?.focus()
-        if (manual) await Promise.all([checkPolicyManually(), updateSchedule.check(true)])
-        return
-      }
       let controller: AbortController | undefined
       let progress: Promise<unknown> | undefined
       try {
@@ -820,12 +776,8 @@ async function main(): Promise<void> {
           const parent = currentDialogWindow()
           progress = parent === undefined ? Promise.resolve() : updateDialog.show(parent, { type: 'info', title: locale.messages.updateCheckTitle,
             message: locale.messages.updateChecking, buttons: [locale.messages.later], cancelId: 0, signal: controller.signal })
-          if (!joinedPolicyAuthentication) {
-            void checkPolicyManually('deferred').catch((error: unknown) => { console.error(error) })
-          }
           state = await updateSchedule.check(true)
         }
-        if (isMandatory()) { mandatoryUI?.focus(); return }
         if (state.phase === 'error' && state.failedOperation === 'check') { await showUpdateFailure(state); return }
         if (state.phase === 'idle') {
           await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
@@ -848,7 +800,7 @@ async function main(): Promise<void> {
             buttons: [locale.messages.updateDownload], cancelId: 1 })
           if (result.response !== 0) return
         }
-        if (!isMandatory() && state.version !== undefined) {
+        if (state.version !== undefined) {
           controller?.abort()
           failedOperation = 'download'
           await showUpdateFailure(await downloadUpdate(state.version))
@@ -860,63 +812,11 @@ async function main(): Promise<void> {
       }
     }).catch((error: unknown) => showUpdateFailure({ phase: 'error', failedOperation,
       message: desktopErrorState(error).message }))
-      .finally(() => { promptOperation = undefined; flushQueuedPolicyAuthentication() })
+      .finally(() => { promptOperation = undefined })
     return promptOperation
   }
 
-  let authenticationOperation: Promise<DesktopPolicyState | undefined> | undefined
-  const authenticatePolicy = () => {
-    if (authenticationOperation !== undefined) { policyAuth?.focus(); updateDialog.focus() }
-    authenticationOperation ??= runPolicyAuthentication().finally(() => { authenticationOperation = undefined })
-    return authenticationOperation
-  }
-  const flushQueuedPolicyAuthentication = (): void => {
-    if (!policyAuthenticationQueued || promptOperation !== undefined || authenticationOperation !== undefined
-      || isMandatory() || quitting) return
-    policyAuthenticationQueued = false
-    void authenticatePolicy().catch((error: unknown) => { console.error(error) })
-  }
-  const queuePolicyAuthentication = (): void => {
-    if (!desktopSettings.updates.allowTestAuthPopupWindow) return
-    if (authenticationOperation !== undefined) {
-      policyAuth?.focus(); updateDialog.focus()
-      return
-    }
-    policyAuthenticationQueued = true
-    flushQueuedPolicyAuthentication()
-  }
-  const runPolicyAuthentication = async () => {
-    if (!desktopSettings.updates.allowTestAuthPopupWindow
-      || policyAuth === undefined || mandatoryPolicy === undefined || quitting) return undefined
-    const parent = mandatoryUI?.confirmationWindow ?? currentDialogWindow()
-    if (parent === undefined) return undefined
-    const consent = await updateDialog.show(parent, { type: 'info', title: locale.messages.policyLoginTitle,
-      message: locale.messages.policyLoginRequired, buttons: [locale.messages.policyLogin, locale.messages.later], cancelId: 1 })
-    if (consent.response !== 0 || isQuitting()) return undefined
-    const outcome = await policyAuth.login()
-    if (isQuitting() || outcome === 'cancelled') return undefined
-    if (outcome === 'failed') {
-      await updateDialog.show(parent, { type: 'error', title: locale.messages.policyLoginTitle,
-        message: locale.messages.policyLoginFailed, buttons: [locale.messages.updateAcknowledge], cancelId: 0 })
-      return undefined
-    }
-    // Drain a pre-login request before asking the server to evaluate the new cookies.
-    await mandatoryPolicy.check('login-return')
-    if (isQuitting()) return undefined
-    return mandatoryPolicy.check('login-return', true)
-  }
-
-  const checkPolicyManually = async (authentication: 'immediate' | 'deferred' = 'immediate') => {
-    if (authenticationOperation !== undefined) return authenticatePolicy()
-    const policy = await mandatoryPolicy?.check('manual', true)
-    if (policy?.error !== 'authentication-required' || !desktopSettings.updates.allowTestAuthPopupWindow) return policy
-    if (authentication === 'immediate') return authenticatePolicy()
-    queuePolicyAuthentication()
-    return policy
-  }
-
   const automaticCheck = (): void => {
-    if (!quitting) void mandatoryPolicy?.check('foreground-or-resume').catch((error: unknown) => { console.error(error) })
     if (!quitting) void updateSchedule.check().catch((error: unknown) => { console.error(error) })
   }
   powerMonitor.on('resume', automaticCheck)
@@ -1140,15 +1040,12 @@ async function main(): Promise<void> {
   const showWelcome = (): Promise<void> => {
     if (quitting) return Promise.resolve()
     if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) {
-      if (!welcomeWindow.isVisible()) void track('auth_page_view', {})
       welcomeWindow.show()
       welcomeWindow.focus()
       return Promise.resolve()
     }
     openingWelcome ??= (async () => {
       welcomeWindow = await openWelcomeWindow(locale, {
-        analytics: track,
-        analyticsEnabled: () => Promise.resolve(analyticsEnabled),
         takeNotice: () => {
           const notice = pendingWelcomeNotice
           pendingWelcomeNotice = undefined
@@ -1215,7 +1112,6 @@ async function main(): Promise<void> {
   }
   focusPrimaryWindow = () => {
     if (quitting) return
-    if (isMandatory()) { mandatoryUI?.focus(); return }
     const window = welcomeWindow ?? mainWindow
     if (window === undefined || window.isDestroyed()) {
       try { createMainWindow() } catch (error) { reportFatal(error, 'main'); return }
@@ -1254,8 +1150,7 @@ async function main(): Promise<void> {
     if (mainWindow !== undefined && !mainWindow.isDestroyed()) mainWindow.hide()
     updateSchedule.dispose()
     updateDialog.dispose()
-    mandatoryUI?.dispose()
-    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(),
+    void Promise.all([backend.close(),
       // A Platform cleanup failure is logged without cutting the remaining Host shutdown short.
       platformView.dispose().catch((error: unknown) => { console.error(error) })])
       .catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })
@@ -1268,7 +1163,6 @@ async function main(): Promise<void> {
       updateJournal?.action('quit-requested')
       tray?.dispose()
       updateDialog.dispose()
-      mandatoryUI?.dispose()
       // Installation preparation already awaited Platform storage cleanup.
       void platformView.dispose().catch((error: unknown) => { console.error(error) })
       return
@@ -1285,47 +1179,6 @@ async function main(): Promise<void> {
   })
 
   mainWindow = createMainWindow()
-  const manifest: unknown = JSON.parse(await readFile(join(app.getAppPath(), 'package.json'), 'utf8'))
-  if (typeof manifest !== 'object' || manifest === null) throw new Error('desktop policy: invalid application manifest')
-  const developmentPolicy = app.isPackaged ? undefined : process.env.DSH_DESKTOP_MANDATORY_UPDATE_CONFIG
-  const policyInput: unknown = app.isPackaged
-    ? ('dshMandatoryUpdatePolicy' in manifest ? manifest.dshMandatoryUpdatePolicy : undefined)
-    : developmentPolicy === undefined ? undefined : JSON.parse(developmentPolicy) as unknown
-  const policyConfig = resolveDesktopPolicyConfig(policyInput, !app.isPackaged)
-  if (policyConfig !== undefined) {
-    if (policyConfig.authentication === 'feishu-test') {
-      policyAuth = new DesktopPolicyTestAuth(policyConfig.origin, policyConfig.allowedAuthOrigins, locale,
-        () => mandatoryUI?.confirmationWindow ?? currentDialogWindow(),
-        (event) => { console.info(`desktop policy authentication: ${event}`); updateJournal?.action(`policy-login-${event}`) })
-    }
-    if (!['win32', 'darwin'].includes(process.platform) || !['x64', 'arm64'].includes(process.arch)) throw new Error('desktop policy: unsupported platform')
-    let wasBlocking = false
-    mandatoryPolicy = new DesktopMandatoryUpdatePolicy(policyConfig, {
-      platform: process.platform as 'win32' | 'darwin', arch: process.arch as 'x64' | 'arm64',
-      bundledDshVersion: app.isPackaged ? readDesktopRuntime(resources.dsh).release.version : app.getVersion(),
-    }, (state) => {
-      if (state.error !== 'authentication-required') policyAuthenticationQueued = false
-      if (state.blocking) {
-        for (const controller of ordinaryDialogs) controller.abort()
-        if (!wasBlocking) updateDialog.cancel()
-      }
-      mandatoryUI?.sync()
-      if (state.blocking && !wasBlocking) void updateSchedule.check(false, true).catch((error: unknown) => { console.error(error) })
-      wasBlocking = state.blocking
-    }, policyAuth?.request, () => desktopClientMetadata(locale.id))
-    const policy = mandatoryPolicy
-    mandatoryUI = new DesktopMandatoryUpdateWindow({
-      overlays: updateOverlays,
-      preload: fileURLToPath(new URL('./preload-mandatory.cjs', import.meta.url)), locale,
-      allowedPageOrigins: policyConfig.allowedPageOrigins, parent: () => mainWindow,
-      policy: () => policy.state, update: () => updates.state,
-      refresh: async () => { await Promise.all([checkPolicyManually(), updateSchedule.check(true)]) },
-      download: downloadUpdate, install: version => updates.install(version),
-    })
-    void mandatoryPolicy.check('launch').then((state) => {
-      if (app.isPackaged && state.error === 'authentication-required' && !isQuitting()) queuePolicyAuthentication()
-    }).catch((error: unknown) => { console.error(error) })
-  }
   automaticCheck()
   await reconcileBackend().catch(() => undefined)
   // Window lifecycle callbacks run while backend startup is pending.

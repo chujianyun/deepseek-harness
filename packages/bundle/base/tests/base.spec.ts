@@ -32,10 +32,6 @@ describe('dsh-base bundle', () => {
     )
     expect(rows.length).toBeGreaterThan(50)
     expect(rows.some(row => row.id === 'agent-loop')).toBe(true)
-    expect(rows.find(row => row.id === 'session-telemetry-otel')?.disabled).toBeUndefined()
-    expect(rows.find(row => row.id === 'session-telemetry-otel')?.config?.['mode']).toEqual({
-      __jsExpr: "process.env.DSH_TELEMETRY_MODE || 'FEEDBACK_ONLY'",
-    })
     expect(rows.find(row => row.id === 'hmr')).toMatchObject({
       config: { root: [] },
     })
@@ -47,6 +43,35 @@ describe('dsh-base bundle', () => {
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-codex')
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
     expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-web-fetch-http')
+  })
+
+  it('mounts no built-in telemetry egress while retaining local feedback and the platform session-log path', () => {
+    const root = fileURLToPath(new URL('..', import.meta.url))
+    const manifest = JSON.parse(
+      readFileSync(resolve(root, 'package.json'), 'utf8'),
+    ) as { dependencies?: Record<string, string> }
+    const text = readFileSync(resolve(root, 'cordis.patch.yml'), 'utf8')
+    const parsed = yaml.load(text, { schema: entryListSchema })
+    if (!Array.isArray(parsed)) throw new TypeError('base patch must parse to a patch list')
+    const rows = parsed.flatMap((patch): Record<string, unknown>[] =>
+      typeof patch === 'object' && patch !== null
+        ? (patch as { insert?: Record<string, unknown>[] }).insert ?? []
+        : [],
+    )
+    // The personal edition ships no session-log OTLP exporter: neither the
+    // reporter row nor the shared OTel factory it injected. A deployment
+    // composing its own backend re-adds both through its own patch layer.
+    expect(rows.some(row => row.id === 'session-telemetry-otel')).toBe(false)
+    expect(rows.some(row => row.id === 'otel')).toBe(false)
+    // No row may hardcode a collector endpoint or read the retired telemetry switches.
+    expect(text).not.toContain('deepseeksvc')
+    expect(text).not.toContain('DSH_TELEMETRY_')
+    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-session-telemetry-otel')
+    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-otel')
+    // Feedback stays in the Session log, and the user-switched official-API
+    // session-log contribution remains a separate, retained request path.
+    expect(rows.some(row => row.id === 'command-feedback')).toBe(true)
+    expect(rows.some(row => row.id === 'session-log-deepseek')).toBe(true)
   })
 
   it('gates each shell stack by platform with a symmetric disabled expression', () => {

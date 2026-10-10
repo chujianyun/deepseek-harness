@@ -6,8 +6,6 @@ import { validateDesktopPackageEnvironment } from '../scripts/desktop-package-en
 const inputs = {
   PACKAGE_BUILD_VERSION: 'auto',
   PACKAGE_DEPLOYMENT: 'test',
-  PACKAGE_POLICY_ORIGIN: 'https://policy.example.com',
-  PACKAGE_LOGIN_ORIGINS: 'https://login.example.com, https://sso.example.com',
   GITHUB_RUN_NUMBER: '42',
   GITHUB_RUN_ATTEMPT: '2',
 }
@@ -22,7 +20,6 @@ describe('manual Windows package inputs', () => {
     expect(() => { validateDesktopPackageEnvironment(settings, { platform: 'win32', arch: 'x64' }, { unsigned: true }) }).not.toThrow()
     expect(Object.keys(settings).sort()).toEqual([
       'DSH_DESKTOP_APP_ID', 'DSH_DESKTOP_AUTO_UPDATE_ENV',
-      'DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN', 'DSH_DESKTOP_MANDATORY_UPDATE_CONFIG',
     ].sort())
   })
 
@@ -32,8 +29,8 @@ describe('manual Windows package inputs', () => {
     expect(result.version).toBe('0.2.1-alpha.1.20261008.7')
   })
 
-  it('uses the stable product test prefix and anonymous production policy', () => {
-    const result = windowsCiSettings({ ...inputs, PACKAGE_DEPLOYMENT: 'production', PACKAGE_LOGIN_ORIGINS: '' }, '0.2.1', now)
+  it('uses the stable product test prefix for a production deployment', () => {
+    const result = windowsCiSettings({ ...inputs, PACKAGE_DEPLOYMENT: 'production' }, '0.2.1', now)
     expect(result.version).toBe('0.2.1-test.20261008.42.2')
     expect(() => { validateDesktopPackageEnvironment(parseEnv(result.settings), { platform: 'win32', arch: 'x64' }, { unsigned: true }) }).not.toThrow()
   })
@@ -42,12 +39,6 @@ describe('manual Windows package inputs', () => {
     { PACKAGE_BUILD_VERSION: '' },
     { PACKAGE_BUILD_VERSION: '0.3.0' },
     { PACKAGE_DEPLOYMENT: 'staging' },
-    { PACKAGE_POLICY_ORIGIN: '' },
-    { PACKAGE_POLICY_ORIGIN: 'http://policy.example.com' },
-    { PACKAGE_POLICY_ORIGIN: 'https://policy.example.com/path' },
-    { PACKAGE_LOGIN_ORIGINS: '' },
-    { PACKAGE_LOGIN_ORIGINS: 'https://user:password@login.example.com' },
-    { PACKAGE_DEPLOYMENT: 'production' },
     { GITHUB_RUN_NUMBER: '0' },
     { GITHUB_RUN_ATTEMPT: '1\nINJECTED=value' },
   ])('rejects invalid manual settings %j', (override) => {

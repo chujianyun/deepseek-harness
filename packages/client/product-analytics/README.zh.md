@@ -21,13 +21,13 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-桌面端同时装配 Analytics 与必需的 Telemetry 导出器。`product-analytics` settings 命名空间持有动态 `enabled` 字段，默认 `true`，通过现有 Cordis Config / settings 机制配置，暂不提供用户操作入口。普通 Web 不装配这两个服务。关闭后不读取埋点身份、不接收新事件；导出器仍保持挂载，已入队事件可以继续导出。会话反馈遥测采用独立策略。
+桌面端组合同时装配 Analytics 与必需的 Telemetry 导出器；随附的组合不装配这两个服务。`product-analytics` settings 命名空间持有动态 `enabled` 字段，默认 `true`，通过现有 Cordis Config / settings 机制配置，暂不提供用户操作入口。关闭后不读取埋点身份、不接收新事件；导出器仍保持挂载，已入队事件可以继续导出。会话反馈遥测采用独立策略。
 
-渲染端和 Electron 通过现有认证流订阅 Host 策略变化及重连后的值；Electron 在原生启动上报前还会读取初始策略。欢迎窗口通过 IPC 获取当前策略。Host 在接收事件及读取身份后都检查当前 volatile 配置。`DSH_PRODUCT_ANALYTICS_OTLP_URL` 可覆盖导出目的地，用于隔离的接收端。[导出器](../../host/product-telemetry-otel/README.zh.md)负责批量发送、重试和退出时的交付。
+渲染端和 Electron 通过现有认证流订阅 Host 策略变化及重连后的值；Electron 在原生启动上报前还会读取初始策略。欢迎窗口通过 IPC 获取当前策略。Host 在接收事件及读取身份后都检查当前 volatile 配置。导出目的地由导出器的 `endpoint` 配置选择，包括隔离的接收端。[导出器](../../host/product-telemetry-otel/README.zh.md)负责批量发送、重试和退出时的交付。
 
 公共字段为 `device_id`、`user_id`、`os_version` 和 `app_version`。设备身份复用现有登录记录，不会生成新标识。Host 通过 `deepseekAccount.getDeviceIdentity()` 读取不含凭据的设备、账户和操作系统字段。缺失值会省略；API key、账户令牌、提示词和模型回复都不是事件字段。
 
-Electron 将构建内联的 `DSH_CLIENT_VERSION` 传给 Host；埋点与导出器复用这一客户端版本，导出器要求该值存在。[桌面组合](../../bundle/web-app/README.zh.md)负责批量发送与超时配置，包括达到关闭期限时的取消行为。
+Electron 将构建内联的 `DSH_CLIENT_VERSION` 传给 Host；埋点与导出器复用这一客户端版本，导出器要求该值存在。组合的 bundle 负责批量发送与超时配置，包括达到关闭期限时的取消行为。
 
 认证事件仅覆盖原生欢迎页；通过 API Key 进入工作区后再登录的场景不在采集范围内。[事件类型](src/events.ts)定义名称和允许的字段。页面曝光按实际进入可见页面计数，包括重新显示的原生欢迎窗口；onboarding 短暂进入加载状态不会重复计算同一页面曝光，关闭 onboarding 弹窗上报 `button_name=close`。有余额时的继续按钮使用 `continue`。消息提交保留最初发生时间，并在异步命令裁决前采集 `msg_type=default|queue|steer`、模型、显式思考强度和 `run_mode`；仅普通消息路径在引用序列化之前上报，已处理或认领的命令不计入。后续序列化、附件处理或发送失败不撤销此次计数，排队后的执行也不重复计数；纯附件提交遵循相同规则。计划模式优先于活跃目标。采集和上报异常不会中断提交。消息提交以及模型或思考强度切换在空白会话中均省略 `session_id`。模型与插件切换仅在变更被接受后上报。分叉事件携带已创建的子会话 ID 和来源 ID，在可选的子会话标题更新前上报；创建失败不产生事件。
 

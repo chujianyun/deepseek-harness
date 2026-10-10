@@ -56,16 +56,14 @@ async function fixture(body: (context: {
     const source = join(root, 'source')
     await mkdir(join(source, 'lib'), { recursive: true })
     await mkdir(join(source, 'renderer'))
-    for (const name of ['main.js', 'preload-app.cjs', 'preload-mandatory.cjs', 'preload-update-dialog.cjs']) {
+    for (const name of ['main.js', 'preload-app.cjs', 'preload-update-dialog.cjs']) {
       await writeFile(join(source, 'lib', name), '// inert fixture\n')
     }
     await writeFile(join(source, 'renderer/index.html'), '<p>test</p>')
     await prepareInstalledUpdateApplication(manifest, source)
     await cp(join(run.root, 'application/files'), source, { recursive: true })
     await writeFile(join(source, 'package.json'), JSON.stringify({ name: `dsh-update-test-${run.id}`, version,
-      dshDesktopAppId: run.appId, main: 'qualification-bootstrap.mjs', type: 'module',
-      dshMandatoryUpdatePolicy: { origin: 'https://policy.example.com', allowedPageOrigins: ['https://policy.example.com'],
-        authentication: 'feishu-test', allowedAuthOrigins: ['https://login.example.com'] } }))
+      dshDesktopAppId: run.appId, main: 'qualification-bootstrap.mjs', type: 'module' }))
     for (const name of ['electron-updater', 'semver']) {
       await mkdir(join(source, 'node_modules', name), { recursive: true })
       await cp(require.resolve(`${name}/package.json`), join(source, 'node_modules', name, 'package.json'))
@@ -104,13 +102,13 @@ describe('installed update archive contents', () => {
   it.each(versions)('reads real ASAR and runtime inventories for %s without claiming installation', async (version) => {
     await fixture(async ({ manifest, payload }) => {
       expect(await verifyInstalledUpdatePackageContent(manifest, version, payload, publisher)).toMatchObject({
-        version, applicationFiles: 7, dependenciesFrozen: false, installed: false,
+        version, applicationFiles: 6, dependenciesFrozen: false, installed: false,
         resignedExecutables: [join(payload, 'resources/app.asar.unpacked/dsh/tool.exe')],
       })
     }, version)
   })
 
-  it.each(['name', 'version', 'dshDesktopAppId', 'main', 'type', 'dshMandatoryUpdatePolicy'])(
+  it.each(['name', 'version', 'dshDesktopAppId', 'main', 'type'])(
     'rejects mismatched packaged %s', async (field) => {
       await fixture(async ({ manifest, source, payload, version, seal }) => {
         const path = join(source, 'package.json')
@@ -119,7 +117,7 @@ describe('installed update archive contents', () => {
         await writeFile(path, JSON.stringify(data))
         await seal()
         await expect(verifyInstalledUpdatePackageContent(manifest, version, payload, publisher))
-          .rejects.toThrow(field === 'dshMandatoryUpdatePolicy' ? 'desktop policy' : 'identity')
+          .rejects.toThrow('identity')
       })
     })
 
