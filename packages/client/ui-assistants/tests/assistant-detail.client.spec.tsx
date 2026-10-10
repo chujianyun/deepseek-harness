@@ -39,8 +39,8 @@ async function mount(view: AssistantView = assistant, read?: () => Promise<Assis
   const sessions = createSnapshotStore({ ids: rows.map(item => item.id), byId: Object.fromEntries(rows.map(item => [item.id, item])) })
   const props = {
     useSessions: bindSnapshotSelector(sessions) as never, onOpenSession: vi.fn(),
-    t: makeTranslate(zh), assistant: view, isDefault: false,
-    onBack: vi.fn(), onChat: vi.fn(async (_id: string) => {}), onSetDefault: vi.fn(), onDuplicate: vi.fn(), onDelete: vi.fn(),
+    t: makeTranslate(zh), assistant: view,
+    onBack: vi.fn(), onChat: vi.fn(async (_id: string) => {}), onDuplicate: vi.fn(), onDelete: vi.fn(),
     onRead: vi.fn(read ?? (async (_id: string): Promise<AssistantDetail | string> => stored)),
     onUpdate: vi.fn(async (_id: string, input: UpdateAssistantInput): Promise<string | undefined> => {
       const assistant = { ...stored.assistant, ...(input.name === undefined ? {} : { name: input.name }) }
@@ -71,7 +71,7 @@ describe('assistant detail page', () => {
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '身份 IDENTITY.md' }).value).toBe('# 身份\n')
     expect(save().disabled).toBe(true)
     expect(discard().disabled).toBe(true)
-    expect(screen.getByRole('button', { name: '设为默认' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '设为默认' })).toBeNull()
   })
 
   it('shows loading, then a read failure', async () => {

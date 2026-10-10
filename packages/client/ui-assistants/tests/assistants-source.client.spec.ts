@@ -6,7 +6,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { assistantOf, assistantSessions, createAssistantsSource, shownAssistant, type BlankSession } from '../src/client/assistants-source.ts'
 
 const state: AssistantsState = {
-  revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [],
+  revision: 1, tenantId: 't-a', templates: [],
   assistants: [
     { id: 'a1', name: '日常助手', description: 'd', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:00Z' },
     { id: 'a2', name: '电商管家', description: '', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:01Z' },
@@ -16,13 +16,13 @@ const sid = (id: string) => id as SessionSummary['id']
 const unused = {
   sessionList: createSnapshotStore({ ids: [], byId: {} }) as never, openSession: vi.fn(),
   loadOptions: vi.fn(), squareAvatar: vi.fn(), read: vi.fn(), update: vi.fn(),
-  setDefault: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), sessionCount: vi.fn(), otherTenant: vi.fn(),
+  duplicate: vi.fn(), remove: vi.fn(), sessionCount: vi.fn(), otherTenant: vi.fn(),
 }
 const refused = (message: string) => ({ ok: false, error: new RemoteError('assistants/not-found', message, { assistantId: 'x' }) }) as never
 
 function harness(initial: BlankSession | undefined) {
   let blank = initial
-  const select = vi.fn((_sessionId: SessionSummary['id'], assistantId: string) => Promise.resolve({ ok: true as const, value: assistantId }))
+  const select = vi.fn((_sessionId: SessionSummary['id'], assistantId: string | null) => Promise.resolve({ ok: true as const, value: assistantId }))
   const startSession = vi.fn()
   const create = vi.fn(async (_input: CreateAssistantInput) => ({ ok: true as const, value: { assistantId: 'a3', state: { ...state, revision: 2 } } }))
   const loadOptions = vi.fn(async () => ({ models: [], presets: [] }))
@@ -30,19 +30,18 @@ function harness(initial: BlankSession | undefined) {
   const ok = <T>(value: T) => ({ ok: true as const, value })
   const read = vi.fn(async (assistantId: string) => ok({ assistant: state.assistants[0]!, files: { 'IDENTITY.md': assistantId, 'SOUL.md': '', 'USER.md': '', 'AGENTS.md': '' } }))
   const update = vi.fn(async (_id: string, _input: object) => ok({ ...state, revision: 3 }))
-  const setDefault = vi.fn(async (_id: string) => ok({ ...state, revision: 4, defaultId: 'a2' }))
   const duplicate = vi.fn(async (_id: string) => ok({ assistantId: 'a9', state: { ...state, revision: 5 } }))
   const remove = vi.fn(async (_id: string) => ok({ ...state, revision: 6, assistants: [state.assistants[1]!] }))
   const sessionCount = vi.fn((_id: string) => 3)
   const openSession = vi.fn()
   const source = createAssistantsSource({
     select, startSession, blankSession: () => blank, create, loadOptions, squareAvatar,
-    read, update, setDefault, duplicate, remove, sessionCount, sessionList: unused.sessionList, openSession,
+    read, update, duplicate, remove, sessionCount, sessionList: unused.sessionList, openSession,
     otherTenant: vi.fn(async () => ({ ok: true as const, value: [] })),
   })
   source.publish(state)
   return {
-    source, select, startSession, create, loadOptions, squareAvatar, read, update, setDefault, duplicate, remove, sessionCount, openSession,
+    source, select, startSession, create, loadOptions, squareAvatar, read, update, duplicate, remove, sessionCount, openSession,
     setBlank: (next: BlankSession | undefined) => { blank = next },
     snapshot: () => source.hooks.assistants.getSnapshot(),
   }
@@ -55,6 +54,14 @@ describe('assistants source', () => {
     expect(h.select).toHaveBeenCalledWith('s1', 'a2')
     expect(h.snapshot()).toMatchObject({ staged: undefined, busy: false, bound: 'a2', failure: null })
     expect(shownAssistant(h.snapshot())).toBe('a2')
+  })
+
+  it('binds no assistant to the blank session when none is picked', async () => {
+    const h = harness({ id: sid('s1'), assistantId: 'a1' })
+    await h.source.onPick(null)
+    expect(h.select).toHaveBeenCalledWith('s1', null)
+    expect(h.snapshot()).toMatchObject({ staged: undefined, busy: false, bound: null, failure: null })
+    expect(shownAssistant(h.snapshot())).toBeNull()
   })
 
   it('keeps a pick staged until a blank session appears, then binds it once', async () => {
@@ -100,13 +107,13 @@ describe('assistants source', () => {
     expect(h.snapshot().failure).toBe('down')
   })
 
-  it('shows the tenant default before any session or pick, and nothing before the first frame', () => {
+  it('shows no assistant before any session or pick, and before the first frame', () => {
     const empty = createAssistantsSource({
       ...unused, select: vi.fn(), startSession: vi.fn(), blankSession: () => undefined, create: vi.fn(),
     })
     expect(shownAssistant(empty.hooks.assistants.getSnapshot())).toBeNull()
     const h = harness(undefined)
-    expect(shownAssistant(h.snapshot())).toBe('a1')
+    expect(shownAssistant(h.snapshot())).toBeNull()
   })
 
   it('creates through the Host, keeping the newer of its answer and the stream, and reports a refusal', async () => {
@@ -144,13 +151,11 @@ describe('managing assistants through the source', () => {
     expect(await h.source.onRead('a1')).toBe('gone')
   })
 
-  it('saves, sets the default, and deletes, adopting each newer state', async () => {
+  it('saves and deletes, adopting each newer state', async () => {
     const h = harness(undefined)
     expect(await h.source.onUpdate('a1', { name: '新' })).toBeUndefined()
     expect(h.update).toHaveBeenCalledWith('a1', { name: '新' })
     expect(h.snapshot().state?.revision).toBe(3)
-    expect(await h.source.onSetDefault('a2')).toBeUndefined()
-    expect(h.snapshot().state?.defaultId).toBe('a2')
     expect(await h.source.onDelete('a1')).toBeUndefined()
     expect(h.snapshot().state?.assistants.map(item => item.id)).toEqual(['a2'])
     h.remove.mockResolvedValueOnce(refused('gone'))

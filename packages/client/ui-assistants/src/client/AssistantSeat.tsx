@@ -8,6 +8,9 @@ import { AssistantAvatar } from './AssistantAvatar.tsx'
 import { shownAssistant, type AssistantsInjected } from './assistants-source.ts'
 import css from './AssistantSeat.module.css'
 
+/** Menu id of the "no assistant" item; assistant ids are UUIDs, so it never collides. */
+const NONE = 'none'
+
 /** Full component props. */
 export type AssistantSeatProps =
   PropsRuntime<'conversation.hero.assistant'>
@@ -15,7 +18,8 @@ export type AssistantSeatProps =
   & InjectFace<AssistantsInjected>
 
 /**
- * Render the picker: the shown assistant's avatar and name, opening a menu of the tenant's assistants.
+ * Render the picker: the shown assistant's avatar and name, or "No assistant", opening a menu of
+ * "No assistant" and the tenant's assistants.
  * @param props - composed slot props.
  * @returns the chip, or null outside the main view or when the tenant has no assistants.
  */
@@ -35,20 +39,31 @@ export function AssistantSeat({ sessionId, useSessionRetainInfo, useAssistants, 
       <Menu
         open={open}
         onClose={() => { setOpen(false) }}
-        items={assistants.map(item => ({
-          id: item.id,
-          icon: <AssistantAvatar avatar={item.avatar} name={item.name} size={20} />,
-          label: (
-            <span className={css.item}>
-              <span className={css.itemName}>{item.name}</span>
-              <span className={css.itemDesc}>{item.description === '' ? t('noDescription') : item.description}</span>
-            </span>
-          ),
-        }))}
-        selectedId={shown ?? undefined}
+        items={[
+          {
+            id: NONE,
+            label: (
+              <span className={css.item}>
+                <span className={css.itemName}>{t('noAssistant')}</span>
+                <span className={css.itemDesc}>{t('noAssistantDescription')}</span>
+              </span>
+            ),
+          },
+          ...assistants.map(item => ({
+            id: item.id,
+            icon: <AssistantAvatar avatar={item.avatar} name={item.name} size={20} />,
+            label: (
+              <span className={css.item}>
+                <span className={css.itemName}>{item.name}</span>
+                <span className={css.itemDesc}>{item.description === '' ? t('noDescription') : item.description}</span>
+              </span>
+            ),
+          })),
+        ]}
+        selectedId={current?.id ?? NONE}
         onSelect={(id) => {
           setOpen(false)
-          void onPick(id)
+          void onPick(id === NONE ? null : id)
         }}
         align="start"
         portal
@@ -66,7 +81,7 @@ export function AssistantSeat({ sessionId, useSessionRetainInfo, useAssistants, 
             onClick={() => { setOpen(value => !value) }}
           >
             {current !== undefined && <AssistantAvatar avatar={current.avatar} name={current.name} size={18} />}
-            <span className={css.seatLabel}>{current?.name ?? t('panel')}</span>
+            <span className={css.seatLabel}>{current?.name ?? t('noAssistant')}</span>
             <IconChevronDownOutlineRegular className={css.chevron} />
           </button>
         )}

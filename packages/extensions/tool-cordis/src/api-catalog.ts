@@ -466,13 +466,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RemoteError `hub-account/signed-out`, `assistants/not-found`, `assistants/invalid-name`, `assistants/invalid-description`, `assistants/invalid-avatar`, `assistants/preset-unavailable`, or `assistants/invalid-file`.'],
       },
       {
-        signature: '@Remote setDefault(assistantId: string): Promise<AssistantsState>',
-        description: 'Make an assistant the one new sessions bind; blank sessions bound to the previous default move to it.',
-        parameters: [{ name: 'assistantId', description: 'the new default.' }],
-        returns: 'the state with the new default.',
-        throws: ['RemoteError `hub-account/signed-out` or `assistants/not-found`.'],
-      },
-      {
         signature: '@Remote duplicateAssistant(assistantId: string): Promise<CreateAssistantResult>',
         description: 'Copy an assistant\'s configuration and core files into a new assistant named «name 副本»; sessions are not copied.',
         parameters: [{ name: 'assistantId', description: 'the assistant to copy.' }],
@@ -481,16 +474,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote deleteAssistant(assistantId: string): Promise<AssistantsState>',
-        description: 'Delete an assistant. Its sessions remain and carry no core files from their next turn. Deleting the default makes the first remaining assistant the default; blank sessions bound to the deleted one move to the default, or bind none when no assistant remains.',
+        description: 'Delete an assistant. Its sessions remain and carry no core files from their next turn; blank sessions bound to it bind none.',
         parameters: [{ name: 'assistantId', description: 'the assistant to delete.' }],
         returns: 'the state without it.',
         throws: ['RemoteError `hub-account/signed-out` or `assistants/not-found`.'],
       },
       {
-        signature: '@Remote(\'select\') select(agent: Agent, assistantId: string): Promise<string>',
-        description: 'Bind a blank session to one of the signed-in tenant\'s assistants.',
-        parameters: [{ name: 'agent', description: 'the session\'s Agent.' }, { name: 'assistantId', description: 'the assistant to bind.' }],
-        returns: 'the bound assistant id.',
+        signature: '@Remote(\'select\') select(agent: Agent, assistantId: string | null): Promise<string | null>',
+        description: 'Bind a blank session to one of the signed-in tenant\'s assistants, or to none.',
+        parameters: [{ name: 'agent', description: 'the session\'s Agent.' }, { name: 'assistantId', description: 'the assistant to bind, or null to bind none.' }],
+        returns: 'the bound assistant id, or null.',
         throws: ['RemoteError `hub-account/signed-out`, `assistants/not-found`, or `assistants/locked` once the session started.'],
       },
     ],
@@ -5458,7 +5451,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AssistantsState',
-    declaration: 'export interface AssistantsState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly defaultId: string | null;\n    readonly assistants: readonly AssistantView[];\n    readonly templates: readonly AssistantTemplateView[];\n}',
+    declaration: 'export interface AssistantsState {\n    readonly revision: number;\n    readonly tenantId: string | null;\n    readonly assistants: readonly AssistantView[];\n    readonly templates: readonly AssistantTemplateView[];\n}',
   },
   {
     name: 'AssistantStreamFrame',

@@ -12,7 +12,7 @@ import { en, zh } from '../src/client/locales.ts'
 afterEach(() => { cleanup() })
 
 const state: AssistantsState = {
-  revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [{ id: 'daily', name: '日常助手', description: 'd', avatar: { kind: 'preset', key: 'sun' } }],
+  revision: 1, tenantId: 't-a', templates: [{ id: 'daily', name: '日常助手', description: 'd', avatar: { kind: 'preset', key: 'sun' } }],
   assistants: [
     { id: 'a1', name: '日常助手', description: '通用日常助手', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:00Z' },
     { id: 'a2', name: '电商管家', description: '', avatar: { kind: 'preset', key: 'moon' }, createdAt: '2026-10-07T00:00:01Z' },
@@ -28,14 +28,13 @@ function mount(value: AssistantsState | undefined, extra: Partial<AssistantsSnap
   const props = {
     t: makeTranslate(copy), useAssistants: bindSnapshotSelector(store), useSessions: bindSnapshotSelector(sessions),
     onOpenSession: vi.fn(),
-    onPick: vi.fn(async (_id: string) => {}), onChat: vi.fn(async (_id: string) => {}), onDismiss: vi.fn(),
+    onPick: vi.fn(async (_id: string | null) => {}), onChat: vi.fn(async (_id: string) => {}), onDismiss: vi.fn(),
     onCreate: vi.fn(async () => undefined), onLoadOptions: vi.fn(async () => ({ models: [], presets: [] })),
     squareAvatar: vi.fn(async () => 'data:image/webp;base64,AA'),
     onRead: vi.fn(async (assistantId: string): Promise<AssistantDetail | string> => ({
       assistant: (value?.assistants ?? []).find(item => item.id === assistantId)!, files: FILES,
     })),
     onUpdate: vi.fn(async (_id: string, _input: UpdateAssistantInput): Promise<string | undefined> => undefined),
-    onSetDefault: vi.fn(async (_id: string): Promise<string | undefined> => undefined),
     onDuplicate: vi.fn(async (_id: string): Promise<{ assistantId: string } | string> => ({ assistantId: 'a2' })),
     onDelete: vi.fn(async (_id: string): Promise<string | undefined> => undefined),
     sessionCount: vi.fn((_id: string) => 4),
@@ -54,16 +53,15 @@ describe('assistants page', () => {
     expect(screen.queryByRole('list')).toBeNull()
   })
 
-  it('lists the cards with the default tag, a placeholder description, and the avatar initial', () => {
+  it('lists the cards with a placeholder description and the avatar initial, and no default tag', () => {
     mount(state)
     expect(screen.getByText('2 个智能体')).toBeTruthy()
     const daily = screen.getByText('日常助手').closest('li')!
-    expect(daily.textContent).toContain('默认')
+    expect(daily.textContent).not.toContain('默认')
     expect(daily.textContent).toContain('通用日常助手')
     expect(daily.querySelector('[data-tone="sun"]')!.textContent).toBe('日')
     const shop = screen.getByText('电商管家').closest('li')!
     expect(shop.textContent).toContain('暂无描述')
-    expect(within(shop).getByRole('button', { name: '查看 电商管家 的详情' }).textContent).not.toContain('默认')
     expect(shop.querySelector('[data-tone="neutral"]')).toBeTruthy()
   })
 
@@ -107,10 +105,10 @@ describe('assistants page', () => {
   })
 
   it('says when the tenant has none, and when signed out', () => {
-    mount({ ...state, defaultId: null, assistants: [] })
+    mount({ ...state, assistants: [] })
     expect(screen.getByText('还没有智能体。')).toBeTruthy()
     cleanup()
-    mount({ ...state, tenantId: null, defaultId: null, assistants: [] })
+    mount({ ...state, tenantId: null, assistants: [] })
     expect(screen.getByText('登录用户中心后可以使用智能体。')).toBeTruthy()
     expect(screen.queryByRole('textbox')).toBeNull()
   })
@@ -125,11 +123,9 @@ describe('assistants page', () => {
 })
 
 describe('managing assistants on the page', () => {
-  it('sets the default, duplicates, and offers no Make default on the default card', async () => {
+  it('duplicates, and offers no Make default on any card', async () => {
     const props = mount(state)
-    expect(within(card('日常助手')).queryByRole('button', { name: '设为默认' })).toBeNull()
-    await act(async () => { fireEvent.click(within(card('电商管家')).getByRole('button', { name: '设为默认' })) })
-    expect(props.onSetDefault).toHaveBeenCalledWith('a2')
+    expect(screen.queryByRole('button', { name: '设为默认' })).toBeNull()
     await act(async () => { fireEvent.click(within(card('日常助手')).getByRole('button', { name: '复制' })) })
     expect(props.onDuplicate).toHaveBeenCalledWith('a1')
     expect(screen.getByRole('heading', { name: '智能体' })).toBeTruthy()
@@ -137,8 +133,8 @@ describe('managing assistants on the page', () => {
 
   it('shows a refused action until dismissed', async () => {
     const props = mount(state)
-    props.onSetDefault.mockResolvedValueOnce('gone')
-    await act(async () => { fireEvent.click(within(card('电商管家')).getByRole('button', { name: '设为默认' })) })
+    props.onDuplicate.mockResolvedValueOnce('gone')
+    await act(async () => { fireEvent.click(within(card('电商管家')).getByRole('button', { name: '复制' })) })
     expect(screen.getByRole('alert').textContent).toContain('操作失败：gone')
     fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     expect(screen.queryByRole('alert')).toBeNull()
@@ -177,15 +173,13 @@ describe('managing assistants on the page', () => {
     const props = mount(state)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '查看 日常助手 的详情' })) })
     expect(screen.queryByRole('button', { name: '设为默认' })).toBeNull()
-    expect(screen.getByText('默认')).toBeTruthy()
+    expect(screen.queryByText('默认')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '对话' }))
     expect(props.onChat).toHaveBeenCalledWith('a1')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '复制' })) })
     expect(screen.getByRole('heading', { level: 1, name: '电商管家' })).toBeTruthy()
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '设为默认' })) })
-    expect(props.onSetDefault).toHaveBeenCalledWith('a2')
-    props.onSetDefault.mockResolvedValueOnce('gone')
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '设为默认' })) })
+    props.onDuplicate.mockResolvedValueOnce('gone')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '复制' })) })
     expect(screen.getByRole('alert').textContent).toContain('操作失败：gone')
     fireEvent.click(screen.getByRole('button', { name: '删除' }))
     await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '删除' })) })

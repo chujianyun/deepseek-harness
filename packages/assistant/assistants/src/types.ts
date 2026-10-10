@@ -5,7 +5,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     /** The signed-in tenant has no assistant with this id. */
     'assistants/not-found': { readonly assistantId: string }
     /** The session already started a turn, so its assistant can no longer change. */
-    'assistants/locked': { readonly sessionId: string; readonly assistantId: string }
+    'assistants/locked': { readonly sessionId: string; readonly assistantId: string | null }
     /** The name is empty or longer than allowed. */
     'assistants/invalid-name': { readonly name: string }
     /** The description is longer than allowed. */
@@ -169,8 +169,6 @@ export interface AssistantsState {
   readonly revision: number
   /** Tenant of the current Hub sign-in; null while signed out. */
   readonly tenantId: string | null
-  /** Assistant a new session binds unless the user picks another; null when the tenant has none. */
-  readonly defaultId: string | null
   /** Assistants in creation order. */
   readonly assistants: readonly AssistantView[]
   /** Built-in templates the creation wizard offers. */
@@ -188,8 +186,8 @@ export interface AssistantProjectionState {
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
-     * The session was bound to an assistant while it was still blank. Later turns carry that
-     * assistant's core files; a session is bound at most once per blank window.
+     * The session was bound to an assistant while it was still blank, or, with an empty
+     * `assistantId`, back to none. Later turns carry the bound assistant's core files.
      */
     'assistant/selected': { assistantId: string }
     /**

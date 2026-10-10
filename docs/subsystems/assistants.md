@@ -101,14 +101,6 @@ Host owner of the assistants and of the `assistants` Remote namespace.
 @Remote updateAssistant(assistantId: string, input: UpdateAssistantInput): Promise<AssistantsState>
 
 /**
- * Make an assistant the one new sessions bind; blank sessions bound to the previous default move to it.
- * @param assistantId - the new default.
- * @returns the state with the new default.
- * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
- */
-@Remote setDefault(assistantId: string): Promise<AssistantsState>
-
-/**
  * Copy an assistant's configuration and core files into a new assistant named «name 副本»; sessions are not copied.
  * @param assistantId - the assistant to copy.
  * @returns the copy's id and the state with it last.
@@ -117,9 +109,8 @@ Host owner of the assistants and of the `assistants` Remote namespace.
 @Remote duplicateAssistant(assistantId: string): Promise<CreateAssistantResult>
 
 /**
- * Delete an assistant. Its sessions remain and carry no core files from their next turn. Deleting
- * the default makes the first remaining assistant the default; blank sessions bound to the deleted
- * one move to the default, or bind none when no assistant remains.
+ * Delete an assistant. Its sessions remain and carry no core files from their next turn; blank
+ * sessions bound to it bind none.
  * @param assistantId - the assistant to delete.
  * @returns the state without it.
  * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
@@ -127,13 +118,13 @@ Host owner of the assistants and of the `assistants` Remote namespace.
 @Remote deleteAssistant(assistantId: string): Promise<AssistantsState>
 
 /**
- * Bind a blank session to one of the signed-in tenant's assistants.
+ * Bind a blank session to one of the signed-in tenant's assistants, or to none.
  * @param agent - the session's Agent.
- * @param assistantId - the assistant to bind.
- * @returns the bound assistant id.
+ * @param assistantId - the assistant to bind, or null to bind none.
+ * @returns the bound assistant id, or null.
  * @throws RemoteError `hub-account/signed-out`, `assistants/not-found`, or `assistants/locked` once the session started.
  */
-@Remote('select') select(agent: Agent, assistantId: string): Promise<string>
+@Remote('select') select(agent: Agent, assistantId: string | null): Promise<string | null>
 ```
 
 Types: [Agent](core.md)
