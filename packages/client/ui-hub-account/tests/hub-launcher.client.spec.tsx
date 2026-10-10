@@ -25,10 +25,11 @@ function mount(view: HubAccountView | undefined, { wide = true, copy = zh, busy 
   return props
 }
 
-it.each([zh, en])('shows the employee and company, opens Settings, and signs out from its menu', (copy) => {
+it.each([zh, en])('shows the employee without the company, opens Settings, and signs out from its menu', (copy) => {
   const props = mount({ status: 'signed-in', profile, reason: null, attempt: null, branding: null }, { copy })
   const trigger = screen.getByRole('button', { name: copy.menu })
-  expect(trigger.textContent).toBe('韩韩梅梅甲公司')
+  // The launcher shows the employee only; the company is in the Settings section.
+  expect(trigger.textContent).toBe('韩韩梅梅')
   fireEvent.click(trigger)
   expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([copy.settings, copy.signOut])
   fireEvent.click(screen.getByRole('menuitem', { name: copy.settings }))
@@ -39,9 +40,9 @@ it.each([zh, en])('shows the employee and company, opens Settings, and signs out
   expect(props.onSignOut).toHaveBeenCalledOnce()
 })
 
-it('names an account without a company and keeps only the initial in the collapsed rail', () => {
+it('shows an account without a company the same way and keeps only the initial in the collapsed rail', () => {
   mount({ status: 'signed-in', profile: { ...profile, tenantName: null }, reason: null, attempt: null, branding: null })
-  expect(screen.getByRole('button', { name: zh.menu }).textContent).toBe('韩韩梅梅不属于任何公司')
+  expect(screen.getByRole('button', { name: zh.menu }).textContent).toBe('韩韩梅梅')
   cleanup()
   mount({ status: 'signed-in', profile, reason: null, attempt: null, branding: null }, { wide: false })
   expect(screen.getByRole('button', { name: zh.menu }).textContent).toBe('韩')

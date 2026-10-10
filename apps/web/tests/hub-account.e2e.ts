@@ -3,8 +3,7 @@
 // section says so and new prompts are refused; browser sign-in from Settings lets
 // the user in; a refused refresh signs out while a running turn keeps streaming; signing in
 // again restores prompts; Settings switches tenant, signs out, and signs in again. The sidebar brand
-// row shows the MO WorkAI mark beside the signed-in tenant's logo, or its name when it set none, above
-// the product name, never the build version. The Desktop welcome window
+// row shows the MO wordmark whatever the tenant, never the build version. The Desktop welcome window
 // that keeps the workspace closed while signed out is covered by the Desktop specs.
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -20,7 +19,7 @@ import { startMockUserCenter } from '../../../packages/credentials/hub-account/t
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, openSettings, saveFailureShot, writeComposerDraft } from './support.ts'
 
-// Composed with the MO brand row like the Desktop product, which owns the mark beside the tenant name.
+// Composed with the MO brand row like the Desktop product, which owns the sidebar brand row.
 const OVERLAY = ['./hub-account.overlay.yml', './brand-mo.overlay.yml'].map(path => fileURLToPath(new URL(path, import.meta.url)))
 const FIRST = 'HUB_ACCOUNT_STREAM_FIRST'
 const DONE = 'HUB_ACCOUNT_STREAM_DONE'
@@ -94,17 +93,18 @@ it('signs in from Settings, survives a refused refresh without stopping a runnin
     expect(Object.fromEntries(center.authorizeRequests[0]!)).toMatchObject({ client_id: 'dsh-desktop', code_challenge_method: 'S256', scope: 'profile skills:read skills:write' })
     await expect.poll(() => section.textContent()).toContain('Tenant：甲公司')
     expect((await scaffold.ctx.hubAccount.getState()).profile).toMatchObject({ nickname: '李雷', tenantName: '甲公司' })
-    // No DeepSeek account section; the sidebar launcher shows the employee and company with Settings and Sign out.
+    // No DeepSeek account section; the sidebar launcher shows the employee with Settings and Sign out.
     expect(await settings.getByRole('button', { name: 'Account', exact: true }).count()).toBe(0)
     await settings.getByRole('button', { name: 'Close' }).last().click()
-    // The sidebar brand row shows the tenant's logo in place of the DeepSeek Harness brand.
+    // The sidebar brand row shows the MO wordmark in place of the DeepSeek Harness brand, whatever the tenant.
     const brandName = page.locator('[data-slot="sidebar.brand.name"]')
-    await expect.poll(() => brandName.locator('img').getAttribute('src'), { timeout: 10_000 }).toMatch(/^data:image\/svg\+xml;base64,/u)
-    expect(await brandName.locator('img').getAttribute('alt')).toBe('甲公司')
-    expect(await brandName.textContent()).toBe('MO WorkAI')
-    expect(await page.locator('[data-slot="sidebar.brand.mark"] img').getAttribute('src')).toMatch(/^data:image\/png;base64,/u)
+    await expect.poll(() => brandName.locator('img').getAttribute('src'), { timeout: 10_000 }).toMatch(/^data:image\/png;base64,/u)
+    expect(await page.locator('[data-slot="sidebar.brand.mark"] img').count()).toBe(0)
+    // The new-session hero reads the tenant's branding through hubAccount.getBranding(): 甲公司's logo.
+    await expect.poll(() => page.locator('[data-slot="conversation.hero.brand.mark"] img').getAttribute('src'), { timeout: 10_000 })
+      .toMatch(/^data:image\/svg\+xml;base64,/u)
     const launcher = page.getByRole('button', { name: 'Account menu', exact: true })
-    await expect.poll(() => launcher.textContent()).toBe('李李雷甲公司')
+    await expect.poll(() => launcher.textContent()).toBe('李李雷')
     await launcher.click()
     expect((await page.getByRole('menuitem').allTextContents()).map(text => text.replace(/[^A-Za-z ].*$/u, ''))).toEqual(['Settings', 'Sign out'])
     await page.keyboard.press('Escape')
@@ -141,9 +141,8 @@ it('signs in from Settings, survives a refused refresh without stopping a runnin
     await expect.poll(async () => (await scaffold.ctx.hubAccount.getState()).profile?.tenantName).toBe('乙公司')
     expect(center.revoked.length).toBeGreaterThan(0)
     await expect.poll(() => section.textContent()).toContain('Tenant：乙公司')
-    // 乙公司 set no branding: its name replaces the logo.
-    await expect.poll(() => brandName.textContent()).toBe('乙公司MO WorkAI')
-    expect(await brandName.locator('img').count()).toBe(0)
+    // The brand row does not follow the tenant switch.
+    expect(await brandName.locator('img').getAttribute('src')).toMatch(/^data:image\/png;base64,/u)
     await section.getByRole('button', { name: 'Sign out' }).click()
     await section.getByText('Not signed in to Skill Hub').waitFor({ timeout: 10_000 })
     expect((await scaffold.ctx.hubAccount.getState()).status).toBe('signed-out')

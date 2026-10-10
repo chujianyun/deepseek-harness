@@ -388,7 +388,7 @@
       name: '@deepseek-ai/dsh-client-ui-skills'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
 
-    # Desktop Hub sign-in gate, the sidebar brand row (tenant logo or name),
+    # Desktop Hub sign-in gate, the new-session hero (tenant logo and slogan),
     # and the Settings account section over the `hubAccount` Remote; mounted
     # exactly when the hub-account row is.
     - id: ui-hub-account
@@ -441,12 +441,12 @@
       name: '@deepseek-ai/dsh-client-ui-chat'
 
     # Official occupants for the generic sidebar and conversation brand slots. Desktop signed in to
-    # a user center shows the MO mark (ui-brand-mo) and the tenant's name and hero (ui-hub-account) instead.
+    # a user center shows the MO wordmark (ui-brand-mo) and the tenant's hero (ui-hub-account) instead.
     - id: ui-brand-official
       name: '@deepseek-ai/dsh-client-ui-brand-official'
       disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
-    # MO WorkAI brand for Desktop with a user center: 名流蓝 palette, the sidebar mark, and the boot page.
+    # MO WorkAI brand for Desktop with a user center: 名流蓝 palette, the sidebar wordmark, and the boot page.
     - id: ui-brand-mo
       name: '@deepseek-ai/dsh-client-ui-brand-mo'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"

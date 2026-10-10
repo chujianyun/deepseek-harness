@@ -1,16 +1,9 @@
-// @vitest-environment jsdom
 import { Context } from '@deepseek-ai/cordis'
-import { createElement } from 'react'
-import { cleanup, render } from '@testing-library/react'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { afterEach, expect, it } from 'vitest'
+import { expect, it } from 'vitest'
 import type { ThemeTokenOverrides } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { apply, inject, MO_THEME_SOURCE } from '../src/client/index.ts'
 import { MO_THEME_TOKENS } from '../src/client/tokens.ts'
-import { MoBrandMark } from '../src/client/BrandMark.tsx'
-import { MO_MARK } from '../src/mark.ts'
-
-afterEach(cleanup)
 
 /** WCAG relative luminance of a `#rrggbb` color. */
 function luminance(hex: string): number {
@@ -35,29 +28,9 @@ async function mount() {
     },
   } as never)
   await ctx.plugin(SlotRegistry).await()
-  const slots = ctx.get('slots') as SlotRegistry
-  const disposeHoles = slots.register({
-    name: 'root', children: { 'sidebar.brand.mark': { kind: 'single', scope: 'root' } },
-  } as never, () => null)
   const fiber = await ctx.plugin({ inject, apply })
-  return { layers, slots, disposeHoles, dispose: () => fiber.dispose() }
+  return { layers, dispose: () => fiber.dispose() }
 }
-
-it('injects the theme and slot services', () => {
-  expect(inject).toEqual(['theme', 'slots'])
-})
-
-it('occupies the sidebar brand mark with the MO mark at the requested size until unloaded', async () => {
-  const h = await mount()
-  const [entry] = h.slots.entries('sidebar.brand.mark')
-  expect(entry?.component).toBe(MoBrandMark)
-  const img = render(createElement(MoBrandMark, { size: 24, placement: 'row' } as never)).container.querySelector('img')!
-  expect(img.getAttribute('src')).toBe(MO_MARK)
-  expect(img).toMatchObject({ width: 24, height: 24 })
-  await h.dispose()
-  expect(h.slots.entries('sidebar.brand.mark')).toEqual([])
-  h.disposeHoles()
-})
 
 it('layers the MO tokens over the active theme for the plugin lifetime', async () => {
   const h = await mount()

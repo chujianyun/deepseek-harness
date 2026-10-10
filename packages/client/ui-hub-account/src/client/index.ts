@@ -1,7 +1,6 @@
 /**
- * Hub sign-in, browser half: the sidebar account launcher (employee, company, Settings, sign-out),
- * the sidebar brand row (the signed-in tenant's logo or name above the build version), the
- * new-session hero's logo and slogan, and the Settings section showing the signed-in employee and
+ * Hub sign-in, browser half: the sidebar account launcher (employee, Settings, sign-out),
+ * the new-session hero's logo and slogan, and the Settings section showing the signed-in employee and
  * tenant with tenant switching and sign-out, or the sign-in state and a way to sign in. State streams from the `hubAccount` Remote.
  * The Desktop welcome window keeps the workspace closed while signed out.
  */
@@ -16,14 +15,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
 import { createBrandSource } from './brand-source.ts'
 import { createHubSource } from './hub-source.ts'
-import { HubBrandName, HubHeroHeadline, HubHeroMark } from './HubBrand.tsx'
+import { HubHeroHeadline, HubHeroMark } from './HubBrand.tsx'
 import { HubAccountSection } from './HubAccountSection.tsx'
 import { HubLauncher } from './HubLauncher.tsx'
 import { en, zh, type HubAccountLocaleKey } from './locales.ts'
 
 export type { HubBrandInjected } from './brand-source.ts'
 export type { HubAccountInjected, HubSnapshot } from './hub-source.ts'
-export type { HubBrandNameProps, HubHeroHeadlineProps, HubHeroMarkProps } from './HubBrand.tsx'
+export type { HubHeroHeadlineProps, HubHeroMarkProps } from './HubBrand.tsx'
 export type { HubAccountLocaleKey } from './locales.ts'
 export type { HubAccountSectionProps } from './HubAccountSection.tsx'
 export type { HubLauncherProps } from './HubLauncher.tsx'
@@ -75,8 +74,7 @@ export function apply(ctx: ClientContext): void {
     name: 'settings.launcher', locale: NS, inject: () => source,
   }, HubLauncher))
   const brandFace = { hooks: { hub: source.hooks.hub, brand: brand.brand } }
-  // The product mark beside the name belongs to the deployment's brand plugin (ui-brand-mo).
-  ctx.slots.inject('sidebar.brand.name', () => ctx.slots.register({ name: 'sidebar.brand.name', locale: NS, inject: () => brandFace }, HubBrandName))
+  // The sidebar brand row belongs to the deployment's brand plugin (ui-brand-mo).
   // The new-session hero shows the same tenant's logo and slogan, or nothing at all.
   ctx.slots.inject('conversation.hero.brand.mark', () => ctx.slots.inject('conversation.hero.brand.headline', function* () {
     yield ctx.slots.register({ name: 'conversation.hero.brand.mark', locale: NS, inject: () => brandFace }, HubHeroMark)

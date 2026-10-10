@@ -5,7 +5,7 @@ import type { HubAccountView, HubBrandingView } from '@deepseek-ai/dsh-hub-accou
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { HubBrandName, HubHeroHeadline, HubHeroMark } from '../src/client/HubBrand.tsx'
+import { HubHeroHeadline, HubHeroMark } from '../src/client/HubBrand.tsx'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -22,24 +22,6 @@ function hooks(tenantName: string | null, logo: string | null, slogan: string | 
   }
 }
 const standard = {} as GlobalStandardProps
-
-it('shows the tenant logo above the product line, without the build version', () => {
-  const name = render(<HubBrandName {...standard} {...hooks('甲公司', LOGO)} t={makeTranslate(zh)} version="0.2.0-rc.2-abc1234" />)
-  const logo = name.container.querySelector('img')!
-  expect(logo.getAttribute('src')).toBe(LOGO)
-  expect(logo.alt).toBe('甲公司')
-  expect(name.container.textContent).toBe(zh.productName)
-})
-
-it('shows the company name above the product line without a logo', () => {
-  const name = render(<HubBrandName {...standard} {...hooks('甲公司', null)} t={makeTranslate(zh)} version="1.0.0-local" />)
-  expect(name.container.textContent).toBe(`甲公司${zh.productName}`)
-})
-
-it('names the logo generically when the profile has no company', () => {
-  const name = render(<HubBrandName {...standard} {...hooks(null, LOGO)} t={makeTranslate(zh)} version="1.0.0" />)
-  expect(name.container.querySelector('img')!.alt).toBe(zh.brandLogo)
-})
 
 it('leads the new-session hero with the tenant logo at the requested height, and nothing without one', () => {
   const mark = render(<HubHeroMark {...standard} {...hooks('甲公司', LOGO)} t={makeTranslate(zh)} size={34} className="host-fish" />)

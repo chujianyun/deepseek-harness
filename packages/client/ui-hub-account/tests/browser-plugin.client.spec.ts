@@ -11,7 +11,7 @@ import { apply as applyNode } from '../src/index.ts'
 import type { HubAccountInjected } from '../src/client/hub-source.ts'
 import { HubAccountSection } from '../src/client/HubAccountSection.tsx'
 import { HubLauncher } from '../src/client/HubLauncher.tsx'
-import { HubBrandName, HubHeroHeadline, HubHeroMark } from '../src/client/HubBrand.tsx'
+import { HubHeroHeadline, HubHeroMark } from '../src/client/HubBrand.tsx'
 import type { HubBrandInjected } from '../src/client/brand-source.ts'
 
 usePinnedBrowserLanguages('zh-CN')
@@ -97,9 +97,9 @@ describe('ui-hub-account browser plugin', () => {
     expect(section?.component).toBe(HubAccountSection)
     expect(section!.options).toMatchObject({ id: 'hub-account', order: -20 })
     expect(resolveSlotLabel(section!.options.label)).toMatch(/^Skill Hub/)
-    // The product mark beside the name is the brand plugin's.
+    // The sidebar brand row is the brand plugin's.
     expect(b.slots.entries('sidebar.brand.mark')).toEqual([])
-    expect(b.slots.entries('sidebar.brand.name')[0]?.component).toBe(HubBrandName)
+    expect(b.slots.entries('sidebar.brand.name')).toEqual([])
     expect(b.slots.entries('conversation.hero.brand.mark')[0]?.component).toBe(HubHeroMark)
     expect(b.slots.entries('conversation.hero.brand.headline')[0]?.component).toBe(HubHeroHeadline)
     await fiber.dispose()
@@ -135,12 +135,10 @@ describe('ui-hub-account browser plugin', () => {
   it('reads the signed-in tenant\'s branding when a frame names it', async () => {
     const b = await bench()
     await b.ctx.plugin({ inject: [...inject], apply }).await()
-    const brand: object = b.slots.entries('sidebar.brand.name')[0]!.inject!()
-    if (!('hooks' in brand)) throw new Error('brand name injected no face')
+    const brand: object = b.slots.entries('conversation.hero.brand.mark')[0]!.inject!()
+    if (!('hooks' in brand)) throw new Error('hero mark injected no face')
     const { hooks } = brand as HubBrandInjected
     expect(hooks.hub).toBe((face(b.slots) as HubAccountInjected).hooks.hub)
-    // The new-session hero reads the same branding.
-    expect(b.slots.entries('conversation.hero.brand.mark')[0]!.inject!()).toBe(brand)
     expect(b.slots.entries('conversation.hero.brand.headline')[0]!.inject!()).toBe(brand)
     b.push({ ...signedOut, status: 'signed-in', branding: { tenantId: 't-a', title: '甲公司', slogan: '标语', logoSha256: null } })
     await vi.waitFor(() => { expect(hooks.brand.getSnapshot()).toEqual({ tenantId: 't-a', title: '甲公司', slogan: '标语', logo: null }) })

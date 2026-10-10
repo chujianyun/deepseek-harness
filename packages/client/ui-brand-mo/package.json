@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-brand-mo",
-  "description": "MO WorkAI brand for the enterprise Desktop client: the 名流蓝 palette, the sidebar product mark, and the branded boot page",
+  "description": "MO WorkAI brand for the enterprise Desktop client: the 名流蓝 palette, the sidebar wordmark, and the branded boot page",
   "version": "1.0.1",
   "publishConfig": {
     "access": "public"
