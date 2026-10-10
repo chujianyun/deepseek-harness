@@ -80,6 +80,11 @@ body {
   display: grid;
   flex: 1;
   min-height: 0;
+  /* The 600 x 700 design size: a larger (maximized) window centers it instead of stretching it to the edges. */
+  width: 100%;
+  max-width: 568px;
+  max-height: 652px;
+  margin: auto;
   grid-template-rows: 40px minmax(0, 1fr) 104px;
   justify-items: center;
   align-items: center;

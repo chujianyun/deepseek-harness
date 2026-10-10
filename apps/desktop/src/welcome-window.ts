@@ -7,7 +7,8 @@ import type { DesktopLocale } from './locale.ts'
 import { WELCOME_IPC, type WelcomeOperations } from './welcome-api.ts'
 
 /**
- * Resolve the fixed-size welcome window's native material and controls.
+ * Resolve the welcome window's native material and controls: resizable down to its 600×700 design
+ * size, which it restores to; `openWelcomeWindow` opens it maximized.
  * @param platform - operating system hosting Electron.
  * @param locale - shell-owned localized copy.
  * @returns sandboxed window options with a locale-only preload.
@@ -16,10 +17,12 @@ export function welcomeWindowOptions(platform: NodeJS.Platform, locale: DesktopL
   return {
     width: 600,
     height: 700,
+    minWidth: 600,
+    minHeight: 700,
     useContentSize: true,
     center: true,
-    resizable: false,
-    maximizable: false,
+    resizable: true,
+    maximizable: true,
     fullscreenable: false,
     show: false,
     title: locale.messages.welcomeTitle,
@@ -49,7 +52,7 @@ export function welcomeWindowOptions(platform: NodeJS.Platform, locale: DesktopL
 let disposeActiveHandlers: (() => void) | undefined
 
 /**
- * Open the process's sole welcome window with desktop-owned operations.
+ * Open the process's sole welcome window, maximized to the screen's work area, with desktop-owned operations.
  * Replaces IPC ownership immediately; the caller closes the previous native window.
  * @param locale - shell-owned localized copy.
  * @param operations - user-center sign-in actions.
@@ -116,6 +119,7 @@ export async function openWelcomeWindow(locale: DesktopLocale, operations: Welco
   }
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Another window can replace ownership during loadFile.
   if (active && !window.isDestroyed()) {
+    window.maximize()
     window.show()
     void operations.analytics?.('auth_page_view', {})
   }
