@@ -144,5 +144,5 @@ export async function setup(options: {
   const status = (value: object | string) => writeFile(join(control, 'status.json'), typeof value === 'string' ? value : JSON.stringify(value))
   /** The always-allowed list the profile holds. */
   const saved = () => Promise.resolve((live.entry.options.config as { alwaysAllowed?: readonly string[] }).alwaysAllowed ?? [])
-  return { ctx, service, hub, until, root, control, tenantDir, exists, calls, answer, status, saved }
+  return { ctx, service, fiber: live.fiber, hub, until, root, control, tenantDir, exists, calls, answer, status, saved }
 }

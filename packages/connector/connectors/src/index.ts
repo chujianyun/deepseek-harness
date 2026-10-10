@@ -299,11 +299,13 @@ function idle(epoch: number): Connection {
 /** The `connectorGrants` Session projection: connectors whose plain writes run without asking in the session. */
 export const connectorGrantsProjection = {
   key: 'connectorGrants',
-  stateSchema: z.object({ connectors: z.array(z.string()) }),
-  init: () => ({ connectors: [] }),
-  apply: (state, event) => event.type === 'connectors/session-allowed' ? { connectors: [...event.data.connectors] } : state,
+  stateSchema: z.object({ connectors: z.array(z.string()), tenantId: z.string().nullable() }),
+  init: () => ({ connectors: [], tenantId: null }),
+  apply: (state, event) => event.type === 'connectors/session-allowed'
+    ? { connectors: [...event.data.connectors], tenantId: event.data.tenantId }
+    : state,
   stateVersion: 1,
-} satisfies ProjectionDefinition<'connectorGrants', { connectors: string[] }>
+} satisfies ProjectionDefinition<'connectorGrants', { connectors: string[]; tenantId: string | null }>
 
 /** Host owner of the connectors and of the `connectors` Remote namespace. */
 export class ConnectorsService extends TypertRemoteService {
@@ -410,13 +412,12 @@ export class ConnectorsService extends TypertRemoteService {
       // Only plain writes the CLI runs unconfirmed can be always allowed; a call that holds anything else always asks.
       const asked = parts.flatMap(part => part.classification.invocations.filter(item => item.risk !== 'read').map(item => ({ ...item, id: part.id, cli: part.cli })))
       const tenant = this.tenantId
-      const plainWrites = asked.every(item => item.risk === 'write' && !item.confirm)
-      const rememberable = tenant !== null && plainWrites
+      const rememberable = tenant !== null && asked.every(item => item.risk === 'write' && !item.confirm)
       const granted = new Set(this.alwaysAllowedList())
-      // Plain writes through connectors the session was granted, as an automation task's session is.
-      const sessionGrants = plainWrites && exec.agent !== undefined ? this.sessionGrants(exec.agent.session) : []
-      if (exec.agent !== undefined && ((plainWrites && asked.every(item => sessionGrants.includes(item.id)))
-        || (rememberable && asked.every(item => granted.has(grantKey(tenant, item.id, item.command)))))) {
+      // Remembered for the tenant, or granted to this session by the same tenant, as an automation task's session is.
+      const remembered = rememberable && asked.every(item => granted.has(grantKey(tenant, item.id, item.command)))
+      const sessionAllowed = rememberable && exec.agent !== undefined && this.sessionAllows(exec.agent.session, tenant, asked)
+      if (exec.agent !== undefined && (remembered || sessionAllowed)) {
         exec.agent.session.append('connectors/always-allowed', { callId: exec.callId, commands: [...new Set(asked.map(item => `${item.cli} ${item.command}`))] })
         return decision
       }
@@ -644,24 +645,34 @@ export class ConnectorsService extends TypertRemoteService {
   }
 
   /**
-   * Let a session's plain connector writes through these connectors run without asking, as the
-   * session of an unattended automation task needs: appends `connectors/session-allowed`, which
-   * replaces the session's earlier grant and survives a restart with the session log. High-risk
-   * writes, commands the CLI runs only confirmed, and commands of unknown risk still ask.
+   * Let a session's plain connector writes through these connectors run without asking while the
+   * signed-in tenant stays signed in, as the session of an unattended automation task needs: appends
+   * `connectors/session-allowed`, which replaces the session's earlier grant and survives a restart
+   * with the session log; an unchanged grant appends nothing. High-risk writes, commands the CLI
+   * runs only confirmed, and commands of unknown risk still ask.
    * @param session - the session to grant.
-   * @param ids - connectors to allow, each a built-in connector id; an empty list withdraws the grant.
+   * @param ids - connectors to allow; an empty list withdraws the grant. Refuses an unknown id with
+   *   `connectors/not-found`, one unsupported here with `connectors/unavailable`, and a signed-out Hub
+   *   with `hub-account/signed-out`.
    */
   allowInSession(session: Session, ids: readonly string[]): void {
-    for (const id of ids) {
-      if (!this.installables.has(id as ConnectorId)) throw new RemoteError('connectors/not-found', `no connector ${id}`, { id })
-    }
-    session.append('connectors/session-allowed', { connectors: [...new Set(ids)] })
+    const tenantId = this.requireTenant()
+    for (const id of ids) this.installable(id)
+    const connectors = [...new Set(ids)].sort()
+    const current = this.grantOf(session)
+    if (current.tenantId === tenantId && current.connectors.join('\n') === connectors.join('\n')) return
+    session.append('connectors/session-allowed', { connectors, tenantId })
   }
 
-  /** Connectors whose plain writes run without asking in the session. */
-  private sessionGrants(session: Session): readonly string[] {
+  /** The session's grant: whether every asked command goes through a connector granted by the signed-in tenant. */
+  private sessionAllows(session: Session, tenantId: string, asked: readonly { id: string }[]): boolean {
+    const grant = this.grantOf(session)
+    return grant.tenantId === tenantId && asked.every(item => grant.connectors.includes(item.id))
+  }
+
+  private grantOf(session: Session): { connectors: readonly string[]; tenantId: string | null } {
     /* v8 ignore next -- this service registers the projection, so its state is always there. */
-    return this.ctx.sessionProjections.stateOf(session, 'connectorGrants')?.connectors ?? []
+    return this.ctx.sessionProjections.stateOf(session, 'connectorGrants') ?? { connectors: [], tenantId: null }
   }
 
   /** A connector this platform can install, with its archive. */

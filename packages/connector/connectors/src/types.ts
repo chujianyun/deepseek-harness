@@ -21,19 +21,21 @@ declare module '@deepseek-ai/dsh-session/types' {
     }
     /**
      * The session's plain connector writes run without asking for these connectors from now on,
-     * as granted when an automation task created the session; replaces the earlier grant, and an
-     * empty list withdraws it. Log-only, never in the model transcript.
+     * while the granting tenant stays signed in, as granted when an automation task created the
+     * session; replaces the earlier grant, and an empty list withdraws it. Log-only, never in the
+     * model transcript.
      */
     'connectors/session-allowed': {
       connectors: string[]
+      tenantId: string
     }
   }
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
-    /** Connectors whose plain writes run without asking in this session. */
-    connectorGrants: { connectors: string[] }
+    /** Connectors whose plain writes run without asking in this session, and the tenant that granted them; null before a grant. */
+    connectorGrants: { connectors: string[]; tenantId: string | null }
   }
 }
 

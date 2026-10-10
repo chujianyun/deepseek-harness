@@ -6673,7 +6673,7 @@
       "kind": "event",
       "event": "connectors/session-allowed",
       "surface": false,
-      "digest": "956295ef80fc57b1eb589c8b9106ae2f5f5bd81af3b129c5fd4abee0c4527962",
+      "digest": "b9e2081c4ef6696227ffc8421e6d1bfa65eb15193c5fd82223a830952842cdf1",
       "schema": {
         "root": 0,
         "nodes": [
@@ -6714,6 +6714,11 @@
               {
                 "name": "connectors",
                 "type": 2,
+                "optional": false
+              },
+              {
+                "name": "tenantId",
+                "type": 3,
                 "optional": false
               }
             ],
@@ -23127,13 +23132,6 @@
       "sources": []
     },
     {
-      "digest": "3c619e01d10893a5e0d91a0e4538e83d6d76e4112282daec05681cab6aa9de33",
-      "names": [],
-      "sources": [
-        "packages/connector/connectors/src/types.ts:27"
-      ]
-    },
-    {
       "digest": "3cfc3a56502da1f8c6153c2c56657bab4b749056968634dd0991d325ec1c919f",
       "names": [
         "packages/core/tools/src/index.ts#ToolRestriction"
@@ -23267,6 +23265,13 @@
       ],
       "sources": [
         "packages/llm/llm/src/types.ts:489"
+      ]
+    },
+    {
+      "digest": "48446dd2b7709930b04f7a7e907698e46143203ba15ca8b20638b5f478895253",
+      "names": [],
+      "sources": [
+        "packages/connector/connectors/src/types.ts:28"
       ]
     },
     {
@@ -24439,11 +24444,6 @@
       ]
     },
     {
-      "digest": "956295ef80fc57b1eb589c8b9106ae2f5f5bd81af3b129c5fd4abee0c4527962",
-      "names": [],
-      "sources": []
-    },
-    {
       "digest": "95c0e88fcf0bafb2087f912ad9e2369de6ae6530cc0c4c2772c96205b57f7f60",
       "names": [],
       "sources": []
@@ -25078,6 +25078,11 @@
     },
     {
       "digest": "b993441f8ce7d27b80e619e113e232ae8e62d3d5a8340f6bfe12d8c4c018e62f",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "b9e2081c4ef6696227ffc8421e6d1bfa65eb15193c5fd82223a830952842cdf1",
       "names": [],
       "sources": []
     },

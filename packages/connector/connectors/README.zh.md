@@ -41,7 +41,7 @@ bash 调用运行前，服务的 `tools/pre-execute` 监听器会读取该调用
 
 连接器已连接或异常且开启时，其 CLI 内置的 Skill 通过 `ctx.skills` 送达模型，来自 `connectors` provider，来源为 `connector-<id>`，rank 为 350：排在用户自己的 Skill 目录之前，因此那里过期的副本不会遮住与已安装 CLI 匹配的 Skill，排在项目 Skill 之后。provider 以 `everyLayer` 注册，因此在自己的层中发现本地 Skill 的 agent 预设里，这一顺序同样成立。飞书的列表来自 `skills list`，每个 CLI 版本读取一次；Skill 的说明来自去掉 frontmatter 的 `skills read <name>`；其文件用 `lark-cli skills read <name> <path>` 读取。钉钉的 Skill 来自已安装的 `skills/<name>/SKILL.md` 文件，其 frontmatter 中的 `name` 必须与目录一致，Skill 的目录即其资源根目录。每个视图会列出已安装 CLI 的 Skill，供卡片显示。`setEnabled(id, enabled)` 通过 Settings 服务在易变的 `disabled` 列表中为当前租户开启或关闭连接器：关闭后连接器保持登录，但模型既得不到它的 Skill 也得不到它的 CLI，用户自己的 `lark-cli` 保持原样。
 
-`allowInSession(session, ids)` 让一个会话里经这些连接器的普通写操作免确认执行，供无人值守的自动化任务会话使用。它追加仅记日志的 `connectors/session-allowed` 事件（`connectors`），替换该会话之前的授权，空列表表示撤销；`connectorGrants` 会话投影折叠该事件，因此授权随会话日志在重启后仍然有效。之后该会话中一次调用要确认的命令若全部是 CLI 无需确认即可执行的普通写操作、且都经已授权的连接器，就免确认执行，并追加同样的 `connectors/always-allowed` 审计事件；高风险、需要确认的和 `unknown` 命令仍然要确认，其他会话不受影响。未知的 id 以 `connectors/not-found` 拒绝，不授予任何连接器。
+`allowInSession(session, ids)` 在当前登录的租户保持登录期间，让一个会话里经这些连接器的普通写操作免确认执行，供无人值守的自动化任务会话使用。它追加仅记日志的 `connectors/session-allowed` 事件（`connectors`、`tenantId`），替换该会话之前的授权，空列表表示撤销；授权不变时不追加。`connectorGrants` 会话投影折叠该事件，因此授权随会话日志在重启后仍然有效。之后该会话中一次调用要确认的命令若全部是 CLI 无需确认即可执行的普通写操作、且都经已授权的连接器，就免确认执行，并追加同样的 `connectors/always-allowed` 审计事件——但仅在授权的租户仍登录时；高风险、需要确认的和 `unknown` 命令仍然要确认，其他会话不受影响。未知的 id 以 `connectors/not-found` 拒绝，本平台不支持的以 `connectors/unavailable` 拒绝，Hub 未登录时以 `hub-account/signed-out` 拒绝，均不授予任何连接器。
 
 `restrict(filter)` 让会话不能使用某些连接器，例如会话的智能体未允许的连接器。对于某个过滤器拒绝其 agent 使用某连接器的模型 shell 调用，该连接器的脚本目录不会加入 `PATH`，其 Skill 通过 skill 视图过滤器离开该会话的目录，按名称或任意路径调用其 CLI 的命令会在运行前被拒绝；隐藏了 CLI 调用方式的命令不在此处拒绝，而是继续进入审批检查。没有 agent 的调用和不属于会话的读取不受过滤。返回的 disposer 移除该过滤器。
 
@@ -78,6 +78,7 @@ bash 调用运行前，服务的 `tools/pre-execute` 监听器会读取该调用
 
 - **没有单独的高风险样式** — 审批面板显示高风险命令与其他审批相同；只有原因中的 ⚠️ 文字把它区分出来。
 - **始终允许不区分参数** — 被始终允许的命令无论带什么参数都直接运行，例如发给任意群的消息；没有按群或按文档的授权，也没有只在本会话内有效的授权。
+- **会话授权跟随会话** — 用户继续使用自动化任务的会话或从它分叉时，授权仍然有效；拥有独立会话的子智能体得不到授权，仍要确认。
 - **模型 shell 可写凭据目录** — 连接器已连接且开启时，其租户目录是沙箱可写根目录，因此受限命令可以修改或删除其中的登录信息，正如它本来就能读取一样。
 - **仅 bash、仅 POSIX** — 这些脚本是放在 `dsh-tool-bash` 的 `PATH` 上的 POSIX shell 脚本；PowerShell 和 Windows 没有脚本。
 - **钉钉只从 GitHub 下载** — npmmirror 没有 `dws` 的二进制镜像，其 npm 包把所有平台的压缩包（约 105 MB）套在另一个包里；GitHub 访问缓慢或受阻时，安装钉钉会以 `network` 失败。

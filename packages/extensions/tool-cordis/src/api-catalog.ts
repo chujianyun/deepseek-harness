@@ -989,8 +989,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'allowInSession(session: Session, ids: readonly string[]): void',
-        description: 'Let a session\'s plain connector writes through these connectors run without asking, as the session of an unattended automation task needs: appends `connectors/session-allowed`, which replaces the session\'s earlier grant and survives a restart with the session log. High-risk writes, commands the CLI runs only confirmed, and commands of unknown risk still ask.',
-        parameters: [{ name: 'session', description: 'the session to grant.' }, { name: 'ids', description: 'connectors to allow, each a built-in connector id; an empty list withdraws the grant.' }],
+        description: 'Let a session\'s plain connector writes through these connectors run without asking while the signed-in tenant stays signed in, as the session of an unattended automation task needs: appends `connectors/session-allowed`, which replaces the session\'s earlier grant and survives a restart with the session log; an unchanged grant appends nothing. High-risk writes, commands the CLI runs only confirmed, and commands of unknown risk still ask.',
+        parameters: [{ name: 'session', description: 'the session to grant.' }, { name: 'ids', description: 'connectors to allow; an empty list withdraws the grant. Refuses an unknown id with `connectors/not-found`, one unsupported here with `connectors/unavailable`, and a signed-out Hub with `hub-account/signed-out`.' }],
       },
       {
         signature: 'restrict(filter: ConnectorFilter): () => void',

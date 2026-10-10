@@ -115,12 +115,15 @@ Host owner of the connectors and of the `connectors` Remote namespace.
 @Remote async revokeAlwaysAllowed(id: string, command: string): Promise<ConnectorsState>
 
 /**
- * Let a session's plain connector writes through these connectors run without asking, as the
- * session of an unattended automation task needs: appends `connectors/session-allowed`, which
- * replaces the session's earlier grant and survives a restart with the session log. High-risk
- * writes, commands the CLI runs only confirmed, and commands of unknown risk still ask.
+ * Let a session's plain connector writes through these connectors run without asking while the
+ * signed-in tenant stays signed in, as the session of an unattended automation task needs: appends
+ * `connectors/session-allowed`, which replaces the session's earlier grant and survives a restart
+ * with the session log; an unchanged grant appends nothing. High-risk writes, commands the CLI
+ * runs only confirmed, and commands of unknown risk still ask.
  * @param session - the session to grant.
- * @param ids - connectors to allow, each a built-in connector id; an empty list withdraws the grant.
+ * @param ids - connectors to allow; an empty list withdraws the grant. Refuses an unknown id with
+ *   `connectors/not-found`, one unsupported here with `connectors/unavailable`, and a signed-out Hub
+ *   with `hub-account/signed-out`.
  */
 allowInSession(session: Session, ids: readonly string[]): void
 
