@@ -54,6 +54,7 @@ export class AgentPresetRegistry extends TypertRemoteService {
   static Config = z.object({
     default: z.string().required(),
     selectedDefault: z.string().volatile(),
+    showPicker: z.boolean().default(true).volatile(),
   })
   private readonly owner: Context
   private readonly definitions = new Map<string, Definition>()

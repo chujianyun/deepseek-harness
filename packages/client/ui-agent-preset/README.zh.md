@@ -37,6 +37,8 @@ kind: "package-reference"
 
 进入创造模式会为接收该选择的空白 Session 选择 `cordis`，不改变新任务默认值或代码工作工具设置。尚未绑定工作区或空白 Session 时，选择等待绑定完成后应用。应用后，创造 Session 保留该预设；之后真正创建的新 Session 使用配置的默认值，例如标准模式。
 
+注册表的 `showPicker` 设置（默认 `true`）控制新会话的 preset 选择器和会话标题栏的 preset 标签：读到该设置且不为 `false` 后才显示，所以隐藏它们的部署不会短暂露出；隐藏时会话使用部署默认的 preset，设置分区和创作者入口保留。web-app bundle 在登录了用户中心的 Desktop 中组合为 `false`。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
