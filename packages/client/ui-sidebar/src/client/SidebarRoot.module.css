@@ -518,9 +518,10 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* A brand theme may mark the active panel apart from hover; both fall back to the hover look. */
 .panelRow.panelActive {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-specific-sidebar-panel-active, var(--dsw-alias-interactive-bg-hover));
+  color: var(--dsw-specific-sidebar-panel-active-label, var(--dsw-alias-label-primary));
 }
 
 .panelRow:focus-visible {
@@ -554,6 +555,10 @@
   margin: 0;
   padding: 0;
   color: var(--dsw-alias-label-primary);
+}
+
+.collapsed .panelRow.panelActive {
+  color: var(--dsw-specific-sidebar-panel-active-label, var(--dsw-alias-label-primary));
 }
 
 /* Region seat: always mounted so the foot never moves. Its trailing margin
