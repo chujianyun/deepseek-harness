@@ -69,7 +69,16 @@ export interface Config {
   maxAvatarLength?: number
   /** Longest core file the detail page may save, in characters; every turn carries the core files. */
   maxCoreFileLength?: number
+  /**
+   * Templates each tenant gets an assistant from when it signs in on this machine, in this order; each
+   * template is seeded once per tenant, so one added later reaches tenants seeded before it, and one the
+   * user deleted is not created again.
+   */
+  seedTemplates?: SeedTemplateId[]
 }
+
+/** Templates an assistant can be seeded from. */
+export type SeedTemplateId = 'daily' | 'ecommerce'
 
 /** Runtime schema for {@link Config}. */
 export const Config: Schema<Config> = Schema.object({
@@ -78,6 +87,8 @@ export const Config: Schema<Config> = Schema.object({
   maxDescriptionLength: Schema.natural().default(200).description('Longest assistant description, in characters.'),
   maxAvatarLength: Schema.natural().min(1).default(700_000).description('Largest uploaded avatar, as the length of its data URL.'),
   maxCoreFileLength: Schema.natural().min(1).default(20_000).description('Longest core file the detail page may save, in characters; every turn carries the core files.'),
+  seedTemplates: Schema.array(Schema.union(['daily', 'ecommerce'] as const)).default(['daily', 'ecommerce'])
+    .description('Templates each tenant gets an assistant from when it signs in on this machine, in order; each is seeded once per tenant, so one added later reaches tenants seeded before it, and a deleted one is not created again.'),
 })
 
 /** Suffix of a duplicated assistant's name. */
@@ -113,7 +124,10 @@ const assistantFileSchema = z.object({
 const tenantFileSchema = z.object({
   version: z.literal(1),
   defaultId: z.string().nullable(),
+  // True once any assistant was seeded; a file without seededTemplates was written when only the Daily Assistant was.
   seeded: z.boolean(),
+  /** Templates already seeded for the tenant. */
+  seededTemplates: z.array(z.string()).optional(),
 })
 
 type TenantFile = z.infer<typeof tenantFileSchema>
@@ -252,6 +266,7 @@ export class AssistantsService extends TypertRemoteService {
   static Config = Config
 
   private readonly root: string
+  private readonly seedTemplates: readonly SeedTemplateId[]
   private readonly limits: { readonly name: number; readonly description: number; readonly avatar: number; readonly file: number }
   private tenantId: string | null = null
   private tenant: TenantFile = { version: 1, defaultId: null, seeded: false }
@@ -268,6 +283,7 @@ export class AssistantsService extends TypertRemoteService {
     super(ctx, 'assistants', { namespace: 'assistants' })
     const resolved = Config(config) as Config & Required<Omit<Config, 'dshHome'>>
     this.root = join(resolveDshHome(resolved.dshHome), 'assistants')
+    this.seedTemplates = resolved.seedTemplates
     this.limits = {
       name: resolved.maxNameLength, description: resolved.maxDescriptionLength,
       avatar: resolved.maxAvatarLength, file: resolved.maxCoreFileLength,
@@ -773,14 +789,33 @@ export class AssistantsService extends TypertRemoteService {
       await mkdir(join(this.root, tenantId), { recursive: true })
       this.tenant = await this.readTenant(tenantId)
       this.list = await this.readAssistants(tenantId)
-      if (!this.tenant.seeded) {
-        const created = await this.createFrom(tenantId, DAILY_ASSISTANT)
-        this.list = [...this.list, created]
-        this.tenant = { version: 1, defaultId: created.id, seeded: true }
-        await this.writeAtomic(join(this.root, tenantId, 'tenant.json'), jsonText(this.tenant))
-      }
+      await this.seed(tenantId)
     }
     this.changed()
+  }
+
+  /**
+   * Create an assistant from each configured template the tenant has not been seeded from. The first
+   * seeding makes its first assistant the default; later ones leave the default alone.
+   */
+  private async seed(tenantId: string): Promise<void> {
+    const done = this.tenant.seededTemplates ?? (this.tenant.seeded ? [DAILY_ASSISTANT.id] : [])
+    const missing = this.seedTemplates.filter(id => !done.includes(id))
+    if (missing.length === 0) return
+    const created: AssistantView[] = []
+    // One millisecond apart, so the creation order (the list order) survives a reload.
+    const start = Date.now()
+    for (const [index, id] of missing.entries()) {
+      const template = TEMPLATES.get(id)
+      // Config admits only template ids, so every seed id names a template.
+      if (template !== undefined) created.push(await this.createFrom(tenantId, template, new Date(start + index)))
+    }
+    this.list = [...this.list, ...created]
+    this.tenant = {
+      version: 1, defaultId: this.tenant.seeded ? this.tenant.defaultId : created[0]?.id ?? null, seeded: true,
+      seededTemplates: [...done, ...missing],
+    }
+    await this.writeAtomic(join(this.root, tenantId, 'tenant.json'), jsonText(this.tenant))
   }
 
   private async readTenant(tenantId: string): Promise<TenantFile> {
@@ -820,10 +855,11 @@ export class AssistantsService extends TypertRemoteService {
     return found.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
 
-  private createFrom(tenantId: string, template: AssistantTemplate): Promise<AssistantView> {
+  private createFrom(tenantId: string, template: AssistantTemplate, createdAt: Date): Promise<AssistantView> {
+    const subsets = normalizeSubsets(template.subsets)
     return this.writeAssistant(tenantId, {
       id: randomUUID(), name: template.name, description: template.description, avatar: template.avatar,
-      templateId: template.id, createdAt: new Date().toISOString(),
+      ...(subsets === undefined ? {} : { subsets }), templateId: template.id, createdAt: createdAt.toISOString(),
     }, template.files)
   }
 

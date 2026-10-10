@@ -14,8 +14,8 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import AssistantsService, {
-  ASSISTANT_SECTION, assistantProjectionDefinition, CORE_FILES_WITHDRAWN, ECOMMERCE_MANAGER, ECOMMERCE_SKILLS, renderInstructions,
-  renderUser, withName,
+  ASSISTANT_SECTION, assistantProjectionDefinition, Config as AssistantsConfig, CORE_FILES_WITHDRAWN, ECOMMERCE_MANAGER, ECOMMERCE_SKILLS,
+  renderInstructions, renderUser, withName,
 } from '../src/index.ts'
 import type { CreateAssistantInput } from '../src/types.ts'
 import { hubStub } from '../../../connector/connectors/tests/support.ts'
@@ -27,7 +27,7 @@ interface SetupOptions {
   tenant?: string | null
   home?: string
   before?: (ctx: Context) => Promise<void>
-  config?: Record<string, number>
+  config?: Record<string, number | readonly string[]>
 }
 
 async function setup(options: SetupOptions = {}) {
@@ -45,7 +45,8 @@ async function setup(options: SetupOptions = {}) {
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   await options.before?.(ctx)
-  await ctx.plugin(AssistantsService, { dshHome: home, ...options.config })
+  // Tests seed only the Daily Assistant unless they say otherwise; the default seed set is covered on its own.
+  await ctx.plugin(AssistantsService, { dshHome: home, seedTemplates: ['daily'], ...options.config })
   const service = ctx.get('assistants')!
   const settle = async (predicate: (state: Awaited<ReturnType<typeof service.getState>>) => boolean) => {
     for (let i = 0; i < 200; i++) {
@@ -65,6 +66,37 @@ async function setup(options: SetupOptions = {}) {
 }
 
 describe('assistants storage', () => {
+  it('seeds the Daily Assistant and the E-commerce Manager by default, the Daily Assistant as default', async () => {
+    const env = await setup({ config: { seedTemplates: ['daily', 'ecommerce'] } })
+    const state = await env.settle(s => s.assistants.length === 2)
+    expect(state.assistants.map(a => [a.name, a.templateId])).toEqual([['日常助手', 'daily'], ['电商管家', 'ecommerce']])
+    const manager = JSON.parse(await readFile(join(env.home, 'assistants', 't-a', state.assistants[1]!.id, 'assistant.json'), 'utf8')) as Record<string, unknown>
+    expect(manager['subsets']).toEqual(ECOMMERCE_MANAGER.subsets)
+    expect(state.defaultId).toBe(state.assistants[0]!.id)
+    const tenant = JSON.parse(await readFile(join(env.home, 'assistants', 't-a', 'tenant.json'), 'utf8')) as Record<string, unknown>
+    expect(tenant).toMatchObject({ seeded: true, seededTemplates: ['daily', 'ecommerce'] })
+  })
+
+  it('adds the E-commerce Manager once to a tenant seeded before it, and never again after the user removes it', async () => {
+    const first = await setup()
+    const daily = (await first.settle(s => s.assistants.length === 1)).assistants[0]!
+    // A tenant file written before seedTemplates existed records only that seeding ran.
+    await writeFile(join(first.home, 'assistants', 't-a', 'tenant.json'), JSON.stringify({ version: 1, defaultId: daily.id, seeded: true }))
+    const second = await setup({ home: first.home, config: { seedTemplates: ['daily', 'ecommerce'] } })
+    const state = await second.settle(s => s.assistants.length === 2)
+    expect(state.assistants.map(a => a.templateId)).toEqual(['daily', 'ecommerce'])
+    expect(state.defaultId).toBe(daily.id)
+    const third = await setup({ home: first.home, config: { seedTemplates: ['daily', 'ecommerce'] } })
+    expect((await third.settle(s => s.tenantId === 't-a')).assistants).toHaveLength(2)
+    await third.service.deleteAssistant(state.assistants[1]!.id)
+    const fourth = await setup({ home: first.home, config: { seedTemplates: ['daily', 'ecommerce'] } })
+    expect((await fourth.settle(s => s.tenantId === 't-a')).assistants.map(a => a.templateId)).toEqual(['daily'])
+  })
+
+  it('defaults to seeding the Daily Assistant and the E-commerce Manager', () => {
+    expect(AssistantsConfig({})).toMatchObject({ seedTemplates: ['daily', 'ecommerce'] })
+  })
+
   it('creates the Daily Assistant as the default the first time a tenant signs in, and only once', async () => {
     const first = await setup()
     const state = await first.settle(s => s.assistants.length === 1)
