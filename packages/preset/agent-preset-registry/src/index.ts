@@ -72,8 +72,14 @@ export class AgentPresetRegistry extends TypertRemoteService {
     })
   }
 
-  /** Default preset for a subsequently created session. */
-  get defaultId(): string { return this.config.selectedDefault.get() ?? this.config.default }
+  /**
+   * Default preset for a subsequently created session: the saved user default over the deployment
+   * default, except while the deployment hides the picker, where the user can no longer see or change it.
+   */
+  get defaultId(): string {
+    if (!this.config.showPicker.get()) return this.config.default
+    return this.config.selectedDefault.get() ?? this.config.default
+  }
 
   /** Register and eagerly load a definition; activation failure remains visible in the roster.
    * @param definition Parsed configuration supplied by the declaring plugin.

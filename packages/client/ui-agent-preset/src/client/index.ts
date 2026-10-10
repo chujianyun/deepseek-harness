@@ -206,10 +206,10 @@ export function apply(ctx: ClientContext): void {
     }
 
     // The deployment can hide the chip and the header label (`showPicker` on the registry); sessions
-    // then run on its default preset. Hidden until the setting is read, so a hiding deployment never flashes them.
+    // then run on its default preset. Shown unless the setting reads false, so a setting that cannot be read never hides them.
     const pickerShown = (): boolean => {
       const { status, value } = presetSettings.getSnapshot()
-      return status === 'unavailable' || (status === 'ready' && value?.showPicker !== false)
+      return !(status === 'ready' && value?.showPicker === false)
     }
     scope.effect(() => {
       creatorDraft = startCreatorDraft
