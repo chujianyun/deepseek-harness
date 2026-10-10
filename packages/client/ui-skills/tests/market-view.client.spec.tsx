@@ -168,7 +168,7 @@ describe('Market view', () => {
     const market = (name: string) => ({ name, description: `${name} description`, group: 'market' as const, source: 'market', path: `/m/${name}/SKILL.md`, enabled: true })
     const { props, marketStore } = pageProps({ skills: [market('pdf-tools'), market('old-skill'), market('fresh')] }, {
       statuses: {
-        'pdf-tools': { name: 'pdf-tools', displayName: 'pdf-tools', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.1.0', state: 'update' },
+        'pdf-tools': { name: 'pdf-tools', displayName: 'PDF 工具', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.1.0', state: 'update' },
         'old-skill': { name: 'old-skill', displayName: 'old-skill', hubSkillId: 's-old', installedVersion: '1.0.0', latestVersion: null, state: 'unavailable' },
         'fresh': { name: 'fresh', displayName: 'fresh', hubSkillId: 's-fresh', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' },
       },
@@ -178,10 +178,10 @@ describe('Market view', () => {
     expect(screen.getByText('可更新到 v1.1.0')).toBeTruthy()
     expect(screen.getByText('市场已不可用')).toBeTruthy()
     expect(screen.getAllByRole('button', { name: /^更新 / })).toHaveLength(1)
-    fireEvent.click(screen.getByRole('button', { name: '更新 pdf-tools' }))
+    fireEvent.click(screen.getByRole('button', { name: '更新 PDF 工具' }))
     expect(props.onInstall).toHaveBeenCalledWith('s-pdf')
     act(() => { marketStore.set({ ...marketStore.getSnapshot(), installing: ['s-pdf'] }) })
-    expect(screen.getByRole('button', { name: '更新 pdf-tools' }).textContent).toBe('安装中…')
+    expect(screen.getByRole('button', { name: '更新 PDF 工具' }).textContent).toBe('安装中…')
   })
 
   it('asks before overwriting local edits', () => {

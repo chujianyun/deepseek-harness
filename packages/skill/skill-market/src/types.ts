@@ -21,8 +21,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'skill-market/upload-rejected': { readonly status: number }
     /** The local folder cannot be uploaded (no SKILL.md, invalid frontmatter, unreadable). */
     'skill-market/invalid-folder': { readonly problems: readonly MarketFolderProblem[] }
-    /** A new Skill was uploaded without a display name. */
-    'skill-market/display-name-required': { readonly name: string }
+    /** A new Skill's display name breaks the Skill Hub's rule (see `displayNameProblem`). */
+    'skill-market/invalid-display-name': { readonly name: string; readonly problem: DisplayNameProblem }
   }
 }
 
@@ -155,6 +155,9 @@ export interface MarketUploadPreview {
   /** `1.0.0` for a new Skill, otherwise the next patch after the highest existing version. */
   readonly suggestedVersion: string
 }
+
+/** Why a display name cannot be used: none given, over 40 characters, or a line break or invisible character. */
+export type DisplayNameProblem = 'missing' | 'too-long' | 'invisible'
 
 /** Who can see an uploaded Skill: the tenant, chosen departments or employees, or only the uploader. */
 export type MarketVisibility = 'tenant' | 'departments' | 'employees' | 'private'

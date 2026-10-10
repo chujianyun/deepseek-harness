@@ -31,7 +31,7 @@ import { z } from 'zod'
 import type {
   MarketCategory, MarketInstalledStatus, MarketInstallOptions, MarketInstallRecord, MarketSkillCard, MarketSkillDetail,
   MarketSkillPage, MarketSkillQuery, MarketUploadOptions, MarketUploadPreview, MarketUploadRequest, MarketUploadResult,
-  MarketUploadSource, MarketFolderProblem,
+  MarketUploadSource, MarketFolderProblem, DisplayNameProblem,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -463,7 +463,7 @@ export class SkillMarket extends TypertRemoteService {
         await writeFile(join(skillDir, path), data)
       }
       const installRecord: MarketInstallRecord = {
-        hubSkillId: value.id, name: value.name, displayName: value.displayName ?? value.name,
+        hubSkillId: value.id, name: value.name, displayName: shownName(value.displayName, value.name),
         version: value.currentVersion.version, installedAt: new Date().toISOString(),
         files: [...files].map(([path, data]) => ({ path, sha256: sha256(data) }))
           .sort((a, b) => Number(a.path > b.path) - Number(a.path < b.path)),
@@ -539,15 +539,16 @@ export class SkillMarket extends TypertRemoteService {
       throw new RemoteError('skill-market/invalid-folder', `the folder cannot be uploaded: ${preview.problems.join('; ')}`, { problems: preview.problems })
     }
     const name = preview.name
+    const existing = preview.existing
+    const displayName = request.displayName?.trim() ?? ''
+    const problem = existing === null ? displayNameProblem(displayName) : null
+    if (problem !== null) {
+      throw new RemoteError('skill-market/invalid-display-name', `a new Skill needs a usable display name (${problem})`, { name, problem })
+    }
     const zip = zipSync(Object.fromEntries([...files].map(([path, data]) => [`${name}/${path}`, data])))
     const form = new FormData()
     form.set('file', new Blob([zip], { type: 'application/zip' }), `${name}.zip`)
     form.set('version', request.version)
-    const existing = preview.existing
-    const displayName = request.displayName?.trim() ?? ''
-    if (existing === null && displayName === '') {
-      throw new RemoteError('skill-market/display-name-required', 'a new Skill needs a display name', { name })
-    }
     if (existing === null) {
       form.set('displayName', displayName)
       if (request.visibility !== undefined) form.set('visibility', request.visibility)
@@ -564,7 +565,7 @@ export class SkillMarket extends TypertRemoteService {
       status: z.enum(['pending', 'published']), reviewUrl: z.string().nullable(),
     }).parse(body)
     return {
-      skillId: result.skillId, name: result.name, displayName: result.displayName ?? existing?.displayName ?? displayName, version: result.version.version, mode: existing === null ? 'create' : 'version',
+      skillId: result.skillId, name: result.name, displayName: shownName(result.displayName, existing?.displayName ?? result.name), version: result.version.version, mode: existing === null ? 'create' : 'version',
       status: result.status, reviewUrl: result.reviewUrl,
     }
   }
@@ -580,12 +581,13 @@ export class SkillMarket extends TypertRemoteService {
     const installed = [...(await this.records()).values()].sort((a, b) => Number(a.name > b.name) - Number(a.name < b.name))
     return Promise.all(installed.map(async (local): Promise<MarketInstalledStatus> => {
       const base = {
-        name: local.name, displayName: local.displayName ?? local.name, hubSkillId: local.hubSkillId, installedVersion: local.version,
+        name: local.name, displayName: shownName(local.displayName, local.name),
+        hubSkillId: local.hubSkillId, installedVersion: local.version,
       }
       try {
         const hub = await this.fetchDetail(local.hubSkillId, signal)
         const latest = hub.currentVersion.version
-        return { ...base, displayName: hub.displayName ?? base.displayName, latestVersion: latest, state: compareVersions(latest, local.version) > 0 ? 'update' : 'current' }
+        return { ...base, displayName: shownName(hub.displayName, base.displayName), latestVersion: latest, state: compareVersions(latest, local.version) > 0 ? 'update' : 'current' }
       } catch (error: unknown) {
         if (signal.aborted) throw error
         const notFound = error instanceof RemoteError && error.code === 'skill-market/not-found'
@@ -674,7 +676,7 @@ export class SkillMarket extends TypertRemoteService {
     const preview: MarketUploadPreview = {
       dir, name, description, fileCount: files.size, sizeBytes: total(files), problems,
       existing: owned === undefined ? null : {
-        skillId: owned.id, displayName: owned.displayName ?? owned.name,
+        skillId: owned.id, displayName: shownName(owned.displayName, owned.name),
         highestVersion: owned.highestVersion, currentVersion: owned.currentVersion, workingStatus: owned.workingStatus,
       },
       suggestedVersion: owned === undefined ? '1.0.0' : nextPatch(owned.highestVersion),
@@ -695,12 +697,38 @@ function card(
   const local = installed.get(value.name)
   const installedVersion = local?.hubSkillId === value.id ? local.version : null
   return {
-    id: value.id, name: value.name, displayName: value.displayName ?? value.name, description, category: value.category,
+    id: value.id, name: value.name, displayName: shownName(value.displayName, value.name), description, category: value.category,
     version: value.currentVersion.version, updatedAt,
     installedVersion,
     updateAvailable: installedVersion !== null && compareVersions(value.currentVersion.version, installedVersion) > 0,
     conflict: custom.has(value.name),
   }
+}
+
+/** The Skill Hub's limit on a display name, in characters (code points). */
+const DISPLAY_NAME_MAX_LENGTH = 40
+
+/**
+ * Check a trimmed display name against the Skill Hub's rule (T93): 1–40 characters, no control,
+ * zero-width, or bidirectional-control characters.
+ * @param displayName - the name with surrounding whitespace removed.
+ * @returns why it cannot be used, or null.
+ */
+function displayNameProblem(displayName: string): DisplayNameProblem | null {
+  if (displayName === '') return 'missing'
+  if (Array.from(displayName).length > DISPLAY_NAME_MAX_LENGTH) return 'too-long'
+  if (/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u.test(displayName)) return 'invisible'
+  return null
+}
+
+/**
+ * The name to show for a Skill: the Hub's display name, or the fallback when the Hub sends none or a blank one.
+ * @param displayName - the display name the Hub sent, if any.
+ * @param fallback - the name to show otherwise (usually the slug).
+ * @returns the name to show.
+ */
+function shownName(displayName: string | undefined, fallback: string): string {
+  return displayName === undefined || displayName.trim() === '' ? fallback : displayName
 }
 
 function total(files: ReadonlyMap<string, Uint8Array>): number {

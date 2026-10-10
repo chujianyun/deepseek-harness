@@ -50,11 +50,14 @@ export function SkillsPage(props: SkillsPageProps) {
  */
 export function OverwriteDialog({ t, useMarket, onConfirmOverwrite, onCancelOverwrite }: SkillsPageProps) {
   const pending = useMarket(snapshot => snapshot.overwrite)
+  // The overwrite comes from the install refusal, which names the slug; show the display name when known
+  const label = useMarket(snapshot => pending === null ? ''
+    : snapshot.items.find(item => item.id === pending.id)?.displayName ?? snapshot.statuses[pending.name]?.displayName ?? pending.name)
   return (
     <Modal
       open={pending !== null}
       title={t('overwriteTitle')}
-      description={t('overwriteDescription', { name: pending?.name ?? '' })}
+      description={t('overwriteDescription', { name: label })}
       closeLabel={t('uninstallClose')}
       onClose={onCancelOverwrite}
       footer={pending !== null && (
@@ -80,6 +83,7 @@ export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
   const skills = useInstalled(snapshot => snapshot.skills)
   const failure = useInstalled(snapshot => snapshot.failure)
   const [uninstalling, setUninstalling] = useState<string>()
+  const uninstallLabel = props.useMarket(snapshot => uninstalling === undefined ? undefined : snapshot.statuses[uninstalling]?.displayName)
 
   useEffect(() => {
     void onRefresh()
@@ -114,6 +118,7 @@ export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
       ))}
       <UninstallDialog
         name={uninstalling}
+        label={uninstallLabel ?? uninstalling}
         t={t}
         onClose={() => { setUninstalling(undefined) }}
         onConfirm={(name) => {
@@ -223,8 +228,10 @@ function SkillCard({ skill, props, onUninstall }: {
   )
 }
 
-function UninstallDialog({ name, t, onClose, onConfirm }: {
+function UninstallDialog({ name, label, t, onClose, onConfirm }: {
   name: string | undefined
+  /** The name shown in the title: a market Skill's display name, otherwise its name. */
+  label: string | undefined
   t: TranslateNS<'skills'>
   onClose: () => void
   onConfirm: (name: string) => void
@@ -232,7 +239,7 @@ function UninstallDialog({ name, t, onClose, onConfirm }: {
   return (
     <Modal
       open={name !== undefined}
-      title={t('uninstallTitle', { name: name ?? '' })}
+      title={t('uninstallTitle', { name: label ?? '' })}
       description={t('uninstallDescription')}
       closeLabel={t('uninstallClose')}
       onClose={onClose}
@@ -256,7 +263,7 @@ function MarketStatus({ name, props }: { name: string; props: SkillsPageProps })
   return (
     <div className={css.statusRow}>
       <span className={css.meta}>{t('updateAvailable', { version: String(status.latestVersion) })}</span>
-      <Button size="sm" variant="outline" disabled={installing} aria-label={t('update', { name })}
+      <Button size="sm" variant="outline" disabled={installing} aria-label={t('update', { name: status.displayName })}
         onClick={() => { void onInstall(status.hubSkillId) }}>
         {installing ? t('installing') : t('updateButton')}
       </Button>

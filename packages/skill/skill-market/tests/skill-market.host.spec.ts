@@ -101,7 +101,8 @@ describe('skillMarket', () => {
 
   it('shows the Hub\'s display name, and the slug when the Hub sends none (a Hub before T93)', async () => {
     const { center, market } = await boot()
-    center.skills = [{ ...PDF, displayName: 'PDF 工具' }, SQL]
+    center.skills = [{ ...PDF, displayName: 'PDF 工具' }, { ...SQL, displayName: '  ' }]
+    // A blank display name shows the slug as well
     expect((await market.list({}, signal())).items.map(item => [item.name, item.displayName])).toEqual([['pdf-tools', 'PDF 工具'], ['sql-helper', 'sql-helper']])
     expect((await market.detail('s-pdf', signal())).displayName).toBe('PDF 工具')
     expect((await market.detail('s-sql', signal())).displayName).toBe('sql-helper')
@@ -436,17 +437,24 @@ describe('skillMarket', () => {
       expect((await stat(join(dir, 'SKILL.md'))).mtimeMs).toBe(before)
     })
 
-    it('sends a new Skill\'s display name trimmed, and refuses a new Skill without one before contacting the Hub', async () => {
+    it('sends a new Skill\'s display name trimmed, and refuses a missing, over-long, or invisible one before contacting the Hub', async () => {
       const { center, market, home } = await boot()
       const dir = await folder(join(home, 'work'), 'report-writer')
-      for (const displayName of [undefined, '   ']) {
+      for (const [displayName, problem] of [[undefined, 'missing'], ['   ', 'missing'], ['名'.repeat(41), 'too-long'], ['报告\u200b助手', 'invisible']] as const) {
         const refused = await market.uploadSkill({ dir, version: '1.0.0', ...displayName === undefined ? {} : { displayName } }, signal()).catch((error: unknown) => error)
-        expect(remoteErrorOf(refused)).toMatchObject({ code: 'skill-market/display-name-required' })
+        expect(remoteErrorOf(refused)).toMatchObject({ code: 'skill-market/invalid-display-name', details: { name: 'report-writer', problem } })
       }
       expect(center.uploads).toEqual([])
       const result = await market.uploadSkill({ dir, version: '1.0.0', displayName: ' 报告助手 ' }, signal())
       expect(result).toMatchObject({ name: 'report-writer', displayName: '报告助手', mode: 'create' })
       expect(center.uploads[0]?.fields).toMatchObject({ displayName: '报告助手' })
+    })
+
+    it('reports the slug when a Hub before T93 does not echo the display name', async () => {
+      const { center, market, home } = await boot()
+      const dir = await folder(join(home, 'work'), 'report-writer')
+      center.uploadReply = { status: 201, body: JSON.stringify({ skillId: 's-1', name: 'report-writer', version: { version: '1.0.0' }, status: 'published', reviewUrl: null }) }
+      expect(await market.uploadSkill({ dir, version: '1.0.0', displayName: '报告助手' }, signal())).toMatchObject({ displayName: 'report-writer' })
     })
 
     it('names the existing Skill by its display name, and a new version needs none', async () => {

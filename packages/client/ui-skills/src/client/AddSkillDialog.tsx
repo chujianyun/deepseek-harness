@@ -10,8 +10,21 @@ import type { MarketFailure } from './market-source.ts'
 import type { SkillsPageProps } from './SkillsPage.tsx'
 import css from './SkillsPage.module.css'
 
-/** The Skill Hub's limit on a display name, in characters. */
+/** The Skill Hub's limit on a display name, in characters (code points). */
 const DISPLAY_NAME_MAX_LENGTH = 40
+
+/**
+ * Why a trimmed display name breaks the Skill Hub's rule (T93), as a `skills` locale key; the
+ * market host checks the same rule before uploading.
+ * @param displayName - the name without surrounding whitespace.
+ * @returns the locale key of the problem, or null.
+ */
+function displayNameProblemKey(displayName: string) {
+  if (displayName === '') return 'displayNameMissing' as const
+  if (Array.from(displayName).length > DISPLAY_NAME_MAX_LENGTH) return 'displayNameTooLong' as const
+  if (/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u.test(displayName)) return 'displayNameInvisible' as const
+  return null
+}
 
 /**
  * The locale key of one reason a folder cannot be uploaded.
@@ -39,7 +52,6 @@ function problemKey(problem: MarketFolderProblem) {
 function uploadFailureText(failure: MarketFailure, t: TranslateNS<'skills'>): string {
   if (failure.code === 'skill-market/unavailable') return t('failureUnavailable')
   if (failure.code === 'hub-account/signed-out') return t('failureSignedOut')
-  if (failure.code === 'skill-market/display-name-required') return t('failureDisplayNameRequired')
   return failure.message
 }
 
@@ -110,9 +122,9 @@ function FormStep({ t, useUpload, onBackToPick, onSubmitUpload, preview }: Skill
   useEffect(() => { setVersion(preview.suggestedVersion) }, [preview.suggestedVersion])
   const creating = preview.existing === null
   const invalid = preview.problems.length > 0
+  // A new Skill needs a usable display name; a new version keeps the existing one
+  const nameProblem = creating ? displayNameProblemKey(displayName.trim()) : null
   const nameLength = Array.from(displayName.trim()).length
-  // A new Skill needs a display name of 1–40 characters (the Skill Hub's limit); a new version keeps the existing one
-  const nameMissing = creating && (nameLength === 0 || nameLength > DISPLAY_NAME_MAX_LENGTH)
   return (
     <>
       <PreviewFacts preview={preview} t={t} />
@@ -140,8 +152,11 @@ function FormStep({ t, useUpload, onBackToPick, onSubmitUpload, preview }: Skill
           {creating && (
             <label className={css.field}>
               <span>{t('uploadDisplayName')}</span>
-              <Input value={displayName} aria-label={t('uploadDisplayName')} onChange={(event) => { setDisplayName(event.target.value) }} />
-              <span className={css.meta}>{t('uploadDisplayNameHint')}</span>
+              <Input value={displayName} aria-label={t('uploadDisplayName')} aria-invalid={displayName !== '' && nameProblem !== null}
+                onChange={(event) => { setDisplayName(event.target.value) }} />
+              {displayName !== '' && nameProblem !== null
+                ? <span className={css.failure} role="alert">{t(nameProblem)}</span>
+                : <span className={css.meta}>{t('uploadDisplayNameHint', { count: String(nameLength) })}</span>}
             </label>
           )}
           <label className={css.field}>
@@ -155,7 +170,7 @@ function FormStep({ t, useUpload, onBackToPick, onSubmitUpload, preview }: Skill
           )}
           <div className={css.dialogActions}>
             <Button variant="outline" onClick={onBackToPick}>{t('uploadBack')}</Button>
-            <Button variant="primary" type="submit" disabled={busy || version.trim() === '' || nameMissing}>{busy ? t('uploading') : t('uploadSubmit')}</Button>
+            <Button variant="primary" type="submit" disabled={busy || version.trim() === '' || nameProblem !== null}>{busy ? t('uploading') : t('uploadSubmit')}</Button>
           </div>
         </form>
       )}

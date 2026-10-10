@@ -142,6 +142,9 @@ describe('Skills page', () => {
     expect(within(market).getByText('天猫发品')).toBeTruthy()
     expect(within(market).getByText('tmall-publish')).toBeTruthy()
     expect(within(market).getByRole('switch', { name: '启用 天猫发品' })).toBeTruthy()
+    fireEvent.click(within(market).getByRole('button', { name: '天猫发品 的更多操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '卸载' }))
+    expect(screen.getByRole('dialog').textContent).toContain('天猫发品')
     expect(within(screen.getByRole('region', { name: /用户自定义/ })).getByText('alpha')).toBeTruthy()
   })
 
