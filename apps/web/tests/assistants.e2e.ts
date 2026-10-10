@@ -287,9 +287,12 @@ it('edits core files on the detail page, copies, and deletes assistants', async 
     await page.getByRole('heading', { level: 1, name: '智能体' }).waitFor()
   }
   const card = (id: string) => page.locator(`li[data-assistant-id="${id}"]`)
-  const deleteCard = async (id: string, sessions: number) => {
+  const cardMenu = async (id: string, action: '复制' | '删除') => {
     await card(id).getByRole('button', { name: /的更多操作$/u }).click()
-    await page.getByRole('menuitem', { name: '删除' }).click()
+    await page.getByRole('menuitem', { name: action }).click()
+  }
+  const deleteCard = async (id: string, sessions: number) => {
+    await cardMenu(id, '删除')
     const dialog = page.getByRole('dialog', { name: '删除智能体' })
     await expect.poll(() => dialog.textContent()).toContain(`它有 ${String(sessions)} 个会话`)
     await dialog.getByRole('button', { name: '删除' }).click()
@@ -344,7 +347,7 @@ it('edits core files on the detail page, copies, and deletes assistants', async 
 
     // Duplicate: a copy with the same core files and no sessions.
     await openAssistants()
-    await card(SHOP_ID).getByRole('button', { name: '复制' }).click()
+    await cardMenu(SHOP_ID, '复制')
     await expect.poll(async () => (await scaffold.ctx.assistants.getState()).assistants.length).toBe(3)
     const copy = (await scaffold.ctx.assistants.getState()).assistants.at(-1)!
     expect(copy.name).toBe('店铺复盘助手 副本')
@@ -481,7 +484,8 @@ it('tells a session of another company\'s assistant from one whose assistant was
     await useChatModel()
     const shop = await startWith(/店铺测试助手/, SHOP_ID, '甲公司的会话')
     await openAssistants()
-    await page.locator(`li[data-assistant-id="${SHOP_ID}"]`).getByRole('button', { name: '复制' }).click()
+    await page.locator(`li[data-assistant-id="${SHOP_ID}"]`).getByRole('button', { name: /的更多操作$/u }).click()
+    await page.getByRole('menuitem', { name: '复制' }).click()
     await expect.poll(async () => (await scaffold.ctx.assistants.getState()).assistants.length).toBe(3)
     const copyId = (await scaffold.ctx.assistants.getState()).assistants.at(-1)!.id
     const gone = await startWith(/店铺测试助手 副本/, copyId, '副本的会话')
