@@ -20,6 +20,8 @@ export interface LocalEmbedder {
    * @returns one unit vector per text.
    */
   embed(texts: readonly string[], signal?: AbortSignal): Promise<number[][]>
+  /** Release the native session's resources. */
+  release(): Promise<void>
 }
 
 const size = z.number().int().positive()
@@ -72,5 +74,6 @@ export async function loadEmbedder(ort: OrtModule, dir: string, weights: string,
       queue = run.catch(() => undefined)
       return run
     },
+    async release() { await session.release?.() },
   }
 }

@@ -21,6 +21,8 @@ export interface OrtSession {
   readonly inputNames: readonly string[]
   /** Run once; decoder exports name their hidden states `last_hidden_state`. */
   run(feeds: Record<string, unknown>): Promise<{ readonly last_hidden_state: OrtTensor }>
+  /** Release the native session's resources; absent on stand-ins. */
+  release?(): Promise<void>
 }
 
 /** An output tensor. */
@@ -53,15 +55,33 @@ export function keepEntry(name: string, path: string): boolean {
   return path === 'package/package.json' || path.startsWith('package/dist/') || path.startsWith(nativeDir())
 }
 
+/** This platform's native files inside an extracted package. */
+function installedNativeDir(): string {
+  return join('bin', 'napi-v6', process.platform, process.arch)
+}
+
+/**
+ * Whether one runtime package is extracted and usable: its manifest plus, for the package that
+ * carries native bindings, this platform's binding directory.
+ * @param target - the extracted package directory.
+ * @param name - package name.
+ * @returns true when the package can actually load.
+ */
+async function packageComplete(target: string, name: string): Promise<boolean> {
+  if ((await stat(join(target, 'package.json')).catch(() => undefined)) === undefined) return false
+  if (name !== 'onnxruntime-node') return true
+  return (await stat(join(target, installedNativeDir())).catch(() => undefined)) !== undefined
+}
+
 /**
  * Whether the runtime is installed in a directory.
  * @param dir - runtime directory.
  * @param spec - the runtime packages.
- * @returns true when every package manifest is in place.
+ * @returns true when every package is extracted with this platform's bindings.
  */
 export async function runtimeInstalled(dir: string, spec: RuntimeSpec): Promise<boolean> {
   for (const pkg of spec.packages) {
-    if ((await stat(join(dir, 'node_modules', pkg.name, 'package.json')).catch(() => undefined)) === undefined) return false
+    if (!await packageComplete(join(dir, 'node_modules', pkg.name), pkg.name)) return false
   }
   return true
 }
@@ -79,7 +99,9 @@ export async function installRuntime(
 ): Promise<void> {
   for (const pkg of spec.packages) {
     const target = join(dir, 'node_modules', pkg.name)
-    if ((await stat(join(target, 'package.json')).catch(() => undefined)) !== undefined) continue
+    if (await packageComplete(target, pkg.name)) continue
+    // A manifest without this platform's bindings cannot load: reinstall it from scratch.
+    await rm(target, { recursive: true, force: true })
     const tarball = join(dir, 'downloads', `${pkg.name}-${spec.version}.tgz`)
     await downloadFile({
       urls: registries.map(origin => `${origin.replace(/\/+$/u, '')}/${pkg.name}/-/${pkg.name}-${spec.version}.tgz`),

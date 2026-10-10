@@ -31,7 +31,7 @@ export function EmbeddingSection(props: EmbeddingSectionProps) {
         <p className={css.error} role="alert">
           {failure.users === null
             ? t('actionFailed', { message: failure.message })
-            : t('inUse', { count: String(failure.users.length), names: failure.users.join('、') })}
+            : t('inUse', { count: String(failure.users.length), names: failure.users.join(t('list.separator')) })}
         </p>
       )}
       {local !== null && <LocalCard {...props} local={local} />}

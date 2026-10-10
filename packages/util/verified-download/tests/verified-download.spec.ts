@@ -115,8 +115,11 @@ describe('downloadFile', () => {
   it('reports verification when the only mirror serves the wrong bytes, and drops them', async () => {
     mirror.replace = Buffer.alloc(BODY.length, 1)
     const dest = join(dir, 'file.bin')
-    const error = await downloadFile(target([`${mirror.origin}/a`], dest), () => {}, new AbortController().signal).catch((e: unknown) => e)
+    let bytes = 0
+    const error = await downloadFile(target([`${mirror.origin}/a`], dest), (n) => { bytes += n }, new AbortController().signal).catch((e: unknown) => e)
     expect((error as DownloadError).code).toBe('verification')
+    // The dropped partial bytes are uncounted, so progress returns to what is on disk.
+    expect(bytes).toBe(0)
     expect(await bytesOnDisk(dest)).toBe(0)
   })
 

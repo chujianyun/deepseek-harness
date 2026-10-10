@@ -26,7 +26,13 @@ export async function requestEmbeddings(
 ): Promise<number[][]> {
   const headers = new Headers(endpoint.headers === undefined ? undefined : Object.entries(endpoint.headers))
   headers.set('content-type', 'application/json')
-  const apiKey = await endpoint.resolveApiKey()
+  let apiKey: string | undefined
+  try {
+    apiKey = await endpoint.resolveApiKey()
+  } catch (_noCredential: unknown) {
+    // A route whose credential cannot be resolved is a domain refusal, not an internal error.
+    throw new RemoteError('embedding/request-failed', 'the embedding endpoint has no usable credential', { status: null })
+  }
   if (apiKey !== undefined) headers.set('authorization', `Bearer ${apiKey}`)
   /** A transport failure or the request deadline, as the documented refusal; a caller's cancellation stays itself. */
   const unreachable = (error: unknown, status: number | null): unknown => {

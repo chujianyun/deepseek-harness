@@ -59,7 +59,8 @@ export async function sha256File(path: string): Promise<string> {
 /**
  * Download one file, resuming a partial one, and verify it; a mirror whose bytes fail verification is skipped like an unreachable one.
  * @param target - URLs, destination, size, and digest.
- * @param onBytes - called with each chunk's length as it is written, and with minus the partial length when a mirror restarts the file.
+ * @param onBytes - called with each chunk's length as it is written, with minus the partial length when a mirror
+ *   restarts the file, and with minus a removed partial file's length when its bytes fail verification.
  * @param signal - stops the transfer; the partial file is kept for the next attempt.
  * @throws DownloadError `verification` when a mirror served bytes that failed verification and none served the file,
  *   `network` when no mirror served it at all, `storage` when it cannot be written; the abort reason when aborted.
@@ -106,8 +107,11 @@ export async function downloadFile(target: DownloadTarget, onBytes: (bytes: numb
         continue
       }
     }
-    if ((await stat(part)).size !== target.size || await sha256File(part) !== target.sha256) {
+    const partSize = (await stat(part)).size
+    if (partSize !== target.size || await sha256File(part) !== target.sha256) {
       await rm(part, { force: true })
+      // The removed bytes are no longer on disk: uncount them so progress keeps tracking the file.
+      onBytes(-partSize)
       failure = 'verification'
       lastError = `${url}: size or sha256 mismatch`
       continue

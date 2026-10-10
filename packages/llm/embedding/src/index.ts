@@ -196,6 +196,7 @@ export class EmbeddingService extends TypertRemoteService {
     ctx.effect(() => () => {
       this.lifetime.abort()
       this.download?.abort()
+      this.releaseEmbedder()
       clearTimeout(this.progressTimer)
       this.changed()
     }, 'embedding: lifetime')
@@ -286,7 +287,7 @@ export class EmbeddingService extends TypertRemoteService {
     await this.assertUnused(this.config.localModel.id)
     this.download?.abort('removed')
     await this.running
-    this.embedder = undefined
+    this.releaseEmbedder()
     this.dimensions = null
     await rm(this.modelDir, { recursive: true, force: true })
     this.received = await this.bytesReceived()
@@ -389,6 +390,11 @@ export class EmbeddingService extends TypertRemoteService {
     for (let start = 0; start < texts.length; start += this.config.apiBatchSize) {
       const batch = texts.slice(start, start + this.config.apiBatchSize)
       vectors.push(...await requestEmbeddings(endpoint, stored.model, batch, this.requestSignal(signal)))
+    }
+    for (const vector of vectors) {
+      if (vector.length !== stored.dimensions) {
+        throw new RemoteError('embedding/request-failed', `the endpoint answered ${String(vector.length)}-dimensional vectors, not the measured ${String(stored.dimensions)}`, { status: null })
+      }
     }
     return vectors
   }
@@ -495,7 +501,7 @@ export class EmbeddingService extends TypertRemoteService {
   private async run(repair: boolean): Promise<void> {
     const controller = new AbortController()
     this.download = controller
-    this.embedder = undefined
+    this.releaseEmbedder()
     this.setLocal('downloading', null)
     const signal = AbortSignal.any([controller.signal, this.lifetime.signal])
     try {
@@ -517,6 +523,7 @@ export class EmbeddingService extends TypertRemoteService {
         await downloadFile({ urls, dest, size: item.size, sha256: item.sha256 }, onBytes, signal)
       }
       this.download = undefined
+      this.received = await this.bytesReceived()
       this.setLocal('installed', null)
       void this.warmUp()
     } catch (error) {
@@ -534,6 +541,13 @@ export class EmbeddingService extends TypertRemoteService {
     const { weights, maxTokens } = this.config.localModel
     this.embedder ??= loadEmbedder(loadRuntime(this.runtimeDir), this.modelDir, weights, maxTokens)
     return this.embedder
+  }
+
+  /** Drop and release the loaded model's native session; a stand-in without release is just dropped. */
+  private releaseEmbedder(): void {
+    const loading = this.embedder
+    this.embedder = undefined
+    loading?.then(embedder => embedder.release()).catch(() => undefined)
   }
 
   /**

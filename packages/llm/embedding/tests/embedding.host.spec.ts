@@ -297,11 +297,28 @@ describe('local embedding model', () => {
     await second.until(installed)
   })
 
-  it('skips a mirror whose bytes fail verification', async () => {
+  it('skips a mirror whose bytes fail verification, keeping progress within the total', async () => {
     const f = await fixtures()
     for (const [path, data] of [...f.served]) if (path.startsWith('/models/')) f.served.set(path.replace('/models/', '/bad/'), Buffer.from('x'.repeat(data.length)))
-    const { until } = await boot(sourceConfig(f, [`${f.mirror.origin}/bad/{repo}/{file}`, `${f.mirror.origin}/models/{repo}/{file}`]))
-    await until(installed)
+    const { until, states } = await boot(sourceConfig(f, [`${f.mirror.origin}/bad/{repo}/{file}`, `${f.mirror.origin}/models/{repo}/{file}`]))
+    const done = await until(installed)
+    // Bytes a mirror served and verification dropped must not stay counted on top of the good mirror's.
+    for (const state of states) expect(state.local.receivedBytes).toBeLessThanOrEqual(state.local.totalBytes)
+    expect(done.local.receivedBytes).toBe(done.local.totalBytes)
+  })
+
+  it('reinstalls a runtime whose native bindings are gone instead of staying damaged', async () => {
+    const f = await fixtures()
+    const first = await boot(sourceConfig(f))
+    await first.until(installed)
+    await first.ctx.fiber.dispose()
+    const bindings = join(f.home, 'models', 'runtime', 'onnxruntime-9.9.9', 'node_modules', 'onnxruntime-node', 'bin', 'napi-v6', process.platform, process.arch)
+    await rm(bindings, { recursive: true, force: true })
+    const requests = f.mirror.requests.length
+    const second = await boot(sourceConfig(f))
+    const done = await second.until(installed)
+    expect(done.local.dimensions).toBe(HIDDEN)
+    expect(f.mirror.requests.slice(requests).map(request => request.path)).toContain('/npm/onnxruntime-node/-/onnxruntime-node-9.9.9.tgz')
   })
 
   it('reports a partial file it cannot write as a storage failure without trying more mirrors', async () => {

@@ -44,6 +44,7 @@ export const zh = {
   'api.removeLabel': '删除 {name}',
   actionFailed: '操作失败：{message}',
   inUse: '该模型正被 {count} 个知识库使用（{names}），不能删除。',
+  'list.separator': '、',
 }
 
 /** Locale keys of the `settings-embedding` namespace. */
@@ -93,4 +94,5 @@ export const en = {
   'api.removeLabel': 'Delete {name}',
   actionFailed: 'Action failed: {message}',
   inUse: 'This model is used by {count} knowledge base(s) ({names}) and cannot be deleted.',
+  'list.separator': ', ',
 } satisfies Record<EmbeddingLocaleKey, string>
