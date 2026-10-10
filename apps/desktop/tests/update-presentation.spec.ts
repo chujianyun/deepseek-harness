@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { desktopUpdateErrorSummary, presentDesktopUpdate } from '../src/update-presentation.ts'
+import { desktopUpdateErrorSummary, presentDesktopStatus, presentDesktopUpdate } from '../src/update-presentation.ts'
 import { en, zh } from '../src/locale.ts'
 import type { DesktopUpdateState, DshDesktopProductApi } from '../src/ipc.ts'
 import type { DesktopUpdateBridge } from '@deepseek-ai/dsh-client-ui-settings-general/types'
@@ -42,4 +42,14 @@ it('keeps raw diagnostics out of error tooltips in both locales', () => {
     expect(desktopUpdateErrorSummary({ phase: 'error', failedOperation: 'install', message: 'internal failure',
       technicalDetails: 'private diagnostic' }, messages)).toBe(messages.updateInstallFailed)
   }
+})
+
+it('shows a version the Hub offers as available only while the ordinary updater has nothing and nothing is forced', () => {
+  const available = { version: '1.0.1', page: 'https://hub.example.com/download' }
+  expect(presentDesktopStatus({ phase: 'idle' }, { blocking: false, checking: false, available })).toEqual({ phase: 'available', version: '1.0.1' })
+  expect(presentDesktopStatus({ phase: 'idle' }, { blocking: false, checking: false })).toEqual({ phase: 'idle' })
+  expect(presentDesktopStatus({ phase: 'idle' }, { blocking: true, checking: false, available })).toEqual({ phase: 'idle' })
+  expect(presentDesktopStatus({ phase: 'downloading', version: '1.0.2', percent: 10 }, { blocking: false, checking: false, available }))
+    .toEqual({ phase: 'downloading', version: '1.0.2', percent: 10 })
+  expect(presentDesktopStatus({ phase: 'idle' }, undefined)).toEqual({ phase: 'idle' })
 })

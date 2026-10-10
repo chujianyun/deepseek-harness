@@ -1,0 +1,61 @@
+# Unsigned MO WorkAI Windows installer, built on a GitHub-hosted Windows x64 runner.
+# Runs on a push to a `build/windows-*` branch or by manual dispatch; the installer is uploaded as a run artifact.
+name: Desktop Windows package
+
+on:
+  push:
+    branches: ['build/windows-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Write enterprise packaging environment
+        shell: pwsh
+        run: |
+          @(
+            'DSH_DESKTOP_APP_ID=vip.shbon.moworkai'
+            'DSH_DESKTOP_AUTO_UPDATE_ENV=production'
+            'DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=https://hub.shbon.vip'
+            'DSH_DESKTOP_HUB_ORIGIN=https://hub.shbon.vip'
+            'DSH_DESKTOP_HUB_CLIENT_ID=dsh_f735504ca96b210c9f66e4e5'
+          ) | Set-Content -Path apps/desktop/.env.windows -Encoding utf8
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run build
+
+      - run: pnpm --filter @deepseek-ai/dsh-desktop run package:win:x64:unsigned
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-windows-x64-unsigned
+          path: |
+            apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.exe
+            apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/*.blockmap
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: packaging-runs
+          path: apps/desktop/.desktop-build/packaging-runs/

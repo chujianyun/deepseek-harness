@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-ecommerce-accounts",
   "description": "Desktop e-commerce accounts: platform sign-ins kept by the system Google Chrome on each account's own browser data, per tenant",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publishConfig": {
     "access": "public"
   },
