@@ -121,6 +121,26 @@
   white-space: nowrap;
 }
 
+.nameStack {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nameStack .name {
+  flex: none;
+}
+
+.slug {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .more {
   flex: none;
 }

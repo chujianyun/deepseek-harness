@@ -180,8 +180,13 @@ function SkillCard({ skill, props, onUninstall }: {
     <li className={css.card} data-enabled={skill.enabled ? 'true' : 'false'}>
       <div className={css.cardHead}>
         <span className={css.avatar} aria-hidden="true">{initial(shown)}</span>
-        <span className={css.name}>{shown}</span>
-        {shown !== skill.name && <span className={css.meta}>{skill.name}</span>}
+        {shown === skill.name ? <span className={css.name}>{shown}</span> : (
+          // The slug goes under the display name, so a long slug never squeezes the name out
+          <span className={css.nameStack}>
+            <span className={css.name}>{shown}</span>
+            <span className={css.slug}>{skill.name}</span>
+          </span>
+        )}
         <Menu
           open={menuOpen}
           onClose={() => { setMenuOpen(false) }}
