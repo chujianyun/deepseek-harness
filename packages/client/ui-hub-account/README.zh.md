@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-注册侧栏账号入口（`settings.launcher`）：显示员工姓名首字、昵称和公司，菜单提供 **设置** 和 **退出登录**。在侧栏品牌行显示当前租户的 Logo 或公司名称，下方是构建版本号；在新会话页显示它的 Logo 和标语。在设置里新增 **Skill Hub 账号** 分区，显示已登录的昵称、租户和手机号，并提供 **切换租户** 和 **退出登录**；未登录时显示登录状态和 **登录 Skill Hub**。它通过 [`hubAccount` Remote](../../credentials/hub-account/README.zh.md) 读取状态和执行操作。Desktop [欢迎窗口](../../../apps/desktop/README.zh.md)在未登录时不打开工作区，所以渲染器没有自己的登录门禁。
+注册侧栏账号入口（`settings.launcher`）：显示员工姓名首字、昵称和公司，菜单提供 **设置** 和 **退出登录**。在侧栏品牌行显示当前租户的 Logo 或公司名称，不显示构建版本号（版本号在通用设置中显示）；在新会话页显示它的 Logo 和标语。在设置里新增 **Skill Hub 账号** 分区，显示已登录的昵称、租户和手机号，并提供 **切换租户** 和 **退出登录**；未登录时显示登录状态和 **登录 Skill Hub**。它通过 [`hubAccount` Remote](../../credentials/hub-account/README.zh.md) 读取状态和执行操作。Desktop [欢迎窗口](../../../apps/desktop/README.zh.md)在未登录时不打开工作区，所以渲染器没有自己的登录门禁。
 
 ## 目录
 

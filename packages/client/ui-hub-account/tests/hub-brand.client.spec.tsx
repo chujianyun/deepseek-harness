@@ -23,12 +23,12 @@ function hooks(tenantName: string | null, logo: string | null, slogan: string | 
 }
 const standard = {} as GlobalStandardProps
 
-it('shows the tenant logo with the build version below, and nothing beside it in the expanded row', () => {
+it('shows the tenant logo without the build version, and nothing beside it in the expanded row', () => {
   const name = render(<HubBrandName {...standard} {...hooks('甲公司', LOGO)} t={makeTranslate(zh)} version="0.2.0-rc.2-abc1234" />)
   const logo = name.container.querySelector('img')!
   expect(logo.getAttribute('src')).toBe(LOGO)
   expect(logo.alt).toBe('甲公司')
-  expect(name.container.textContent).toBe('0.2.0-rc.2-abc1234')
+  expect(name.container.textContent).toBe('')
   const row = render(<HubBrandMark {...standard} {...hooks('甲公司', LOGO)} size={24} placement="row" />)
   expect(row.container.innerHTML).toBe('')
   const rail = render(<HubBrandMark {...standard} {...hooks('甲公司', LOGO)} size={24} placement="rail" />)
@@ -36,7 +36,7 @@ it('shows the tenant logo with the build version below, and nothing beside it in
 })
 
 it('shows the company name without a logo, and its first character on the rail', () => {
-  const name = render(<HubBrandName {...standard} {...hooks('甲公司', null)} t={makeTranslate(zh)} version={undefined} />)
+  const name = render(<HubBrandName {...standard} {...hooks('甲公司', null)} t={makeTranslate(zh)} version="1.0.0-735e8dd" />)
   expect(name.container.textContent).toBe('甲公司')
   const rail = render(<HubBrandMark {...standard} {...hooks('甲公司', null)} size={24} placement="rail" />)
   expect(rail.container.textContent).toBe('甲')
