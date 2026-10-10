@@ -3,7 +3,7 @@ import type { MarketSkillCard, MarketSkillDetail, MarketSkillPage } from '@deeps
 import { createMarketSource, MARKET_PAGE_SIZE, type MarketDependencies } from '../src/client/market-source.ts'
 
 const card = (name: string, installedVersion: string | null = null): MarketSkillCard => ({
-  id: `id-${name}`, name, description: name, category: null, version: '1.0.0', updatedAt: 'x', installedVersion, updateAvailable: false, conflict: false,
+  id: `id-${name}`, name, displayName: name, description: name, category: null, version: '1.0.0', updatedAt: 'x', installedVersion, updateAvailable: false, conflict: false,
 })
 const ok = <T>(value: T) => Promise.resolve({ ok: true as const, value })
 const fail = (message: string) => Promise.resolve({ ok: false as const, error: { code: 'x', message, details: {} } as never })
@@ -15,7 +15,7 @@ function deps() {
     categories: vi.fn<MarketDependencies['categories']>(() => ok([{ id: 'c', name: 'C' }])),
     detail: vi.fn<MarketDependencies['detail']>(id => ok({ ...card('a'), id, ownerName: 'o', skillMd: '#', files: [] } satisfies MarketSkillDetail)),
     install: vi.fn<MarketDependencies['install']>(() => ok(card('a', '1.0.0'))),
-    installedStatus: vi.fn<MarketDependencies['installedStatus']>(() => ok([{ name: 'a', hubSkillId: 'id-a', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' as const }])),
+    installedStatus: vi.fn<MarketDependencies['installedStatus']>(() => ok([{ name: 'a', displayName: 'a', hubSkillId: 'id-a', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' as const }])),
     installed: vi.fn<MarketDependencies['installed']>(),
   }
 }
@@ -98,7 +98,7 @@ describe('market source', () => {
     const d = deps()
     const source = createMarketSource(d)
     await source.onRefreshStatus()
-    expect(source.hooks.market.getSnapshot().statuses).toEqual({ a: { name: 'a', hubSkillId: 'id-a', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' } })
+    expect(source.hooks.market.getSnapshot().statuses).toEqual({ a: { name: 'a', displayName: 'a', hubSkillId: 'id-a', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' } })
     await source.onInstall('id-a')
     expect(d.install).toHaveBeenCalledWith('id-a', {})
     expect(d.installedStatus).toHaveBeenCalledTimes(2)

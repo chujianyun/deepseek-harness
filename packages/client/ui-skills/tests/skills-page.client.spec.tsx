@@ -133,6 +133,18 @@ describe('Skills page', () => {
     expect(onBack).toHaveBeenCalledOnce()
   })
 
+  it('names a market Skill by the display name its status carries, with the slug beside it; a user Skill keeps its name', () => {
+    const { props } = pageProps({ skills: [skill('alpha'), skill('tmall-publish', true, 'market')] }, {
+      statuses: { 'tmall-publish': { name: 'tmall-publish', displayName: '天猫发品', hubSkillId: 's-t', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' } },
+    })
+    render(<InstalledView {...props} onBack={() => {}} />)
+    const market = screen.getByRole('region', { name: /来自市场/ })
+    expect(within(market).getByText('天猫发品')).toBeTruthy()
+    expect(within(market).getByText('tmall-publish')).toBeTruthy()
+    expect(within(market).getByRole('switch', { name: '启用 天猫发品' })).toBeTruthy()
+    expect(within(screen.getByRole('region', { name: /用户自定义/ })).getByText('alpha')).toBeTruthy()
+  })
+
   it('says when nothing came from the market yet', () => {
     renderPage({ skills: [skill('alpha')] })
     expect(within(screen.getByRole('region', { name: /来自市场/ })).getByText('还没有从市场安装 Skill')).toBeTruthy()

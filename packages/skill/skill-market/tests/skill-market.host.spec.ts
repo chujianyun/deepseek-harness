@@ -84,7 +84,7 @@ describe('skillMarket', () => {
     expect(center.clientRequests.at(-1)).toBe('/api/client/skills?q=pdf&categoryId=c-doc&page=1&pageSize=12')
     expect(first).toEqual({
       total: 1, page: 1, pageSize: 12,
-      items: [{ id: 's-pdf', name: 'pdf-tools', description: 'Read PDF files', category: { id: 'c-doc', name: '文档' }, version: '1.0.0', updatedAt: '2026-10-01T08:00:00.000Z', installedVersion: null, updateAvailable: false, conflict: false }],
+      items: [{ id: 's-pdf', name: 'pdf-tools', displayName: 'pdf-tools', description: 'Read PDF files', category: { id: 'c-doc', name: '文档' }, version: '1.0.0', updatedAt: '2026-10-01T08:00:00.000Z', installedVersion: null, updateAvailable: false, conflict: false }],
     })
     expect((await market.list({ page: 2, pageSize: 1 }, signal())).items.map(item => item.name)).toEqual(['sql-helper'])
     expect(await market.categories(signal())).toEqual([{ id: 'c-doc', name: '文档' }, { id: 'c-dev', name: '研发' }])
@@ -97,6 +97,26 @@ describe('skillMarket', () => {
     expect(detail.skillMd).toContain('# pdf-tools')
     expect(detail.files.map(file => file.path)).toEqual(['SKILL.md', 'scripts/run.sh'])
     expect(remoteErrorOf(await market.detail('missing', signal()).catch((error: unknown) => error))).toMatchObject({ code: 'skill-market/not-found', details: { id: 'missing' } })
+  })
+
+  it('shows the Hub\'s display name, and the slug when the Hub sends none (a Hub before T93)', async () => {
+    const { center, market } = await boot()
+    center.skills = [{ ...PDF, displayName: 'PDF 工具' }, SQL]
+    expect((await market.list({}, signal())).items.map(item => [item.name, item.displayName])).toEqual([['pdf-tools', 'PDF 工具'], ['sql-helper', 'sql-helper']])
+    expect((await market.detail('s-pdf', signal())).displayName).toBe('PDF 工具')
+    expect((await market.detail('s-sql', signal())).displayName).toBe('sql-helper')
+  })
+
+  it('records the display name at install and reports the Hub\'s current one, or the recorded one when the Hub cannot be asked', async () => {
+    const { center, market, dshHome } = await boot()
+    center.skills = [{ ...PDF, displayName: 'PDF 工具' }, SQL]
+    expect(await market.installSkill('s-pdf', {}, signal())).toMatchObject({ displayName: 'PDF 工具' })
+    const record = JSON.parse(await readFile(join(dshHome, 'skills-market', 't-a', 'pdf-tools', INSTALL_RECORD), 'utf8')) as Record<string, unknown>
+    expect(record).toMatchObject({ name: 'pdf-tools', displayName: 'PDF 工具' })
+    center.skills = [{ ...PDF, displayName: 'PDF 工具箱' }, SQL]
+    expect((await market.installedStatus(signal()))[0]).toMatchObject({ name: 'pdf-tools', displayName: 'PDF 工具箱', state: 'current' })
+    center.skills = [SQL]
+    expect((await market.installedStatus(signal()))[0]).toMatchObject({ name: 'pdf-tools', displayName: 'PDF 工具', state: 'unavailable' })
   })
 
   it('installs into the tenant directory with a record, and the Skill joins the catalog as a market Skill', async () => {
@@ -271,11 +291,11 @@ describe('skillMarket', () => {
     it('offers an update when the Hub publishes a newer version, and the update lands the new files', async () => {
       const { center, market, dshHome } = await boot()
       await market.installSkill('s-pdf', {}, signal())
-      expect(await market.installedStatus(signal())).toEqual([{ name: 'pdf-tools', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' }])
+      expect(await market.installedStatus(signal())).toEqual([{ name: 'pdf-tools', displayName: 'pdf-tools', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' }])
       center.skills = [v2, SQL]
       expect((await market.list({}, signal())).items[0]).toMatchObject({ installedVersion: '1.0.0', version: '1.1.0', updateAvailable: true })
       expect((await market.detail('s-pdf', signal())).updateAvailable).toBe(true)
-      expect(await market.installedStatus(signal())).toEqual([{ name: 'pdf-tools', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.1.0', state: 'update' }])
+      expect(await market.installedStatus(signal())).toEqual([{ name: 'pdf-tools', displayName: 'pdf-tools', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.1.0', state: 'update' }])
       expect(await market.installSkill('s-pdf', {}, signal())).toMatchObject({ installedVersion: '1.1.0', updateAvailable: false })
       expect(await readFile(join(dirOf(dshHome), 'scripts/run.sh'), 'utf8')).toBe('echo pdf 1.1\n')
       expect(await readFile(join(dirOf(dshHome), 'scripts/new.sh'), 'utf8')).toBe('echo new\n')
@@ -313,7 +333,7 @@ describe('skillMarket', () => {
       const { ctx, center, market } = await boot()
       await market.installSkill('s-pdf', {}, signal())
       center.skills = [SQL]
-      expect(await market.installedStatus(signal())).toEqual([{ name: 'pdf-tools', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: null, state: 'unavailable' }])
+      expect(await market.installedStatus(signal())).toEqual([{ name: 'pdf-tools', displayName: 'pdf-tools', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: null, state: 'unavailable' }])
       expect((await ctx.skills.get('pdf-tools'))?.invocation.modelInvocable).toBe(true)
       expect((await market.list({}, signal())).items.map(item => item.name)).toEqual(['sql-helper'])
       center.clientStatus = 503
@@ -406,14 +426,37 @@ describe('skillMarket', () => {
       const { center, market, home } = await boot()
       const dir = await folder(join(home, 'work'), 'report-writer')
       const before = (await stat(join(dir, 'SKILL.md'))).mtimeMs
-      const result = await market.uploadSkill({ dir, version: '1.0.0', visibility: 'departments', departmentIds: ['d-rd'], categoryId: 'c-doc' }, signal())
+      const result = await market.uploadSkill({ dir, version: '1.0.0', displayName: '报告助手', visibility: 'departments', departmentIds: ['d-rd'], categoryId: 'c-doc' }, signal())
       expect(result).toMatchObject({ name: 'report-writer', version: '1.0.0', mode: 'create', status: 'pending', reviewUrl: expect.stringContaining('/skills/review/') as string })
       expect(center.uploads[0]).toEqual({
-        path: '/api/client/skills', fields: { version: '1.0.0', visibility: 'departments', departmentIds: 'd-rd', categoryId: 'c-doc' },
+        path: '/api/client/skills', fields: { version: '1.0.0', displayName: '报告助手', visibility: 'departments', departmentIds: 'd-rd', categoryId: 'c-doc' },
         entries: ['report-writer/SKILL.md', 'report-writer/scripts/run.sh'],
       })
       expect((await readdir(dir)).sort()).toEqual(['.DS_Store', 'SKILL.md', '__pycache__', 'node_modules', 'scripts'])
       expect((await stat(join(dir, 'SKILL.md'))).mtimeMs).toBe(before)
+    })
+
+    it('sends a new Skill\'s display name trimmed, and refuses a new Skill without one before contacting the Hub', async () => {
+      const { center, market, home } = await boot()
+      const dir = await folder(join(home, 'work'), 'report-writer')
+      for (const displayName of [undefined, '   ']) {
+        const refused = await market.uploadSkill({ dir, version: '1.0.0', ...displayName === undefined ? {} : { displayName } }, signal()).catch((error: unknown) => error)
+        expect(remoteErrorOf(refused)).toMatchObject({ code: 'skill-market/display-name-required' })
+      }
+      expect(center.uploads).toEqual([])
+      const result = await market.uploadSkill({ dir, version: '1.0.0', displayName: ' 报告助手 ' }, signal())
+      expect(result).toMatchObject({ name: 'report-writer', displayName: '报告助手', mode: 'create' })
+      expect(center.uploads[0]?.fields).toMatchObject({ displayName: '报告助手' })
+    })
+
+    it('names the existing Skill by its display name, and a new version needs none', async () => {
+      const { center, market, home } = await boot()
+      center.owned.push({ id: 's-own', name: 'report-writer', displayName: '报告助手', versions: [{ version: '1.2.0', status: 'published' }] })
+      const dir = await folder(join(home, 'work'), 'report-writer')
+      expect((await market.inspectFolder(dir, signal())).existing).toMatchObject({ skillId: 's-own', displayName: '报告助手' })
+      const result = await market.uploadSkill({ dir, version: '1.2.1' }, signal())
+      expect(result).toMatchObject({ mode: 'version', displayName: '报告助手' })
+      expect(center.uploads[0]?.fields).toEqual({ version: '1.2.1' })
     })
 
     it('uploads the next version of the employee\'s own Skill, and a tenant admin\'s upload is published', async () => {
@@ -424,7 +467,7 @@ describe('skillMarket', () => {
       const preview = await market.inspectFolder(dir, signal())
       expect(preview).toMatchObject({ existing: { skillId: 's-own', highestVersion: '1.2.0', currentVersion: '1.2.0', workingStatus: null }, suggestedVersion: '1.2.1' })
       const result = await market.uploadSkill({ dir, version: '1.2.1', visibility: 'private', categoryId: 'c-doc' }, signal())
-      expect(result).toEqual({ skillId: 's-own', name: 'report-writer', version: '1.2.1', mode: 'version', status: 'published', reviewUrl: null })
+      expect(result).toEqual({ skillId: 's-own', name: 'report-writer', displayName: 'report-writer', version: '1.2.1', mode: 'version', status: 'published', reviewUrl: null })
       expect(center.uploads[0]).toMatchObject({ path: '/api/client/skills/s-own/versions', fields: { version: '1.2.1' } })
       expect((await market.list({}, signal())).items.map(item => item.name)).toContain('report-writer')
     })
@@ -433,7 +476,7 @@ describe('skillMarket', () => {
       const { center, market, home } = await boot()
       const dir = await folder(join(home, 'work'), 'report-writer')
       const reason = async (version: string) =>
-        (await market.uploadSkill({ dir, version }, signal()).catch((error: unknown) => error)) as Error
+        (await market.uploadSkill({ dir, version, displayName: '报告助手' }, signal()).catch((error: unknown) => error)) as Error
       expect(remoteErrorOf(await reason('v1'))).toMatchObject({ code: 'skill-market/upload-rejected', message: '版本号格式应为 x.y.z（如 1.0.0）', details: { status: 400 } })
       center.owned.push({ id: 's-own', name: 'report-writer', versions: [{ version: '1.0.0', status: 'published' }, { version: '1.1.0', status: 'pending' }] })
       expect((await reason('1.2.0')).message).toBe('该 Skill 已有未成为正式的版本 1.1.0（审核中），请先处理后再上传新版本')
@@ -447,16 +490,16 @@ describe('skillMarket', () => {
       const { center, market, home } = await boot()
       const dir = await folder(join(home, 'work'), 'report-writer')
       await center.close()
-      expect(remoteErrorOf(await market.uploadSkill({ dir, version: '1.0.0' }, signal()).catch((error: unknown) => error))).toMatchObject({ code: 'skill-market/unavailable' })
+      expect(remoteErrorOf(await market.uploadSkill({ dir, version: '1.0.0', displayName: '报告助手' }, signal()).catch((error: unknown) => error))).toMatchObject({ code: 'skill-market/unavailable' })
     })
 
     it('sends an employee list, and reports rejections without a usable reason, dropped uploads, and withdrawn callers', async () => {
       const { center, market, home } = await boot()
       const dir = await folder(join(home, 'work'), 'report-writer')
-      await market.uploadSkill({ dir, version: '1.0.0', visibility: 'employees', employeeIds: ['e-li', 'e-han'] }, signal())
+      await market.uploadSkill({ dir, version: '1.0.0', displayName: '报告助手', visibility: 'employees', employeeIds: ['e-li', 'e-han'] }, signal())
       expect(center.uploads[0]?.fields).toMatchObject({ visibility: 'employees', employeeIds: ['e-li', 'e-han'] })
       const other = await folder(join(home, 'work'), 'other-skill')
-      const attempt = async (controller = new AbortController()) => market.uploadSkill({ dir: other, version: '1.0.0' }, controller.signal).catch((error: unknown) => error)
+      const attempt = async (controller = new AbortController()) => market.uploadSkill({ dir: other, version: '1.0.0', displayName: '其他' }, controller.signal).catch((error: unknown) => error)
       center.uploadReply = { status: 400, body: JSON.stringify({ message: ['版本号格式应为 x.y.z', 'SKILL.md 缺少 description'] }) }
       expect((await attempt() as Error).message).toBe('版本号格式应为 x.y.z；SKILL.md 缺少 description')
       center.uploadReply = { status: 413, body: 'too large' }

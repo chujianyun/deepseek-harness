@@ -78,7 +78,8 @@ export const Config = Schema.object({
 
 const versionInfo = z.object({ version: z.string(), uploadedAt: z.string() })
 const category = z.object({ id: z.string(), name: z.string() }).nullable()
-const summary = z.object({ id: z.string(), name: z.string(), category, currentVersion: versionInfo })
+// displayName: a Hub before T93 sends none, and the slug stands in for it
+const summary = z.object({ id: z.string(), name: z.string(), displayName: z.string().optional(), category, currentVersion: versionInfo })
 const page = z.object({ items: z.array(summary), total: z.number(), page: z.number(), pageSize: z.number() })
 const detail = summary.extend({
   description: z.string(),
@@ -89,11 +90,11 @@ const detail = summary.extend({
 })
 const listItem = summary.extend({ currentVersion: versionInfo.extend({ description: z.string() }) })
 const ownSkill = z.object({
-  id: z.string(), name: z.string(), highestVersion: z.string(), currentVersion: z.string().nullable(),
+  id: z.string(), name: z.string(), displayName: z.string().optional(), highestVersion: z.string(), currentVersion: z.string().nullable(),
   workingStatus: z.enum(['draft', 'pending']).nullable(),
 })
 const record = z.object({
-  hubSkillId: z.string(), name: z.string(), version: z.string(), installedAt: z.string(),
+  hubSkillId: z.string(), name: z.string(), displayName: z.string().optional(), version: z.string(), installedAt: z.string(),
   files: z.array(z.object({ path: z.string(), sha256: z.string() })),
 })
 
@@ -462,7 +463,8 @@ export class SkillMarket extends TypertRemoteService {
         await writeFile(join(skillDir, path), data)
       }
       const installRecord: MarketInstallRecord = {
-        hubSkillId: value.id, name: value.name, version: value.currentVersion.version, installedAt: new Date().toISOString(),
+        hubSkillId: value.id, name: value.name, displayName: value.displayName ?? value.name,
+        version: value.currentVersion.version, installedAt: new Date().toISOString(),
         files: [...files].map(([path, data]) => ({ path, sha256: sha256(data) }))
           .sort((a, b) => Number(a.path > b.path) - Number(a.path < b.path)),
       }
@@ -542,7 +544,12 @@ export class SkillMarket extends TypertRemoteService {
     form.set('file', new Blob([zip], { type: 'application/zip' }), `${name}.zip`)
     form.set('version', request.version)
     const existing = preview.existing
+    const displayName = request.displayName?.trim() ?? ''
+    if (existing === null && displayName === '') {
+      throw new RemoteError('skill-market/display-name-required', 'a new Skill needs a display name', { name })
+    }
     if (existing === null) {
+      form.set('displayName', displayName)
       if (request.visibility !== undefined) form.set('visibility', request.visibility)
       for (const id of request.departmentIds ?? []) form.append('departmentIds', id)
       for (const id of request.employeeIds ?? []) form.append('employeeIds', id)
@@ -553,11 +560,11 @@ export class SkillMarket extends TypertRemoteService {
     const body: unknown = await res.json().catch(() => ({}))
     if (!res.ok) throw uploadRejected(res, body)
     const result = z.object({
-      skillId: z.string(), name: z.string(), version: z.object({ version: z.string() }),
+      skillId: z.string(), name: z.string(), displayName: z.string().optional(), version: z.object({ version: z.string() }),
       status: z.enum(['pending', 'published']), reviewUrl: z.string().nullable(),
     }).parse(body)
     return {
-      skillId: result.skillId, name: result.name, version: result.version.version, mode: existing === null ? 'create' : 'version',
+      skillId: result.skillId, name: result.name, displayName: result.displayName ?? existing?.displayName ?? displayName, version: result.version.version, mode: existing === null ? 'create' : 'version',
       status: result.status, reviewUrl: result.reviewUrl,
     }
   }
@@ -572,10 +579,13 @@ export class SkillMarket extends TypertRemoteService {
   async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]> {
     const installed = [...(await this.records()).values()].sort((a, b) => Number(a.name > b.name) - Number(a.name < b.name))
     return Promise.all(installed.map(async (local): Promise<MarketInstalledStatus> => {
-      const base = { name: local.name, hubSkillId: local.hubSkillId, installedVersion: local.version }
+      const base = {
+        name: local.name, displayName: local.displayName ?? local.name, hubSkillId: local.hubSkillId, installedVersion: local.version,
+      }
       try {
-        const latest = (await this.fetchDetail(local.hubSkillId, signal)).currentVersion.version
-        return { ...base, latestVersion: latest, state: compareVersions(latest, local.version) > 0 ? 'update' : 'current' }
+        const hub = await this.fetchDetail(local.hubSkillId, signal)
+        const latest = hub.currentVersion.version
+        return { ...base, displayName: hub.displayName ?? base.displayName, latestVersion: latest, state: compareVersions(latest, local.version) > 0 ? 'update' : 'current' }
       } catch (error: unknown) {
         if (signal.aborted) throw error
         const notFound = error instanceof RemoteError && error.code === 'skill-market/not-found'
@@ -664,7 +674,8 @@ export class SkillMarket extends TypertRemoteService {
     const preview: MarketUploadPreview = {
       dir, name, description, fileCount: files.size, sizeBytes: total(files), problems,
       existing: owned === undefined ? null : {
-        skillId: owned.id, highestVersion: owned.highestVersion, currentVersion: owned.currentVersion, workingStatus: owned.workingStatus,
+        skillId: owned.id, displayName: owned.displayName ?? owned.name,
+        highestVersion: owned.highestVersion, currentVersion: owned.currentVersion, workingStatus: owned.workingStatus,
       },
       suggestedVersion: owned === undefined ? '1.0.0' : nextPatch(owned.highestVersion),
     }
@@ -684,7 +695,8 @@ function card(
   const local = installed.get(value.name)
   const installedVersion = local?.hubSkillId === value.id ? local.version : null
   return {
-    id: value.id, name: value.name, description, category: value.category, version: value.currentVersion.version, updatedAt,
+    id: value.id, name: value.name, displayName: value.displayName ?? value.name, description, category: value.category,
+    version: value.currentVersion.version, updatedAt,
     installedVersion,
     updateAvailable: installedVersion !== null && compareVersions(value.currentVersion.version, installedVersion) > 0,
     conflict: custom.has(value.name),

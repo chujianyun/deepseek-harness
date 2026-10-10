@@ -1,4 +1,5 @@
-// "Add skill" over the real `skillMarket` Remote and a mock Skill Hub: an employee's upload waits
+// "Add skill" over the real `skillMarket` Remote and a mock Skill Hub: a new Skill needs a display
+// name, and the dialog names the Skill by it; an employee's upload waits
 // for review with its link, the Hub's refusal shows verbatim, a broken folder lists its problems,
 // and an administrator's upload is published into the market, while the local Skills stay as they were.
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -54,11 +55,14 @@ it('uploads a custom Skill for review, shows refusals verbatim, and publishes an
     expect(await dialog.getByRole('textbox', { name: 'Version' }).inputValue()).toBe('1.0.0')
     await dialog.getByRole('tab', { name: 'Departments' }).click()
     await dialog.getByRole('checkbox', { name: '研发部' }).check()
+    // A new Skill cannot be uploaded until it has a display name.
+    expect(await dialog.getByRole('button', { name: 'Upload', exact: true }).isDisabled()).toBe(true)
+    await dialog.getByRole('textbox', { name: 'Display name' }).fill(' 周报助手 ')
     await dialog.getByRole('button', { name: 'Upload', exact: true }).click()
-    await dialog.getByRole('status').filter({ hasText: 'Submitted for review: report-writer 1.0.0' }).waitFor()
+    await dialog.getByRole('status').filter({ hasText: 'Submitted for review: 周报助手 1.0.0' }).waitFor()
     expect(await dialog.getByRole('textbox', { name: 'Review link' }).inputValue()).toMatch(/\/skills\/review\/s-up-1-v1$/)
     expect(center.uploads[0]).toMatchObject({
-      path: '/api/client/skills', fields: { version: '1.0.0', visibility: 'departments', departmentIds: 'd-rd' },
+      path: '/api/client/skills', fields: { version: '1.0.0', displayName: '周报助手', visibility: 'departments', departmentIds: 'd-rd' },
     })
     expect([...center.uploads[0]?.entries ?? []].sort()).toEqual(['report-writer/SKILL.md', 'report-writer/scripts/run.sh'])
     expect(await readFile(join(reportDir, 'SKILL.md'), 'utf8')).toBe(reportMd)
@@ -67,8 +71,9 @@ it('uploads a custom Skill for review, shows refusals verbatim, and publishes an
     // Uploading it again is its next version, which the Hub refuses while 1.0.0 is in review.
     await openUpload()
     await dialog.getByRole('button', { name: /report-writer/ }).click()
-    await dialog.getByText('You already own a skill with this name (highest version 1.0.0)').waitFor()
+    await dialog.getByText('You already own a skill with this name ("周报助手", highest version 1.0.0)').waitFor()
     expect(await dialog.getByRole('textbox', { name: 'Version' }).inputValue()).toBe('1.0.1')
+    expect(await dialog.getByRole('textbox', { name: 'Display name' }).count()).toBe(0)
     expect(await dialog.getByRole('tablist').count()).toBe(0)
     await dialog.getByRole('button', { name: 'Upload', exact: true }).click()
     await dialog.getByRole('alert').filter({ hasText: 'Upload failed: 该 Skill 已有未成为正式的版本 1.0.0（审核中），请先处理后再上传新版本' }).waitFor()
@@ -87,11 +92,12 @@ it('uploads a custom Skill for review, shows refusals verbatim, and publishes an
     center.tenantAdmin = true
     await openUpload()
     await dialog.getByRole('button', { name: /weekly-notes/ }).click()
+    await dialog.getByRole('textbox', { name: 'Display name' }).fill('每周笔记')
     await dialog.getByRole('button', { name: 'Upload', exact: true }).click()
-    await dialog.getByRole('status').filter({ hasText: 'Published: weekly-notes 1.0.0' }).waitFor()
+    await dialog.getByRole('status').filter({ hasText: 'Published: 每周笔记 1.0.0' }).waitFor()
     expect(await dialog.getByRole('textbox', { name: 'Review link' }).count()).toBe(0)
     await dialog.getByRole('button', { name: 'Done' }).click()
-    await page.getByRole('tabpanel').getByRole('button', { name: 'weekly-notes', exact: true }).waitFor()
+    await page.getByRole('tabpanel').getByRole('button', { name: '每周笔记', exact: true }).waitFor()
 
     // Both local Skills remain custom Skills.
     await page.getByRole('button', { name: /^Installed \(\d+\)$/ }).click()

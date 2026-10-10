@@ -11,7 +11,7 @@ import type { InstalledSkillsInjected } from './installed-source.ts'
 import type { MarketInjected } from './market-source.ts'
 import type { UploadInjected } from './upload-source.ts'
 import { AddSkillDialog } from './AddSkillDialog.tsx'
-import { MarketView } from './MarketView.tsx'
+import { initial, MarketView } from './MarketView.tsx'
 import css from './SkillsPage.module.css'
 
 /** Cards shown per "load more" step of an installed group. */
@@ -165,14 +165,18 @@ function SkillCard({ skill, props, onUninstall }: {
   props: SkillsPageProps
   onUninstall: () => void
 }) {
-  const { t, useInstalled, onToggle, onReveal, onEdit, onChat } = props
+  const { t, useInstalled, useMarket, onToggle, onReveal, onEdit, onChat } = props
   const busy = useInstalled(snapshot => snapshot.busy.includes(skill.name))
+  // A market Skill shows the display name its Hub status carries; a user Skill has only its name
+  const marketName = useMarket(snapshot => skill.group === 'market' ? snapshot.statuses[skill.name]?.displayName : undefined)
+  const shown = marketName ?? skill.name
   const [menuOpen, setMenuOpen] = useState(false)
   return (
     <li className={css.card} data-enabled={skill.enabled ? 'true' : 'false'}>
       <div className={css.cardHead}>
-        <span className={css.avatar} aria-hidden="true">{skill.name.slice(0, 1).toUpperCase()}</span>
-        <span className={css.name}>{skill.name}</span>
+        <span className={css.avatar} aria-hidden="true">{initial(shown)}</span>
+        <span className={css.name}>{shown}</span>
+        {shown !== skill.name && <span className={css.meta}>{skill.name}</span>}
         <Menu
           open={menuOpen}
           onClose={() => { setMenuOpen(false) }}
@@ -196,7 +200,7 @@ function SkillCard({ skill, props, onUninstall }: {
             <Button
               size="sm"
               className={css.more}
-              aria-label={t('more', { name: skill.name })}
+              aria-label={t('more', { name: shown })}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               disabled={busy}
@@ -208,7 +212,7 @@ function SkillCard({ skill, props, onUninstall }: {
         />
         <Switch
           checked={skill.enabled}
-          label={t('toggle', { name: skill.name })}
+          label={t('toggle', { name: shown })}
           disabled={busy}
           onChange={(next) => { void onToggle(skill.name, next) }}
         />

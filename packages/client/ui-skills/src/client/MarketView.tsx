@@ -124,13 +124,22 @@ export function MarketView(props: SkillsPageProps & { onShowInstalled: () => voi
   )
 }
 
+/**
+ * The avatar letter of a Skill: the first character of its shown name, uppercased.
+ * @param name - the shown name.
+ * @returns one character.
+ */
+export function initial(name: string): string {
+  return (Array.from(name)[0] ?? '').toUpperCase()
+}
+
 function MarketCard({ item, props }: { item: MarketSkillCard; props: SkillsPageProps }) {
   const { onOpenDetail } = props
   return (
     <li className={css.card}>
       <div className={css.cardHead}>
-        <span className={css.avatar} aria-hidden="true">{item.name.slice(0, 1).toUpperCase()}</span>
-        <button type="button" className={css.cardLink} onClick={() => { void onOpenDetail(item.id) }}>{item.name}</button>
+        <span className={css.avatar} aria-hidden="true">{initial(item.displayName)}</span>
+        <button type="button" className={css.cardLink} onClick={() => { void onOpenDetail(item.id) }}>{item.displayName}</button>
         <InstallControl item={item} props={props} compact />
       </div>
       <p className={css.description}>{item.description}</p>
@@ -148,7 +157,7 @@ function InstallControl({ item, props, compact = false }: { item: MarketSkillCar
   if (item.updateAvailable) {
     return (
       <Button size="sm" variant={compact ? 'outline' : 'primary'} disabled={installing}
-        aria-label={t('update', { name: item.name })} onClick={() => { void onInstall(item.id) }}>
+        aria-label={t('update', { name: item.displayName })} onClick={() => { void onInstall(item.id) }}>
         {installing ? t('installing') : t('updateTo', { version: item.version })}
       </Button>
     )
@@ -156,7 +165,7 @@ function InstallControl({ item, props, compact = false }: { item: MarketSkillCar
   const label = installing ? t('installing') : compact ? '+' : t('installButton')
   const button = (
     <Button size="sm" variant={compact ? 'outline' : 'primary'} disabled={installing || item.conflict}
-      aria-label={item.conflict ? t('conflict') : t('install', { name: item.name })} onClick={() => { void onInstall(item.id) }}>
+      aria-label={item.conflict ? t('conflict') : t('install', { name: item.displayName })} onClick={() => { void onInstall(item.id) }}>
       {label}
     </Button>
   )
@@ -167,7 +176,7 @@ function MarketDetailDialog({ props }: { props: SkillsPageProps }) {
   const { t, useMarket, onCloseDetail } = props
   const detail = useMarket(snapshot => snapshot.detail)
   const items = useMarket(snapshot => snapshot.items)
-  const title = detail?.status === 'ready' ? detail.value.name : items.find(item => item.id === detail?.id)?.name ?? ''
+  const title = detail?.status === 'ready' ? detail.value.displayName : items.find(item => item.id === detail?.id)?.displayName ?? ''
   return (
     <Modal
       open={detail !== null}
@@ -193,6 +202,7 @@ function DetailBody({ detail, t }: { detail: MarketSkillDetail; t: TranslateNS<'
     <div className={css.detailBody}>
       <p className={css.intro}>{detail.description}</p>
       <dl className={css.facts}>
+        <dt>{t('detailSlug')}</dt><dd><code>{detail.name}</code></dd>
         <dt>{t('detailCategory')}</dt><dd>{detail.category?.name ?? t('noCategory')}</dd>
         <dt>{t('detailOwner')}</dt><dd>{detail.ownerName}</dd>
         <dt>{t('detailVersion')}</dt><dd>{detail.version}</dd>
