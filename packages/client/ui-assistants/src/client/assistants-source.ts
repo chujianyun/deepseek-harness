@@ -21,8 +21,8 @@ export interface AssistantsSnapshot {
   readonly state: AssistantsState | undefined
   /** Assistant the main view's blank session is bound to; null when none or no blank session is shown. */
   readonly bound: string | null
-  /** A pick waiting for a blank session to bind. */
-  readonly staged: string | undefined
+  /** A pick waiting for a blank session to bind: an assistant id, null for none, or undefined when nothing is waiting. */
+  readonly staged: string | null | undefined
   /** A bind is in flight. */
   readonly busy: boolean
   /** The Host's message for the last refused pick. */
@@ -62,7 +62,7 @@ export interface WizardOptions {
 
 /** Remote calls and workspace navigation the source drives. */
 export interface AssistantsDependencies {
-  readonly select: (sessionId: SessionSummary['id'], assistantId: string) => Promise<RemoteResult<string>>
+  readonly select: (sessionId: SessionSummary['id'], assistantId: string | null) => Promise<RemoteResult<string | null>>
   /** Open the new-session screen, which brings a blank session into the main view. */
   readonly startSession: () => void
   /** The blank session the main view shows now, if any. */
@@ -74,7 +74,6 @@ export interface AssistantsDependencies {
   readonly squareAvatar: (file: Blob) => Promise<string>
   readonly read: (assistantId: string) => Promise<RemoteResult<AssistantDetail>>
   readonly update: (assistantId: string, input: UpdateAssistantInput) => Promise<RemoteResult<AssistantsState>>
-  readonly setDefault: (assistantId: string) => Promise<RemoteResult<AssistantsState>>
   readonly duplicate: (assistantId: string) => Promise<RemoteResult<CreateAssistantResult>>
   readonly remove: (assistantId: string) => Promise<RemoteResult<AssistantsState>>
   /** How many started sessions in the session list are bound to the assistant. */
@@ -90,8 +89,8 @@ export interface AssistantsDependencies {
 /** Business face injected into the page and the picker. */
 export interface AssistantsInjected {
   readonly hooks: { readonly assistants: HostObservable<AssistantsSnapshot>; readonly sessions: HostObservable<SessionListState> }
-  /** Bind an assistant to the session about to start. */
-  readonly onPick: (assistantId: string) => Promise<void>
+  /** Bind an assistant, or none (null), to the session about to start. */
+  readonly onPick: (assistantId: string | null) => Promise<void>
   /** Open a new session with this assistant. */
   readonly onChat: (assistantId: string) => Promise<void>
   /** Clear the last failure. */
@@ -104,8 +103,6 @@ export interface AssistantsInjected {
   readonly onRead: (assistantId: string) => Promise<AssistantDetail | string>
   /** Save changes; resolves to the Host's refusal message, or undefined once saved. */
   readonly onUpdate: (assistantId: string, input: UpdateAssistantInput) => Promise<string | undefined>
-  /** Make the assistant the default; resolves to the Host's refusal message, or undefined. */
-  readonly onSetDefault: (assistantId: string) => Promise<string | undefined>
   /** Copy the assistant; resolves to the copy's id, or the Host's refusal message. */
   readonly onDuplicate: (assistantId: string) => Promise<{ readonly assistantId: string } | string>
   /** Delete the assistant; resolves to the Host's refusal message, or undefined once deleted. */
@@ -154,12 +151,12 @@ export function assistantSessions(list: SessionListState, assistantId: string): 
 }
 
 /**
- * The assistant a picker shows: the staged pick, else the blank session's own, else the tenant default.
+ * The assistant a picker shows: the staged pick, else the blank session's own.
  * @param snapshot - the current snapshot.
- * @returns the assistant id, or null when there is none to show.
+ * @returns the assistant id, or null for no assistant.
  */
 export function shownAssistant(snapshot: AssistantsSnapshot): string | null {
-  return snapshot.staged ?? snapshot.bound ?? snapshot.state?.defaultId ?? null
+  return snapshot.staged === undefined ? snapshot.bound : snapshot.staged
 }
 
 /**
@@ -263,7 +260,6 @@ export function createAssistantsSource(deps: AssistantsDependencies): Assistants
       return result.ok ? result.value : result.error.message
     },
     onUpdate: (assistantId, input) => settle(deps.update(assistantId, input)),
-    onSetDefault: assistantId => settle(deps.setDefault(assistantId)),
     onDuplicate: async (assistantId) => {
       const result = await deps.duplicate(assistantId)
       if (!result.ok) return result.error.message

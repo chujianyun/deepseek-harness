@@ -2,14 +2,12 @@
  * Assistants for Desktop, behind one Host service and the `assistants` Remote namespace. An
  * assistant is a named role with its own core files, kept per tenant of the current Hub sign-in
  * under `<dshHome>/assistants/<tenantId>/<assistantId>/`: `assistant.json` and the Markdown core
- * files. The tenant's `tenant.json` records its default assistant and the templates it was seeded
- * from; when a tenant signs in, the service creates one assistant from each configured seed template
- * not seeded yet (the first seeding's first assistant becomes the default), so each template is
- * seeded once per tenant and never again after the user deletes it. Deleting the
- * default makes the first remaining assistant the default; with none left, new sessions bind none.
+ * files. The tenant's `tenant.json` records the templates it was seeded from; when a tenant signs
+ * in, the service creates one assistant from each configured seed template not seeded yet, so each
+ * template is seeded once per tenant and never again after the user deletes it.
  *
- * A main session binds one assistant while it is blank: a new session takes the tenant's default,
- * and the user may pick another before the first turn. Binding an assistant whose knowledge subset
+ * A new main session binds no assistant; while it is blank the user may bind one, switch to
+ * another, or go back to none, each recorded as `assistant/selected`. Binding an assistant whose knowledge subset
  * names knowledge bases selects those that still exist for the session, logged as
  * `knowledge/selection`; binding one without a knowledge subset, or none, clears that preselection.
  * A selection the user changed is kept. Before each turn step the service reads the
@@ -124,6 +122,7 @@ const assistantFileSchema = z.object({
 
 const tenantFileSchema = z.object({
   version: z.literal(1),
+  // Ignored: new sessions bind no assistant. Kept so earlier builds still read the file; seeding writes it as null.
   defaultId: z.string().nullable(),
   // True once any assistant was seeded; a file without seededTemplates was written when only the Daily Assistant was.
   seeded: z.boolean(),
@@ -142,12 +141,14 @@ export const assistantProjectionDefinition = {
   stateSchema: projectionStateSchema,
   init: () => ({ assistantId: null, instructions: null }),
   apply: (state, event) => {
-    if (event.type === 'assistant/selected') return { ...state, assistantId: event.data.assistantId }
+    // An empty id records going back to no assistant. Earlier builds keep it as an id no assistant has, so they carry no core files either.
+    if (event.type === 'assistant/selected') return { ...state, assistantId: event.data.assistantId === '' ? null : event.data.assistantId }
     if (event.type === 'assistant/instructions') return { ...state, instructions: event.data.text }
     return state
   },
   wire: { viewSchema: projectionViewSchema, view: state => state.assistantId },
-  stateVersion: 1,
+  // 2: an empty assistant/selected id folds to null.
+  stateVersion: 2,
 } satisfies ProjectionDefinition<'assistant', AssistantProjectionState>
 
 /**
@@ -298,16 +299,10 @@ export class AssistantsService extends TypertRemoteService {
       if (agent.session.header.parentSession === undefined) this.installPrompt(agent)
     }
     this.installSubsets()
-    ctx.on('agent/created', async ({ agent }) => {
+    ctx.on('agent/created', ({ agent }) => {
       if (agent.session.header.parentSession !== undefined) return
+      // A new session binds no assistant; the user picks one, if any, before the first turn.
       this.installPrompt(agent)
-      // A blank session without an assistant takes the default, whether new or resumed before its first turn.
-      // Checked inside the queue, so a pick that reached select() first is never overwritten.
-      await this.serialized(async () => {
-        if (!this.isBlank(agent) || this.boundId(agent) !== null) return
-        const fallback = this.list.find(item => item.id === this.tenant.defaultId)
-        if (fallback !== undefined) await this.bind(agent, fallback)
-      })
     })
   }
 
@@ -328,7 +323,7 @@ export class AssistantsService extends TypertRemoteService {
   @Remote
   getState(): Promise<AssistantsState> {
     return Promise.resolve({
-      revision: this.revision, tenantId: this.tenantId, defaultId: this.tenant.defaultId, assistants: this.list, templates: TEMPLATE_VIEWS,
+      revision: this.revision, tenantId: this.tenantId, assistants: this.list, templates: TEMPLATE_VIEWS,
     })
   }
 
@@ -503,24 +498,6 @@ export class AssistantsService extends TypertRemoteService {
   }
 
   /**
-   * Make an assistant the one new sessions bind; blank sessions bound to the previous default move to it.
-   * @param assistantId - the new default.
-   * @returns the state with the new default.
-   * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
-   */
-  @Remote
-  setDefault(assistantId: string): Promise<AssistantsState> {
-    return this.serialized(async () => {
-      const assistant = this.find(assistantId)
-      const previous = this.list.find(item => item.id === this.tenant.defaultId)
-      await this.saveDefault(assistant.id)
-      if (previous !== undefined && previous !== assistant) await this.rebindBlank(previous.id, assistant, previous)
-      this.changed()
-      return this.getState()
-    })
-  }
-
-  /**
    * Copy an assistant's configuration and core files into a new assistant named «name 副本»; sessions are not copied.
    * @param assistantId - the assistant to copy.
    * @returns the copy's id and the state with it last.
@@ -543,9 +520,8 @@ export class AssistantsService extends TypertRemoteService {
   }
 
   /**
-   * Delete an assistant. Its sessions remain and carry no core files from their next turn. Deleting
-   * the default makes the first remaining assistant the default; blank sessions bound to the deleted
-   * one move to the default, or bind none when no assistant remains.
+   * Delete an assistant. Its sessions remain and carry no core files from their next turn; blank
+   * sessions bound to it bind none.
    * @param assistantId - the assistant to delete.
    * @returns the state without it.
    * @throws RemoteError `hub-account/signed-out` or `assistants/not-found`.
@@ -559,29 +535,29 @@ export class AssistantsService extends TypertRemoteService {
       await rm(join(dir, 'assistant.json'), { force: true })
       await rm(dir, { recursive: true, force: true })
       this.list = this.list.filter(item => item !== deleted)
-      if (this.tenant.defaultId === deleted.id) await this.saveDefault(this.list[0]?.id ?? null)
-      await this.rebindBlank(deleted.id, this.list.find(item => item.id === this.tenant.defaultId), deleted)
+      await this.rebindBlank(deleted.id, undefined, deleted)
       this.changed()
       return this.getState()
     })
   }
 
   /**
-   * Bind a blank session to one of the signed-in tenant's assistants.
+   * Bind a blank session to one of the signed-in tenant's assistants, or to none.
    * @param agent - the session's Agent.
-   * @param assistantId - the assistant to bind.
-   * @returns the bound assistant id.
+   * @param assistantId - the assistant to bind, or null to bind none.
+   * @returns the bound assistant id, or null.
    * @throws RemoteError `hub-account/signed-out`, `assistants/not-found`, or `assistants/locked` once the session started.
    */
   @Remote('select')
-  select(agent: Agent, assistantId: string): Promise<string> {
+  select(agent: Agent, assistantId: string | null): Promise<string | null> {
     return this.serialized(async () => {
       this.requireTenant()
-      const assistant = this.list.find(item => item.id === assistantId)
-      if (assistant === undefined) throw new RemoteError('assistants/not-found', 'This assistant no longer exists', { assistantId })
+      const assistant = assistantId === null ? undefined : this.list.find(item => item.id === assistantId)
+      if (assistantId !== null && assistant === undefined) throw new RemoteError('assistants/not-found', 'This assistant no longer exists', { assistantId })
       if (!this.isBlank(agent)) throw new RemoteError('assistants/locked', 'This session has already started', { sessionId: agent.id, assistantId })
-      const previous = this.list.find(item => item.id === this.boundId(agent))
-      if (previous?.id !== assistant.id) await this.bind(agent, assistant, previous)
+      const boundId = this.boundId(agent)
+      const previous = this.list.find(item => item.id === boundId)
+      if (boundId !== (assistant?.id ?? null)) await this.bind(agent, assistant, previous)
       return assistantId
     })
   }
@@ -590,8 +566,9 @@ export class AssistantsService extends TypertRemoteService {
    * Bind the assistant, applying its preset and model. Picking, in the same blank session, an
    * assistant without either after one that set it returns the session to the deployment's default
    * preset or the global model, so a choice the user made in the composer is left alone otherwise.
-   * Without an assistant, only that return happens and the binding stays. Either way the session's
-   * knowledge selection follows the assistant's knowledge subset unless the user changed it.
+   * Without an assistant, only that return happens and a bound session is recorded as bound to none.
+   * Either way the session's knowledge selection follows the assistant's knowledge subset unless the
+   * user changed it.
    */
   private async bind(agent: Agent, assistant: AssistantView | undefined, previous?: AssistantView): Promise<void> {
     const presets = this.ctx.get('agentPresets')
@@ -607,10 +584,9 @@ export class AssistantsService extends TypertRemoteService {
     const model = assistant?.model ?? (previous?.model === undefined ? undefined : this.ctx.get('agentDefaultModel')?.currentSelection())
     // An unavailable model, such as one removed from Settings, leaves the session on the global default.
     if (model !== undefined) await this.ctx.get('sessionController')?.useModel(agent, model)
-    if (assistant !== undefined) {
-      if (assistant.id === this.boundId(agent)) return
-      agent.session.append('assistant/selected', { assistantId: assistant.id })
-    }
+    const assistantId = assistant?.id ?? null
+    if (assistantId === this.boundId(agent)) return
+    agent.session.append('assistant/selected', { assistantId: assistantId ?? '' })
     await this.preselectKnowledge(agent, assistant)
   }
 
@@ -777,11 +753,6 @@ export class AssistantsService extends TypertRemoteService {
     return join(this.root, this.requireTenant(), assistantId)
   }
 
-  private async saveDefault(defaultId: string | null): Promise<void> {
-    this.tenant = { ...this.tenant, defaultId }
-    await this.writeAtomic(join(this.root, this.requireTenant(), 'tenant.json'), jsonText(this.tenant))
-  }
-
   private async switchTenant(tenantId: string | null): Promise<void> {
     this.tenantId = tenantId
     this.tenant = { version: 1, defaultId: null, seeded: false }
@@ -801,8 +772,7 @@ export class AssistantsService extends TypertRemoteService {
   }
 
   /**
-   * Create an assistant from each configured template the tenant has not been seeded from. The first
-   * seeding makes its first assistant the default; later ones leave the default alone.
+   * Create an assistant from each configured template the tenant has not been seeded from.
    */
   private async seed(tenantId: string): Promise<void> {
     const done = this.tenant.seededTemplates ?? (this.tenant.seeded ? [DAILY_ASSISTANT.id] : [])
@@ -817,7 +787,7 @@ export class AssistantsService extends TypertRemoteService {
       this.list = [...this.list, created]
       // Recorded right after each creation, so an interrupted seeding never creates one twice.
       this.tenant = {
-        version: 1, defaultId: this.tenant.seeded ? this.tenant.defaultId : created.id, seeded: true,
+        version: 1, defaultId: null, seeded: true,
         seededTemplates: [...this.tenant.seededTemplates ?? done, id],
       }
       await this.writeAtomic(join(this.root, tenantId, 'tenant.json'), jsonText(this.tenant))

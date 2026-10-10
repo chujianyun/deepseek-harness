@@ -145,18 +145,23 @@ async function launch() {
   return { chat, scaffold, tenantDir, page, tripwire, send, useChatModel, switchTenant, close }
 }
 
-it('creates the default assistant, carries its core files into the chat, and lets a new session pick another', async () => {
+it('seeds the Daily Assistant, starts new sessions with no assistant, carries a picked one\'s core files, and goes back to none', async () => {
   const { chat, scaffold, tenantDir, page, tripwire, send, useChatModel, close } = await launch()
   try {
-    const { defaultId } = await scaffold.ctx.assistants.getState()
-    expect(defaultId).not.toBe(SHOP_ID)
-    expect(JSON.parse(await readFile(join(tenantDir, 'tenant.json'), 'utf8'))).toEqual({ version: 1, defaultId, seeded: true, seededTemplates: ['daily'] })
+    const dailyId = (await scaffold.ctx.assistants.getState()).assistants.find(item => item.templateId === 'daily')!.id
+    expect(JSON.parse(await readFile(join(tenantDir, 'tenant.json'), 'utf8'))).toEqual({ version: 1, defaultId: null, seeded: true, seededTemplates: ['daily'] })
 
-    // The sidebar entry opens the cards: the Daily Assistant is the default, and search narrows the list.
+    // The new-session screen starts with no assistant.
+    const picker = page.getByRole('button', { name: '选择这个会话的智能体' })
+    await expect.poll(() => picker.textContent()).toContain('不使用智能体')
+
+    // The sidebar entry opens the cards, none marked default; search narrows the list.
     await page.getByRole('button', { name: '智能体', exact: true }).click()
     await page.getByRole('heading', { name: '智能体' }).waitFor()
-    const daily = page.locator(`[data-assistant-id="${defaultId!}"]`)
-    await expect.poll(() => daily.textContent()).toContain('默认')
+    const daily = page.locator(`[data-assistant-id="${dailyId}"]`)
+    await expect.poll(() => daily.textContent()).toContain('日常助手')
+    expect(await daily.textContent()).not.toContain('默认')
+    expect(await page.getByRole('button', { name: '设为默认' }).count()).toBe(0)
     await expect.poll(() => page.locator(`li[data-assistant-id="${SHOP_ID}"]`).textContent()).toContain('帮店铺做运营复盘')
     await page.getByRole('textbox', { name: '搜索智能体' }).fill('运营')
     await expect.poll(() => page.locator('li[data-assistant-id]').count()).toBe(1)
@@ -164,7 +169,6 @@ it('creates the default assistant, carries its core files into the chat, and let
 
     // Chat opens a new session bound to the Daily Assistant; its request carries the core files.
     await daily.getByRole('button', { name: '对话' }).click()
-    const picker = page.getByRole('button', { name: '选择这个会话的智能体' })
     await expect.poll(() => picker.textContent()).toContain('日常助手')
     await useChatModel()
     await send('你好，你是谁？')
@@ -177,20 +181,34 @@ it('creates the default assistant, carries its core files into the chat, and let
     expect(await picker.count()).toBe(0)
 
     // An edit to a core file on disk reaches the next request of the same session.
-    await writeFile(join(tenantDir, defaultId!, 'SOUL.md'), '# 人格\n\n回答结尾加上 SOUL_EDITED。\n')
+    await writeFile(join(tenantDir, dailyId, 'SOUL.md'), '# 人格\n\n回答结尾加上 SOUL_EDITED。\n')
     await send('再说一次')
     await expect.poll(() => page.getByText(ANSWER).count(), { timeout: 30_000 }).toBe(2)
     expect(systemPrompt(chat.chats.at(-1)!)).toContain('SOUL_EDITED')
 
     // A new session picks another assistant in the hero picker; its first request carries that identity.
     await page.getByRole('button', { name: '新建会话' }).first().click()
-    await expect.poll(() => picker.textContent()).toContain('日常助手')
+    await expect.poll(() => picker.textContent()).toContain('不使用智能体')
     await picker.click()
     await page.getByRole('menuitem', { name: /店铺测试助手/ }).click()
     await expect.poll(() => picker.textContent()).toContain('店铺测试助手')
     await send('今天的运营怎么样？')
     await expect.poll(() => chat.chats.filter(request => systemPrompt(request).includes('SHOP_IDENTITY')).length, { timeout: 30_000 }).toBe(1)
     expect(systemPrompt(chat.chats.at(-1)!)).toContain('You are the assistant \\"店铺测试助手\\"')
+
+    // Picking an assistant and then "No assistant" before the first turn sends no assistant at all.
+    await page.getByRole('button', { name: '新建会话' }).first().click()
+    await picker.click()
+    await page.getByRole('menuitem', { name: /店铺测试助手/ }).click()
+    await expect.poll(() => picker.textContent()).toContain('店铺测试助手')
+    await picker.click()
+    await page.getByRole('menuitem', { name: /不使用智能体/ }).click()
+    await expect.poll(() => picker.textContent()).toContain('不使用智能体')
+    const before = chat.chats.length
+    await send('不用智能体回答')
+    await expect.poll(() => chat.chats.length, { timeout: 30_000 }).toBeGreaterThan(before)
+    expect(systemPrompt(chat.chats.at(-1)!)).not.toContain('You are the assistant')
+    expect(systemPrompt(chat.chats.at(-1)!)).not.toContain('SHOP_IDENTITY')
 
     // The wizard creates an E-commerce Manager with an uploaded avatar, its own model, and what it should know about the user.
     await page.getByRole('button', { name: '智能体', exact: true }).click()
@@ -260,7 +278,7 @@ it('creates the default assistant, carries its core files into the chat, and let
   }
 }, 180_000)
 
-it('edits core files on the detail page, moves the default, copies, and deletes assistants', async () => {
+it('edits core files on the detail page, copies, and deletes assistants', async () => {
   const { chat, scaffold, tenantDir, page, tripwire, send, useChatModel, close } = await launch()
   const lastPrompt = () => systemPrompt(chat.chats.at(-1)!)
   const answers = () => page.getByText(ANSWER).count()
@@ -277,7 +295,7 @@ it('edits core files on the detail page, moves the default, copies, and deletes 
     await card(id).waitFor({ state: 'detached' })
   }
   try {
-    const dailyId = (await scaffold.ctx.assistants.getState()).defaultId!
+    const dailyId = (await scaffold.ctx.assistants.getState()).assistants.find(item => item.templateId === 'daily')!.id
 
     // A card opens the detail page with the core files; Chat there starts a session bound to it.
     await openAssistants()
@@ -323,14 +341,6 @@ it('edits core files on the detail page, moves the default, copies, and deletes 
     await expect.poll(answers, { timeout: 30_000 }).toBe(2)
     expect(await page.locator('[role="treeitem"][aria-selected="true"]').getAttribute('data-row-key')).toBe(rowKey)
 
-    // Make default: the new-session screen then starts with it.
-    await openAssistants()
-    await card(SHOP_ID).getByRole('button', { name: '设为默认' }).click()
-    await expect.poll(() => card(SHOP_ID).textContent()).toContain('默认')
-    await expect.poll(async () => (await scaffold.ctx.assistants.getState()).defaultId).toBe(SHOP_ID)
-    await page.getByRole('button', { name: '新建会话' }).first().click()
-    await expect.poll(() => picker.textContent()).toContain('店铺复盘助手')
-
     // Duplicate: a copy with the same core files and no sessions.
     await openAssistants()
     await card(SHOP_ID).getByRole('button', { name: '复制' }).click()
@@ -340,10 +350,8 @@ it('edits core files on the detail page, moves the default, copies, and deletes 
     await card(copy.id).waitFor()
     expect(await readFile(join(tenantDir, copy.id, 'SOUL.md'), 'utf8')).toBe(await readFile(join(tenantDir, SHOP_ID, 'SOUL.md'), 'utf8'))
 
-    // Delete the default with its one session: the default moves to the first remaining assistant,
-    // and the session continues without the deleted assistant's core files.
+    // Delete an assistant with its one session: the session continues without its core files.
     await deleteCard(SHOP_ID, 1)
-    await expect.poll(() => card(dailyId).textContent()).toContain('默认')
     await expect.poll(() => shopSession.locator('[data-assistant-badge]').getAttribute('data-assistant-badge')).toBe('deleted')
     expect(await shopSession.locator('[data-assistant-badge]').getAttribute('title')).toBe('已删除的智能体')
     await shopSession.click()
@@ -407,7 +415,7 @@ it('gives an assistant\'s sessions only the Skills it allows, and marks a Skill 
     await expect.poll(messages).toContain('e2e-alpha')
     expect(messages()).not.toContain('e2e-beta')
     await page.getByRole('button', { name: '新建会话' }).first().click()
-    await expect.poll(() => picker.textContent()).toContain('日常助手')
+    await expect.poll(() => picker.textContent()).toContain('不使用智能体')
     const before = chat.chats.length
     await send('有哪些 Skill？')
     await expect.poll(() => chat.chats.length, { timeout: 30_000 }).toBeGreaterThan(before)
@@ -501,7 +509,7 @@ it('tells a session of another company\'s assistant from one whose assistant was
     await shot('04-tenant-b-hover-deleted')
 
     // 乙公司's own assistant counts none of these sessions.
-    const daily = state.defaultId!
+    const daily = state.assistants.find(item => item.templateId === 'daily')!.id
     await openAssistants()
     await page.locator(`li[data-assistant-id="${daily}"]`).getByRole('button', { name: '查看 日常助手 的详情' }).click()
     await page.mouse.move(900, 10)

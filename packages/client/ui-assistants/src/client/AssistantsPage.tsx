@@ -5,7 +5,7 @@
 
 import { useState } from 'react'
 import type { AssistantView } from '@deepseek-ai/dsh-assistants/types'
-import { Button, IconSearchOutlineRegular, Input, Modal, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconSearchOutlineRegular, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { AssistantAvatar } from './AssistantAvatar.tsx'
 import { AssistantDetailPage } from './AssistantDetail.tsx'
@@ -80,10 +80,9 @@ export function AssistantsPage(props: AssistantsPageProps) {
     return (
       <>
         <AssistantDetailPage
-          key={opened.id} t={t} assistant={opened} isDefault={opened.id === state.defaultId} alerts={alerts}
+          key={opened.id} t={t} assistant={opened} alerts={alerts}
           onBack={() => { setOpenId(null) }} onChat={onChat} onRead={props.onRead} onUpdate={props.onUpdate}
           onLoadOptions={onLoadOptions} squareAvatar={squareAvatar} useSessions={useSessions} onOpenSession={props.onOpenSession}
-          onSetDefault={() => { void run(props.onSetDefault(opened.id)) }}
           onDuplicate={() => { void duplicate(opened.id, true) }}
           onDelete={() => { setDeleting(opened) }}
         />
@@ -131,14 +130,10 @@ export function AssistantsPage(props: AssistantsPageProps) {
                   <span className={css.cardHead}>
                     <AssistantAvatar avatar={item.avatar} name={item.name} size={36} />
                     <span className={css.name}>{item.name}</span>
-                    {item.id === state.defaultId && <Tag tone="neutral">{t('default')}</Tag>}
                   </span>
                   <span className={css.description}>{item.description === '' ? t('noDescription') : item.description}</span>
                 </button>
                 <div className={css.actions}>
-                  {item.id !== state.defaultId && (
-                    <Button variant="ghost" size="sm" onClick={() => { void run(props.onSetDefault(item.id)) }}>{t('setDefault')}</Button>
-                  )}
                   <Button variant="ghost" size="sm" onClick={() => { void duplicate(item.id, false) }}>{t('duplicate')}</Button>
                   <Button variant="ghost" size="sm" onClick={() => { setDeleting(item) }}>{t('delete')}</Button>
                   <Button variant="outline" size="sm" onClick={() => { void onChat(item.id) }}>{t('chat')}</Button>

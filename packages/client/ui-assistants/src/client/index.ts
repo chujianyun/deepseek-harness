@@ -96,7 +96,6 @@ export function apply(ctx: ClientContext): void {
       squareAvatar,
       read: assistantId => remote.getAssistant(assistantId),
       update: (assistantId, input) => remote.updateAssistant(assistantId, input),
-      setDefault: assistantId => remote.setDefault(assistantId),
       duplicate: assistantId => remote.duplicateAssistant(assistantId),
       remove: assistantId => remote.deleteAssistant(assistantId),
       otherTenant: assistantIds => remote.otherTenantAssistants(assistantIds),

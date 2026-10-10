@@ -22,7 +22,7 @@ beforeAll(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { pro
 afterAll(() => { Reflect.deleteProperty(globalThis, 'dshDesktop') })
 
 const state: AssistantsState = {
-  revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [{ id: 'daily', name: '日常助手', description: 'd', avatar: { kind: 'preset', key: 'sun' } }],
+  revision: 1, tenantId: 't-a', templates: [{ id: 'daily', name: '日常助手', description: 'd', avatar: { kind: 'preset', key: 'sun' } }],
   assistants: [{ id: 'a1', name: '日常助手', description: '', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:00Z' }],
 }
 
@@ -54,7 +54,6 @@ async function bench() {
     createAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: { assistantId: 'a9', state } })),
     getAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: { assistant: state.assistants[0]!, files: { 'IDENTITY.md': '', 'SOUL.md': '', 'USER.md': '', 'AGENTS.md': '' } } })),
     updateAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
-    setDefault: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
     duplicateAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: { assistantId: 'a8', state } })),
     deleteAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: state })),
     capabilityOptions: vi.fn(() => Promise.resolve({ ok: true as const, value: { skills: [], connectors: [{ id: 'feishu', name: 'feishu' }], knowledgeBases: [] } })),
@@ -204,8 +203,6 @@ describe('ui-assistants browser plugin', () => {
     expect(b.assistants.getAssistant).toHaveBeenCalledWith('a1')
     await injected.onUpdate('a1', { name: 'x' })
     expect(b.assistants.updateAssistant).toHaveBeenCalledWith('a1', { name: 'x' })
-    await injected.onSetDefault('a1')
-    expect(b.assistants.setDefault).toHaveBeenCalledWith('a1')
     expect(await injected.onDuplicate('a1')).toEqual({ assistantId: 'a8' })
     expect(b.assistants.duplicateAssistant).toHaveBeenCalledWith('a1')
     await injected.onDelete('a1')

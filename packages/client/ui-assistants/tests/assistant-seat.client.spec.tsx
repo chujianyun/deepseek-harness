@@ -13,7 +13,7 @@ import { zh } from '../src/client/locales.ts'
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 const state: AssistantsState = {
-  revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [{ id: 'daily', name: '日常助手', description: 'd', avatar: { kind: 'preset', key: 'sun' } }],
+  revision: 1, tenantId: 't-a', templates: [{ id: 'daily', name: '日常助手', description: 'd', avatar: { kind: 'preset', key: 'sun' } }],
   assistants: [
     { id: 'a1', name: '日常助手', description: '通用日常助手', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:00Z' },
     { id: 'a2', name: '电商管家', description: '', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:01Z' },
@@ -30,7 +30,7 @@ function mount(extra: Partial<AssistantsSnapshot> = {}, mainView: number | null 
     t: makeTranslate(zh), useAssistants: bindSnapshotSelector(store),
     useSessionRetainInfo: <Selected,>(selector: (value: SessionRetainInfo | undefined) => Selected) => selector(retainInfo),
     sessionId: sessionId === null ? undefined : SessionId(sessionId),
-    onPick: vi.fn(async (_id: string) => {}), onChat: vi.fn(async (_id: string) => {}), onDismiss: vi.fn(),
+    onPick: vi.fn(async (_id: string | null) => {}), onChat: vi.fn(async (_id: string) => {}), onDismiss: vi.fn(),
     onCreate: vi.fn(), onLoadOptions: vi.fn(), squareAvatar: vi.fn(),
   } as AssistantSeatProps
   render(<AssistantSeat {...props} />)
@@ -38,14 +38,16 @@ function mount(extra: Partial<AssistantsSnapshot> = {}, mainView: number | null 
 }
 
 describe('assistant picker', () => {
-  it('shows the tenant default, then the session\'s own and a staged pick', () => {
+  it('shows no assistant, then the session\'s own and a staged pick, including a staged none', () => {
     const { store } = mount()
     const chip = screen.getByRole('button', { name: '选择这个会话的智能体' })
-    expect(chip.textContent).toContain('日常助手')
+    expect(chip.textContent).toContain('不使用智能体')
     act(() => { store.set({ ...store.getSnapshot(), bound: 'a2' }) })
     expect(chip.textContent).toContain('电商管家')
     act(() => { store.set({ ...store.getSnapshot(), staged: 'a1' }) })
     expect(chip.textContent).toContain('日常助手')
+    act(() => { store.set({ ...store.getSnapshot(), staged: null }) })
+    expect(chip.textContent).toContain('不使用智能体')
   })
 
   it('picks another assistant from the menu', () => {
@@ -55,11 +57,19 @@ describe('assistant picker', () => {
     expect(props.onPick).toHaveBeenCalledWith('a2')
   })
 
+  it('goes back to no assistant from the menu, which lists it first', () => {
+    const { props } = mount({ bound: 'a1' })
+    fireEvent.click(screen.getByRole('button', { name: '选择这个会话的智能体' }))
+    expect(screen.getAllByRole('menuitem')[0]!.textContent).toContain('不使用智能体')
+    fireEvent.click(screen.getByText('不使用智能体'))
+    expect(props.onPick).toHaveBeenCalledWith(null)
+  })
+
   it('renders nothing outside the main view or when the tenant has no assistants', () => {
     mount({}, 0)
     expect(screen.queryByRole('button')).toBeNull()
     cleanup()
-    mount({ state: { ...state, assistants: [], defaultId: null } })
+    mount({ state: { ...state, assistants: [] } })
     expect(screen.queryByRole('button')).toBeNull()
   })
 
@@ -68,15 +78,15 @@ describe('assistant picker', () => {
     expect(screen.getByRole('button', { name: '选择这个会话的智能体' })).toBeTruthy()
   })
 
-  it('falls back to the panel name when the shown assistant is gone, and is disabled while binding', () => {
+  it('shows the neutral label when bound to an id the tenant lacks, and is disabled while binding', () => {
     mount({ bound: 'gone', busy: true })
     const chip = screen.getByRole('button', { name: '选择这个会话的智能体' }) as HTMLButtonElement
-    expect(chip.textContent).toContain('智能体')
+    expect(chip.textContent).toBe('智能体')
     expect(chip.disabled).toBe(true)
   })
 
   it('closes its menu on Escape, and when the tenant loses every assistant', () => {
-    const { store } = mount({ state: { ...state, defaultId: null } })
+    const { store } = mount({ state: { ...state } })
     const chip = screen.getByRole('button', { name: '选择这个会话的智能体' })
     expect(chip.textContent).toContain('智能体')
     fireEvent.click(chip)

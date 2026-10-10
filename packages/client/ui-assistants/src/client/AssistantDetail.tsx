@@ -6,7 +6,7 @@
 
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import type { AssistantDetail as Detail, AssistantSubsets, AssistantView, CoreFileName, UpdateAssistantInput } from '@deepseek-ai/dsh-assistants/types'
-import { Button, relativeTime, SegmentedTabs, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, relativeTime, SegmentedTabs } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SnapshotSelectorHook, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import { AssistantAvatar } from './AssistantAvatar.tsx'
@@ -90,9 +90,7 @@ export interface AssistantDetailProps extends Pick<AssistantsInjected, 'onChat' 
   readonly useSessions: SnapshotSelectorHook<SessionListState>
   readonly t: TranslateNS<'assistants'>
   readonly assistant: AssistantView
-  readonly isDefault: boolean
   readonly onBack: () => void
-  readonly onSetDefault: () => void
   readonly onDuplicate: () => void
   readonly onDelete: () => void
   /** Failure banners of the page's actions, shown under the header. */
@@ -105,7 +103,7 @@ export interface AssistantDetailProps extends Pick<AssistantsInjected, 'onChat' 
  * @returns the page.
  */
 export function AssistantDetailPage(props: AssistantDetailProps) {
-  const { t, assistant, isDefault, onBack, onChat, onRead, onUpdate, onLoadOptions, squareAvatar } = props
+  const { t, assistant, onBack, onChat, onRead, onUpdate, onLoadOptions, squareAvatar } = props
   const ids = useId()
   const [saved, setSaved] = useState<Draft | undefined>(undefined)
   const [draft, setDraft] = useState<Draft | undefined>(undefined)
@@ -154,10 +152,8 @@ export function AssistantDetailPage(props: AssistantDetailProps) {
       <header className={css.header}>
         <AssistantAvatar avatar={assistant.avatar} name={assistant.name} size={40} />
         <h1 className={css.title}>{assistant.name}</h1>
-        {isDefault && <Tag tone="neutral">{t('default')}</Tag>}
         <span className={css.actions}>
           <Button variant="outline" size="sm" onClick={() => { void onChat(assistant.id) }}>{t('chat')}</Button>
-          {!isDefault && <Button variant="ghost" size="sm" onClick={props.onSetDefault}>{t('setDefault')}</Button>}
           <Button variant="ghost" size="sm" onClick={props.onDuplicate}>{t('duplicate')}</Button>
           <Button variant="ghost" size="sm" onClick={props.onDelete}>{t('delete')}</Button>
         </span>

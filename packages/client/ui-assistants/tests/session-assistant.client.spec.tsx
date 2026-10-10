@@ -11,7 +11,7 @@ import { SessionAssistantBadge, SessionAssistantHover } from '../src/client/Sess
 afterEach(() => { cleanup() })
 
 const state: AssistantsState = {
-  revision: 1, tenantId: 't-a', defaultId: 'a1', templates: [],
+  revision: 1, tenantId: 't-a', templates: [],
   assistants: [{ id: 'a1', name: '店铺复盘助手', description: '', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2026-10-07T00:00:00Z' }],
 }
 
