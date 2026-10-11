@@ -126,8 +126,8 @@ export async function reportRisk(accountId: string, run = runDshEcommerce): Prom
 }
 
 /**
- * Tell DSH that the account this bash call took over turned out signed out, so DSH shows it expired
- * at once instead of handing it over again.
+ * Tell DSH that the account this bash call took over turned out signed out, so DSH checks it at once
+ * and, when the check confirms it, shows it expired instead of handing it over again.
  * @param accountId - the account.
  * @param run - runs `dsh-ecommerce`.
  */

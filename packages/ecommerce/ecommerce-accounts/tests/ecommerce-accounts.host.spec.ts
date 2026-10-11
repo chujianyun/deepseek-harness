@@ -1018,24 +1018,29 @@ describe('buyer accounts and risk protection', () => {
     expect((await env.service.getState()).accounts[0]!.cooldownUntil).toBeUndefined()
   })
 
-  it('records an account signed out once a task\'s tab lands on the sign-in page, not a frame or a page passing through', async () => {
+  it('checks an account once a task\'s tab lands on the sign-in page, not for a frame or a page passing through', async () => {
     const env = await setup()
     await env.service.addAccount(merchant)
     const { accountId } = await env.service.addAccount({ ...merchant, platform: 'pinduoduo' })
     await env.service.startSignIn(accountId)
     await env.signIn(accountId, 'nick')
-    await env.settle(s => s.accounts[1]!.status === 'signed-in')
+    const { checkedAt } = (await env.settle(s => s.accounts[1]!.status === 'signed-in')).accounts[1]!
+    const checks = vi.spyOn(env.service as never, 'check')
     const exec = bashCall('c-1')
     const { cdpUrl } = JSON.parse((await runCommand(env, varsOf(env, exec), 'browser', accountId)).stdout) as { cdpUrl: string }
-    // Signed in, a page with a sign-in frame and one passing through a sign-in host change nothing.
+    // A page with a sign-in frame, and one passing through a sign-in host, ask nothing.
     expect(await openPages(cdpUrl, 'https://mms.pinduoduo.com/home/', 'https://mms.pinduoduo.com/home/?sso=1')).toEqual(['ok', 'ok'])
-    await new Promise(resolve => setTimeout(resolve, 200))
+    // A sign-in page the task lands on while the session holds is checked, and changes nothing.
+    expect(await openPages(cdpUrl, 'https://mms.pinduoduo.com/login/?from=x')).toEqual(['ok'])
+    await env.settle(s => s.accounts[1]!.checkedAt !== checkedAt)
     expect((await env.service.getState()).accounts[1]!.status).toBe('signed-in')
-    // The session ends: the next page lands on the sign-in page, which still loads for the task.
+    expect(checks).toHaveBeenCalledTimes(1)
+    // The session ends: the next page lands on the sign-in page, which still loads for the task, and the check records the sign-out.
     await rm(join(env.browserDir(accountId), 'user-data', 'fake-signed-in'))
-    expect(await openPages(cdpUrl, 'https://mms.pinduoduo.com/home/')).toEqual(['ok'])
+    expect(await openPages(cdpUrl, 'https://mms.pinduoduo.com/home/', 'https://mms.pinduoduo.com/home/')).toEqual(['ok', 'ok'])
     const state = await env.settle(s => s.accounts[1]!.status === 'signed-out')
     expect(state.accounts[1]).toMatchObject({ expired: true })
+    expect(state.accounts[1]!.signedInAs).toBeUndefined()
     const ledger = JSON.parse(await readFile(join(env.home, 'ecommerce', 't-a', 'accounts.json'), 'utf8')) as { accounts: { signedIn?: boolean }[] }
     expect(ledger.accounts.map(account => account.signedIn)).toEqual([undefined, false])
     // The next task is told at once, without standing by the earlier answer.
@@ -1043,7 +1048,7 @@ describe('buyer accounts and risk protection', () => {
     expect((await runCommand(env, varsOf(env, bashCall('c-2')), 'browser', accountId)).stderr).toContain('is signed out')
   })
 
-  it('records a sign-out a script reports for the account its call took over, and refuses any other', async () => {
+  it('checks an account a script reports signed out for its call, and refuses any other', async () => {
     const env = await setup()
     const { accountId } = await env.service.addAccount(merchant)
     await env.service.startSignIn(accountId)
@@ -1057,17 +1062,56 @@ describe('buyer accounts and risk protection', () => {
     expect((await runCommand(env, varsOf(env, exec), 'browser', accountId)).code).toBe(0)
     expect((await runCommand(env, varsOf(env, other), 'signed-out', accountId)).code).toBe(1)
     expect((await runCommand(env, varsOf(env, exec), 'signed-out')).code).toBe(2)
-    const reported = await runCommand(env, varsOf(env, exec), 'signed-out', accountId)
-    expect(JSON.parse(reported.stdout)).toEqual({ id: accountId, status: 'signed-out' })
+    // A refusal that was no sign-out: the check finds the account signed in.
+    expect(JSON.parse((await runCommand(env, varsOf(env, exec), 'signed-out', accountId)).stdout)).toEqual({ id: accountId, status: 'signed-in' })
+    await rm(join(env.browserDir(accountId), 'user-data', 'fake-signed-in'))
+    // Reported twice at once, the account is checked once and shows expired.
+    const checks = vi.spyOn(env.service as never, 'check')
+    const [first, second] = await Promise.all([
+      runCommand(env, varsOf(env, exec), 'signed-out', accountId), runCommand(env, varsOf(env, exec), 'signed-out', accountId),
+    ])
+    expect([JSON.parse(first.stdout), JSON.parse(second.stdout)]).toEqual([{ id: accountId, status: 'signed-out' }, { id: accountId, status: 'signed-out' }])
+    expect(checks).toHaveBeenCalledTimes(1)
     expect((await env.service.getState()).accounts[0]).toMatchObject({ status: 'signed-out', expired: true })
-    // Reported again, it stays as it is.
-    const { checkedAt } = (await env.service.getState()).accounts[0]!
-    expect((await runCommand(env, varsOf(env, exec), 'signed-out', accountId)).code).toBe(0)
-    expect((await env.service.getState()).accounts[0]!.checkedAt).toBe(checkedAt)
     env.hub.set('t-b')
     await env.settle(s => s.tenantId === 't-b')
     expect((await runCommand(env, varsOf(env, exec), 'signed-out', accountId)).stderr).toContain('signed out of the user center')
   })
+
+  it('logs a check after a sign-in page that cannot be saved, and answers a report whose tenant switched meanwhile', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    await env.settle(s => s.accounts[0]!.status === 'signed-in')
+    const exec = bashCall('c-1')
+    const { cdpUrl } = JSON.parse((await runCommand(env, varsOf(env, exec), 'browser', accountId)).stdout) as { cdpUrl: string }
+    // The ledger cannot be written: the check after the sign-in page fails, and DSH logs it.
+    const warn = vi.spyOn(env.ctx.logger, 'warn')
+    const ledger = join(env.home, 'ecommerce', 't-a', 'accounts.json')
+    await rm(ledger)
+    await mkdir(ledger)
+    await rm(join(env.browserDir(accountId), 'user-data', 'fake-signed-in'))
+    expect(await openPages(cdpUrl, 'https://login.tmall.com/')).toEqual(['ok'])
+    await expect.poll(() => warn.mock.calls.some(([line]) => String(line).includes('after a sign-in page failed'))).toBe(true)
+    await rm(ledger, { recursive: true })
+
+    // The platform is slow to answer while the tenant switches: the report is told DSH is signed out.
+    const other = await setup()
+    const { accountId: id } = await other.service.addAccount(merchant)
+    await other.service.startSignIn(id)
+    await other.signIn(id, 'nick')
+    await other.settle(s => s.accounts[0]!.status === 'signed-in')
+    const call = bashCall('c-2')
+    expect((await runCommand(other, varsOf(other, call), 'browser', id)).code).toBe(0)
+    vi.spyOn<{ recheck: () => Promise<{ kind: 'gone' }> }, 'recheck'>(other.service as never, 'recheck').mockImplementation(async () => {
+      other.hub.set('t-b')
+      await other.settle(s => s.tenantId === 't-b')
+      return { kind: 'gone' }
+    })
+    const reported = runCommand(other, varsOf(other, call), 'signed-out', id)
+    expect((await reported).stderr).toBe('DSH: DSH is signed out of the user center, so there are no e-commerce accounts.\n')
+  }, 20_000)
 
   it('counts a buyer account\'s pages, stops at the daily limit, refuses it for the rest of the day, and lets it again the next day', async () => {
     const env = await setup()

@@ -216,6 +216,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
   private readonly leases = new Map<string, { readonly callId: string; stop?: () => void }>()
   /** The tenant's own daily page limit for buyer accounts, once set. */
   private dailyPages: number | undefined
+  /** Checks of accounts a task found signed out, by account, while they run. */
+  private readonly rechecks = new Map<string, Promise<CheckResult>>()
   private readonly bridge = new Bridge({
     accounts: grant => this.modelAccounts(grant),
     browser: (grant, id) => this.modelBrowser(grant, id),
@@ -832,7 +834,12 @@ export class EcommerceAccountsService extends TypertRemoteService {
    */
   private rulesFor(entry: Entry): GuardRules {
     const spec = specOf(entry.platform, entry.kind)
-    const signIn = { signInPage: (url: string) => spec.isLoginPage(url), signedOut: () => { void this.expire(entry.id) } }
+    const signIn = {
+      signInPage: (url: string) => spec.isLoginPage(url),
+      signedOut: () => {
+        this.recheck(entry).catch((error: unknown) => { this.ctx.logger.warn(`ecommerce-accounts: checking ${entry.id} after a sign-in page failed: ${String(error)}`) })
+      },
+    }
     if (entry.kind === 'merchant') return { page: url => !PUBLIC_PAGE.test(url), risk: () => {}, ...signIn }
     // The watch ends before its account can be deleted or its tenant switched, so the account is always listed.
     const current = (): Entry => this.entries.find(item => item.id === entry.id) as Entry
@@ -876,7 +883,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
 
   /**
    * Answer `dsh-ecommerce signed-out <id>`: a script found the account it took over signed out, so
-   * DSH records that at once instead of waiting for the next check.
+   * DSH checks it now instead of standing by its earlier answer.
+   * @returns the account's status after the check.
    */
   private async modelSignedOut(grant: Grant, accountId: string): Promise<BridgeReply> {
     if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
@@ -884,25 +892,23 @@ export class EcommerceAccountsService extends TypertRemoteService {
     if (entry === undefined || this.leases.get(entry.id)?.callId !== grant.callId) {
       return refused(`DSH: a sign-out can only be reported for an account this shell call took over, not "${accountId}".`)
     }
-    await this.expire(entry.id)
-    return { status: 200, body: JSON.stringify({ id: entry.id, status: 'signed-out' }, null, 2) }
+    await this.recheck(entry)
+    // A task's account cannot be deleted, so only a switch of tenant takes it away meanwhile.
+    if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
+    return { status: 200, body: JSON.stringify({ id: entry.id, status: this.statuses.get(entry.id) }, null, 2) }
   }
 
   /**
-   * Record that a signed-in account is signed out now, as a check would: its saved answer and status
-   * change, and the Desktop announces it expired. An account that is not shown signed in stays as it is.
+   * Check an account a task found signed out, once however often it is found meanwhile: a sign-in
+   * page that only passes by, or an API refusal that is not a sign-out, then changes nothing, and a
+   * sign-out is recorded as any check records it.
    */
-  private expire(accountId: string): Promise<void> {
-    return this.serialized(async () => {
-      const entry = this.entries.find(item => item.id === accountId)
-      if (entry === undefined || this.statuses.get(accountId) !== 'signed-in') return
-      this.ctx.logger.warn(`ecommerce-accounts: ${accountId} found signed out during a task`)
-      const checkedAt = new Date().toISOString()
-      this.entries = this.entries.map(item => item.id === accountId ? { ...item, signedIn: false, checkedAt } : item)
-      this.statuses.set(accountId, 'signed-out')
-      await this.saveLedger(this.requireTenant())
-      this.changed()
-    })
+  private recheck(entry: Entry): Promise<CheckResult> {
+    const pending = this.rechecks.get(entry.id)
+    if (pending !== undefined) return pending
+    const result = this.check(entry).finally(() => { this.rechecks.delete(entry.id) })
+    this.rechecks.set(entry.id, result)
+    return result
   }
 
   /** Replace an account's ledger row now, and save it. */
