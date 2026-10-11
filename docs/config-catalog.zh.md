@@ -953,7 +953,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-ecommerce-accounts`
 
 - `inject`: `hubAccount` · `skills` · `shellEnv`
-- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:73`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
+- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:75`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */

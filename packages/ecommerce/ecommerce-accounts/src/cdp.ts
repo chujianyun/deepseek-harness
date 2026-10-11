@@ -210,8 +210,9 @@ export async function showSignIn(cdp: Cdp, url: string, startedHere: boolean): P
 }
 
 /**
- * Minimize every window of the browser, so it keeps running unseen. Minimizing rather than moving
- * off screen: macOS keeps part of any window on screen.
+ * Minimize every window of the browser that is not minimized yet, so it keeps running unseen; a
+ * minimized window is left alone, so nothing shows on screen meanwhile. Minimizing rather than
+ * moving off screen: macOS keeps part of any window on screen.
  * @param cdp - the browser connection.
  */
 export async function hideWindows(cdp: Cdp): Promise<void> {
@@ -222,7 +223,10 @@ export async function hideWindows(cdp: Cdp): Promise<void> {
     if (found !== undefined) windows.add(found.windowId)
   }
   for (const windowId of windows) {
-    await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } })
+    const { bounds } = await cdp.send<{ bounds: { windowState: string } }>('Browser.getWindowBounds', { windowId })
+    if (bounds.windowState === 'minimized') continue
+    // Chrome minimizes a full-screen window only once it is a normal one again.
+    if (bounds.windowState === 'fullscreen') await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } })
     await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } })
   }
 }

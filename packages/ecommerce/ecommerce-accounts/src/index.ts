@@ -14,9 +14,10 @@
  * business page in a background tab and reads the platform's own sign-in response there, retrying
  * once. The last answer and its time are saved with the account, and DSH shows the saved answer
  * instead of checking again: it checks only when the user asks, or when a task takes the account
- * over and its last signed-in answer is older than `signInReuseMs`. A signed-in account's Chrome
- * keeps running with its windows minimized, and survives DSH: a later check or take-over reattaches
- * to it, or, when it is gone, starts it again minimized, restoring the last session.
+ * over and its last signed-in answer is older than `signInReuseMs`. Chrome runs only while it is
+ * needed: a check or task starts it in the background, without taking focus, and minimizes its
+ * window once; it closes when a check the user asked for, a sign-in, or a turn of any Session ends,
+ * and restores its session when it starts again. A Chrome that outlived DSH is reattached to.
  *
  * The model and Skill scripts reach the accounts through the `dsh-ecommerce` command on the model
  * shell's `PATH`, which calls a loopback endpoint with a token valid for its bash call only, and
@@ -31,6 +32,7 @@ import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-hub-account'
+import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-shell-env'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-tools'
@@ -236,7 +238,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const { dshHome, ...resolved } = Config(config) as Config & Required<Omit<Config, 'dshHome' | 'chromePath'>>
     this.root = join(resolveDshHome(dshHome), 'ecommerce')
     this.options = resolved
-    // Chrome keeps running after DSH stops: that keeps the sign-ins.
+    // A Chrome still running when DSH stops is reattached to by the next DSH, and closed at its next turn end.
     ctx.effect(() => () => {
       this.lifetime.abort()
       for (const controller of this.signIns.values()) controller.abort()
@@ -255,6 +257,10 @@ export class EcommerceAccountsService extends TypertRemoteService {
       this.bridge.revoke(exec.callId)
       this.endLeases(lease => lease.callId === exec.callId)
       this.changed()
+    })
+    // A finished turn of any Session lets every account's Chrome close until a task needs it again.
+    ctx.on('session/event', (_session, event) => {
+      if (event.type === 'turn/end') void this.closeIdle(() => true)
     })
   }
 
@@ -355,6 +361,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const entry = this.find(accountId)
     this.requireIdle(entry)
     const chrome = await this.requireChrome()
+    // A sign-in under way keeps its window; any other Chrome of the account runs in the background.
+    const again = this.signIns.has(entry.id)
     this.signIns.get(entry.id)?.abort()
     const controller = new AbortController()
     this.signIns.set(entry.id, controller)
@@ -370,6 +378,10 @@ export class EcommerceAccountsService extends TypertRemoteService {
         if (await this.heldElsewhere(current)) {
           throw new RemoteError('ecommerce-accounts/browser-busy', 'Another Chrome is using this account\'s browser data', { accountId })
         }
+        // A Chrome running in the background, or one an earlier DSH kept running minimized, starts again
+        // on screen, so the sign-in page comes to the front.
+        const dir = this.dirOf(current.id)
+        if (!again && (await readRecord(dir))?.background !== false) await closeChrome(dir, this.options.chromeTimeoutMs)
         const { port, started } = await this.ensureChrome(current, chrome, false, 'about:blank')
         const cdp = await Cdp.connect(port, this.options.chromeTimeoutMs)
         try {
@@ -407,6 +419,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     if (signingIn !== undefined && result.kind === 'signed-in') {
       signingIn.abort()
       this.signIns.delete(entry.id)
+      await this.closeIdle(item => item.id === entry.id)
     } else if (signingIn !== undefined) {
       this.setStatus(entry.id, 'signing-in')
     }
@@ -433,7 +446,9 @@ export class EcommerceAccountsService extends TypertRemoteService {
   @Remote
   async checkAccounts(accountIds?: readonly string[]): Promise<EcommerceAccountsState> {
     this.requireTenant()
-    await this.checkIdle(entry => accountIds === undefined || accountIds.includes(entry.id))
+    const asked = (entry: Entry): boolean => accountIds === undefined || accountIds.includes(entry.id)
+    await this.checkIdle(asked)
+    await this.closeIdle(asked)
     return this.getState()
   }
 
@@ -534,6 +549,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
   private async watchSignIn(entry: Entry, spec: PlatformSpec, tab: string, signal: AbortSignal): Promise<void> {
     const deadline = Date.now() + this.options.signInTimeoutMs
     let lastCheck = Date.now()
+    let done = false
     try {
       for (;;) {
         await sleep(this.options.signInPollMs, signal)
@@ -543,13 +559,19 @@ export class EcommerceAccountsService extends TypertRemoteService {
         const left = await this.queued(entry.id, () => this.leftSignInPage(entry, spec, tab))
         if (!left && Date.now() - lastCheck < this.options.signInCheckEveryMs) continue
         lastCheck = Date.now()
-        if ((await this.check(entry)).kind === 'signed-in') return
+        if ((await this.check(entry)).kind === 'signed-in') {
+          done = true
+          break
+        }
         this.setStatus(entry.id, 'signing-in')
       }
-      if (!signal.aborted) this.setStatus(entry.id, 'signed-out')
+      if (!done && !signal.aborted) this.setStatus(entry.id, 'signed-out')
     } finally {
       if (this.signIns.get(entry.id)?.signal === signal) this.signIns.delete(entry.id)
     }
+    // The sign-in is done: its window closes, and the session waits in Chrome's data for the next task.
+    // A sign-in started again meanwhile keeps the window.
+    if (done) await this.closeIdle(item => item.id === entry.id)
   }
 
   private async leftSignInPage(entry: Entry, spec: PlatformSpec, tab: string): Promise<boolean> {
@@ -566,9 +588,9 @@ export class EcommerceAccountsService extends TypertRemoteService {
   }
 
   /**
-   * Ask the platform whether the account is signed in, retrying once, and record the answer. A
-   * signed-in account's Chrome is minimized. A Chrome gone since an earlier sign-in is started
-   * again minimized, restoring its last session; an account never signed in starts no Chrome. A
+   * Ask the platform whether the account is signed in, retrying once, and record the answer. An
+   * account ever signed in whose Chrome is not running has it started in the background, minimized,
+   * restoring its last session; an account never signed in starts no Chrome. A
    * check that gets no answer, cannot reach the page, or finds the browser data held by another
    * Chrome fails with that problem and keeps the last answer. The check works on the account as it is
    * once its turn comes: one deleted, or of another tenant, while it waited is `gone`, asks nothing,
@@ -621,20 +643,18 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const dir = this.dirOf(entry.id)
     const record = await readRecord(dir)
     let port = record !== undefined && await alive(record.port) ? record.port : undefined
-    // A Chrome started here in the background is minimized whatever the platform answers.
-    const started = port === undefined
     if (port === undefined) {
       if (entry.everSignedIn !== true || this.chrome === undefined) return { kind: 'signed-out' }
       if (await profileHolder(dir) !== undefined) return { kind: 'busy' }
       port = (await this.ensureChrome(entry, this.chrome, true, 'about:blank')).port
     }
-    await ensureTab(port)
+    const opened = await ensureTab(port)
     const cdp = await Cdp.connect(port, this.options.chromeTimeoutMs)
     try {
+      if (opened) await hideWindows(cdp)
       const spec = specOf(entry.platform, entry.kind)
       let result = await probe(cdp, spec, this.options.checkTimeoutMs)
       if (result.kind !== 'signed-in') result = await probe(cdp, spec, this.options.checkTimeoutMs)
-      if (started || result.kind === 'signed-in') await hideWindows(cdp)
       return result
     } finally {
       cdp.close()
@@ -657,16 +677,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
       if (!this.recentlySignedIn(now) || chrome === undefined) return undefined
       try {
         if (await this.heldElsewhere(now)) return undefined
-        const { port, started } = await this.ensureChrome(now, chrome, true, 'about:blank')
-        await ensureTab(port)
-        if (started) {
-          const cdp = await Cdp.connect(port, this.options.chromeTimeoutMs)
-          try {
-            await hideWindows(cdp)
-          } finally {
-            cdp.close()
-          }
-        }
+        const { port } = await this.ensureChrome(now, chrome, true, 'about:blank')
+        if (await ensureTab(port)) await this.minimize(port)
         return { kind: 'signed-in' }
       } catch (error) {
         this.ctx.logger.warn(`ecommerce-accounts: reusing the sign-in of ${entry.id} failed: ${String(error)}`)
@@ -928,6 +940,28 @@ export class EcommerceAccountsService extends TypertRemoteService {
     }
   }
 
+  /**
+   * Close the Chrome of each matching account that no task, sign-in, or other operation of the account
+   * uses, so Chrome runs only while it is needed. Chrome writes its cookies as it closes and restores
+   * its session when it starts again; an account without a running Chrome is left as it is.
+   */
+  private async closeIdle(matches: (entry: Entry) => boolean): Promise<void> {
+    await Promise.all(this.entries.filter(matches).map(entry => this.queued(entry.id, async () => {
+      if (!this.listed(entry.id) || this.leases.has(entry.id) || this.signIns.has(entry.id)) return
+      await closeChrome(this.dirOf(entry.id), this.options.chromeTimeoutMs)
+    })))
+  }
+
+  /** Minimize the windows of the Chrome on a port that are not minimized yet. */
+  private async minimize(port: number): Promise<void> {
+    const cdp = await Cdp.connect(port, this.options.chromeTimeoutMs)
+    try {
+      await hideWindows(cdp)
+    } finally {
+      cdp.close()
+    }
+  }
+
   /** How an account is named in what the model reads. */
   private nameOf(entry: Entry): string {
     return entry.kind === 'buyer'
@@ -978,6 +1012,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const cdp = await Cdp.connect(started.port, timeoutMs)
     try {
       await closeBlankTabs(cdp)
+      // Minimized once, as soon as it answers, and left so: its tabs open in the background.
+      if (hidden) await hideWindows(cdp)
     } finally {
       cdp.close()
     }

@@ -133,18 +133,20 @@ it.skipIf(process.platform === 'win32')('lets the model list the accounts, take 
     await page.getByText(ANSWER).first().waitFor({ timeout: 30_000 })
     const browserCall = chat.chats.at(-1)!.messages.at(-1)!
     expect(browserCall.role).toBe('tool')
-    const port = (JSON.parse(await readFile(join(accountDir, 'chrome.json'), 'utf8')) as { port: number }).port
-    expect(JSON.stringify(browserCall.content)).toContain(`http://127.0.0.1:${String(port)}`)
+    // The address the call got was the account's own Chrome, which the turn's end has closed since.
+    expect(JSON.stringify(browserCall.content)).toMatch(/cdpUrl.{1,8}http:\/\/127\.0\.0\.1:\d+/u)
     const listed = JSON.stringify(chat.chats.find(request => request.messages.filter(message => message.role === 'tool').length === 1)!.messages.at(-1)!.content)
     expect(listed).toContain('名流旗舰店')
     expect(listed).not.toMatch(/cookie|user-data/iu)
-    // The reservation ended with the bash call.
+    // The reservation ended with the bash call, and the turn's end closed the account's Chrome.
     await expect.poll(async () => (await accounts.getState()).accounts[0]!.inUse).toBe(false)
+    await expect.poll(() => readFile(join(accountDir!, 'chrome.json'), 'utf8').then(() => true, () => false), { timeout: 15_000 }).toBe(false)
 
     // The sign-in checked minutes ago stands: a second task takes the account over without a check.
     await send('再看一下天猫店铺的数据')
     await expect.poll(() => page.getByText(ANSWER).count(), { timeout: 30_000 }).toBe(2)
-    expect(JSON.stringify(chat.chats.at(-1)!.messages.at(-1)!.content)).toContain(`http://127.0.0.1:${String(port)}`)
+    // Chrome started again in the background for the second task, without a check.
+    expect(JSON.stringify(chat.chats.at(-1)!.messages.at(-1)!.content)).toMatch(/cdpUrl/u)
     expect((await accounts.getState()).accounts[0]!.checkedAt).toBe(checkedAt)
 
     // Signed out, and checked, the same request stops with the way to Settings.
