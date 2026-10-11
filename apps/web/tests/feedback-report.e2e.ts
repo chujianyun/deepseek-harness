@@ -57,7 +57,9 @@ it('reports a problem from the header, with no More actions menu, and an explain
     await dialog.getByRole('textbox', { name: 'Description' }).fill('Publishing spins forever, then fails')
     await dialog.getByLabel('Add screenshot', { exact: true }).setInputFiles({ name: 'spinner.png', mimeType: 'image/png', buffer: PNG })
     await dialog.getByRole('img', { name: 'spinner.png' }).waitFor()
-    expect(await dialog.getByRole('checkbox').isChecked()).toBe(true)
+    // Attaching the conversation is the user's explicit choice: unticked until they tick it.
+    expect(await dialog.getByRole('checkbox').isChecked()).toBe(false)
+    await dialog.getByRole('checkbox').check()
     await shot(page, 'e2e-report-dialog')
     await submit.click()
     await page.getByRole('alert').filter({ hasText: 'Sent. Thanks for the report' }).waitFor({ timeout: 15_000 })

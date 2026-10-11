@@ -80,7 +80,9 @@ describe('report dialog', () => {
     expect(screen.getByText('12/2000')).toBeTruthy()
     await addFiles([png('a.png')])
     expect(screen.getByRole('img', { name: 'a.png' })).toBeTruthy()
-    expect(screen.getByRole<HTMLInputElement>('checkbox').checked).toBe(true)
+    // Attaching the conversation is the user's explicit choice (ADR-0008): unticked until they tick it.
+    expect(screen.getByRole<HTMLInputElement>('checkbox').checked).toBe(false)
+    fireEvent.click(screen.getByRole('checkbox'))
 
     let finish: (() => void) | undefined
     d.submit.mockImplementationOnce(() => new Promise((resolve) => { finish = () => { resolve(ok(RECEIPT)) } }))
@@ -99,12 +101,11 @@ describe('report dialog', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('leaves the conversation out when unticked, and offers no attachment without a Session', async () => {
+  it('leaves the conversation out unless ticked, and offers no attachment without a Session', async () => {
     const d = dialog()
     d.ask()
     fireEvent.click(screen.getByRole('radio', { name: '报错' }))
     describeIt('x')
-    fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.click(button('提交'))
     await waitFor(() => { expect(d.submit).toHaveBeenCalledOnce() })
     expect(d.submit.mock.calls[0]![0]).toMatchObject({ attachSession: false, images: [] })

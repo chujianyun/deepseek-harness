@@ -156,7 +156,8 @@ function ReportForm({ target, face, t }: { target: ReportTarget; face: Omit<Repo
   const [category, setCategory] = useState<FeedbackReportCategory | null>(null)
   const [description, setDescription] = useState('')
   const [shots, setShots] = useState<readonly Shot[]>([])
-  const [attach, setAttach] = useState(true)
+  // Attaching the conversation is the user's explicit choice for the platform's administrators (new-dsh-ms ADR-0008).
+  const [attach, setAttach] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const picker = useRef<HTMLInputElement>(null)
