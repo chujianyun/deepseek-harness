@@ -1115,6 +1115,9 @@ describe('buyer accounts and risk protection', () => {
     const { cdpUrl } = JSON.parse(taken.stdout) as { cdpUrl: string }
     expect(await openPages(cdpUrl, 'https://myseller.taobao.com/home.htm', 'https://detail.tmall.com/item.htm?id=1', 'https://s.taobao.com/search?q=x'))
       .toEqual(['ok', 'net::ERR_BLOCKED_BY_CLIENT', 'net::ERR_BLOCKED_BY_CLIENT'])
+    // Those tabs were opened in front, which brings the window back: DSH's watch minimizes it again.
+    const window = join(env.browserDir(accountId), 'user-data', 'fake-window.json')
+    await expect.poll(async () => (JSON.parse(await readFile(window, 'utf8')) as { windowState: string }).windowState).toBe('minimized')
     // Risk control stops the task's pages; a merchant account does not rest.
     expect(await openPages(cdpUrl, 'https://myseller.taobao.com/home.htm?risk=1', 'https://myseller.taobao.com/home.htm'))
       .toEqual(['ok', 'net::ERR_BLOCKED_BY_CLIENT'])

@@ -3,7 +3,8 @@
  * of its own, attached to every tab before the tab runs, it pauses each page load: a page the
  * rules refuse never loads, and once the platform's risk control shows, nothing else loads for
  * the rest of the task. A tab whose page lands on the platform's sign-in page is reported, after
- * any redirects that only pass through it, and still loads, so the task sees it too. The task's own connection cannot get around it.
+ * any redirects that only pass through it, and still loads, so the task sees it too. A tab the task
+ * opens in front, which brings its window back on screen, has the window minimized again. The task's own connection cannot get around it.
  */
 
 import { Cdp } from './cdp.ts'
@@ -41,6 +42,16 @@ export interface GuardRules {
 /** Ignore a call the browser no longer answers, such as one for a tab that closed. */
 const ignore = (): undefined => undefined
 
+/** Minimize the window of a tab when it is on screen; a tab that closed meanwhile is left. */
+function minimizeWindowOf(cdp: Cdp, targetId: string): Promise<void> {
+  return cdp.send<{ windowId: number }>('Browser.getWindowForTarget', { targetId }).then(async ({ windowId }) => {
+    const { bounds } = await cdp.send<{ bounds: { windowState: string } }>('Browser.getWindowBounds', { windowId })
+    if (bounds.windowState === 'normal' || bounds.windowState === 'maximized') {
+      await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } })
+    }
+  }).catch(ignore)
+}
+
 /**
  * Watch every tab of a browser until the returned function is called.
  * @param port - the browser's remote-debugging port.
@@ -60,6 +71,7 @@ export async function guardBrowser(port: number, timeoutMs: number, rules: Guard
     const target = params.targetInfo as { targetId: string; type: string }
     if (target.type === 'page') {
       tabs.set(sessionId, target.targetId)
+      void minimizeWindowOf(cdp, target.targetId)
       // The network domain gives each paused load the network request id that its redirects keep.
       void cdp.send('Network.enable', {}, sessionId).catch(ignore)
       void cdp.send('Page.enable', {}, sessionId).catch(ignore)

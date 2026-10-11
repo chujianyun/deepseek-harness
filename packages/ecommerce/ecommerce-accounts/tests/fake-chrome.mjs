@@ -364,6 +364,11 @@ wss.on('connection', (socket) => {
     const target = sessionId === undefined ? undefined : targets.get(sessionId.slice(2))
     switch (method) {
       case 'Target.createTarget': {
+        // Like Chrome, a tab opened in front brings its window back on screen.
+        if (params.background !== true) {
+          const path = join(dataDir, 'fake-window.json')
+          writeFileSync(path, JSON.stringify({ ...existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}, windowState: 'normal' }))
+        }
         if (process.env.FAKE_CHROME_LATE_COMMIT === undefined) return reply({ targetId: addTarget(params.url) })
         // As Chrome does, the new tab is listed as about:blank until its page commits.
         const targetId = addTarget('about:blank')
