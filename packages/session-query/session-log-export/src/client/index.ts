@@ -13,22 +13,8 @@ import { SessionLogDownloadController } from './controller.ts'
 import { SessionLogDownloadHeaderAction, type SessionLogDownloadHeaderInjected } from './HeaderAction.tsx'
 import { en, NS, zh, type SessionLogDownloadKey } from './locales.ts'
 
-/**
- * A plugin that takes over the Header menu's Feedback row: while one is provided as
- * `sessionFeedbackEntry`, the row opens it instead of the message-feedback dialog.
- */
-export interface SessionFeedbackEntry {
-  /**
-   * Open the plugin's feedback surface for the Session.
-   * @param sessionId - the Session the header menu belongs to.
-   */
-  open(sessionId: SessionId): void
-}
-
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** The Feedback row's replacement surface, when a plugin provides one. */
-    sessionFeedbackEntry: SessionFeedbackEntry
     sessionLogDownload: SessionLogDownloadController
   }
 }
@@ -53,16 +39,12 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => async () => { await controller.dispose() }, 'session-log-download: browser download lifecycle')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'session-log-download: browser dictionaries')
   const feedbackAvailable = createSnapshotStore(false)
-  // The row shows while either surface is mounted.
-  let feedbackSurfaces = 0
-  for (const service of ['feedbackUi', 'sessionFeedbackEntry'] as const) {
-    ctx.inject([service], (scope: ClientContext) => {
-      scope.effect(() => {
-        feedbackAvailable.set(++feedbackSurfaces > 0)
-        return () => { feedbackAvailable.set(--feedbackSurfaces > 0) }
-      }, `session-log-download: ${service} availability`)
-    })
-  }
+  ctx.inject(['feedbackUi'], (scope: ClientContext) => {
+    scope.effect(() => {
+      feedbackAvailable.set(true)
+      return () => { feedbackAvailable.set(false) }
+    }, 'session-log-download: feedback availability')
+  })
   ctx.on('command/executed', (sessionId, commandName, result) => {
     if (commandName === 'export' && result.kind === 'success') void controller.download(sessionId)
   })
@@ -74,12 +56,8 @@ export function apply(ctx: ClientContext): void {
       hooks: { sessionLogDownload: controller.store, feedbackAvailable },
       request: (sessionId: SessionId) => controller.download(sessionId),
       dismiss: (sessionId: SessionId) => { controller.dismiss(sessionId) },
-      // The feedback plugins can unload between the menu render and this click.
-      openFeedback: (sessionId: SessionId) => {
-        const entry = ctx.get('sessionFeedbackEntry')
-        if (entry !== undefined) entry.open(sessionId)
-        else ctx.get('feedbackUi')?.openSession(sessionId)
-      },
+      // The feedback plugin can unload between the menu render and this click.
+      openFeedback: (sessionId: SessionId) => { ctx.get('feedbackUi')?.openSession(sessionId) },
     }),
   }, SessionLogDownloadHeaderAction))
 }

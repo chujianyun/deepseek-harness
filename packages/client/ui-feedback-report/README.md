@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Adds **Report a problem** to the Session header and the dialog it opens. The dialog collects a problem type, a description, up to three screenshots, and whether to include the Session's conversation, and sends them through the [`feedbackReport` Remote](../../feedback/feedback-report/README.md) to the super administrators of the user center. The header menu's **Feedback** row opens the same dialog.
+Adds **Report a problem** to the Session header and the dialog it opens. The dialog collects a problem type, a description, up to three screenshots, and whether to include the Session's conversation, and sends them through the [`feedbackReport` Remote](../../feedback/feedback-report/README.md) to the super administrators of the user center.
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ Adds **Report a problem** to the Session header and the dialog it opens. The dia
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the browser row beside the Host `feedback-report` row with the same `disabled` condition; the web-app bundle enables both for the `desktop` profile with a configured user center. Like ui-hub-account, it adds nothing outside the Desktop window. The plugin injects `slots`, `locale`, and the `hubAccount` and `feedbackReport` Remotes. For exactly the plugin lifetime it registers the `feedback-report` entry of `conversation.session.header.utilities` at order -8 (left of the schedule catalog and the overflow menu), the `feedback-report` and `feedback-report.notice` entries of `shell.overlay`, and, while signed in, provides `sessionFeedbackEntry`, which makes the [session-log-export](../../session-query/session-log-export/README.md) header menu's **Feedback** row open this dialog; signed out, the row keeps opening the message-feedback form. The enterprise Desktop composition leaves that menu out, so there the header button is the only entry.
+Mount the browser row beside the Host `feedback-report` row with the same `disabled` condition; the web-app bundle enables both for the `desktop` profile with a configured user center. Like ui-hub-account, it adds nothing outside the Desktop window. The plugin injects `slots`, `locale`, and the `hubAccount` and `feedbackReport` Remotes. For exactly the plugin lifetime it registers the `feedback-report` entry of `conversation.session.header.utilities` at order -8 (left of the schedule catalog), and the `feedback-report` and `feedback-report.notice` entries of `shell.overlay`. The enterprise Desktop composition leaves the header's More actions menu ([session-log-export](../../session-query/session-log-export/README.md)) out, so this button is its feedback entry.
 
 The button shows only while the `hubAccount` state stream reports a sign-in, and asks for the dialog about the open Session.
 

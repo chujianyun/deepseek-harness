@@ -43,9 +43,6 @@
     },
     {
       "path": "../../feedback/feedback-report"
-    },
-    {
-      "path": "../../session-query/session-log-export/tsconfig.client.json"
     }
   ]
 }

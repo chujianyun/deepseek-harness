@@ -59,7 +59,6 @@
     "@deepseek-ai/dsh-feedback-report": "workspace:*",
     "@deepseek-ai/dsh-hub-account": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
-    "@deepseek-ai/dsh-session-log-export": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@testing-library/react": "^16.1.0",
     "@types/react": "~18.3.1",

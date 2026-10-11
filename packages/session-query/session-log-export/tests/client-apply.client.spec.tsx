@@ -54,28 +54,6 @@ describe('session-log-download browser plugin', () => {
     await b.fiber.dispose()
   })
 
-  it('opens a provided feedback entry instead of the message-feedback form, and shows the row while either is mounted', async () => {
-    const b = await bench()
-    const entry = b.slots.entries('conversation.session.header.utilities')[0]!
-    const injected = (entry.inject as never as () => SessionLogDownloadHeaderInjected)()
-    const openSession = vi.fn()
-    const open = vi.fn()
-    const feedback = b.ctx.plugin((ctx) => { ctx.provide('feedbackUi', { openSession }) })
-    const report = b.ctx.plugin((ctx) => { ctx.provide('sessionFeedbackEntry', { open }) })
-    await feedback.await()
-    await report.await()
-    await vi.waitFor(() => { expect(injected.hooks.feedbackAvailable.getSnapshot()).toBe(true) })
-    injected.openFeedback(SID)
-    expect(open).toHaveBeenCalledWith(SID)
-    expect(openSession).not.toHaveBeenCalled()
-
-    await feedback.dispose()
-    await vi.waitFor(() => { expect(injected.hooks.feedbackAvailable.getSnapshot()).toBe(true) })
-    await report.dispose()
-    await vi.waitFor(() => { expect(injected.hooks.feedbackAvailable.getSnapshot()).toBe(false) })
-    await b.fiber.dispose()
-  })
-
   it('provides one controller and removes its Header contribution on disposal', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 500 })))
     const b = await bench()

@@ -27,7 +27,7 @@ kind: "package-reference"
 
 当 Web bundle 需要让用户导出会话日志时使用本包。它需要 Connection、命令注册表、Session 查询与持久化以及附件服务。挂载插件，然后在 Session Header 的更多操作菜单中选择 `下载 Session 日志` 或输入 `/export`；浏览器会下载 `dsh-session-<id>.zip`。
 
-挂载 `ui-message-feedback` 时，同一菜单还提供“反馈”，打开已有的 Session 反馈弹窗。打开或关闭该弹窗不会导出 Session 或提交反馈。提供 `sessionFeedbackEntry`（带 `open(sessionId)` 的服务，例如 [ui-feedback-report](../../client/ui-feedback-report/README.zh.md)）的插件会接管这一项：它挂载期间，“反馈”改为打开它的界面。两者任一挂载时显示反馈入口；导出功能保持独立可用。web-app bundle 在企业版桌面端（配置了用户中心的 `desktop` profile）不挂载本包，那里的头部只提供[问题反馈](../../client/ui-feedback-report/README.zh.md)。
+挂载 `ui-message-feedback` 时，同一菜单还提供“反馈”，打开已有的 Session 反馈弹窗。打开或关闭该弹窗不会导出 Session 或提交反馈。反馈入口随反馈插件的可用状态显示；导出功能保持独立可用。web-app bundle 在企业版桌面端（配置了用户中心的 `desktop` profile）不挂载本包，那里的反馈改走会话头部的[问题反馈](../../client/ui-feedback-report/README.zh.md)。
 
 ### 何时选择
 

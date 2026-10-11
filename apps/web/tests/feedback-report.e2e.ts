@@ -1,6 +1,6 @@
 /**
- * Problem reports through the shipped composition against a mock user center: the header button,
- * the menu's Feedback row, and an explained thumbs-down.
+ * Problem reports through the enterprise composition against a mock user center: the header button
+ * (the only header entry, with no More actions menu) and an explained thumbs-down.
  */
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -22,7 +22,7 @@ const shot = async (page: Page, name: string) => {
   await page.screenshot({ path: `${SHOTS}/${name}.png` })
 }
 
-it('reports a problem from the header and from the menu, and an explained thumbs-down, to the user center', async () => {
+it('reports a problem from the header, with no More actions menu, and an explained thumbs-down, to the user center', async () => {
   const center = await startMockUserCenter({ tenantId: 't-a', tenantName: '名流' })
   process.env.DSH_E2E_HUB_ORIGIN = center.origin
   const scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAYS })
@@ -72,12 +72,8 @@ it('reports a problem from the header and from the menu, and an explained thumbs
       images: [{ name: 'spinner.png', type: 'image/png', size: PNG.length }],
     })
 
-    // The header menu's Feedback row opens the same dialog.
-    await page.getByRole('button', { name: 'More actions', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Feedback', exact: true }).click()
-    await dialog.waitFor()
-    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
-    await expect.poll(() => dialog.count()).toBe(0)
+    // The enterprise header has no More actions menu: Report a problem is its feedback entry.
+    expect(await page.getByRole('button', { name: 'More actions', exact: true }).count()).toBe(0)
 
     // A thumbs-down with a category is reported as well.
     const dislike = page.getByRole('button', { name: 'Bad response' }).first()

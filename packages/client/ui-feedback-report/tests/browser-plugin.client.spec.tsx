@@ -86,15 +86,10 @@ describe('ui-feedback-report browser plugin', () => {
     expect(accepted).toHaveBeenCalledOnce()
 
     const one = 'one' as SessionId
-    // The header menu's Feedback row opens the dialog only while signed in.
-    await vi.waitFor(() => { expect(ctx.get('sessionFeedbackEntry')).toBeDefined() })
     buttonFace.requestReport({ sessionId: one })
     expect(dialogFace.hooks.reportRequest.getSnapshot()).toEqual({ sessionId: one })
     dialogFace.settleReport()
     expect(dialogFace.hooks.reportRequest.getSnapshot()).toBeNull()
-    // The header menu's Feedback row opens the same dialog.
-    ctx.get('sessionFeedbackEntry')!.open(one)
-    expect(dialogFace.hooks.reportRequest.getSnapshot()).toEqual({ sessionId: one })
     const request = { category: 'error' as const, description: 'x', sessionId: one, attachSession: true, images: [] }
     expect(await dialogFace.submit(request)).toEqual({ ok: true, value: receipt })
     expect(feedbackReport.submit).toHaveBeenCalledWith(request)
@@ -105,25 +100,14 @@ describe('ui-feedback-report browser plugin', () => {
     noticeFace.dismissNotice()
     expect(noticeFace.hooks.submitted.getSnapshot()).toBe(0)
 
-    // Signing out withdraws the menu takeover; signing in again restores it.
     frames.push(view('signed-out'))
     wake?.()
-    await vi.waitFor(() => { expect(ctx.get('sessionFeedbackEntry')).toBeUndefined() })
-    frames.push(view('signed-out'))
-    wake?.()
-    await vi.waitFor(() => { expect(accepted).toHaveBeenCalledTimes(3) })
-    frames.push(view('signed-in'))
-    wake?.()
-    await vi.waitFor(() => { expect(ctx.get('sessionFeedbackEntry')).toBeDefined() })
-    frames.push(view('signed-in'))
-    wake?.()
-    await vi.waitFor(() => { expect(accepted).toHaveBeenCalledTimes(5) })
+    await vi.waitFor(() => { expect(buttonFace.hooks.signedIn.getSnapshot()).toBe(false) })
     fail?.(new Error('stream broke'))
     await fiber.dispose()
     expect(dispose).toHaveBeenCalledOnce()
     expect(slots.entries('conversation.session.header.utilities')).toEqual([])
     expect(slots.entries('shell.overlay')).toEqual([])
-    expect(ctx.get('sessionFeedbackEntry')).toBeUndefined()
     applyNode()
   })
 })

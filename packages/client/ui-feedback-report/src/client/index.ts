@@ -1,8 +1,7 @@
 /**
  * Problem report, browser half: a Report a problem button in the Session header, the dialog it
- * opens, and the notice after a report is stored, over the `feedbackReport` Remote. The header
- * menu's Feedback row opens the same dialog. Everything shows only while the `hubAccount` Remote
- * reports a sign-in, and only in the Desktop window.
+ * opens, and the notice after a report is stored, over the `feedbackReport` Remote. Everything
+ * shows only while the `hubAccount` Remote reports a sign-in, and only in the Desktop window.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -10,8 +9,6 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type {} from '@deepseek-ai/dsh-session-log-export/client'
 import { en, zh, type FeedbackReportLocaleKey } from './locales.ts'
 import {
   ReportButton, ReportDialog, ReportNotice,
@@ -36,7 +33,7 @@ const NS = 'feedbackReport'
 export const inject = ['slots', 'locale', 'remote', 'remote.hubAccount', 'remote.feedbackReport']
 
 /**
- * Register the button, the dialog, the notice, and the header menu's feedback entry for exactly the plugin lifetime.
+ * Register the button, the dialog, and the notice for exactly the plugin lifetime.
  * @param ctx - Client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -50,20 +47,9 @@ export function apply(ctx: ClientContext): void {
     name: 'feedbackReport.hubAccount', open: signal => remote.hubAccount.watch(signal), ended: () => new Error('hub account stream ended'),
   })
   ctx.effect(() => () => stream.dispose(), 'ui-feedback-report: sign-in stream')
-  // The header menu's Feedback row opens this dialog instead of the message-feedback form, while signed in.
-  const entry = { open: (sessionId: SessionId) => { reportRequest.set({ sessionId }) } }
-  let entryFiber: ReturnType<ClientContext['plugin']> | undefined
-  const followSignIn = (now: boolean): void => {
-    signedIn.set(now)
-    if (now && entryFiber === undefined) entryFiber = ctx.plugin((scope: ClientContext) => { scope.provide('sessionFeedbackEntry', entry) })
-    if (!now && entryFiber !== undefined) {
-      void entryFiber.dispose()
-      entryFiber = undefined
-    }
-  }
   void (async () => {
     for await (const frame of stream) {
-      followSignIn(frame.value.status === 'signed-in')
+      signedIn.set(frame.value.status === 'signed-in')
       frame.accept()
     }
   })().catch(() => {
@@ -80,7 +66,7 @@ export function apply(ctx: ClientContext): void {
   }
   const noticeFace: ReportNoticeInjected = { hooks: { submitted }, dismissNotice: () => { submitted.set(0) } }
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
-    // Left of the schedule catalog (-5) and the overflow menu (0).
+    // Left of the schedule catalog (-5).
     name: 'conversation.session.header.utilities', id: 'feedback-report', order: -8, locale: NS, inject: () => buttonFace,
   }, ReportButton))
   ctx.slots.inject('shell.overlay', function* () {
