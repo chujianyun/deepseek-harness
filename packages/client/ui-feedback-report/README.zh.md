@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-将浏览器行与 Host 的 `feedback-report` 行一起挂载，使用相同的 `disabled` 条件；web-app bundle 在配置了用户中心的 `desktop` profile 下同时启用两者。和 ui-hub-account 一样，它在桌面窗口之外不添加任何内容。插件注入 `slots`、`locale`，以及 `hubAccount` 和 `feedbackReport` Remote。在插件生命周期内，它在 `conversation.session.header.utilities` 注册 `feedback-report` 条目（order -8，位于定时任务目录和溢出菜单左侧），在 `shell.overlay` 注册 `feedback-report` 与 `feedback-report.notice` 条目，并在登录期间提供 `sessionFeedbackEntry`，使 [session-log-export](../../session-query/session-log-export/README.zh.md) 头部菜单的**反馈**打开这个对话框；未登录时这一项仍打开消息反馈弹窗。
+将浏览器行与 Host 的 `feedback-report` 行一起挂载，使用相同的 `disabled` 条件；web-app bundle 在配置了用户中心的 `desktop` profile 下同时启用两者。和 ui-hub-account 一样，它在桌面窗口之外不添加任何内容。插件注入 `slots`、`locale`，以及 `hubAccount` 和 `feedbackReport` Remote。在插件生命周期内，它在 `conversation.session.header.utilities` 注册 `feedback-report` 条目（order -8，位于定时任务目录和溢出菜单左侧），在 `shell.overlay` 注册 `feedback-report` 与 `feedback-report.notice` 条目，并在登录期间提供 `sessionFeedbackEntry`，使 [session-log-export](../../session-query/session-log-export/README.zh.md) 头部菜单的**反馈**打开这个对话框；未登录时这一项仍打开消息反馈弹窗。企业版桌面端组合不挂载那个菜单，所以那里只有头部按钮一个入口。
 
 按钮只在 `hubAccount` 状态流报告已登录时显示，点击后为当前会话打开对话框。
 

@@ -81,8 +81,11 @@
         appVersion: !!js process.env.DSH_CLIENT_VERSION
 
     # Browser Session export: `/export` command plus the shared download dialog.
+    # The enterprise Desktop (desktop profile with a user center) leaves it out:
+    # its header keeps only Report a problem, which also carries the conversation.
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     # Session-header "Open In..." split button over the host application
     # resolution (macOS/Windows/Linux; a host with no resolved application
