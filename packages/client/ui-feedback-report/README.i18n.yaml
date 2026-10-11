@@ -3,20 +3,20 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/client/ui-feedback-report/README.md
 /:
-  en: 06f1accf1e77d87a
-  zh: 1379b42f06857865
+  en: cdbbd56c81c0645e
+  zh: 5746b18adc781104
 /deepseek-ai-dsh-client-ui-feedback-report:
   en: 6fbfeb9bee6a0358
   zh: 18f74ed081adf028
 /deepseek-ai-dsh-client-ui-feedback-report/summary:
-  en: 29485233f40f78b5
-  zh: 8f2b5f7d9757ff14
+  en: 76d423ab43dd6343
+  zh: ca615fa8034ca404
 /deepseek-ai-dsh-client-ui-feedback-report/table-of-contents:
   en: 4e53164159b5ce41
   zh: 89582dc0294d0776
 /deepseek-ai-dsh-client-ui-feedback-report/use-this-package:
-  en: ae80424dd37053bb
-  zh: d5f9dfb4c1e4316a
+  en: 56c27a999fd5569e
+  zh: a753739f025f773a
 /deepseek-ai-dsh-client-ui-feedback-report/use-this-package/the-dialog:
   en: 50c4a9e7f1edb858
   zh: 3fcbcd62a40721c1
@@ -27,8 +27,8 @@
   en: e277b74f9b721f5e
   zh: 014c91db5c8570d0
 /deepseek-ai-dsh-client-ui-feedback-report/known-limitations-and-deferred-work:
-  en: 835b267503f0e515
-  zh: 358ba1e66fbff151
+  en: 9906a23e2722b6b2
+  zh: 67fe037b439e7236
 /deepseek-ai-dsh-client-ui-feedback-report/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 3bb0c20c93f16f98

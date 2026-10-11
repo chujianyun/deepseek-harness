@@ -1,6 +1,6 @@
 /**
- * Problem reports through the enterprise composition against a mock user center: the window's
- * top-right button on a Session, a blank new Session, and a page without one, and an explained thumbs-down.
+ * Problem reports through the enterprise composition against a mock user center: the button in the
+ * Session header, its corner copy on a blank new Session and a page without one, and an explained thumbs-down.
  */
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -22,7 +22,7 @@ const shot = async (page: Page, name: string) => {
   await page.screenshot({ path: `${SHOTS}/${name}.png` })
 }
 
-it('reports a problem from the header, with no More actions menu, and an explained thumbs-down, to the user center', async () => {
+it('reports a problem from every page, with no More actions menu, and an explained thumbs-down, to the user center', async () => {
   const center = await startMockUserCenter({ tenantId: 't-a', tenantName: '名流' })
   process.env.DSH_E2E_HUB_ORIGIN = center.origin
   const scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAYS })
@@ -47,8 +47,12 @@ it('reports a problem from the header, with no More actions menu, and an explain
     await page.getByRole('treeitem').filter({ has: page.getByText('Multi-shop draft', { exact: true }) }).click()
     await page.getByText('DONE', { exact: true }).waitFor({ timeout: 30_000 })
 
-    // The header button opens the dialog about the open Session.
-    await page.getByRole('button', { name: 'Report a problem', exact: true }).click()
+    // The header button opens the dialog about the open Session; the corner copy steps aside.
+    const reportButtons = page.getByRole('button', { name: 'Report a problem', exact: true })
+    const corner = page.locator('[data-feedback-report-corner]')
+    expect(await reportButtons.count()).toBe(1)
+    expect(await corner.count()).toBe(0)
+    await reportButtons.click()
     const dialog = page.getByRole('dialog', { name: 'Report a problem' })
     await dialog.waitFor()
     const submit = dialog.getByRole('button', { name: 'Submit', exact: true })
@@ -81,9 +85,11 @@ it('reports a problem from the header, with no More actions menu, and an explain
     await expect.poll(() => center.feedback.length, { timeout: 15_000 }).toBe(2)
     expect(center.feedback[1]!.payload).toMatchObject({ category: 'other', session: null })
 
-    // A blank new Session keeps the button in the same corner; there is no conversation to attach.
+    // A blank new Session hides its header utilities, so the corner copy shows; there is no conversation to attach.
     await page.locator('button', { hasText: 'New Session' }).first().click()
-    await page.getByRole('button', { name: 'Report a problem', exact: true }).click()
+    await corner.waitFor()
+    expect(await reportButtons.count()).toBe(1)
+    await reportButtons.click()
     await dialog.waitFor()
     expect(await dialog.getByRole('checkbox').count()).toBe(0)
     await dialog.getByRole('radio', { name: 'Error' }).click()
@@ -93,12 +99,14 @@ it('reports a problem from the header, with no More actions menu, and an explain
     expect(center.feedback[2]!.payload).toMatchObject({ category: 'error', session: null })
     await shot(page, 'e2e-blank-session')
 
-    // A page without a Session, such as Plugins, shows it too.
+    // A page without a Session, such as Plugins, shows the corner copy too.
     await page.getByRole('button', { name: 'Plugins', exact: true }).click()
-    await page.getByRole('button', { name: 'Report a problem', exact: true }).waitFor()
+    await corner.waitFor()
+    expect(await reportButtons.count()).toBe(1)
     await shot(page, 'e2e-plugins-page')
     await page.getByRole('treeitem').filter({ has: page.getByText('Multi-shop draft', { exact: true }) }).click()
     await page.getByText('DONE', { exact: true }).waitFor({ timeout: 30_000 })
+    await corner.waitFor({ state: 'detached' })
 
     // The enterprise header has no More actions menu: Report a problem is its feedback entry.
     expect(await page.getByRole('button', { name: 'More actions', exact: true }).count()).toBe(0)

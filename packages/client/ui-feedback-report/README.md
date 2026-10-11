@@ -1,5 +1,5 @@
 ---
-description: "Problem report of the dsh Desktop client: the Report a problem button in the window's top-right corner, the dialog it opens, and the notice after a report is sent to the user center's super administrators."
+description: "Problem report of the dsh Desktop client: the Report a problem button at the window's top right, the dialog it opens, and the notice after a report is sent to the user center's super administrators."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Adds **Report a problem** to the top-right corner of the Desktop window, on every page, and the dialog it opens. The dialog collects a problem type, a description, up to three screenshots, and, on a Session with a conversation, whether to include it, and sends them through the [`feedbackReport` Remote](../../feedback/feedback-report/README.md) to the super administrators of the user center.
+Adds **Report a problem** to the Desktop window's top right on every page, and the dialog it opens. The dialog collects a problem type, a description, up to three screenshots, and, on a Session with a conversation, whether to include it, and sends them through the [`feedbackReport` Remote](../../feedback/feedback-report/README.md) to the super administrators of the user center.
 
 ## Table of Contents
 
@@ -23,9 +23,9 @@ Adds **Report a problem** to the top-right corner of the Desktop window, on ever
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the browser row beside the Host `feedback-report` row with the same `disabled` condition; the web-app bundle enables both for the `desktop` profile with a configured user center. Like ui-hub-account, it adds nothing outside the Desktop window. The plugin injects `slots`, `locale`, and the `hubAccount` and `feedbackReport` Remotes. For exactly the plugin lifetime it registers the `feedback-report.button`, `feedback-report`, and `feedback-report.notice` entries of `shell.overlay`. The button is fixed left of the sidebar toggle in the window's top-right corner. The enterprise Desktop composition leaves the header's More actions menu ([session-log-export](../../session-query/session-log-export/README.md)) out, so this button is its feedback entry.
+Mount the browser row beside the Host `feedback-report` row with the same `disabled` condition; the web-app bundle enables both for the `desktop` profile with a configured user center. Like ui-hub-account, it adds nothing outside the Desktop window. The plugin injects `slots`, `locale`, and the `hubAccount` and `feedbackReport` Remotes. For exactly the plugin lifetime it registers the `feedback-report` entry of `conversation.session.header.utilities` at order -8 (left of the schedule catalog), and the `feedback-report.corner`, `feedback-report`, and `feedback-report.notice` entries of `shell.overlay`. The enterprise Desktop composition leaves the header's More actions menu ([session-log-export](../../session-query/session-log-export/README.md)) out, so this button is its feedback entry.
 
-The button shows only while the `hubAccount` state stream reports a sign-in, On a Session page it asks for the dialog about that Session; on a blank new Session or a page without a Session, such as Plugins or Settings, the dialog has no conversation to include.
+The button shows only while the `hubAccount` state stream reports a sign-in. On a Session with a conversation it sits in the Session header and asks for the dialog about that Session. A blank new Session hides its header utilities, and a page such as Plugins or Settings covers the Conversation, so there a corner copy takes the same spot, fixed left of the sidebar toggle and below the Windows caption row; its dialog has no conversation to include. The corner copy hides while the right panel is open, as that panel holds the window's top right.
 
 ### The dialog
 
@@ -53,7 +53,7 @@ No effect.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Fixed position** — the button sits at a fixed offset from the window's top-right corner; a header contribution that grows into that area would sit under it.
+- **Corner copy has a fixed position** — on a blank new Session or a page without a Session, the button sits at a fixed offset from the window's top right instead of in a layout row, and it is absent while the right panel is open.
 - **Screenshots are sent as picked** — images are not shrunk before sending, so each must be 5 MB or smaller.
 
 <a id="dev-note"></a>

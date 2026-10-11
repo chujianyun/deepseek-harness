@@ -9,7 +9,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
 import {
-  ReportButton, ReportDialog, ReportNotice, type ReportButtonInjected, type ReportDialogInjected, type ReportNoticeInjected,
+  ReportButton, ReportCorner, ReportDialog, ReportNotice,
+  type ReportButtonInjected, type ReportCornerInjected, type ReportDialogInjected, type ReportNoticeInjected,
 } from '../src/client/ReportDialog.tsx'
 
 const view = (status: HubAccountView['status']): HubAccountView => ({ status, profile: null, reason: null, attempt: null, branding: null })
@@ -60,19 +61,23 @@ describe('ui-feedback-report browser plugin', () => {
     const slots = ctx.get('slots') as SlotRegistry
     const removeRoot = slots.register({
       name: 'root',
-      children: { 'shell.overlay': { kind: 'list', scope: 'root' } },
+      children: { 'conversation.session.header.utilities': { kind: 'list', scope: 'root' }, 'shell.overlay': { kind: 'list', scope: 'root' } },
     } as never, () => null)
     onTestFinished(removeRoot)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
 
-    // The button lives in the window-wide layer, so it shows on every page, blank Sessions included.
+    const [button] = slots.entries('conversation.session.header.utilities')
+    expect(button?.component).toBe(ReportButton)
+    expect(button!.options).toMatchObject({ id: 'feedback-report', order: -8 })
     const overlays = slots.entries('shell.overlay')
-    expect(overlays.map(entry => entry.component)).toEqual([ReportButton, ReportDialog, ReportNotice])
-    expect(overlays[0]!.options).toMatchObject({ id: 'feedback-report.button' })
-    const buttonFace = overlays[0]!.inject!() as object as ReportButtonInjected
+    expect(overlays.map(entry => entry.component)).toEqual([ReportCorner, ReportDialog, ReportNotice])
+    expect(overlays[0]!.options).toMatchObject({ id: 'feedback-report.corner' })
+    const buttonFace = button!.inject!() as object as ReportButtonInjected
+    const cornerFace = overlays[0]!.inject!() as object as ReportCornerInjected
     const dialogFace = overlays[1]!.inject!() as object as ReportDialogInjected
     const noticeFace = overlays[2]!.inject!() as object as ReportNoticeInjected
+    expect(cornerFace.hooks.signedIn).toBe(buttonFace.hooks.signedIn)
 
     const signal = new AbortController().signal
     streamOptions.open?.(signal)
@@ -85,9 +90,20 @@ describe('ui-feedback-report browser plugin', () => {
     expect(accepted).toHaveBeenCalledOnce()
 
     const one = 'one' as SessionId
-    buttonFace.requestReport({ sessionId: one, attachable: true })
-    expect(dialogFace.hooks.reportRequest.getSnapshot()).toEqual({ sessionId: one, attachable: true })
+    buttonFace.requestReport({ sessionId: one })
+    expect(dialogFace.hooks.reportRequest.getSnapshot()).toEqual({ sessionId: one })
     dialogFace.settleReport()
+    cornerFace.requestReport({ sessionId: null })
+    expect(dialogFace.hooks.reportRequest.getSnapshot()).toEqual({ sessionId: null })
+    dialogFace.settleReport()
+
+    // The corner button steps aside while a Session header shows one.
+    const withdraw = buttonFace.shown()
+    const withdrawSecond = buttonFace.shown()
+    expect(cornerFace.hooks.headerButtons.getSnapshot()).toBe(2)
+    withdraw()
+    withdrawSecond()
+    expect(cornerFace.hooks.headerButtons.getSnapshot()).toBe(0)
     expect(dialogFace.hooks.reportRequest.getSnapshot()).toBeNull()
     const request = { category: 'error' as const, description: 'x', sessionId: one, attachSession: true, images: [] }
     expect(await dialogFace.submit(request)).toEqual({ ok: true, value: receipt })
@@ -105,6 +121,7 @@ describe('ui-feedback-report browser plugin', () => {
     fail?.(new Error('stream broke'))
     await fiber.dispose()
     expect(dispose).toHaveBeenCalledOnce()
+    expect(slots.entries('conversation.session.header.utilities')).toEqual([])
     expect(slots.entries('shell.overlay')).toEqual([])
     applyNode()
   })

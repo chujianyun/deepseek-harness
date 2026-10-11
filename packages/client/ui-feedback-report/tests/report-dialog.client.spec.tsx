@@ -8,7 +8,8 @@ import type { FeedbackReportId, FeedbackReportReceipt } from '@deepseek-ai/dsh-f
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { en, zh, type FeedbackReportLocaleKey } from '../src/client/locales.ts'
 import {
-  ReportButton, ReportDialog, ReportNotice, type ReportButtonProps, type ReportDialogProps, type ReportNoticeProps, type ReportTarget,
+  ReportButton, ReportCorner, ReportDialog, ReportNotice,
+  type ReportButtonProps, type ReportCornerProps, type ReportDialogProps, type ReportNoticeProps, type ReportTarget,
 } from '../src/client/ReportDialog.tsx'
 
 afterEach(() => {
@@ -22,56 +23,68 @@ const ok = <T,>(value: T) => ({ ok: true as const, value })
 const refused = (code: string, message: string) => ({ ok: false as const, error: new RemoteError(code as never, message, {} as never) })
 const png = (name = 'shot.png', size = 16) => new File([new Uint8Array(size)], name, { type: 'image/png' })
 
-/** A sessions snapshot whose main view shows `main` (blank or not), beside another Session. */
-function sessions(main: { id: string; blank: boolean } | null) {
-  const row = (id: string, blank: boolean, shown: boolean) => ({
-    id: sid(id), displayTitle: id, running: false, blank, updatedAt: 1, retainedBy: shown ? { mainView: 1 } : {},
-  })
-  const rows = [row('other', false, false), ...main === null ? [] : [row(main.id, main.blank, true)]]
-  return { ids: rows.map(r => r.id), byId: Object.fromEntries(rows.map(r => [r.id, r])), phase: 'ready', projectionsBySession: {} }
-}
-
-interface ButtonOptions {
-  signedIn?: boolean
-  main?: { id: string; blank: boolean } | null
-  panel?: string | null
-  copy?: Record<FeedbackReportLocaleKey, string>
-}
-
-function renderButton(options: ButtonOptions = {}) {
+function renderButton(options: { signedIn?: boolean; copy?: Record<FeedbackReportLocaleKey, string> } = {}) {
   const requestReport = vi.fn()
+  const shown = vi.fn<() => () => void>()
+  const withdraw = vi.fn()
+  shown.mockReturnValue(withdraw)
   const props = {
+    sessionId: sid('one'),
     t: makeTranslate(options.copy ?? zh),
     useSignedIn: bindSnapshotSelector(createSnapshotStore(options.signedIn ?? true)),
-    useSessions: bindSnapshotSelector(createSnapshotStore(sessions(options.main === undefined ? { id: 'one', blank: false } : options.main))),
+    requestReport,
+    shown,
+  } as Partial<ReportButtonProps> as ReportButtonProps
+  const view = render(<ReportButton {...props} />)
+  return { requestReport, shown, withdraw, unmount: view.unmount }
+}
+
+describe('Report a problem button in the Session header', () => {
+  it.each([[zh, '问题反馈'], [en, 'Report a problem']])('asks for the dialog about its Session', (copy, name) => {
+    const { requestReport } = renderButton({ copy })
+    fireEvent.click(screen.getByRole('button', { name }))
+    expect(requestReport).toHaveBeenCalledWith({ sessionId: 'one' })
+  })
+
+  it('records its presence while shown, so the corner button steps aside', () => {
+    const b = renderButton()
+    expect(b.shown).toHaveBeenCalledOnce()
+    b.unmount()
+    expect(b.withdraw).toHaveBeenCalledOnce()
+  })
+
+  it('is absent, and leaves the corner to its button, without a sign-in', () => {
+    const b = renderButton({ signedIn: false })
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(b.shown).not.toHaveBeenCalled()
+  })
+})
+
+function renderCorner(options: { signedIn?: boolean; headerButtons?: number; panel?: string | null } = {}) {
+  const requestReport = vi.fn()
+  const props = {
+    t: makeTranslate(en),
+    useSignedIn: bindSnapshotSelector(createSnapshotStore(options.signedIn ?? true)),
+    useHeaderButtons: bindSnapshotSelector(createSnapshotStore(options.headerButtons ?? 0)),
     usePanelInfo: bindSnapshotSelector(createSnapshotStore({ activePanelId: options.panel ?? null })),
     requestReport,
-  } as Partial<ReportButtonProps> as ReportButtonProps
-  render(<ReportButton {...props} />)
+  } as Partial<ReportCornerProps> as ReportCornerProps
+  render(<ReportCorner {...props} />)
   return requestReport
 }
 
-describe('Report a problem button', () => {
-  it.each([[zh, '问题反馈'], [en, 'Report a problem']])('asks for the dialog about the Session on screen, which can be attached', (copy, name) => {
-    const requestReport = renderButton({ copy })
-    fireEvent.click(screen.getByRole('button', { name }))
-    expect(requestReport).toHaveBeenCalledWith({ sessionId: 'one', attachable: true })
+describe('Report a problem button in the window corner', () => {
+  it.each([
+    ['a blank new Session, whose header hides its utilities', {}],
+    ['a page such as Plugins over a Session header', { headerButtons: 1, panel: 'plugins' }],
+  ])('shows on %s and reports without a conversation', (_label, options) => {
+    const requestReport = renderCorner(options)
+    fireEvent.click(screen.getByRole('button', { name: 'Report a problem' }))
+    expect(requestReport).toHaveBeenCalledWith({ sessionId: null })
   })
 
-  it('offers no attachment for a blank new Session, but still names it for its environment', () => {
-    const requestReport = renderButton({ main: { id: 'blank', blank: true } })
-    fireEvent.click(screen.getByRole('button', { name: '问题反馈' }))
-    expect(requestReport).toHaveBeenCalledWith({ sessionId: 'blank', attachable: false })
-  })
-
-  it.each([['a page such as Assistants', { panel: 'assistants' }], ['no Session at all', { main: null }]])('reports without a Session on %s', (_label, options) => {
-    const requestReport = renderButton(options)
-    fireEvent.click(screen.getByRole('button', { name: '问题反馈' }))
-    expect(requestReport).toHaveBeenCalledWith({ sessionId: null, attachable: false })
-  })
-
-  it('is absent without a sign-in', () => {
-    renderButton({ signedIn: false })
+  it.each([['a Session header shows the button', { headerButtons: 1 }], ['no sign-in', { signedIn: false }]])('is absent when %s', (_label, options) => {
+    renderCorner(options)
     expect(screen.queryByRole('button')).toBeNull()
   })
 })
@@ -85,7 +98,7 @@ function dialog(copy: Record<FeedbackReportLocaleKey, string> = zh) {
     t: makeTranslate(copy), useReportRequest: bindSnapshotSelector(request), settleReport, submit, notifySubmitted, uiLanguage: () => 'zh-CN',
   } as Partial<ReportDialogProps> as ReportDialogProps
   render(<ReportDialog {...props} />)
-  const ask = (sessionId: SessionId | null = sid('one'), attachable = sessionId !== null) => { act(() => { request.set({ sessionId, attachable }) }) }
+  const ask = (sessionId: SessionId | null = sid('one')) => { act(() => { request.set({ sessionId }) }) }
   return { ask, settleReport, submit, notifySubmitted }
 }
 const button = (name: string) => screen.getByRole<HTMLButtonElement>('button', { name })
@@ -144,17 +157,6 @@ describe('report dialog', () => {
     fireEvent.click(button('提交'))
     await waitFor(() => { expect(d.submit).toHaveBeenCalledOnce() })
     expect(d.submit.mock.calls[0]![0]).toMatchObject({ attachSession: false, images: [] })
-    cleanup()
-
-    // A blank new Session has nothing to attach: no checkbox, but the Session still names its environment.
-    const blank = dialog()
-    blank.ask(sid('blank'), false)
-    expect(screen.queryByRole('checkbox')).toBeNull()
-    fireEvent.click(screen.getByRole('radio', { name: '其他' }))
-    describeIt('z')
-    fireEvent.click(button('提交'))
-    await waitFor(() => { expect(blank.submit).toHaveBeenCalledOnce() })
-    expect(blank.submit.mock.calls[0]![0]).toMatchObject({ sessionId: 'blank', attachSession: false })
     cleanup()
 
     const none = dialog(en)

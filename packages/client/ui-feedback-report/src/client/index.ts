@@ -1,8 +1,8 @@
 /**
- * Problem report, browser half: a Report a problem button in the window's top-right corner on every
- * page, the dialog it opens, and the notice after a report is stored, over the `feedbackReport`
- * Remote. Everything shows only while the `hubAccount` Remote reports a sign-in, and only in the
- * Desktop window.
+ * Problem report, browser half: a Report a problem button on every page (in the Session header, or
+ * in the window's top-right corner where no Session header shows it), the dialog it opens, and the
+ * notice after a report is stored, over the `feedbackReport` Remote. Everything shows only while
+ * the `hubAccount` Remote reports a sign-in, and only in the Desktop window.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -12,13 +12,14 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
 import { en, zh, type FeedbackReportLocaleKey } from './locales.ts'
 import {
-  ReportButton, ReportDialog, ReportNotice,
-  type ReportButtonInjected, type ReportDialogInjected, type ReportNoticeInjected, type ReportTarget,
+  ReportButton, ReportCorner, ReportDialog, ReportNotice,
+  type ReportButtonInjected, type ReportCornerInjected, type ReportDialogInjected, type ReportNoticeInjected, type ReportTarget,
 } from './ReportDialog.tsx'
 
 export type { FeedbackReportLocaleKey } from './locales.ts'
 export type {
-  ReportButtonInjected, ReportButtonProps, ReportDialogInjected, ReportDialogProps, ReportNoticeInjected, ReportNoticeProps, ReportTarget,
+  ReportButtonInjected, ReportButtonProps, ReportCornerInjected, ReportCornerProps,
+  ReportDialogInjected, ReportDialogProps, ReportNoticeInjected, ReportNoticeProps, ReportTarget,
 } from './ReportDialog.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -57,7 +58,17 @@ export function apply(ctx: ClientContext): void {
     // The stream reconnects on its own; a disposed plugin simply stops listening.
   })
   const submitted = createSnapshotStore(0)
-  const buttonFace: ReportButtonInjected = { hooks: { signedIn }, requestReport: (target) => { reportRequest.set(target) } }
+  const requestReport = (target: ReportTarget): void => { reportRequest.set(target) }
+  const headerButtons = createSnapshotStore(0)
+  const buttonFace: ReportButtonInjected = {
+    hooks: { signedIn },
+    requestReport,
+    shown: () => {
+      headerButtons.set(headerButtons.getSnapshot() + 1)
+      return () => { headerButtons.set(headerButtons.getSnapshot() - 1) }
+    },
+  }
+  const cornerFace: ReportCornerInjected = { hooks: { signedIn, headerButtons }, requestReport }
   const dialogFace: ReportDialogInjected = {
     hooks: { reportRequest },
     settleReport: () => { reportRequest.set(null) },
@@ -66,9 +77,13 @@ export function apply(ctx: ClientContext): void {
     uiLanguage: () => ctx.locale.getSnapshot().active,
   }
   const noticeFace: ReportNoticeInjected = { hooks: { submitted }, dismissNotice: () => { submitted.set(0) } }
+  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+    // Left of the schedule catalog (-5).
+    name: 'conversation.session.header.utilities', id: 'feedback-report', order: -8, locale: NS, inject: () => buttonFace,
+  }, ReportButton))
   ctx.slots.inject('shell.overlay', function* () {
-    // The window's top-right corner on every page, not the Session header, which a blank Session hides.
-    yield ctx.slots.register({ name: 'shell.overlay', id: 'feedback-report.button', locale: NS, inject: () => buttonFace }, ReportButton)
+    // Where no Session header shows the button: a blank Session hides its header utilities.
+    yield ctx.slots.register({ name: 'shell.overlay', id: 'feedback-report.corner', locale: NS, inject: () => cornerFace }, ReportCorner)
     yield ctx.slots.register({ name: 'shell.overlay', id: 'feedback-report', locale: NS, inject: () => dialogFace }, ReportDialog)
     yield ctx.slots.register({ name: 'shell.overlay', id: 'feedback-report.notice', locale: NS, inject: () => noticeFace }, ReportNotice)
   })

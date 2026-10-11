@@ -1,5 +1,5 @@
 ---
-description: "dsh 桌面端的问题反馈：窗口右上角的「问题反馈」按钮、它打开的对话框，以及反馈发送给用户中心超管后的提示。"
+description: "dsh 桌面端的问题反馈：窗口右上方的「问题反馈」按钮、它打开的对话框，以及反馈发送给用户中心超管后的提示。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在桌面窗口右上角（所有页面）添加**问题反馈**按钮及其打开的对话框。对话框收集问题类型、描述、最多三张截图，以及（在有对话的会话上）是否附上会话内容，通过 [`feedbackReport` Remote](../../feedback/feedback-report/README.zh.md) 发送给用户中心的超管。
+在桌面窗口右上方（所有页面）添加**问题反馈**按钮及其打开的对话框。对话框收集问题类型、描述、最多三张截图，以及（在有对话的会话上）是否附上会话内容，通过 [`feedbackReport` Remote](../../feedback/feedback-report/README.zh.md) 发送给用户中心的超管。
 
 ## 目录
 
@@ -23,9 +23,9 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-将浏览器行与 Host 的 `feedback-report` 行一起挂载，使用相同的 `disabled` 条件；web-app bundle 在配置了用户中心的 `desktop` profile 下同时启用两者。和 ui-hub-account 一样，它在桌面窗口之外不添加任何内容。插件注入 `slots`、`locale`，以及 `hubAccount` 和 `feedbackReport` Remote。在插件生命周期内，它在 `shell.overlay` 注册 `feedback-report.button`、`feedback-report` 与 `feedback-report.notice` 条目。按钮固定在窗口右上角侧栏开关的左侧。企业版桌面端组合不挂载头部的更多操作菜单（[session-log-export](../../session-query/session-log-export/README.zh.md)），所以这个按钮就是那里的反馈入口。
+将浏览器行与 Host 的 `feedback-report` 行一起挂载，使用相同的 `disabled` 条件；web-app bundle 在配置了用户中心的 `desktop` profile 下同时启用两者。和 ui-hub-account 一样，它在桌面窗口之外不添加任何内容。插件注入 `slots`、`locale`，以及 `hubAccount` 和 `feedbackReport` Remote。在插件生命周期内，它在 `conversation.session.header.utilities` 注册 `feedback-report` 条目（order -8，位于定时任务目录左侧），并在 `shell.overlay` 注册 `feedback-report.corner`、`feedback-report` 与 `feedback-report.notice` 条目。企业版桌面端组合不挂载头部的更多操作菜单（[session-log-export](../../session-query/session-log-export/README.zh.md)），所以这个按钮就是那里的反馈入口。
 
-按钮只在 `hubAccount` 状态流报告已登录时显示，在会话页面上，点击后为该会话打开对话框；在空白新会话或没有会话的页面（如插件、设置）上，对话框没有可附上的对话。
+按钮只在 `hubAccount` 状态流报告已登录时显示。在有对话的会话上，它位于会话头部，点击后为该会话打开对话框。空白新会话会隐藏头部工具区，插件、设置等页面会盖住会话，所以在这些地方由一个角落副本占据同一位置：固定在侧栏开关左侧、Windows 标题栏下方，它打开的对话框没有可附上的对话。右侧面板打开时角落副本隐藏，因为窗口右上方由该面板占据。
 
 ### 对话框
 
@@ -53,7 +53,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **固定位置** —— 按钮距窗口右上角的偏移是固定的；若头部贡献增长到该区域，会被按钮压住。
+- **角落副本位置固定** —— 在空白新会话或没有会话的页面上，按钮按距窗口右上方的固定偏移放置，而不在布局行内；右侧面板打开时不显示。
 - **截图按原样发送** —— 发送前不压缩图片，所以每张必须不超过 5 MB。
 
 <a id="dev-note"></a>
