@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-session-share",
   "description": "Share session action of the dsh Desktop client: a Session row menu item and the dialog that makes, copies, refreshes, and withdraws the Session's share link over the sessionShare Remote",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
