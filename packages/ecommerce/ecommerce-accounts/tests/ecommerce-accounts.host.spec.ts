@@ -383,6 +383,9 @@ describe('e-commerce accounts', () => {
     const env = await setup()
     const { accountId } = await env.service.addAccount(merchant)
     await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    await env.settle(s => s.accounts[0]!.status === 'signed-in')
+    const other = await env.service.addAccount({ ...merchant, platform: 'pinduoduo' })
     const browsers = join(env.home, 'ecommerce', 't-a', 'browsers')
     await chmod(browsers, 0o500)
     try {
@@ -390,7 +393,9 @@ describe('e-commerce accounts', () => {
     } finally {
       await chmod(browsers, 0o700)
     }
-    expect((await env.service.getState()).accounts.map(account => [account.id, account.status])).toEqual([[accountId, 'signed-out']])
+    expect((await env.service.getState()).accounts.map(account => [account.id, account.status])).toEqual([[accountId, 'signed-out'], [other.accountId, 'signed-out']])
+    // The saved answer is gone too: the account stays signed out after a restart.
+    await expect.poll(async () => (JSON.parse(await readFile(join(env.home, 'ecommerce', 't-a', 'accounts.json'), 'utf8')) as { accounts: { signedIn?: boolean }[] }).accounts[0]!.signedIn).toBe(false)
   })
 
   it('leaves a deleted account deleted when a check or sign-in waited behind the deletion', async () => {
@@ -862,7 +867,8 @@ describe('e-commerce accounts for the model', () => {
     expect((await readRecord(dir))!.port).toBe(Number(new URL((JSON.parse(run.stdout) as { cdpUrl: string }).cdpUrl).port))
     expect(JSON.parse(await readFile(join(dir, 'user-data', 'fake-window.json'), 'utf8'))).toMatchObject({ windowState: 'minimized' })
     expect((await env.service.getState()).accounts[0]).toMatchObject({ status: 'signed-in', checkedAt })
-    // Another Chrome holds the data, or Chrome cannot start: the account is checked, which says why.
+    // Another Chrome holds the data: the account is checked, which says why.
+    // Chrome cannot start: the task is told so, without a second start.
     await closeChrome(dir, 2000)
     const lock = join(dir, 'user-data', 'SingletonLock')
     await symlink(`other-host-${String(process.pid)}`, lock)
@@ -878,6 +884,28 @@ describe('e-commerce accounts for the model', () => {
     const noChrome = await setup({ home: env.home, config: { chromePath: join(tmpdir(), 'no-such-chrome') } })
     const exec = bashCall('c-4')
     expect((await runCommand(noChrome, varsOf(noChrome, exec), 'browser', accountId)).stderr).toContain('is signed out')
+  }, 20_000)
+
+  it('does not stand by a signed-in answer that a check queued ahead overturned, or while the last check failed', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    await env.settle(s => s.accounts[0]!.status === 'signed-in')
+    // The user checks while the session is gone, and a task asks at the same moment, behind the check.
+    await rm(join(env.browserDir(accountId), 'user-data', 'fake-signed-in'))
+    const checked = env.service.checkAccounts()
+    const run = await runCommand(env, varsOf(env, bashCall('c-1')), 'browser', accountId)
+    await checked
+    expect(run.stderr).toContain('is signed out')
+    // A failed check leaves the earlier signed-in answer saved, but a task does not stand by it.
+    await env.signIn(accountId, 'nick')
+    expect((await env.service.checkAccounts()).accounts[0]!.status).toBe('signed-in')
+    process.env.FAKE_CHROME_SILENT = '1'
+    await closeChrome(env.browserDir(accountId), 2000)
+    expect((await env.service.checkAccounts()).accounts[0]!.status).toBe('check-failed')
+    await closeChrome(env.browserDir(accountId), 2000)
+    expect((await runCommand(env, varsOf(env, bashCall('c-2')), 'browser', accountId)).stderr).toContain('could not be checked')
   }, 20_000)
 
   it('checks again on take-over once the signed-in answer is older than the reuse time', async () => {

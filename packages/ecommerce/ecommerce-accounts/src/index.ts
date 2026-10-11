@@ -15,8 +15,8 @@
  * once. The last answer and its time are saved with the account, and DSH shows the saved answer
  * instead of checking again: it checks only when the user asks, or when a task takes the account
  * over and its last signed-in answer is older than `signInReuseMs`. A signed-in account's Chrome
- * keeps running with its windows minimized, and survives DSH: the next DSH reattaches to it, or,
- * when it is gone, starts it again minimized, restoring the last session.
+ * keeps running with its windows minimized, and survives DSH: a later check or take-over reattaches
+ * to it, or, when it is gone, starts it again minimized, restoring the last session.
  *
  * The model and Skill scripts reach the accounts through the `dsh-ecommerce` command on the model
  * shell's `PATH`, which calls a loopback endpoint with a token valid for its bash call only, and
@@ -508,8 +508,10 @@ export class EcommerceAccountsService extends TypertRemoteService {
         await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
       } catch (error) {
         // Its Chrome is closed and part of its data may be gone, so its sign-in is no longer known; the error
-        // names only the cause, not the path.
+        // names only the cause, not the path. The saved answer goes too, so no take-over stands by it.
         this.setStatus(entry.id, 'signed-out')
+        this.entries = this.entries.map(item => item.id === entry.id ? { ...item, signedIn: false } : item)
+        await this.serialized(() => this.saveLedger(this.requireTenant()))
         const reason = (error as NodeJS.ErrnoException).code ?? 'unknown'
         throw new RemoteError('ecommerce-accounts/delete-failed', 'The account\'s browser data could not be removed', { accountId: entry.id, reason })
       }
@@ -638,16 +640,18 @@ export class EcommerceAccountsService extends TypertRemoteService {
 
   /**
    * Stand by a recent signed-in answer: make sure the account's Chrome runs, starting it again
-   * minimized when it is gone, without asking the platform.
-   * @returns `signed-in`, `gone` for an account deleted while this waited its turn, or undefined
-   *   when the answer is too old or Chrome cannot be reached, so the account is checked instead.
+   * minimized when it is gone, without asking the platform. Decided once the account's turn comes,
+   * so a check queued ahead of it counts.
+   * @returns `signed-in`; `gone` for an account deleted while this waited its turn; `no-response`
+   *   when its Chrome could not be started or reached; or undefined when the answer is not recent,
+   *   Chrome is missing, or another Chrome holds the data, so the account is checked instead.
    */
-  private async reuse(entry: Entry): Promise<CheckResult | undefined> {
-    if (!this.recentlySignedIn(entry) || this.chrome === undefined) return undefined
-    const chrome = this.chrome
+  private reuse(entry: Entry): Promise<CheckResult | undefined> {
     return this.queued(entry.id, async () => {
       const now = this.entries.find(item => item.id === entry.id)
       if (now === undefined) return { kind: 'gone' }
+      const chrome = this.chrome
+      if (!this.recentlySignedIn(now) || chrome === undefined) return undefined
       try {
         if (await this.heldElsewhere(now)) return undefined
         const { port, started } = await this.ensureChrome(now, chrome, true, 'about:blank')
@@ -663,14 +667,15 @@ export class EcommerceAccountsService extends TypertRemoteService {
         return { kind: 'signed-in' }
       } catch (error) {
         this.ctx.logger.warn(`ecommerce-accounts: reusing the sign-in of ${entry.id} failed: ${String(error)}`)
-        return undefined
+        return { kind: 'no-response' }
       }
     })
   }
 
-  /** Whether the account's last check found it signed in less than `signInReuseMs` ago. */
+  /** Whether the account shows signed in, from a check less than `signInReuseMs` ago. */
   private recentlySignedIn(entry: Entry): boolean {
-    return entry.signedIn === true && entry.checkedAt !== undefined && Date.now() - Date.parse(entry.checkedAt) < this.options.signInReuseMs
+    return this.statuses.get(entry.id) === 'signed-in' && entry.signedIn === true && entry.checkedAt !== undefined
+      && Date.now() - Date.parse(entry.checkedAt) < this.options.signInReuseMs
   }
 
   /** Answer `dsh-ecommerce accounts`: the tenant's accounts, without anything secret. */

@@ -72,7 +72,7 @@ export function EcommerceAccountsSection(props: EcommerceAccountsSectionProps) {
   const [adding, setAdding] = useState(false)
   const [signingIn, setSigningIn] = useState<{ readonly id: string; readonly refusal?: Refusal } | null>(null)
   const [query, setQuery] = useState('')
-  // Opening the section checks every account, so the dots show the platforms' answers.
+  // Opening the section looks for Chrome again; the dots show each account's saved answer.
   useEffect(() => { void onRefresh() }, [onRefresh])
   const accounts = state?.accounts ?? []
   const opened = accounts.find(item => item.id === openId)
