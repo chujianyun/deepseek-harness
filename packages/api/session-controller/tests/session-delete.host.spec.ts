@@ -19,7 +19,7 @@ const header = (id: string, extra: Partial<SessionHeader> = {}): SessionHeader =
 afterEach(() => { vi.useRealTimers() })
 
 /** The command controller over recorded fakes; `stored` is what persistence lists. */
-async function bench(stored: SessionHeader[], archived: string[] = []) {
+async function bench(stored: SessionHeader[]) {
   const steps: string[] = []
   const ctx = new Context()
   await ctx.plugin(SessionStore)
@@ -34,59 +34,60 @@ async function bench(stored: SessionHeader[], archived: string[] = []) {
     list: () => Promise.resolve([...stored]), delete: removeLog,
   }) as never)
   installSessionReadTestServices(ctx)
-  const archivedIds = archived.map(SessionId)
-  const registry = {
-    get archivedSessionIds() { return archivedIds },
-    archiveSession: vi.fn(async (id: SessionId, options: object) => {
-      steps.push(`archive:${id}:${JSON.stringify(options)}`)
-      archivedIds.push(id)
-    }),
-    unarchiveSession: vi.fn(async (id: SessionId) => {
-      steps.push(`unarchive:${id}`)
-      archivedIds.splice(archivedIds.indexOf(id), 1)
-    }),
-    forgetSession: vi.fn(async (id: SessionId) => { steps.push(`forget:${id}`) }),
-  }
-  ctx.provide('workspaceRegistry', registry as never)
+  ctx.provide('workspaceRegistry', { list: () => [] } as never)
+  const stop = vi.fn(async ({ sessionId }: { sessionId: SessionId }) => { steps.push(`stop:${sessionId}`) })
+  ctx.on('workspace/session-stop', stop)
+  const blocked: SessionId[] = []
   const release = vi.fn(async (id: SessionId) => { steps.push(`release:${id}`) })
+  const agents = {
+    release,
+    blockOpens: (ids: readonly SessionId[]) => {
+      blocked.push(...ids)
+      steps.push('block')
+      return () => { steps.push('unblock') }
+    },
+  }
   const removed: SessionId[] = []
   ctx.on('api-session/removed', (id) => { removed.push(id) })
-  const controller = new SessionCommandController(ctx, { release } as unknown as ApiSessionAgentController, '/proj')
-  return { ctx, controller, steps, removeLog, registry, release, removed }
+  const deleted: SessionId[] = []
+  ctx.on('session/deleted', (id) => { deleted.push(id) })
+  const controller = new SessionCommandController(ctx, agents as unknown as ApiSessionAgentController, '/proj')
+  return { ctx, controller, steps, removeLog, stop, release, removed, deleted, blocked }
 }
 
 describe('sessions.delete', () => {
-  it('stops the Session, unloads it and its subagent descendants, deletes their logs children first, and forgets them', async () => {
+  it('blocks reopening, stops the Session, unloads it and its subagent descendants, and deletes their logs children first', async () => {
     const b = await bench([
       header('root'), header('child', { origin: 'subagent', parentSession: SessionId('root') }),
+      header('sibling', { origin: 'subagent', parentSession: SessionId('root') }),
       header('grandchild', { origin: 'subagent', parentSession: SessionId('child') }),
       // A fork is its own Session, and another Session's child is not this one's.
       header('fork', { parentSession: SessionId('root'), isSeeded: true }),
       header('other'), header('other-child', { origin: 'subagent', parentSession: SessionId('other') }),
     ])
     const result = await b.controller.delete({ sessionId: SessionId('root') })
-    expect(result).toEqual({ deletedSessionIds: ['root', 'child', 'grandchild'] })
+    expect(result).toEqual({ deletedSessionIds: ['root', 'child', 'sibling', 'grandchild'] })
+    expect(b.blocked).toEqual(['root', 'child', 'sibling', 'grandchild'])
     expect(b.steps).toEqual([
-      'archive:root:{"stopActivity":true}',
-      'release:grandchild', 'release:child', 'release:root',
-      'delete:grandchild', 'delete:child', 'delete:root',
-      'forget:root', 'forget:child', 'forget:grandchild',
+      'block', 'stop:root',
+      'release:grandchild', 'release:sibling', 'release:child', 'release:root',
+      'delete:grandchild', 'delete:sibling', 'delete:child', 'delete:root',
+      'unblock',
     ])
-    expect(b.removed).toEqual(['root', 'child', 'grandchild'])
+    expect(b.removed).toEqual(['root', 'child', 'sibling', 'grandchild'])
     expect((await b.ctx.sessionPersistence.list()).map(snapshot => snapshot.header.id)).toEqual(['fork', 'other', 'other-child'])
   })
 
-  it('deletes an archived Session without archiving it again, and a blank one that never reached storage', async () => {
-    const b = await bench([header('archived')], ['archived'])
-    await b.controller.delete({ sessionId: SessionId('archived') })
-    expect(b.registry.archiveSession).not.toHaveBeenCalled()
-    expect(b.steps).toEqual(['release:archived', 'delete:archived', 'forget:archived'])
-
-    // A live Session that never materialized: unloading erases it, so there is no log to delete.
-    b.ctx.sessions.create(SessionId('blank'), { meta: { cwd: '/proj' } })
-    b.steps.length = 0
+  it('announces a Session that never reached storage itself, since no backend will', async () => {
+    const b = await bench([])
+    // Live, never materialized: unloading erases it, so there is no log to delete.
+    const owner = await b.ctx.plugin(Object.assign((inner: Context) => {
+      inner.sessions.create(SessionId('blank'), { meta: { cwd: '/proj' } })
+    }, { inject: ['sessions'] }))
+    b.release.mockImplementationOnce(async () => { await owner.dispose() })
     expect(await b.controller.delete({ sessionId: SessionId('blank') })).toEqual({ deletedSessionIds: ['blank'] })
-    expect(b.steps).toEqual(['archive:blank:{"stopActivity":true}', 'release:blank', 'delete:blank', 'forget:blank'])
+    expect(b.deleted).toEqual(['blank'])
+    expect(b.removed).toContain('blank')
   })
 
   it('refuses an unknown Session and a subagent child, touching nothing', async () => {
@@ -98,16 +99,37 @@ describe('sessions.delete', () => {
     expect(b.steps).toEqual([])
   })
 
+  it('deletes although a provider failed to stop its work', async () => {
+    const b = await bench([header('root')])
+    b.stop.mockRejectedValueOnce(new Error('job would not stop'))
+    const warn = vi.spyOn(b.ctx.logger, 'warn')
+    await b.controller.delete({ sessionId: SessionId('root') })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('stopping its work before deletion reported failures'))
+    expect(b.steps.at(-2)).toBe('delete:root')
+  })
+
+  it('refuses a Session another owner keeps loaded, before any log is deleted, and lifts the block', async () => {
+    const b = await bench([header('root'), header('child', { origin: 'subagent', parentSession: SessionId('root') })])
+    // Loaded by something this controller holds no handle for: release leaves it in the store.
+    b.ctx.sessions.create(SessionId('root'), { meta: { cwd: '/proj', createdAt: 1 } })
+    await expect(b.controller.delete({ sessionId: SessionId('root') })).rejects.toMatchObject({
+      code: 'session/agent-busy', message: 'session "root" is loaded by another owner and cannot be deleted while it is',
+    })
+    expect(b.removeLog).not.toHaveBeenCalled()
+    expect(b.steps.at(-1)).toBe('unblock')
+    expect(b.removed).toEqual([])
+  })
+
   it('waits for a closing writer, then deletes', async () => {
     const b = await bench([header('root')])
     b.removeLog.mockRejectedValueOnce(new SessionAlreadyOwnedError(SessionId('root')))
     b.removeLog.mockRejectedValueOnce(new SessionAlreadyOwnedError(SessionId('root')))
     await b.controller.delete({ sessionId: SessionId('root') })
     expect(b.removeLog).toHaveBeenCalledTimes(3)
-    expect(b.steps.at(-1)).toBe('forget:root')
+    expect(b.removed).toEqual(['root'])
   })
 
-  it('reports a writer that never lets go and restores the Session to the list it was in', async () => {
+  it('reports a writer that never lets go, leaves the Session in place, and lifts the block', async () => {
     vi.useFakeTimers()
     const b = await bench([header('root')])
     b.removeLog.mockRejectedValue(new SessionAlreadyOwnedError(SessionId('root')))
@@ -115,9 +137,9 @@ describe('sessions.delete', () => {
     const failure = expect(deleting).rejects.toMatchObject({ code: 'session/writer-held', details: { sessionId: 'root' } })
     await vi.runAllTimersAsync()
     await failure
-    expect(b.steps.at(-1)).toBe('unarchive:root')
-    expect(b.registry.forgetSession).not.toHaveBeenCalled()
+    expect(b.steps.at(-1)).toBe('unblock')
     expect(b.removed).toEqual([])
+    expect((await b.ctx.sessionPersistence.list()).map(snapshot => snapshot.header.id)).toEqual(['root'])
   })
 
   it('is unavailable without session persistence', async () => {
@@ -128,15 +150,13 @@ describe('sessions.delete', () => {
     await expect(controller.delete({ sessionId: SessionId('root') })).rejects.toMatchObject({ code: 'gateway/internal' })
   })
 
-  it('passes another storage failure through and keeps an already archived Session archived', async () => {
-    const b = await bench([header('root')], ['root'])
+  it('passes another storage failure through, with or without an Error', async () => {
+    const b = await bench([header('root')])
     b.removeLog.mockRejectedValueOnce(new Error('disk failure'))
     await expect(b.controller.delete({ sessionId: SessionId('root') })).rejects.toThrow('disk failure')
-    expect(b.registry.unarchiveSession).not.toHaveBeenCalled()
-    expect(b.registry.forgetSession).not.toHaveBeenCalled()
-    // A rejection that carries no Error passes through as it is.
     b.removeLog.mockRejectedValueOnce('storage offline')
     await expect(b.controller.delete({ sessionId: SessionId('root') })).rejects.toBe('storage offline')
+    expect(b.removed).toEqual([])
   })
 
   it('answers through the Remote face', async () => {

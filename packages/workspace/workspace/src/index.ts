@@ -215,6 +215,12 @@ export class WorkspaceRegistry extends Service {
     this.validateStoredState(this.requireState())
     this.rebuildEntities()
     this.reportFilteredCandidates()
+    // A deleted session leaves no log to account: its records go on the event, whoever deleted it.
+    this.ctx.on('session/deleted', (sessionId) => {
+      this.forgetSession(sessionId).catch((error: unknown) => {
+        this.ctx.logger.warn(`workspace: forgetting deleted session "${sessionId}" failed: ${String(error)}`)
+      })
+    })
   }
 
   /**
@@ -408,13 +414,11 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
-   * Drop everything the registry keeps for a session that was deleted: its slot in a workspace's
-   * accounting, its pin, and its archive mark. The caller deletes the session's log first; an id
-   * the registry does not know resolves without writing.
-   * @param sessionId - The deleted session.
-   * @returns resolution after durability.
+   * Drop everything the registry keeps for a deleted session: its slot in a workspace's
+   * accounting, its pin, and its archive mark. Runs on `session/deleted`, queued behind every
+   * other registry write; an id the registry does not know writes nothing.
    */
-  forgetSession(sessionId: SessionId): Promise<void> {
+  private forgetSession(sessionId: SessionId): Promise<void> {
     return this.enqueueOperation(async () => {
       this.headers.delete(sessionId)
       this.sessionPaths.delete(sessionId)

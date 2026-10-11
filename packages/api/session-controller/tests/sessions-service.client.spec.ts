@@ -934,8 +934,14 @@ describe('delete', () => {
     await feedList(b, [{ id: 'root' }])
     const error = new RemoteError('session/writer-held', 'still being written', { sessionId: sid('root') })
     b.mock.remote.session.delete.mockResolvedValue(err(error))
+    const lists = b.mock.remote.session.list.mock.calls.length
     await expect(b.svc.delete(sid('root'))).resolves.toEqual({ ok: false, error })
     expect(b.svc.list.getSnapshot().ids).toEqual(['root'])
+    // The Host may have unloaded the Session before refusing: the list is read back.
+    await vi.waitFor(() => { expect(b.mock.remote.session.list.mock.calls.length).toBeGreaterThan(lists) })
+    // A list that cannot be read back does not turn the refusal into a rejection.
+    b.mock.remote.session.list.mockRejectedValueOnce(new Error('offline'))
+    await expect(b.svc.delete(sid('root'))).resolves.toEqual({ ok: false, error })
   })
 })
 

@@ -439,11 +439,13 @@ export class ClientSessions implements ISessions {
   /**
    * Delete a Session on the Host permanently, with its subagent descendants.
    * @param sessionId - Session to delete.
-   * @returns the deleted ids, or the Host's refusal with the list unchanged.
+   * @returns the deleted ids, or the Host's refusal; the list is then read back from the Host.
    */
   async delete(sessionId: SessionId): Promise<RemoteResult<SessionDeleteValue>> {
     const result = await this.manager.delete(sessionId)
     if (result.ok) this.projectList()
+    // A refused deletion may already have unloaded the Session, which drops its row: read the list back.
+    else void this.refresh().catch(() => {})
     return result
   }
 

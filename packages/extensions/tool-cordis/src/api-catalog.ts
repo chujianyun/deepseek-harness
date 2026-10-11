@@ -4543,12 +4543,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'resolution after durability.',
       },
       {
-        signature: 'forgetSession(sessionId: SessionId): Promise<void>',
-        description: 'Drop everything the registry keeps for a session that was deleted: its slot in a workspace\'s accounting, its pin, and its archive mark. The caller deletes the session\'s log first; an id the registry does not know resolves without writing.',
-        parameters: [{ name: 'sessionId', description: 'The deleted session.' }],
-        returns: 'resolution after durability.',
-      },
-      {
         signature: 'pinSession(sessionId: SessionId): Promise<void>',
         description: 'Pin one session durably, prepending it to the registry-global pin set. The session must exist (live or in session persistence) and must not be archived. An already pinned id resolves without writing or reordering.',
         parameters: [{ name: 'sessionId', description: 'The session to pin.' }],
@@ -5024,8 +5018,8 @@ export const EVENT_API: readonly EventApiEntry[] = [
     name: 'session/deleted',
     mode: 'emit',
     signature: '\'session/deleted\'(sessionId: SessionId): void',
-    summary: 'A stored Session was deleted permanently: its log no longer exists and nothing can be read back.',
-    description: 'A stored Session was deleted permanently: its log no longer exists and nothing can be read back. The Session persistence backend emits it once the storage is gone; owners of data keyed by the Session drop that data. Not scope-filtered: the Session is no longer live.',
+    summary: 'A Session was deleted permanently: its log no longer exists and nothing can be read back.',
+    description: 'A Session was deleted permanently: its log no longer exists and nothing can be read back. The Session persistence backend emits it once the storage is gone, and the deleter emits it for a Session that never reached storage; owners of data keyed by the Session drop that data. Not scope-filtered: the Session is no longer live.',
     parameters: [{ name: 'sessionId', description: 'the deleted Session.' }],
   },
   {

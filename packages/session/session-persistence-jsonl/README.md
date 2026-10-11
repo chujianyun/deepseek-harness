@@ -73,7 +73,7 @@ Session ids are injectively escaped to one safe path segment before use (no trav
 
 ### Deleting a session
 
-`delete(id)` removes the session's directory with every generation and its lock file, holding the in-process write claim and the directory's kernel lock across the removal so no writer in this or another process can append meanwhile. A removal interrupted part-way leaves either the log, in which case the session still exists and the delete can be retried, or no log, in which case the session is gone: a leftover directory without a log is not a session. On Windows the lock is released just before the removal, because an open lock handle keeps its file undeletable.
+`delete(id)` removes the session's directory with every generation and its lock file, holding the in-process write claim and the directory's kernel lock across the removal so no writer in this or another process can append meanwhile. A removal that fails part-way leaves either the log, in which case the session still exists, the error propagates, and the delete can be retried, or no log, in which case the session is gone: a leftover directory without a log is not a session. Once the directory is removed the session is deleted: a failure to sync the parent directory or release the lock afterwards is logged and `session/deleted` is emitted all the same.
 
 ### Durability and crash semantics
 

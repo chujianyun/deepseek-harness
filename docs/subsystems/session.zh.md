@@ -1272,13 +1272,14 @@ Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/i
 
 #### `session/deleted` — emit
 
-A stored Session was deleted permanently: its log no longer exists and nothing can be read back. The Session persistence backend emits it once the storage is gone; owners of data keyed by the Session drop that data. Not scope-filtered: the Session is no longer live.
+A Session was deleted permanently: its log no longer exists and nothing can be read back. The Session persistence backend emits it once the storage is gone, and the deleter emits it for a Session that never reached storage; owners of data keyed by the Session drop that data. Not scope-filtered: the Session is no longer live.
 
 ```ts cordis-catalog
 /**
- * A stored Session was deleted permanently: its log no longer exists and nothing can be read
- * back. The Session persistence backend emits it once the storage is gone; owners of data
- * keyed by the Session drop that data. Not scope-filtered: the Session is no longer live.
+ * A Session was deleted permanently: its log no longer exists and nothing can be read back.
+ * The Session persistence backend emits it once the storage is gone, and the deleter emits it
+ * for a Session that never reached storage; owners of data keyed by the Session drop that
+ * data. Not scope-filtered: the Session is no longer live.
  * @param sessionId - the deleted Session.
  * @mode emit
  */

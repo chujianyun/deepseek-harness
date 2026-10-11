@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 创建与检查会话
 
-`ctx.sessions.create()` 构建绑定到调用方 fiber 的实时会话；`get(id)` 与 `list()` 查找会话，`fork()` 从实时会话的精确前缀创建子会话。store 为实时会话发出 `session/created` 与 `session/disposed`；`session/deleted` 由会话持久化后端在某个已存储会话的日志被永久删除后发出，供按会话保存数据的各方清理。
+`ctx.sessions.create()` 构建绑定到调用方 fiber 的实时会话；`get(id)` 与 `list()` 查找会话，`fork()` 从实时会话的精确前缀创建子会话。store 为实时会话发出 `session/created` 与 `session/disposed`；`session/deleted` 在会话被永久删除后发出（日志移除后由会话持久化后端发出；从未落盘的会话由删除方发出），供按会话保存数据的各方清理。
 
 ```text
 const session = ctx.sessions.create(sessionId, { meta: { cwd: '/workspace' } })

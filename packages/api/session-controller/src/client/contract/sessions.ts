@@ -123,7 +123,7 @@ export interface ISessions {
    * Delete a Session on the Host permanently, with its subagent descendants; nothing can be
    * restored. On success the deleted ids leave the list before this resolves.
    * @param sessionId - Session to delete.
-   * @returns the deleted ids, or the Host's refusal with the list unchanged.
+   * @returns the deleted ids, or the Host's refusal; the list is then read back from the Host.
    */
   delete(sessionId: SessionId): Promise<RemoteResult<SessionDeleteValue>>
   /**

@@ -136,12 +136,19 @@ export async function inspectApiSession(
   }
 }
 
+/** The refusal for a Session a deletion is removing. */
+function beingDeleted(sessionId: SessionId): ApiSessionAgentError {
+  return new RemoteError('session/not-found', `session "${sessionId}" is being deleted`, { sessionId })
+}
+
 /** Owns every operation that may create, resume, or configure a Web Agent. */
 export class ApiSessionAgentController {
   private readonly resumes = new Map<SessionId, Promise<Agent>>()
   private readonly creations = new Map<SessionId, Promise<Agent>>()
   /** Teardown capabilities of the Agents this controller created or resumed, by Session. */
   private readonly handles = new Map<SessionId, AgentHandle>()
+  /** Sessions being deleted: nothing may create or resume them meanwhile. */
+  private readonly deleting = new Set<SessionId>()
   private readonly selections = new WeakMap<Agent, InstalledSelection>()
   private readonly imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
 
@@ -186,6 +193,7 @@ export class ApiSessionAgentController {
     sessionId: SessionId,
     observation?: SessionObservation,
   ): Promise<ApiSessionAgentResult> {
+    if (this.deleting.has(sessionId)) return { error: beingDeleted(sessionId) }
     const live = this.liveAgent(sessionId)
     if (live !== undefined) return live
     const attached = this.ctx.sessions.get(sessionId)
@@ -244,6 +252,7 @@ export class ApiSessionAgentController {
     checkPersistedIdentity: boolean,
     presetId?: string,
   ): Promise<Agent> {
+    if (this.deleting.has(sessionId)) throw beingDeleted(sessionId)
     let creation = this.creations.get(sessionId)
     if (creation === undefined) {
       creation = this.createOrAdopt(sessionId, cwd, checkPersistedIdentity, presetId)
@@ -496,10 +505,30 @@ export class ApiSessionAgentController {
     }))
   }
 
-  /** Keep the teardown capability of an Agent this controller created or resumed. */
-  private own(sessionId: SessionId, handle: AgentHandle): Agent {
+  /**
+   * Keep the teardown capability of an Agent created or resumed for this controller, so
+   * {@link release} can unload its Session.
+   * @param sessionId - the Agent's Session.
+   * @param handle - the owned Agent handle.
+   * @returns the Agent.
+   */
+  own(sessionId: SessionId, handle: AgentHandle): Agent {
     this.handles.set(sessionId, handle)
     return handle.agent
+  }
+
+  /**
+   * Refuse to create or resume these Sessions until the returned disposer runs. A deletion holds
+   * this from before it unloads them until their logs are gone, so no request can load one again
+   * in between.
+   * @param sessionIds - Sessions being deleted.
+   * @returns the disposer that lifts the refusal.
+   */
+  blockOpens(sessionIds: readonly SessionId[]): () => void {
+    for (const id of sessionIds) this.deleting.add(id)
+    return () => {
+      for (const id of sessionIds) this.deleting.delete(id)
+    }
   }
 
   /**

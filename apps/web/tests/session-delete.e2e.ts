@@ -1,7 +1,9 @@
 /** Permanent Session deletion through the shipped Web composition: storage, registry, list, and search. */
+import { existsSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { launchWebScaffold, seedSession } from './scaffold.ts'
 
@@ -24,6 +26,11 @@ it('deletes a loaded Session from storage, the Workspace registry, the list, and
     for (const id of [gone, kept]) await workspace.attachSession(id)
     await ctx.workspaceRegistry.pinSession(gone)
     await ctx.schedule.create(gone, { prompt: 'check later', after_seconds: 3_600, title: 'Check later' })
+    const spilled = await ctx.spillStore.saveText({
+      owner: { sessionId: gone }, source: { kind: 'tool', toolName: 'shell', callId: ToolCallId('call-1'), label: 'result' },
+      suggestedName: 'shell.txt', content: 'a long tool result',
+    })
+    expect(existsSync(spilled.locator)).toBe(true)
     // Load the Session, as an open conversation would: its Agent holds the log's writer.
     const resolved = await ctx.sessionController.resolveAgent(gone)
     expect('agent' in resolved).toBe(true)
@@ -42,15 +49,28 @@ it('deletes a loaded Session from storage, the Workspace registry, the list, and
     const afterwards = await listed()
     expect(afterwards).toContain(kept)
     expect(afterwards).not.toContain(gone)
-    expect(workspace.sessionIds).toEqual([kept])
-    expect(ctx.workspaceRegistry.pinnedSessionIds).toEqual([])
+    // The owners of data keyed by the Session clean up on its deletion.
+    await expect.poll(() => workspace.sessionIds).toEqual([kept])
+    await expect.poll(() => ctx.workspaceRegistry.pinnedSessionIds).toEqual([])
     expect(ctx.workspaceRegistry.archivedSessionIds).toEqual([])
     await expect.poll(async () => (await ctx.schedule.catalog()).map(entry => entry.sessionId)).toEqual([])
+    await expect.poll(() => existsSync(spilled.locator)).toBe(false)
     // The other Session is untouched and still opens.
     expect((await pathsNaming(scaffold.persistenceRoot, kept)).length).toBeGreaterThan(0)
     expect('agent' in await ctx.sessionController.resolveAgent(kept)).toBe(true)
     // A second delete finds nothing.
     await expect(ctx.sessionController.delete({ sessionId: gone })).rejects.toMatchObject({ code: 'session/not-found' })
+
+    // A fork is loaded the moment it is created: it deletes at once, and its source stays.
+    const fork = await ctx.sessionController.fork({ sessionId: kept })
+    expect(await ctx.sessionController.delete({ sessionId: fork.sessionId })).toEqual({ deletedSessionIds: [fork.sessionId] })
+    expect(await pathsNaming(scaffold.persistenceRoot, fork.sessionId)).toEqual([])
+    expect((await listed())).toContain(kept)
+    // A new Session deleted before its first prompt never reached storage, and is gone all the same.
+    const blank = await ctx.sessionController.create({ workspaceId: workspace.id })
+    expect(await ctx.sessionController.delete({ sessionId: blank.sessionId })).toEqual({ deletedSessionIds: [blank.sessionId] })
+    expect(ctx.sessions.get(blank.sessionId)).toBeUndefined()
+    await expect.poll(() => workspace.sessionIds).toEqual([kept])
   } finally {
     await scaffold.close()
   }

@@ -243,11 +243,12 @@ export class SessionCommandController {
   }
 
   /**
-   * Delete one ordinary Session permanently, with its subagent descendants: running work is
-   * stopped through the Workspace registry's archive admission, the live Agents are unloaded, the
-   * logs are deleted children first, and the registry forgets the ids. A fork is its own Session
-   * and stays. A failure before the first log is gone leaves the Session as it was, back in the
-   * list it was shown in; later failures can be retried.
+   * Delete one ordinary Session permanently, with its subagent descendants. Its running work is
+   * stopped through the owners that answer `workspace/session-stop`, the Agents this controller
+   * holds are unloaded, and the logs are deleted children first; owners of data keyed by a Session
+   * clean up on `session/deleted`. A fork is its own Session and stays. While the deletion runs,
+   * nothing can create or resume the Sessions. A refusal leaves every log in place, though the
+   * work that was running stays stopped; a failure after the first log is gone can be retried.
    * @param request - Session identity to delete.
    * @returns the deleted Session ids: the requested one, then its descendants.
    */
@@ -257,10 +258,16 @@ export class SessionCommandController {
     if (persistence === undefined) {
       throw new RemoteError('gateway/internal', 'deleting is unavailable: this deployment mounts no session persistence', {})
     }
+    // One listing serves the lookup and the descendants; it includes Sessions that are live but not stored yet.
     const headers = new Map<SessionId, SessionHeader>()
-    for (const record of await this.ctx.sessionQuery.listSessions()) headers.set(record.header.id, record.header)
-    // A Session created in this process may not have reached storage yet.
-    for (const live of this.ctx.sessions.list()) headers.set(live.id, live.header)
+    const children = new Map<SessionId, SessionId[]>()
+    for (const { header } of await this.ctx.sessionQuery.listSessions()) {
+      headers.set(header.id, header)
+      if (header.origin !== 'subagent' || header.parentSession === undefined) continue
+      const siblings = children.get(header.parentSession)
+      if (siblings === undefined) children.set(header.parentSession, [header.id])
+      else siblings.push(header.id)
+    }
     const root = headers.get(sessionId)
     if (root === undefined) {
       throw new RemoteError('session/not-found', `session "${sessionId}" not found`, { sessionId })
@@ -269,37 +276,37 @@ export class SessionCommandController {
       throw new RemoteError('gateway/bad-request', `session "${sessionId}" is a subagent Session: delete its parent Session`, {})
     }
     const ids = [sessionId]
-    for (const parentId of ids) {
-      for (const header of headers.values()) {
-        if (header.origin === 'subagent' && header.parentSession === parentId && !ids.includes(header.id)) ids.push(header.id)
-      }
-    }
-    const registry = this.ctx.workspaceRegistry
-    // Archiving with a stop is the one path that halts the turn, subagents, jobs, and schedules,
-    // and it gates further model steps while the Agents unload.
-    const wasArchived = registry.archivedSessionIds.includes(sessionId)
-    if (!wasArchived) await registry.archiveSession(sessionId, { stopActivity: true })
+    for (const parentId of ids) ids.push(...children.get(parentId) ?? [])
     const childrenFirst = ids.toReversed()
-    let deletedAny = false
+    const allowOpens = this.agents.blockOpens(ids)
     try {
-      for (const id of childrenFirst) await this.agents.release(id)
-      for (const id of childrenFirst) {
-        await this.deleteLog(persistence, id)
-        deletedAny = true
+      try {
+        await this.ctx.parallel('workspace/session-stop', { sessionId })
+      } catch (error) {
+        // A provider that could not stop its work is no reason to keep the Session: unloading stops the rest.
+        this.ctx.logger.warn(`session "${sessionId}": stopping its work before deletion reported failures: ${String(error)}`)
       }
-    } catch (error) {
-      // Nothing is gone yet: the Session returns to the list it was shown in.
-      if (!deletedAny && !wasArchived) await registry.unarchiveSession(sessionId)
-      throw error
+      for (const id of childrenFirst) await this.agents.release(id)
+      // An Agent some other owner created (a webhook, the SDK) is not this controller's to unload.
+      const loaded = ids.find(id => this.ctx.sessions.get(id) !== undefined)
+      if (loaded !== undefined) {
+        throw new RemoteError(
+          'session/agent-busy', `session "${loaded}" is loaded by another owner and cannot be deleted while it is`,
+          { reason: 'unload the session, or restart the Host, then delete it' },
+        )
+      }
+      for (const id of childrenFirst) await this.deleteLog(persistence, id)
+    } finally {
+      allowOpens()
     }
-    for (const id of ids) await registry.forgetSession(id)
     for (const id of ids) this.ctx.emit('api-session/removed', id)
     return { deletedSessionIds: ids }
   }
 
   /**
    * Delete one stored log, waiting out the writer an unloading Session is still closing. A Session
-   * that never reached storage has no log: unloading already erased it.
+   * that never reached storage has no log and no backend to announce it, so its deletion is
+   * announced here for the owners of data keyed by it.
    */
   private async deleteLog(persistence: Context['sessionPersistence'], sessionId: SessionId): Promise<void> {
     for (let attempt = 1; ; attempt += 1) {
@@ -308,7 +315,10 @@ export class SessionCommandController {
         return
       } catch (error) {
         const name = error instanceof Error ? error.name : ''
-        if (name === 'SessionPersistenceNotFoundError') return
+        if (name === 'SessionPersistenceNotFoundError') {
+          this.ctx.emit('session/deleted', sessionId)
+          return
+        }
         if (name !== 'SessionAlreadyOwnedError') throw error
         if (attempt === DELETE_ATTEMPTS) {
           throw new RemoteError(
@@ -376,7 +386,7 @@ export class SessionCommandController {
     const composition = await this.agents.composeAgent(this.agents.presetForObservation(source))
     try {
       const { provider, model } = this.ctx.agentDefaultModel.currentSelection()
-      await this.ctx.agents.create({
+      this.agents.own(childId, await this.ctx.agents.create({
         sessionId: childId,
         seed,
         inheritedEventCount: SessionLogOffset(boundary + 1),
@@ -390,7 +400,7 @@ export class SessionCommandController {
         },
         agentOptions: { provider, model },
         setup: composition.setup,
-      })
+      }))
     } catch (error) {
       throw new RemoteError(
         'gateway/internal',

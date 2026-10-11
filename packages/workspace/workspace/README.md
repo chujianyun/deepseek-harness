@@ -80,7 +80,7 @@ Workspace registration does not establish ownership of its directory. A future d
 
 ### Forgetting a deleted session
 
-`forgetSession(sessionId)` drops everything the registry keeps for a session whose log was deleted: its slot in a workspace's accounting, its pin, and its archive mark, in one queued durable operation. The caller deletes the log first. An id the registry does not know resolves without writing.
+On `session/deleted` the registry drops everything it keeps for that session: its slot in a workspace's accounting, its pin, and its archive mark, in one queued durable operation. An id the registry does not know writes nothing, and a failed cleanup is logged rather than thrown into the deletion; ids it could not drop stay filtered from every workspace's session list because their log is gone.
 
 -----
 

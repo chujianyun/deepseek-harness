@@ -3312,7 +3312,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-spill-local`
 
-- `source`: [`packages/spill/spill-local/src/index.ts:31`](../packages/spill/spill-local/src/index.ts)
+- `source`: [`packages/spill/spill-local/src/index.ts:32`](../packages/spill/spill-local/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config (all optional — `static Config` supplies the defaults). */

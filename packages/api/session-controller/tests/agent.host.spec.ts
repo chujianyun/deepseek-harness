@@ -536,4 +536,27 @@ describe('ApiSession release', () => {
     await agents.release(meta.id)
     expect(dispose).toHaveBeenCalledOnce()
   })
+
+  it('refuses to resolve, resume, or create a Session while its deletion holds the block', async () => {
+    const { ctx, agents } = await harness()
+    const meta = header('deleting')
+    providePersistence(ctx, {
+      list: () => Promise.resolve([meta]),
+      inspect: () => Promise.resolve({ meta, events: [] }),
+    })
+    const resume = vi.spyOn(ctx.agents, 'resume')
+    const create = vi.spyOn(ctx.agents, 'create')
+    const allow = agents.blockOpens([meta.id])
+    await expect(agents.resolveAgent(meta.id)).resolves.toMatchObject({
+      error: { code: 'session/not-found', message: 'session "deleting" is being deleted' },
+    })
+    await expect(agents.ensureSession(meta.id, '/workspace', true)).rejects.toMatchObject({ code: 'session/not-found' })
+    expect(resume).not.toHaveBeenCalled()
+    expect(create).not.toHaveBeenCalled()
+    // Another Session is untouched, and the block lifts with its disposer.
+    await expect(agents.resolveAgent(SessionId('missing'))).resolves.toMatchObject({ error: { message: 'session "missing" not found' } })
+    allow()
+    resume.mockResolvedValueOnce({ agent: agent(ctx, meta), dispose: () => Promise.resolve() })
+    await expect(agents.resolveAgent(meta.id)).resolves.toHaveProperty('agent')
+  })
 })
