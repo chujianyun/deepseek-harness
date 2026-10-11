@@ -3,7 +3,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import { readPublishMemory, takeOverMerchant, type MerchantBrowser, type PublishMemory } from './account.ts'
+import { readPublishMemory, reportSignedOut, takeOverMerchant, type MerchantBrowser, type PublishMemory } from './account.ts'
 import { beijingDate, pastDate } from './dates.ts'
 import { EXIT, SkillError } from './errors.ts'
 import { openPage, type Page } from './page.ts'
@@ -11,6 +11,8 @@ import { openPage, type Page } from './page.ts'
 /** What a script reaches outside itself; tests replace it. */
 export interface Deps {
   readonly takeOver: (accountId: string) => Promise<MerchantBrowser>
+  /** Tell DSH the account taken over turned out signed out. */
+  readonly reportSignedOut: (accountId: string) => Promise<void>
   /** The company's publishing memory. */
   readonly memory: () => Promise<PublishMemory>
   readonly openPage: (cdpUrl: string) => Promise<Page>
@@ -23,6 +25,7 @@ export interface Deps {
 /** The real outside world. */
 export const realDeps: Deps = {
   takeOver: accountId => takeOverMerchant(accountId),
+  reportSignedOut: accountId => reportSignedOut(accountId),
   memory: () => readPublishMemory(),
   openPage: cdpUrl => openPage(cdpUrl),
   fetchFile: fetch,
@@ -87,7 +90,8 @@ export async function runReport(
 }
 
 /**
- * Take over the account's browser, open a tab, and close the tab afterwards.
+ * Take over the account's browser, open a tab, and close the tab afterwards. A run that stops because
+ * the account is signed out tells DSH, which shows the account expired at once.
  * @param options - the run's options.
  * @param deps - the outside world.
  * @param use - reads data in the tab, knowing the account.
@@ -100,6 +104,9 @@ export async function withMerchantPage<T>(
   const page = await deps.openPage(account.cdpUrl)
   try {
     return { account, result: await use(page, account) }
+  } catch (error) {
+    if (error instanceof SkillError && error.exitCode === EXIT.signedOut) await deps.reportSignedOut(account.id)
+    throw error
   } finally {
     await page.close()
   }

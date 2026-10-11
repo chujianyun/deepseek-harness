@@ -1279,9 +1279,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async refresh(): Promise<EcommerceAccountsState>',
-        description: 'Check every account that is not signing in, and look for Chrome again.',
+        description: 'Look for Chrome again; the accounts keep their saved sign-in answers.',
         parameters: [],
+        returns: 'the state with what was found.',
+      },
+      {
+        signature: '@Remote async checkAccounts(accountIds?: readonly string[]): Promise<EcommerceAccountsState>',
+        description: 'Check the sign-in of the accounts the user asks about, leaving those signing in or in a task\'s use.',
+        parameters: [{ name: 'accountIds', description: 'the accounts; all of the tenant\'s when left out. Ids no longer listed are skipped.' }],
         returns: 'the state after the checks.',
+        throws: ['RemoteError `hub-account/signed-out`.'],
       },
       {
         signature: '@Remote setBuyerDailyPages(pages: number): Promise<EcommerceAccountsState>',

@@ -75,6 +75,11 @@ const pause = (target, url, frameId, networkId) => {
     socket.send(JSON.stringify({ method: 'Fetch.requestPaused', params: { requestId, request: { url }, frameId, networkId, resourceType: 'Document' }, sessionId: `g-${target.id}` }))
   })
 }
+/** Tell the tab's watcher a navigation committed in one of its frames. */
+const committed = (target, frameId, url) => {
+  const socket = target.watcher
+  if (socket !== undefined && watchers.has(socket)) socket.send(JSON.stringify({ method: 'Page.frameNavigated', params: { frame: { id: frameId, url } }, sessionId: `g-${target.id}` }))
+}
 if (args.includes('--restore-last-session') && existsSync(tabsFile)) for (const url of JSON.parse(readFileSync(tabsFile, 'utf8'))) addTarget(url)
 addTarget(args.at(-1)?.startsWith('-') ? 'about:blank' : args.at(-1))
 /** Each platform's sign-in page and the page a sign-in tab moves on to once the user has signed in. */
@@ -359,6 +364,11 @@ wss.on('connection', (socket) => {
     const target = sessionId === undefined ? undefined : targets.get(sessionId.slice(2))
     switch (method) {
       case 'Target.createTarget': {
+        // Like Chrome, a tab opened in front brings its window back on screen.
+        if (params.background !== true) {
+          const path = join(dataDir, 'fake-window.json')
+          writeFileSync(path, JSON.stringify({ ...existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}, windowState: 'normal' }))
+        }
         if (process.env.FAKE_CHROME_LATE_COMMIT === undefined) return reply({ targetId: addTarget(params.url) })
         // As Chrome does, the new tab is listed as about:blank until its page commits.
         const targetId = addTarget('about:blank')
@@ -427,6 +437,10 @@ wss.on('connection', (socket) => {
         emit('Network.requestWillBeSent', { requestId: 'r0', type: 'Script', request: { url: 'https://login.taobao.com/x.js' } }, sessionId)
         // A page embeds a sign-in frame whether or not the user is signed in.
         emit('Network.requestWillBeSent', { requestId: 'r4', type: 'Document', frameId: 'child', request: { url: 'https://login.taobao.com/frame.htm' } }, sessionId)
+        committed(target, 'child', 'https://login.taobao.com/frame.htm')
+        // A redirect that only passes through a sign-in host never commits there.
+        if (load.redirect === undefined && params.url.includes('sso=1')) await pause(target, 'https://login.taobao.com/jump?target=x', target.id, networkId)
+        committed(target, target.id, load.redirect ?? params.url)
         if (load.redirect !== undefined) {
           const frameId = sessionId.slice(2)
           emit('Network.requestWillBeSent', { requestId: 'r3', type: 'Document', frameId, request: { url: load.redirect } }, 'other-session')
@@ -460,6 +474,11 @@ wss.on('connection', (socket) => {
         const bounds = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}
         writeFileSync(path, JSON.stringify({ ...bounds, ...params.bounds }))
         return reply({})
+      }
+      case 'SystemInfo.getProcessInfo': return reply({ processInfo: [{ type: 'renderer', id: 1, cpuTime: 0 }, ...process.env.FAKE_CHROME_NO_BROWSER_PID === undefined ? [{ type: 'browser', id: process.pid, cpuTime: 0 }] : []] })
+      case 'Browser.getWindowBounds': {
+        const path = join(dataDir, 'fake-window.json')
+        return reply({ bounds: { windowState: 'normal', ...existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {} } })
       }
       case 'Browser.close':
         if (process.env.FAKE_CHROME_STUBBORN !== undefined) return

@@ -3,7 +3,8 @@
 // center with a signed-in Tmall merchant account, the employee asks for store data; a scripted model
 // sees the `ecommerce-accounts` Skill in the catalog, lists the accounts through `dsh-ecommerce`
 // in bash, takes over the account's browser, and answers with its DevTools address, which reaches
-// the account's own Chrome. Once the account is signed out, the same request stops with the way to
+// the account's own Chrome. A second request within half an hour uses the account without checking
+// it again. Once a check finds the account signed out, the same request stops with the way to
 // Settings → E-commerce accounts.
 import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -110,6 +111,7 @@ it.skipIf(process.platform === 'win32')('lets the model list the accounts, take 
     await expect.poll(() => readFile(join(accountDir!, 'chrome.json'), 'utf8').then(() => true, () => false), { timeout: 10_000 }).toBe(true)
     await writeFile(join(accountDir, 'user-data', 'fake-signed-in'), '名流旗舰店:运营')
     await expect.poll(async () => (await accounts.getState()).accounts[0]!.status, { timeout: 15_000 }).toBe('signed-in')
+    const { checkedAt } = (await accounts.getState()).accounts[0]!
 
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
     failurePage = page
@@ -131,18 +133,31 @@ it.skipIf(process.platform === 'win32')('lets the model list the accounts, take 
     await page.getByText(ANSWER).first().waitFor({ timeout: 30_000 })
     const browserCall = chat.chats.at(-1)!.messages.at(-1)!
     expect(browserCall.role).toBe('tool')
-    const port = (JSON.parse(await readFile(join(accountDir, 'chrome.json'), 'utf8')) as { port: number }).port
-    expect(JSON.stringify(browserCall.content)).toContain(`http://127.0.0.1:${String(port)}`)
+    // The address the call got was the account's own Chrome, which the turn's end has closed since.
+    const launchedPort = async () => {
+      const args = JSON.parse(await readFile(join(accountDir!, 'user-data', 'fake-args.json'), 'utf8')) as string[]
+      return args.find(arg => arg.startsWith('--remote-debugging-port='))!.split('=')[1]!
+    }
+    expect(JSON.stringify(browserCall.content)).toContain(`http://127.0.0.1:${await launchedPort()}`)
     const listed = JSON.stringify(chat.chats.find(request => request.messages.filter(message => message.role === 'tool').length === 1)!.messages.at(-1)!.content)
     expect(listed).toContain('名流旗舰店')
     expect(listed).not.toMatch(/cookie|user-data/iu)
-    // The reservation ended with the bash call.
+    // The reservation ended with the bash call, and the turn's end closed the account's Chrome.
     await expect.poll(async () => (await accounts.getState()).accounts[0]!.inUse).toBe(false)
+    await expect.poll(() => readFile(join(accountDir!, 'chrome.json'), 'utf8').then(() => true, () => false), { timeout: 15_000 }).toBe(false)
 
-    // Signed out, the same request stops with the way to Settings.
-    await rm(join(accountDir, 'user-data', 'fake-signed-in'))
+    // The sign-in checked minutes ago stands: a second task takes the account over without a check.
     await send('再看一下天猫店铺的数据')
     await expect.poll(() => page.getByText(ANSWER).count(), { timeout: 30_000 }).toBe(2)
+    // Chrome started again in the background for the second task, without a check.
+    expect(JSON.stringify(chat.chats.at(-1)!.messages.at(-1)!.content)).toContain(`http://127.0.0.1:${await launchedPort()}`)
+    expect((await accounts.getState()).accounts[0]!.checkedAt).toBe(checkedAt)
+
+    // Signed out, and checked, the same request stops with the way to Settings.
+    await rm(join(accountDir, 'user-data', 'fake-signed-in'))
+    expect((await accounts.checkAccounts()).accounts[0]!.status).toBe('signed-out')
+    await send('第三次看一下天猫店铺的数据')
+    await expect.poll(() => page.getByText(ANSWER).count(), { timeout: 30_000 }).toBe(3)
     expect(JSON.stringify(chat.chats.at(-1)!.messages.at(-1)!.content)).toContain('is signed out. Stop, and ask the user to sign in again in DSH Settings')
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {

@@ -2,7 +2,9 @@
  * The watch DSH keeps on an account's browser while a task uses it. Through a DevTools connection
  * of its own, attached to every tab before the tab runs, it pauses each page load: a page the
  * rules refuse never loads, and once the platform's risk control shows, nothing else loads for
- * the rest of the task. The task's own connection cannot get around it.
+ * the rest of the task. A tab whose page lands on the platform's sign-in page is reported, after
+ * any redirects that only pass through it, and still loads, so the task sees it too. A tab the task
+ * opens in front, which brings its window back on screen, has the window minimized again. The task's own connection cannot get around it.
  */
 
 import { Cdp } from './cdp.ts'
@@ -24,10 +26,31 @@ export interface GuardRules {
    * @param url - the address of its page.
    */
   readonly risk: (url: string) => void
+  /**
+   * Whether an address is the platform's sign-in page.
+   * @param url - a tab's address.
+   * @returns true for the sign-in page.
+   */
+  readonly signInPage: (url: string) => boolean
+  /**
+   * A tab was sent to the platform's sign-in page: the account is signed out.
+   * @param url - the address of the sign-in page.
+   */
+  readonly signedOut: (url: string) => void
 }
 
 /** Ignore a call the browser no longer answers, such as one for a tab that closed. */
 const ignore = (): undefined => undefined
+
+/** Minimize the window of a tab when it is on screen; a tab that closed meanwhile is left. */
+function minimizeWindowOf(cdp: Cdp, targetId: string): Promise<void> {
+  return cdp.send<{ windowId: number }>('Browser.getWindowForTarget', { targetId }).then(async ({ windowId }) => {
+    const { bounds } = await cdp.send<{ bounds: { windowState: string } }>('Browser.getWindowBounds', { windowId })
+    if (bounds.windowState === 'normal' || bounds.windowState === 'maximized') {
+      await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } })
+    }
+  }).catch(ignore)
+}
 
 /**
  * Watch every tab of a browser until the returned function is called.
@@ -48,12 +71,19 @@ export async function guardBrowser(port: number, timeoutMs: number, rules: Guard
     const target = params.targetInfo as { targetId: string; type: string }
     if (target.type === 'page') {
       tabs.set(sessionId, target.targetId)
+      void minimizeWindowOf(cdp, target.targetId)
       // The network domain gives each paused load the network request id that its redirects keep.
       void cdp.send('Network.enable', {}, sessionId).catch(ignore)
+      void cdp.send('Page.enable', {}, sessionId).catch(ignore)
       void cdp.send('Fetch.enable', { patterns: [{ resourceType: 'Document', requestStage: 'Request' }] }, sessionId).catch(ignore)
     }
     // A tab waits for this before it loads anything, so the watch is in place first.
     void cdp.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch(ignore)
+  })
+  // A navigation commits once its redirects are done, so only the page a tab lands on counts.
+  cdp.on('Page.frameNavigated', (params, sessionId) => {
+    const frame = params.frame as { id: string; url: string }
+    if (frame.id === tabs.get(sessionId as string) && rules.signInPage(frame.url)) rules.signedOut(frame.url)
   })
   cdp.on('Fetch.requestPaused', (params, sessionId) => {
     const { url } = params.request as { url: string }

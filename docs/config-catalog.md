@@ -951,7 +951,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-ecommerce-accounts`
 
 - `inject`: `hubAccount` · `skills` · `shellEnv`
-- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:70`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
+- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:75`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -966,14 +966,16 @@ export interface Config {
   signInTimeoutMs?: number
   /** How long one check waits for the platform's response, in milliseconds. */
   checkTimeoutMs?: number
+  /** How long a check whose page could not be loaded waits before trying once more, in milliseconds. */
+  networkRetryMs?: number
   /** How long DSH waits for Chrome to start or close, in milliseconds. */
   chromeTimeoutMs?: number
   /** Time between looks at the sign-in tab, in milliseconds. */
   signInPollMs?: number
   /** Time after which a sign-in is checked even before its tab leaves the sign-in page, in milliseconds. */
   signInCheckEveryMs?: number
-  /** Time between background checks of every merchant account, in milliseconds. */
-  checkIntervalMs?: number
+  /** How long a signed-in answer stands, so a task taking the account over does not check it again, in milliseconds. */
+  signInReuseMs?: number
   /** Most pages a task may open with one buyer account in a calendar day, until a tenant sets its own. */
   buyerDailyPages?: number
   /** How long a buyer account rests after the platform's risk control showed, in hours. */

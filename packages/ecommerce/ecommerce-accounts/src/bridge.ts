@@ -28,6 +28,8 @@ export interface BridgeHandlers {
   readonly buyer: (grant: Grant, platform: string) => Promise<BridgeReply>
   /** Rest a buyer account the call took over, after risk control a script met through the platform's APIs. */
   readonly risk: (grant: Grant, accountId: string) => Promise<BridgeReply>
+  /** Record that an account the call took over is signed out, as a script found through the platform's pages or APIs. */
+  readonly signedOut: (grant: Grant, accountId: string) => Promise<BridgeReply>
   /** The tenant's publishing memory. */
   readonly memory: (grant: Grant) => Promise<BridgeReply>
   /** Remember or forget entries of the tenant's publishing memory, from the request's JSON body. */
@@ -103,6 +105,7 @@ export class Bridge {
     if (command === 'browser') return this.handlers.browser(grant, url.searchParams.get('id') ?? '')
     if (command === 'buyer') return this.handlers.buyer(grant, url.searchParams.get('platform') ?? '')
     if (command === 'risk') return this.handlers.risk(grant, url.searchParams.get('id') ?? '')
+    if (command === 'signed-out') return this.handlers.signedOut(grant, url.searchParams.get('id') ?? '')
     if (command === 'memory') return this.handlers.memory(grant)
     if (command === 'remember') return this.handlers.remember(grant, body)
     return { status: 404, body: `DSH: unknown command "${command}".` }
@@ -128,7 +131,7 @@ async function readBody(request: AsyncIterable<Buffer>): Promise<string | undefi
 /** The `dsh-ecommerce` command: POSIX shell and curl, so it needs nothing DSH ships. */
 export const SCRIPT = `#!/bin/sh
 # dsh-ecommerce: the e-commerce accounts DSH keeps signed in, for this DSH shell call.
-usage='usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id> | dsh-ecommerce memory | dsh-ecommerce remember <json-file>'
+usage='usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id> | dsh-ecommerce signed-out <account-id> | dsh-ecommerce memory | dsh-ecommerce remember <json-file>'
 if [ -z "$DSH_ECOMMERCE_URL" ]; then
   echo "dsh-ecommerce: e-commerce accounts are only available in a DSH shell call while DSH is signed in to the user center." >&2
   exit 2
@@ -142,6 +145,9 @@ case "$1" in
   risk)
     if [ -z "$2" ]; then echo "$usage" >&2; exit 2; fi
     set -- --get --data-urlencode "id=$2" "$DSH_ECOMMERCE_URL/risk" ;;
+  signed-out)
+    if [ -z "$2" ]; then echo "$usage" >&2; exit 2; fi
+    set -- --get --data-urlencode "id=$2" "$DSH_ECOMMERCE_URL/signed-out" ;;
   memory) set -- "$DSH_ECOMMERCE_URL/memory" ;;
   remember)
     if [ -z "$2" ] || [ ! -f "$2" ]; then echo "$usage" >&2; exit 2; fi

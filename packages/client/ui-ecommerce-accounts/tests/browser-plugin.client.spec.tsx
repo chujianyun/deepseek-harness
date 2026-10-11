@@ -36,6 +36,7 @@ async function bench() {
     confirmSignIn: vi.fn(() => ok(signedIn)),
     renameAccount: vi.fn(() => ok(signedIn)),
     refresh: vi.fn(() => ok(signedIn)),
+    checkAccounts: vi.fn(() => ok(signedIn)),
     setBuyerDailyPages: vi.fn(() => ok(signedIn)),
     deleteAccount: vi.fn(() => ok(signedIn)),
     watch: vi.fn(),
@@ -112,6 +113,8 @@ describe('ui-ecommerce-accounts browser plugin', () => {
     expect(b.ecommerceAccounts.setBuyerDailyPages).toHaveBeenCalledWith(30)
     await injected.onRefresh()
     expect(b.ecommerceAccounts.refresh).toHaveBeenCalledOnce()
+    await injected.onCheck(['e1'])
+    expect(b.ecommerceAccounts.checkAccounts).toHaveBeenCalledWith(['e1'])
     await injected.onDelete('e1')
     expect(b.ecommerceAccounts.deleteAccount).toHaveBeenCalledWith('e1')
     const open = vi.spyOn(globalThis, 'open').mockReturnValue(null)

@@ -14,11 +14,11 @@
 
 ## 检查
 
-一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的登录响应，失败时重试一次：天猫的 `mtop.user.getusersimple`（会给出账号名）、淘宝千牛的 `mtop.taobao.jdy.resource.shop.info.get`、拼多多的 `janus/api/checkLogin`，或抖店的 `byteshop/menu/list/v2`；拼多多和抖店的页面还会给出店铺名，设置分区会把它与填写的店铺名比较。页面被平台转到登录页时立即判为未登录。在规定时间内没有答复、页面无法加载，或账号的浏览器数据正被一个不是 DSH 启动的 Chrome 占用时，检查以对应的问题（超时、网络、占用）失败，并保留上次的结果。账号在加载时、设置分区打开时以及每隔 30 分钟检查一次；曾经登录、现在未登录的账号为登录过期，桌面版会弹出提示，可直接打开该分区。登录后，该账号的 Chrome 窗口被最小化，Chrome 继续运行。租户的账号加载时以及设置分区打开时，都会检查每个账号。
+一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的登录响应，失败时重试一次：天猫的 `mtop.user.getusersimple`（会给出账号名）、淘宝千牛的 `mtop.taobao.jdy.resource.shop.info.get`、拼多多的 `janus/api/checkLogin`，或抖店的 `byteshop/menu/list/v2`；拼多多和抖店的页面还会给出店铺名，设置分区会把它与填写的店铺名比较。页面被平台转到登录页时立即判为未登录。在规定时间内没有答复、页面无法加载，或账号的浏览器数据正被一个不是 DSH 启动的 Chrome 占用时，检查以对应的问题（超时、网络、占用）失败，并保留上次的结果。最近一次结果随账号保存，此后一直显示，重启后也是。DSH 不会自行检查、不定时检查，设置分区打开时也不检查：只在用户要求时，以及任务接管一个上次已登录结果早于 30 分钟的账号时检查。曾经登录、现在未登录的账号为登录过期，桌面版会弹出提示，可直接打开该分区。登录经检查确认后，其 Chrome 关闭。
 
 ## 重启之后
 
-Chrome 的生命周期长于 DSH。之后启动的 DSH 会重新连上记录中的 Chrome；它已不在时（例如电脑重启后），曾经登录过的账号会重新启动 Chrome、将其最小化并恢复上次会话，再由检查判断平台是否保留了登录。删除账号会先关闭其 Chrome 让它写入 cookie，再删除其数据。
+Chrome 只在需要时运行：检查或任务会在后台启动账号的 Chrome，不抢焦点，把窗口最小化一次，并恢复上次会话；用户要求的检查或登录结束、或切换租户时关闭，但只在没有任何会话处于一轮之中时才关，因此任务在一轮的多次调用之间保有浏览器。由检查判断平台是否保留了登录。比 DSH 活得更久的 Chrome 会被重新连上。删除账号会先关闭其 Chrome 让它写入 cookie，再删除其数据。
 
 ## 模型使用
 
@@ -26,7 +26,7 @@ Chrome 的生命周期长于 DSH。之后启动的 DSH 会重新连上记录中�
 
 ## 买家账号与风控保护
 
-天猫和淘宝的买家账号只用于查看公开商品页面，由 DSH 而不是模型保证安全：任务使用账号期间，DSH 通过自己的 DevTools 连接监看其浏览器，暂停每一次页面加载。商家账号不能打开公开的商品页或搜索页。买家账号最多打开租户的每日页面上限（默认 20，可在设置中修改），按自然日计数；平台风控一旦出现，DSH 不再为该任务加载任何内容，并让该账号休息 72 小时。`dsh-ecommerce buyer` 挑选可用且当天打开页面最少的买家账号，或说明为何都不可用。买家账号不做后台定时检查，因为每次检查都会打开一个被平台计数的页面。
+天猫和淘宝的买家账号只用于查看公开商品页面，由 DSH 而不是模型保证安全：任务使用账号期间，DSH 通过自己的 DevTools 连接监看其浏览器，暂停每一次页面加载。商家账号不能打开公开的商品页或搜索页。买家账号最多打开租户的每日页面上限（默认 20，可在设置中修改），按自然日计数；平台风控一旦出现，DSH 不再为该任务加载任何内容，并让该账号休息 72 小时。`dsh-ecommerce buyer` 挑选可用且当天打开页面最少的买家账号，或说明为何都不可用。任务的标签页落在平台登录页时，或技能脚本上报它以其他方式发现的掉线时，DSH 立即检查该账号，确认掉线后显示为已失效；技能会告诉用户哪家店铺需要重新登录，跨多家店铺的任务继续处理其他店铺。
 
 ## 天猫取数技能
 
@@ -93,10 +93,18 @@ Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote name
 @Remote async confirmSignIn(accountId: string): Promise<EcommerceAccountsState>
 
 /**
- * Check every account that is not signing in, and look for Chrome again.
- * @returns the state after the checks.
+ * Look for Chrome again; the accounts keep their saved sign-in answers.
+ * @returns the state with what was found.
  */
 @Remote async refresh(): Promise<EcommerceAccountsState>
+
+/**
+ * Check the sign-in of the accounts the user asks about, leaving those signing in or in a task's use.
+ * @param accountIds - the accounts; all of the tenant's when left out. Ids no longer listed are skipped.
+ * @returns the state after the checks.
+ * @throws RemoteError `hub-account/signed-out`.
+ */
+@Remote async checkAccounts(accountIds?: readonly string[]): Promise<EcommerceAccountsState>
 
 /**
  * Set the tenant's daily page limit for buyer accounts.

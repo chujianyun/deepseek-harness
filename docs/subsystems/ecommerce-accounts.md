@@ -14,11 +14,11 @@ Signing in starts the system Google Chrome detached on the account's data, with 
 
 ## Checking
 
-A check opens the platform's business page in a background tab and reads the platform's own sign-in response there, retrying once: Tmall's `mtop.user.getusersimple` (which names the account), Taobao Qianniu's `mtop.taobao.jdy.resource.shop.info.get`, Pinduoduo's `janus/api/checkLogin`, or a Douyin shop's `byteshop/menu/list/v2`; Pinduoduo and Douyin shop pages also name the store, which the Settings section compares with the store name entered. A page the platform sends to sign in is signed out at once. A check that gets no answer in time, cannot load the page, or finds the account's browser data held by a Chrome DSH did not start fails with that problem — timeout, network, or busy — and keeps the last answer. Accounts are checked when they load, when the Settings section opens, and every 30 minutes; an account that was signed in and is now signed out is expired, which the Desktop announces with a notice that opens the section. Once signed in, the account's Chrome windows are minimized and Chrome keeps running. Every account is checked when the tenant's accounts load and when the Settings section opens.
+A check opens the platform's business page in a background tab and reads the platform's own sign-in response there, retrying once: Tmall's `mtop.user.getusersimple` (which names the account), Taobao Qianniu's `mtop.taobao.jdy.resource.shop.info.get`, Pinduoduo's `janus/api/checkLogin`, or a Douyin shop's `byteshop/menu/list/v2`; Pinduoduo and Douyin shop pages also name the store, which the Settings section compares with the store name entered. A page the platform sends to sign in is signed out at once. A check that gets no answer in time, cannot load the page, or finds the account's browser data held by a Chrome DSH did not start fails with that problem — timeout, network, or busy — and keeps the last answer. The last answer is saved with the account and shown from then on, also after a restart. DSH does not check on its own, on a schedule, or when the Settings section opens: it checks when the user asks, and when a task takes an account over whose last signed-in answer is older than 30 minutes. An account that was signed in and is now signed out is expired, which the Desktop announces with a notice that opens the section. Once the sign-in is checked, its Chrome closes.
 
 ## Across restarts
 
-Chrome outlives DSH. A later DSH reattaches to the recorded Chrome; when it is gone, as after a computer restart, an account that was ever signed in has Chrome started again, minimized, with its last session restored, and the check tells whether the platform kept the sign-in. Deleting an account closes its Chrome so it writes its cookies, then deletes its data.
+Chrome runs only while it is needed: a check or task starts the account's Chrome in the background, without taking focus, minimizes its window once, and restores its last session; it closes when a check the user asked for or a sign-in ends, or the tenant switches, but only once no Session has a turn under way, so a task keeps its browser between the calls of its turn. A check tells whether the platform kept the sign-in. A Chrome that outlived DSH is reattached to. Deleting an account closes its Chrome so it writes its cookies, then deletes its data.
 
 ## Use by the model
 
@@ -26,7 +26,7 @@ While a tenant is signed in, the `ecommerce-accounts` Skill tells the model how 
 
 ## Buyer accounts and risk protection
 
-Buyer accounts on Tmall and Taobao only view public product pages, and DSH, not the model, keeps them safe: while a task uses an account, DSH watches its browser through its own DevTools connection and pauses every page load. A merchant account opens no public product or search page. A buyer account opens at most the tenant's daily page limit (20 by default, set in Settings), counted by calendar day; once the platform's risk control shows, DSH loads nothing more for the task and rests the account for 72 hours. `dsh-ecommerce buyer` picks the usable buyer account that opened the fewest pages today, or says why none can be used. Buyer accounts are not checked in the background, since each check opens a page the platform counts.
+Buyer accounts on Tmall and Taobao only view public product pages, and DSH, not the model, keeps them safe: while a task uses an account, DSH watches its browser through its own DevTools connection and pauses every page load. A merchant account opens no public product or search page. A buyer account opens at most the tenant's daily page limit (20 by default, set in Settings), counted by calendar day; once the platform's risk control shows, DSH loads nothing more for the task and rests the account for 72 hours. `dsh-ecommerce buyer` picks the usable buyer account that opened the fewest pages today, or says why none can be used. When a task's tab lands on the platform's sign-in page, or a skill script reports a sign-out it found another way, DSH checks the account at once, and a checked sign-out shows it expired; the skills tell the user which store to sign in again, and a task across several stores goes on with the others.
 
 ## Tmall data skills
 
@@ -93,10 +93,18 @@ Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote name
 @Remote async confirmSignIn(accountId: string): Promise<EcommerceAccountsState>
 
 /**
- * Check every account that is not signing in, and look for Chrome again.
- * @returns the state after the checks.
+ * Look for Chrome again; the accounts keep their saved sign-in answers.
+ * @returns the state with what was found.
  */
 @Remote async refresh(): Promise<EcommerceAccountsState>
+
+/**
+ * Check the sign-in of the accounts the user asks about, leaving those signing in or in a task's use.
+ * @param accountIds - the accounts; all of the tenant's when left out. Ids no longer listed are skipped.
+ * @returns the state after the checks.
+ * @throws RemoteError `hub-account/signed-out`.
+ */
+@Remote async checkAccounts(accountIds?: readonly string[]): Promise<EcommerceAccountsState>
 
 /**
  * Set the tenant's daily page limit for buyer accounts.

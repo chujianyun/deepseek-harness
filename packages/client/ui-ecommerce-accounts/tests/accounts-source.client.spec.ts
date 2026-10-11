@@ -16,6 +16,7 @@ function harness() {
     confirmSignIn: vi.fn(() => ok(state(7))),
     rename: vi.fn(() => ok(state(7))),
     refresh: vi.fn(() => ok(state(8))),
+    check: vi.fn(() => ok(state(10))),
     setDailyPages: vi.fn(() => ok(state(8))),
     remove: vi.fn(() => ok(state(9))),
     openUrl: vi.fn(),
@@ -39,6 +40,8 @@ describe('accounts source', () => {
     expect(await h.source.onRename('e1', { account: 'nick' })).toBeUndefined()
     expect(h.deps.rename).toHaveBeenCalledWith('e1', { account: 'nick' })
     await h.source.onRefresh()
+    expect(await h.source.onCheck()).toBeUndefined()
+    expect(h.deps.check).toHaveBeenCalledWith(undefined)
     expect(await h.source.onSetDailyPages(30)).toBeUndefined()
     expect(h.deps.setDailyPages).toHaveBeenCalledWith(30)
     expect(await h.source.onDelete('e1')).toBeUndefined()

@@ -1,9 +1,9 @@
 import { chmod, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { readPublishMemory, reportRisk, runDshEcommerce, takeOverBuyer, takeOverMerchant, type EcommerceCommandResult } from '../src/account.ts'
+import { readPublishMemory, reportRisk, reportSignedOut, runDshEcommerce, takeOverBuyer, takeOverMerchant, type EcommerceCommandResult } from '../src/account.ts'
 import { main as alimamaMain } from '../src/alimama-report.ts'
-import { fileSafe, parseOptions, realDeps, runReport, writeFiles } from '../src/cli.ts'
+import { fileSafe, parseOptions, realDeps, runReport, withMerchantPage, writeFiles } from '../src/cli.ts'
 import { EXIT, SkillError } from '../src/errors.ts'
 import { main as sycmMain } from '../src/sycm-report.ts'
 import { TEMPLATE_NAME } from '../src/sycm.ts'
@@ -85,6 +85,24 @@ describe('takeOverMerchant', () => {
     expect(args).toEqual([['risk', 'b1']])
     expect(await reportRisk('b1', ran({ code: 1, stderr: 'DSH: risk control can only be reported for a buyer account this shell call took over, not "b1".\n' })))
       .toBe('未能通知 DSH 让这个买家号冷却（DSH: risk control can only be reported for a buyer account this shell call took over, not "b1".），请今天不要再用它。')
+  })
+
+  it('tells DSH an account turned out signed out, whatever DSH answers', async () => {
+    const args: unknown[] = []
+    await reportSignedOut('a1', (given) => { args.push(given); return ran({ code: 1, stderr: 'DSH: no' })() })
+    expect(args).toEqual([['signed-out', 'a1']])
+  })
+
+  it('reports the account of a run that stops signed out, and of no other stop', async () => {
+    const reported: string[] = []
+    const deps = fakeDeps(new FakePage([]), { reportSignedOut: (id) => { reported.push(id); return Promise.resolve() } })
+    const stop = (error: Error) => withMerchantPage({ account: 'a1' }, deps, () => Promise.reject(error))
+    await expect(stop(new SkillError('天猫商家后台需要重新登录。', EXIT.signedOut))).rejects.toMatchObject({ exitCode: EXIT.signedOut })
+    await expect(stop(new SkillError('失败', EXIT.failed))).rejects.toMatchObject({ exitCode: EXIT.failed })
+    await expect(stop(new Error('down'))).rejects.toThrow('down')
+    expect(reported).toEqual(['a1'])
+    // Outside a DSH shell call the command is missing, which does not change the stop.
+    await expect(realDeps.reportSignedOut('a1')).resolves.toBeUndefined()
   })
 
   it('reads the company\'s publishing memory, and says why when it cannot', async () => {
