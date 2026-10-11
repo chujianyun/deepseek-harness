@@ -16,6 +16,7 @@ import knowledgeSelectionRemote from '@deepseek-ai/dsh-knowledge-selection/remot
 import connectorsRemote from '@deepseek-ai/dsh-connectors/remote'
 import assistantsRemote from '@deepseek-ai/dsh-assistants/remote'
 import automationTasksRemote from '@deepseek-ai/dsh-automation-tasks/remote'
+import sessionShareRemote from '@deepseek-ai/dsh-session-share/remote'
 import ecommerceAccountsRemote from '@deepseek-ai/dsh-ecommerce-accounts/remote'
 import skillMarketRemote from '@deepseek-ai/dsh-skill-market/remote'
 import officeToPdfRemote from '@deepseek-ai/dsh-office-to-pdf/remote'
@@ -61,6 +62,7 @@ export type {} from '@deepseek-ai/dsh-knowledge-selection/remote'
 export type {} from '@deepseek-ai/dsh-connectors/remote'
 export type {} from '@deepseek-ai/dsh-assistants/remote'
 export type {} from '@deepseek-ai/dsh-automation-tasks/remote'
+export type {} from '@deepseek-ai/dsh-session-share/remote'
 export type {} from '@deepseek-ai/dsh-ecommerce-accounts/remote'
 export type {} from '@deepseek-ai/dsh-skill-market/remote'
 export type {} from '@deepseek-ai/dsh-api-account-controller/remote'
@@ -215,6 +217,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       connectorsRemote,
       assistantsRemote,
       automationTasksRemote,
+      sessionShareRemote,
       ecommerceAccountsRemote,
     ]) {
       disposers.push(await ctx.remote.$mount(contribution))

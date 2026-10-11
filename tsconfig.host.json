@@ -101,6 +101,7 @@
     "apps/web/tests/workspace-recency.e2e.ts",
     "apps/web/tests/session-grouping.e2e.ts",
     "apps/web/tests/session-delete.e2e.ts",
+    "apps/web/tests/session-share.e2e.ts",
     "apps/web/tests/session-group-limit.e2e.ts",
     "apps/web/tests/session-unarchive.e2e.ts",
     "apps/web/tests/session-archive-active.e2e.ts",

@@ -1,0 +1,68 @@
+/** Share session copy: the menu row and the share dialog. */
+
+/** Simplified Chinese copy. */
+export const zh = {
+  'menu.share': '分享会话',
+  'untitled': '未命名',
+  'dialog.title': '分享会话',
+  'dialog.desc': '同公司的成员登录后，可以通过链接查看“{title}”的对话内容。分享的是现在的对话正文，不包含附件文件；之后的新内容需要更新后才会出现在链接里。',
+  'close': '关闭',
+  'cancel': '取消',
+  'done': '完成',
+  'loading': '正在读取分享状态…',
+  'create': '生成链接',
+  'creating': '正在生成链接…',
+  'link': '分享链接',
+  'copy': '复制链接',
+  'copied': '链接已复制',
+  'copyFailed': '无法复制，请手动选中链接后复制',
+  'updatedAt': '内容更新于 {time}',
+  'time.locale': 'zh-CN',
+  'update': '更新内容',
+  'updating': '正在更新内容…',
+  'updated': '内容已更新，链接不变',
+  'revoke': '取消分享',
+  'revoking': '正在取消分享…',
+  'revoked': '已取消分享，原链接已失效',
+  'error.signedOut': '请先登录后再分享。',
+  'error.empty': '这个会话还没有对话内容，暂时不能分享。',
+  'error.tooLong': '对话内容太长，超过了分享的上限，无法分享。',
+  'error.refused': '分享没有成功：{reason}',
+  'error.unreachable': '连接不上服务器，请检查网络后重试。',
+  'error.failed': '操作没有成功：{reason}',
+} as const
+
+/** The keys every dictionary of this namespace carries. */
+export type SessionShareLocaleKey = keyof typeof zh
+
+/** English copy. */
+export const en: Record<SessionShareLocaleKey, string> = {
+  'menu.share': 'Share session',
+  'untitled': 'Untitled',
+  'dialog.title': 'Share session',
+  'dialog.desc': 'Signed-in members of your company can read the conversation of “{title}” at a link. It shares the conversation as it is now, without attachment files; later messages appear at the link only after you update it.',
+  'close': 'Close',
+  'cancel': 'Cancel',
+  'done': 'Done',
+  'loading': 'Reading the share status…',
+  'create': 'Create link',
+  'creating': 'Creating the link…',
+  'link': 'Share link',
+  'copy': 'Copy link',
+  'copied': 'Link copied',
+  'copyFailed': 'Could not copy. Select the link and copy it yourself.',
+  'updatedAt': 'Content updated {time}',
+  'time.locale': 'en-US',
+  'update': 'Update content',
+  'updating': 'Updating the content…',
+  'updated': 'Content updated; the link is the same',
+  'revoke': 'Stop sharing',
+  'revoking': 'Stopping the share…',
+  'revoked': 'Sharing stopped; the link no longer works',
+  'error.signedOut': 'Sign in before sharing.',
+  'error.empty': 'This session has no conversation yet, so it cannot be shared.',
+  'error.tooLong': 'The conversation is longer than a share can hold, so it cannot be shared.',
+  'error.refused': 'Sharing did not succeed: {reason}',
+  'error.unreachable': 'Cannot reach the server. Check the network and try again.',
+  'error.failed': 'That did not succeed: {reason}',
+}
