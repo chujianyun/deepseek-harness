@@ -108,6 +108,8 @@ export class SessionProjectionCache extends Service {
 
   private table?: KvTable<SessionId, CheckpointRecord>
   private readonly dirty = new Map<Session, DirtyState>()
+  /** Sessions deleted in this process: a checkpoint write still in flight for one must not bring its record back. */
+  private readonly deleted = new Set<SessionId>()
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'sessionProjectionCache')
@@ -335,7 +337,17 @@ export class SessionProjectionCache extends Service {
     // the store, would leave the seed-derived values (the title) unreadable
     // on the cold list. The creation write captures the seed-derived cut.
     this.ctx.on('session/created', (session: Session) => {
+      this.deleted.delete(session.id)
       void this.flushSoft(session, 'create')
+    })
+
+    // A deleted session has no log to replay over its checkpoint.
+    this.ctx.on('session/deleted', (id: SessionId) => {
+      this.deleted.add(id)
+      /* v8 ignore next 3 -- the domain rejects a delete only while it is closing; an unread record then stays */
+      this.requireTable().delete(id).catch((error: unknown) => {
+        this.ctx.logger.warn(`session projection cache: removing the checkpoint of deleted session "${id}" failed: ${String(error)}`)
+      })
     })
 
     // Detach (the live-to-cold moment): the final mandatory point. After
@@ -391,6 +403,7 @@ export class SessionProjectionCache extends Service {
     if (detached === undefined) {
       throw new TypeError('projection checkpoint is not losslessly JSON-serializable (a unit state violates the plain-JSON contract)')
     }
+    if (this.deleted.has(id)) return
     await this.requireTable().put(id, { identity, rows: detached as CheckpointRecord['rows'] })
   }
 

@@ -906,6 +906,45 @@ describe('create', () => {
   })
 })
 
+describe('delete', () => {
+  it('drops the deleted Session and its descendants from the list at once, and keeps the others', async ({ bench }) => {
+    const b = bench()
+    await feedList(b, [])
+    for (const id of ['root', 'child', 'other']) {
+      b.svc.handleSessionAdded({
+        sessionId: sid(id), updatedAt: 1, running: false, agentAvailable: false, blank: false, cwd: '/proj',
+        ...(id === 'child' ? { origin: 'subagent' as const, parentSessionId: sid('root') } : {}),
+      })
+    }
+    await Promise.resolve()
+    expect([...b.svc.list.getSnapshot().ids].sort()).toEqual(['child', 'other', 'root'])
+    b.mock.remote.session.delete.mockResolvedValue(ok({ deletedSessionIds: [sid('root'), sid('child')] }))
+    await expect(b.svc.delete(sid('root'))).resolves.toEqual({ ok: true, value: { deletedSessionIds: ['root', 'child'] } })
+    expect(b.mock.remote.session.delete).toHaveBeenCalledExactlyOnceWith({ sessionId: 'root' })
+    expect(b.svc.list.getSnapshot().ids).toEqual(['other'])
+    // The Host's own removal notice for the same ids changes nothing more.
+    b.svc.handleSessionRemoved(sid('root'))
+    b.svc.handleSessionRemoved(sid('child'))
+    await Promise.resolve()
+    expect(b.svc.list.getSnapshot().ids).toEqual(['other'])
+  })
+
+  it('returns a refusal and leaves the list as it was', async ({ bench }) => {
+    const b = bench()
+    await feedList(b, [{ id: 'root' }])
+    const error = new RemoteError('session/writer-held', 'still being written', { sessionId: sid('root') })
+    b.mock.remote.session.delete.mockResolvedValue(err(error))
+    const lists = b.mock.remote.session.list.mock.calls.length
+    await expect(b.svc.delete(sid('root'))).resolves.toEqual({ ok: false, error })
+    expect(b.svc.list.getSnapshot().ids).toEqual(['root'])
+    // The Host may have unloaded the Session before refusing: the list is read back.
+    await vi.waitFor(() => { expect(b.mock.remote.session.list.mock.calls.length).toBeGreaterThan(lists) })
+    // A list that cannot be read back does not turn the refusal into a rejection.
+    b.mock.remote.session.list.mockRejectedValueOnce(new Error('offline'))
+    await expect(b.svc.delete(sid('root'))).resolves.toEqual({ ok: false, error })
+  })
+})
+
 describe('fork', () => {
   it('propagates a failed fork without creating or retaining a child', async ({ bench }) => {
     const b = bench()

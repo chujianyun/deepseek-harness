@@ -215,6 +215,12 @@ export class WorkspaceRegistry extends Service {
     this.validateStoredState(this.requireState())
     this.rebuildEntities()
     this.reportFilteredCandidates()
+    // A deleted session leaves no log to account: its records go on the event, whoever deleted it.
+    this.ctx.on('session/deleted', (sessionId) => {
+      this.forgetSession(sessionId).catch((error: unknown) => {
+        this.ctx.logger.warn(`workspace: forgetting deleted session "${sessionId}" failed: ${String(error)}`)
+      })
+    })
   }
 
   /**
@@ -404,6 +410,29 @@ export class WorkspaceRegistry extends Service {
         ...state,
         archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
       })
+    })
+  }
+
+  /**
+   * Drop everything the registry keeps for a deleted session: its slot in a workspace's
+   * accounting, its pin, and its archive mark. Runs on `session/deleted`, queued behind every
+   * other registry write; an id the registry does not know writes nothing.
+   */
+  private forgetSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      this.headers.delete(sessionId)
+      this.sessionPaths.delete(sessionId)
+      this.invalidSessionPaths.delete(sessionId)
+      // An entity whose record does not hold the id writes nothing.
+      for (const entity of this.entities.values()) await entity.detachSession(sessionId)
+      const state = this.requireState()
+      if (state.archivedSessionIds.includes(sessionId) || state.pinnedSessionIds.includes(sessionId)) {
+        await this.setState({
+          ...state,
+          archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+          pinnedSessionIds: state.pinnedSessionIds.filter(id => id !== sessionId),
+        })
+      }
     })
   }
 

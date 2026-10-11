@@ -1088,6 +1088,76 @@ describe('registry-global session unarchive', () => {
     expect(result.changes.filter(change => change.table === '').length).toBe(changesAfterFirst)
   })
 
+  it('forgets a deleted session: its accounting slot, pin, and archive mark, durably and idempotently', async () => {
+    const dir = await makeDir('forget-home')
+    const result = await harness({
+      sessions: [header('kept', dir, 100), header('pinned', dir, 200), header('archived', dir, 300)],
+    })
+    const workspace = result.registry.list()[0]!
+    await result.registry.pinSession(SessionId('pinned'))
+    await result.registry.pinSession(SessionId('kept'))
+    await result.registry.archiveSession(SessionId('archived'))
+    expect([...workspace.sessionIds].sort()).toEqual(['archived', 'kept', 'pinned'])
+
+    // The sessions' logs are gone by the time the registry hears of it.
+    result.setSessions([header('kept', dir, 100)])
+    /** Announce a deletion and wait until the registry's write queue has handled it. */
+    const deleted = async (id: string): Promise<void> => {
+      result.ctx.emit('session/deleted', SessionId(id))
+      await result.registry.unarchiveSession(SessionId('queue-marker'))
+    }
+    await deleted('pinned')
+    await deleted('archived')
+    expect(workspace.sessionIds).toEqual(['kept'])
+    expect(result.registry.pinnedSessionIds).toEqual(['kept'])
+    expect(result.registry.archivedSessionIds).toEqual([])
+    expect(storedRecord(result.pool, workspace.id).sessionIds).toEqual(['kept'])
+    expect(storedState(result.pool)).toMatchObject({ pinnedSessionIds: ['kept'], archivedSessionIds: [] })
+    // The id is unknown again: it can be neither archived nor pinned.
+    await expect(result.registry.archiveSession(SessionId('pinned'))).rejects.toMatchObject({ name: 'WorkspaceUnknownSessionError' })
+
+    // A repeat, or an id the registry never knew, writes nothing.
+    const changes = result.changes.length
+    await deleted('pinned')
+    await deleted('never-known')
+    expect(result.changes.length).toBe(changes)
+  })
+
+  it('logs a failed cleanup for a deleted session instead of throwing into the deletion', async () => {
+    const dir = await makeDir('forget-failure')
+    const pool = new MemoryMediaPool()
+    const inner = new MemoryStorageBackend(pool)
+    let armed = false
+    // Every registry-global write fails once armed: the pin removal cannot land.
+    const backend: StorageBackend = {
+      kv: {
+        open: async (descriptor) => {
+          const unit = await inner.kv.open(descriptor)
+          return {
+            ...unit,
+            loadAll: () => unit.loadAll(),
+            putRecord: (table, key, value) => unit.putRecord(table, key, value),
+            deleteRecord: (table, key) => unit.deleteRecord(table, key),
+            setGlobal: async (value) => {
+              if (armed) throw new Error('injected global write failure')
+              await unit.setGlobal(value)
+            },
+            close: () => unit.close(),
+          }
+        },
+      },
+      close: () => inner.close(),
+    }
+    const result = await harness({ pool, backend, sessions: [header('gone', dir, 100)] })
+    await result.registry.pinSession(SessionId('gone'))
+    const warn = vi.spyOn(result.ctx.logger, 'warn')
+    armed = true
+    result.ctx.emit('session/deleted', SessionId('gone'))
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('forgetting deleted session "gone" failed'))
+    })
+  })
+
   it('unarchives an entry whose session is gone without consulting session persistence', async () => {
     const dir = await makeDir('unarchive-vanished')
     const result = await harness({ sessions: [header('vanished', dir, 100)] })

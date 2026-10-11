@@ -1,0 +1,7 @@
+# Enables Session sharing for the keyless Web e2e (`session-share.e2e.ts`), beside the Hub sign-in
+# (`hub-account.overlay.yml`). The shipped web-app bundle enables it only for the `desktop` profile
+# with a configured user center.
+- id: session-share
+  disabled: false
+- id: ui-session-share
+  disabled: false

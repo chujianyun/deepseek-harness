@@ -508,6 +508,47 @@ class JsonlSessionPersistence extends SessionPersistence {
     return snapshots
   }
 
+  /**
+   * Delete one stored session permanently: its directory with every generation and its lock file.
+   * The in-process write claim and the session's kernel lock are held across the removal, so no
+   * writer in this or another process can append meanwhile. A removal that fails part-way leaves
+   * either the log (the session still exists, the error propagates, and the delete can be retried)
+   * or no log (the session is gone; a leftover directory without a log is not a session). Once
+   * the directory is removed the session is deleted: a failure to sync the parent directory or to
+   * release the lock afterwards is logged, and `session/deleted` is emitted all the same.
+   * @param id - the stored session to delete.
+   * @returns resolution once the directory is gone and `session/deleted` was emitted.
+   */
+  async delete(id: SessionId): Promise<void> {
+    await this.ensureRootEncoding()
+    // A created-but-unmaterialized session always has a live creator handle, which holds this claim.
+    this.tracker.claimWrite(id)
+    try {
+      const resolved = await this.findLog(id)
+      if (resolved === undefined) throw new SessionPersistenceNotFoundError(id)
+      const dir = dirname(resolved.currentPath)
+      const lease = await this.acquireLease(id, undefined, dir)
+      try {
+        await rm(dir, { recursive: true, force: true })
+      } catch (error) {
+        await lease.release()
+        throw error
+      }
+      this.coldLogMemo.delete(id)
+      this.migrationPreparations.delete(id)
+      try {
+        /* v8 ignore next -- Windows has no directory fsync; native Windows coverage exercises the other arm */
+        if (process.platform !== 'win32') await this.syncDirPosix(dirname(dir))
+        await lease.release()
+      } catch (error) {
+        this.ctx.logger.warn(`session-persistence: session "${id}" was deleted, but finishing the removal failed: ${String(error)}`)
+      }
+    } finally {
+      this.tracker.releaseClaim(id)
+    }
+    this.ctx.emit('session/deleted', id)
+  }
+
   // --- handle-facing storage internals (package-private via the handle class below) ---
 
   /** Resolve and read one stored log, refusing loudly when the artifact is absent. */

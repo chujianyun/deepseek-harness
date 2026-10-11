@@ -87,6 +87,7 @@ describe('web e2e: workspace recency', () => {
     const titles = () => page.locator('[role="treeitem"]:not([aria-expanded]) [class*="title"]').allTextContents()
     const pick = async (name: string): Promise<void> => {
       await page.getByRole('button', { name: 'View options' }).click()
+      await page.getByRole('menuitem', { name: name === 'Manual' || name === 'Last updated' ? /^Order by/u : /^Group by/u }).hover()
       await page.getByRole('menuitem', { name, exact: true }).click()
     }
     const captureSidebar = async (): Promise<string> => {
@@ -114,7 +115,7 @@ describe('web e2e: workspace recency', () => {
     acknowledgeReloadConnectionLoss(tripwire, manualWarningStart)
     await pick('Last updated')
     await expect.poll(titles).toEqual(TITLES)
-    await pick('In one list')
+    await pick('No grouping')
     await expect.poll(titles).toEqual(TITLES)
     const recencyWarningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
@@ -134,7 +135,7 @@ describe('web e2e: workspace recency', () => {
     await page.locator('[role="treeitem"][aria-expanded]')
       .filter({ has: page.getByText(workspaceTitle, { exact: true }) }).hover()
     await page.getByRole('button', { name: `New session in ${workspaceTitle}` }).click()
-    await pick('In one list')
+    await pick('No grouping')
     await expect.poll(titles).toEqual(['New Session', ...TITLES])
     await expect.poll(() => page.evaluate(() => {
       const { sessionId } = JSON.parse(localStorage.getItem('dsh.sessions.current')!) as { sessionId: string }

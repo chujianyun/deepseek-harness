@@ -24,7 +24,7 @@ import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/cli
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
 import type { MenuOpenState, WorkspaceBrowserProps } from '../contract/slots.ts'
-import type { GroupNode, SearchResultNode, SessionNode } from '../tree.ts'
+import type { GroupingSection, GroupNode, SearchResultNode, SessionNode } from '../tree.ts'
 import css from './Rows.module.css'
 
 /** The standard locale seat, prop-passed from the browser root. */
@@ -517,6 +517,33 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }: 
         {result.snippet !== undefined && (
           <span className={css.searchResultSnippet}>{result.snippet}</span>
         )}
+      </span>
+    </div>
+  )
+}
+
+/**
+ * Section heading of a registered grouping: a fold toggle with the section's optional glyph and
+ * label. Without a glyph the fold arrow stays visible instead of appearing on hover.
+ */
+export function GroupingSectionRow({ section, onToggle }: { section: GroupingSection; onToggle: () => void }) {
+  const expanded = !section.collapsed
+  return (
+    <div
+      className={css.projectRow}
+      data-row-key={`group:${section.key}`}
+      role="treeitem"
+      aria-expanded={expanded}
+      onClick={onToggle}
+    >
+      {section.heading.icon !== undefined && (
+        <span className={clsx(css.slot, css.folder, section.containsCurrent && css.folderActive)}>{section.heading.icon}</span>
+      )}
+      <span className={clsx(css.slot, css.chevron, section.heading.icon === undefined && css.chevronShown)}>
+        <IconTriangleRightFillRegular className={clsx(css.arrow, expanded && css.arrowOpen)} />
+      </span>
+      <span className={css.projectText}>
+        <span className={css.title}>{section.heading.label}</span>
       </span>
     </div>
   )

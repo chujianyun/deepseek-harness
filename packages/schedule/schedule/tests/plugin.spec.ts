@@ -67,6 +67,25 @@ describe('shared Schedule management', () => {
     expect(await ask(delegated)).toEqual([{ kind: 'turn' }])
   })
 
+  it('removes every task of a deleted Session, and leaves other Sessions\' tasks', async () => {
+    const { ctx, service } = await setup()
+    const deleted = SessionId('deleted-session')
+    const other = SessionId('other-session')
+    await service.create(deleted, { prompt: 'check the build', after_seconds: 3_600, title: 'Check the build' })
+    await service.create(deleted, { prompt: 'check again', after_seconds: 7_200, title: 'Check again' })
+    const kept = await service.create(other, { prompt: 'water the plants', after_seconds: 3_600, title: 'Water' })
+    const changed = vi.fn()
+    ctx.on('schedule/changed', changed)
+    ctx.emit('session/deleted', deleted)
+    await vi.waitFor(async () => { expect((await service.catalog()).map(entry => entry.id)).toEqual([kept.id]) })
+    expect(changed).toHaveBeenCalled()
+    // A Session without tasks changes nothing.
+    changed.mockClear()
+    ctx.emit('session/deleted', SessionId('no-tasks'))
+    await service.list({ sessionId: other })
+    expect(changed).not.toHaveBeenCalled()
+  })
+
   it('stops a Session whose create write is still in flight', async () => {
     // Real timers: the test observes that the stop has not settled while the
     // create holds the queue, which a fake clock cannot express.
@@ -134,6 +153,25 @@ describe('shared Schedule management', () => {
     expect(failure).toBeInstanceOf(AggregateError)
     expect(changed).toHaveBeenCalled()
     expect((await service.catalog()).map(entry => entry.title)).toEqual(['Second'])
+  })
+
+  it('logs a failed removal for a deleted Session instead of throwing into the deletion', async () => {
+    const pool = new MemoryMediaPool()
+    const backend = gatedScheduleBackend(pool, {
+      deleteRecord: async (table) => {
+        if (table === 'tasks') throw new Error('injected delete failure')
+      },
+    })
+    const test = await harness({ pool, backend })
+    tests.push(test)
+    const { ctx, service } = test
+    const sessionId = SessionId('deleted-failing')
+    await service.create(sessionId, { prompt: 'first', after_seconds: 60, title: 'First' })
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    ctx.emit('session/deleted', sessionId)
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('removing the tasks of deleted Session "deleted-failing" failed'))
+    })
   })
 
   it('reports a stop failure whose rejection reason is not an Error', async () => {

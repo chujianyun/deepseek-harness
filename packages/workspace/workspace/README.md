@@ -78,6 +78,10 @@ Hide a session from the grouping when it should stop appearing there: it disappe
 
 Workspace registration does not establish ownership of its directory. A future destructive filesystem action must be separately named, explicitly confirmed, and enforce ownership and safety checks.
 
+### Forgetting a deleted session
+
+On `session/deleted` the registry drops everything it keeps for that session: its slot in a workspace's accounting, its pin, and its archive mark, in one queued durable operation. An id the registry does not know writes nothing, and a failed cleanup is logged rather than thrown into the deletion; ids it could not drop stay filtered from every workspace's session list because their log is gone.
+
 -----
 
 <a id="understand-the-implementation"></a>

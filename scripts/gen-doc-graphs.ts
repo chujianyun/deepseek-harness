@@ -680,6 +680,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Creates a form-made automation task in one call: its named Session with assistant, model, permission, and connector grant, and the schedule bound to it.',
   },
   {
+    key: 'sessionShare',
+    pkg: 'session-share',
+    title: 'Session sharing',
+    mode: 'core',
+    note: "Uploads a snapshot of one Session's conversation to the user center of the Hub sign-in, reads its link, and withdraws it.",
+  },
+  {
     key: 'goals',
     pkg: 'goal',
     title: 'Same-session goal domain',

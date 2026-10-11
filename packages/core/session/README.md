@@ -29,7 +29,7 @@ Mount `dsh-session` wherever a session must exist. It creates and holds event-so
 
 ### Create and inspect sessions
 
-`ctx.sessions.create()` builds a live session bound to the calling fiber; `get(id)` and `list()` find sessions, and `fork()` creates a child session from a stable prefix of a live one.
+`ctx.sessions.create()` builds a live session bound to the calling fiber; `get(id)` and `list()` find sessions, and `fork()` creates a child session from a stable prefix of a live one. The store emits `session/created` and `session/disposed` for live sessions; `session/deleted` is emitted after a session was removed permanently (by the Session persistence backend once its log is gone, or by the deleter for a session that never reached storage) for owners of data keyed by the session to drop it.
 
 ```text
 const session = ctx.sessions.create(sessionId, { meta: { cwd: '/workspace' } })

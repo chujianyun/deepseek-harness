@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/session-query/session-share/README.md
+/:
+  en: b1823ee9913ea14c
+  zh: d10edfe3e7b37a45
+/session-share:
+  en: c60d7ef86eaab1a7
+  zh: 9a429e835f33faa9
+/session-share/summary:
+  en: 06a90a23e4ab3147
+  zh: 2f8238176b55f8f3
+/session-share/table-of-contents:
+  en: 4e53164159b5ce41
+  zh: 89582dc0294d0776
+/session-share/use-this-package:
+  en: a45635742454ac7f
+  zh: 9531b9b6cca1f930
+/session-share/use-this-package/what-the-snapshot-holds:
+  en: a336a49b4cb75bf4
+  zh: 443413cf14fbf09b
+/session-share/use-this-package/errors:
+  en: 2bae908941008c73
+  zh: 33fb8073c71d3392
+/session-share/model-experience:
+  en: 718ea8f817fa6ae3
+  zh: 0af84922e3e1ffa6
+/session-share/model-experience/kv-cache-effect:
+  en: e277b74f9b721f5e
+  zh: 014c91db5c8570d0
+/session-share/known-limitations-and-deferred-work:
+  en: 6b24037720f74e86
+  zh: 1f9778d93df12474
+/session-share/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 3bb0c20c93f16f98

@@ -2,7 +2,7 @@
  * A loopback stand-in for the user center's OAuth2 endpoints, enough for Hub sign-in: authorize
  * (redirecting straight back with a code, as a browser with a signed-in session and a recorded
  * consent would), token (authorization_code with PKCE S256, refresh_token with rotation), userinfo,
- * and revoke; the client Skill and login-page branding APIs. Shared by the package specs and the
+ * and revoke; the client Skill, login-page branding, and Session share APIs. Shared by the package specs and the
  * Desktop web e2e.
  */
 import { createHash, randomBytes } from 'node:crypto'
@@ -53,6 +53,15 @@ export interface MockBranding {
   /** New-session slogan (T45); left out, the answer omits it as a user center before T45 does. */
   readonly slogan?: string | null
   readonly logo: { readonly contentType: string; readonly data: Buffer } | null
+}
+
+/** One Session share the mock holds. */
+export interface MockShare {
+  readonly shareId: string
+  /** The body of the latest upload: title, assistant name, and messages. */
+  readonly body: unknown
+  readonly createdAt: string
+  readonly updatedAt: string
 }
 
 /** Control and observation surface of the mock user center. */
@@ -107,6 +116,10 @@ export interface MockUserCenter {
   brandingGate: Promise<unknown> | undefined
   /** When set, the logo download answers with this raw reply instead. */
   logoReply: { status: number; contentType?: string; body: Buffer } | undefined
+  /** Session shares by Session id, as `/api/client/session-shares/:sessionId` holds them. */
+  shares: Record<string, MockShare>
+  /** When set, a session-share call is answered with this raw reply, or its connection is dropped. */
+  shareReply: { status: number; body: string } | 'drop' | undefined
   close(): Promise<void>
 }
 
@@ -185,6 +198,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
           await gate
         }
         if (url.pathname.startsWith('/api/client/branding')) brandingApi(url, res, json, bound)
+        else if (url.pathname.startsWith('/api/client/session-shares/')) await shareApi(url, req, res, json)
         else await clientApi(url, req, res, json)
       } else if (url.pathname === '/oauth/userinfo' && mock.userinfoReply !== undefined) {
         res.writeHead(mock.userinfoReply.status, { 'content-type': 'application/json' }).end(mock.userinfoReply.body)
@@ -327,6 +341,31 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     } else if (logo === null) json(404, { message: '未设置 Logo' })
     else res.writeHead(200, { 'content-type': logo.contentType }).end(logo.data)
   }
+  const shareApi = async (url: URL, req: IncomingMessage, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void): Promise<void> => {
+    let text = ''
+    for await (const chunk of req) text += String(chunk)
+    if (mock.shareReply === 'drop') { res.destroy(); return }
+    if (mock.shareReply !== undefined) {
+      res.writeHead(mock.shareReply.status, { 'content-type': 'application/json' }).end(mock.shareReply.body)
+      return
+    }
+    const sessionId = decodeURIComponent(url.pathname.slice('/api/client/session-shares/'.length))
+    const held = mock.shares[sessionId]
+    const link = (share: MockShare) => ({
+      shareId: share.shareId, url: `${mock.origin}/share/${share.shareId}`, createdAt: share.createdAt, updatedAt: share.updatedAt,
+    })
+    if (req.method === 'PUT') {
+      const now = new Date().toISOString()
+      const uploaded: unknown = JSON.parse(text)
+      const share = { shareId: held?.shareId ?? `sh-${randomBytes(6).toString('hex')}`, body: uploaded, createdAt: held?.createdAt ?? now, updatedAt: now }
+      mock.shares = { ...mock.shares, [sessionId]: share }
+      json(200, link(share))
+    } else if (held === undefined) json(404, { message: '这个会话还没有分享' })
+    else if (req.method === 'DELETE') {
+      mock.shares = Object.fromEntries(Object.entries(mock.shares).filter(([id]) => id !== sessionId))
+      res.writeHead(204).end()
+    } else json(200, link(held))
+  }
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const mock: MockUserCenter = {
     origin: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
@@ -335,7 +374,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     exchangeStatus: undefined, tokenBody: undefined, tokenGate: undefined, userinfoReply: undefined,
     skills: [], downloadBody: undefined, clientStatus: undefined, clientRequests: [],
     tenantAdmin: false, owned: [], uploads: [], uploadReply: undefined, uploadHook: undefined, optionsReply: undefined,
-    brandings: {}, brandingGate: undefined, logoReply: undefined,
+    brandings: {}, brandingGate: undefined, logoReply: undefined, shares: {}, shareReply: undefined,
     authorizeRequests: [], tokenRequests: [], revoked: [],
     close: () => new Promise((resolve) => { server.closeAllConnections(); server.close(() => { resolve() }) }),
   }

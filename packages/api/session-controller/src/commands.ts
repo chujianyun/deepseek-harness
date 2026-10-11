@@ -11,6 +11,7 @@ import type {
 } from '@deepseek-ai/dsh-attachment'
 import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
+import type {} from '@deepseek-ai/dsh-session-persistence'
 import {
   ReasoningEffortId, assistantStreamChunks, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
@@ -41,6 +42,8 @@ import type {
   SessionCancelValue,
   SessionCreateRequest,
   SessionCreateValue,
+  SessionDeleteRequest,
+  SessionDeleteValue,
   SessionForkRequest,
   SessionForkValue,
   SessionPromptRequest,
@@ -54,6 +57,11 @@ import type {
   SessionUpdateQueueValue,
   SessionRequestId,
 } from './types.ts'
+
+/** Pause between attempts to delete a log whose unloading Session is still closing its writer. */
+const DELETE_RETRY_MS = 50
+/** Attempts before a held writer is reported: three seconds. */
+const DELETE_ATTEMPTS = 60
 
 interface SessionReadState {
   readonly id: SessionId
@@ -235,6 +243,94 @@ export class SessionCommandController {
   }
 
   /**
+   * Delete one ordinary Session permanently, with its subagent descendants. Its running work is
+   * stopped through the owners that answer `workspace/session-stop`, the Agents this controller
+   * holds are unloaded, and the logs are deleted children first; owners of data keyed by a Session
+   * clean up on `session/deleted`. A fork is its own Session and stays. While the deletion runs,
+   * nothing can create or resume the Sessions. A refusal leaves every log in place, though the
+   * work that was running stays stopped; a failure after the first log is gone can be retried.
+   * @param request - Session identity to delete.
+   * @returns the deleted Session ids: the requested one, then its descendants.
+   */
+  async delete(request: SessionDeleteRequest): Promise<SessionDeleteValue> {
+    const { sessionId } = request
+    const persistence = this.ctx.get('sessionPersistence')
+    if (persistence === undefined) {
+      throw new RemoteError('gateway/internal', 'deleting is unavailable: this deployment mounts no session persistence', {})
+    }
+    // One listing serves the lookup and the descendants; it includes Sessions that are live but not stored yet.
+    const headers = new Map<SessionId, SessionHeader>()
+    const children = new Map<SessionId, SessionId[]>()
+    for (const { header } of await this.ctx.sessionQuery.listSessions()) {
+      headers.set(header.id, header)
+      if (header.origin !== 'subagent' || header.parentSession === undefined) continue
+      const siblings = children.get(header.parentSession)
+      if (siblings === undefined) children.set(header.parentSession, [header.id])
+      else siblings.push(header.id)
+    }
+    const root = headers.get(sessionId)
+    if (root === undefined) {
+      throw new RemoteError('session/not-found', `session "${sessionId}" not found`, { sessionId })
+    }
+    if (root.origin === 'subagent') {
+      throw new RemoteError('gateway/bad-request', `session "${sessionId}" is a subagent Session: delete its parent Session`, {})
+    }
+    const ids = [sessionId]
+    for (const parentId of ids) ids.push(...children.get(parentId) ?? [])
+    const childrenFirst = ids.toReversed()
+    const allowOpens = this.agents.blockOpens(ids)
+    try {
+      try {
+        await this.ctx.parallel('workspace/session-stop', { sessionId })
+      } catch (error) {
+        // A provider that could not stop its work is no reason to keep the Session: unloading stops the rest.
+        this.ctx.logger.warn(`session "${sessionId}": stopping its work before deletion reported failures: ${String(error)}`)
+      }
+      for (const id of childrenFirst) await this.agents.release(id)
+      // An Agent some other owner created (a webhook, the SDK) is not this controller's to unload.
+      const loaded = ids.find(id => this.ctx.sessions.get(id) !== undefined)
+      if (loaded !== undefined) {
+        throw new RemoteError(
+          'session/agent-busy', `session "${loaded}" is loaded by another owner and cannot be deleted while it is`,
+          { reason: 'unload the session, or restart the Host, then delete it' },
+        )
+      }
+      for (const id of childrenFirst) await this.deleteLog(persistence, id)
+    } finally {
+      allowOpens()
+    }
+    for (const id of ids) this.ctx.emit('api-session/removed', id)
+    return { deletedSessionIds: ids }
+  }
+
+  /**
+   * Delete one stored log, waiting out the writer an unloading Session is still closing. A Session
+   * that never reached storage has no log and no backend to announce it, so its deletion is
+   * announced here for the owners of data keyed by it.
+   */
+  private async deleteLog(persistence: Context['sessionPersistence'], sessionId: SessionId): Promise<void> {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await persistence.delete(sessionId)
+        return
+      } catch (error) {
+        const name = error instanceof Error ? error.name : ''
+        if (name === 'SessionPersistenceNotFoundError') {
+          this.ctx.emit('session/deleted', sessionId)
+          return
+        }
+        if (name !== 'SessionAlreadyOwnedError') throw error
+        if (attempt === DELETE_ATTEMPTS) {
+          throw new RemoteError(
+            'session/writer-held', `session "${sessionId}" is still being written and was not deleted`, { sessionId }, { cause: error },
+          )
+        }
+        await new Promise<void>((resolve) => { setTimeout(resolve, DELETE_RETRY_MS) })
+      }
+    }
+  }
+
+  /**
    * Create a new ordinary Session from an exact event prefix. An explicit
    * `atSeq` is the inclusive cut; an omitted value selects the latest
    * completed-turn prefix. An open cut receives synthetic fork closers.
@@ -290,7 +386,7 @@ export class SessionCommandController {
     const composition = await this.agents.composeAgent(this.agents.presetForObservation(source))
     try {
       const { provider, model } = this.ctx.agentDefaultModel.currentSelection()
-      await this.ctx.agents.create({
+      this.agents.own(childId, await this.ctx.agents.create({
         sessionId: childId,
         seed,
         inheritedEventCount: SessionLogOffset(boundary + 1),
@@ -304,7 +400,7 @@ export class SessionCommandController {
         },
         agentOptions: { provider, model },
         setup: composition.setup,
-      })
+      }))
     } catch (error) {
       throw new RemoteError(
         'gateway/internal',

@@ -182,6 +182,12 @@
       name: '@deepseek-ai/dsh-skill-market'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
+    # Session sharing for Desktop: a conversation snapshot uploaded to the user
+    # center of the Hub sign-in; mounted exactly when hub-account is.
+    - id: session-share
+      name: '@deepseek-ai/dsh-session-share'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     # Embedding models for Desktop knowledge bases: the local model downloaded at
     # startup and API embedding models over configured provider routes.
     - id: embedding
@@ -461,6 +467,10 @@
         quickTasks: [multi-publish, business-report, product-research, asset-organize]
         # The tasks need 电商管家's Skills: a card also picks the assistant created from the `ecommerce` template.
         quickTaskAssistant: ecommerce
+        # Operators divide work by assistant, not by folder: the Session list starts grouped by assistant.
+        defaultSessionGrouping: assistant
+        # Each group lists its five most recent Sessions before "show more".
+        sessionsPerGroup: 5
 
     - id: ui-attachment
       name: '@deepseek-ai/dsh-client-ui-attachment'
@@ -523,6 +533,11 @@
     # Add automation task form in the Automation tasks page, over the automation-tasks row.
     - id: ui-automation-tasks
       name: '@deepseek-ai/dsh-client-ui-automation-tasks'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # Share session row of the Session menu and its dialog, over the session-share row.
+    - id: ui-session-share
+      name: '@deepseek-ai/dsh-client-ui-session-share'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
     # Goal surface: GoalBar in the input dock over the goal session projection.

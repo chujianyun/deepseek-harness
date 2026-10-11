@@ -19,6 +19,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { DraftInitializationOptions } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { RowToast } from './contract/slots.ts'
+import type { SessionGrouping, SessionGroupingRegistry } from './groupings.ts'
 import { pinOrderAccounts, pinOrderSource } from './pin-order.ts'
 import type { WorkspaceViewStoreActions } from './stores.ts'
 
@@ -74,6 +75,13 @@ export interface UiWorkspace {
    */
   archiveSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void>
   /**
+   * Delete a Session permanently on the Host, with its subagent descendants. Once they are gone
+   * the main view leaves whichever of them it shows. A Session that no longer exists counts as deleted.
+   * @param sessionId - Session to delete.
+   * @throws with the refusal in the UI language; the Session then still exists and stays selected.
+   */
+  deleteSession(sessionId: SessionId): Promise<void>
+  /**
    * Unarchive a Session, restoring it to its recorded Workspace position.
    * @param sessionId - Session to unarchive.
    */
@@ -110,6 +118,26 @@ export interface UiWorkspace {
    * @returns created absolute path.
    */
   createDirectory(path: string, name: string): Promise<string>
+  /**
+   * Offer a Session grouping in the sidebar's Group by menu for as long as the caller keeps it.
+   * @param grouping - the grouping; an id a built-in view or another registration already uses throws.
+   * @returns the disposer that removes it; a sidebar grouped by it then shows the Workspace view.
+   */
+  registerSessionGrouping(grouping: SessionGrouping): () => void
+  /**
+   * Choose the grouping the sidebar shows until its user picks one, for as long as the caller keeps it.
+   * A user's own pick is never replaced, and an id nothing provides shows the Workspace view.
+   * @param id - a built-in view ('workspace', 'workspace-tree', 'flat') or a registered grouping's id.
+   * @returns the disposer that withdraws the default.
+   */
+  setDefaultSessionGrouping(id: string): () => void
+  /**
+   * Set how many idle Session rows each sidebar group shows before its overflow control, for as
+   * long as the caller keeps it. Pinned, current, running, and blank rows always show.
+   * @param limit - a positive whole number; anything else throws.
+   * @returns the disposer that restores the default of five.
+   */
+  setSessionGroupLimit(limit: number): () => void
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -145,6 +173,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
    * @param sessions - pure Session Controller.
    * @param view - the browser's viewing-store write set (one instance shared with its registration).
    * @param notify - show one notice through the Workspace notice channel.
+   * @param groupings - the registry the sidebar lists its registered groupings from.
    */
   constructor(
     ctx: Context,
@@ -153,6 +182,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     private readonly sessions: ISessions,
     private readonly view: Pick<WorkspaceViewStoreActions, 'pinSessionOrder'>,
     private readonly notify: (toast: RowToast) => void,
+    private readonly groupings: Pick<SessionGroupingRegistry, 'register' | 'setDefault' | 'setSessionLimit'>,
   ) {
     super(ctx, 'uiWorkspace')
     ctx.effect(() => {
@@ -165,6 +195,18 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         reference?.release()
       }
     }, 'ui-workspace: Workspace navigation policy')
+  }
+
+  registerSessionGrouping(grouping: SessionGrouping): () => void {
+    return this.groupings.register(grouping)
+  }
+
+  setDefaultSessionGrouping(id: string): () => void {
+    return this.groupings.setDefault(id)
+  }
+
+  setSessionGroupLimit(limit: number): () => void {
+    return this.groupings.setSessionLimit(limit)
   }
 
   async connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId> {
@@ -276,6 +318,23 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   async unarchiveSession(sessionId: SessionId): Promise<void> {
     await this.workspaces.unarchiveSession(sessionId)
+  }
+
+  async deleteSession(sessionId: SessionId): Promise<void> {
+    const result = await this.sessions.delete(sessionId)
+    const t = this.ctx.locale.bind('workspace')
+    if (!result.ok) {
+      switch (result.error.code) {
+        // Already gone, for example deleted from another window: the request is met.
+        case 'session/not-found': break
+        case 'session/agent-busy': throw new Error(t('delete.session.busy'))
+        case 'session/writer-held': throw new Error(t('delete.session.writing'))
+        default: throw new Error(t('delete.session.failed', { reason: result.error.message }))
+      }
+    }
+    const deleted = result.ok ? result.value.deletedSessionIds : [sessionId]
+    const current = this.mainReference?.sessionId
+    if (current !== undefined && deleted.includes(current)) this.clearMain()
   }
 
   async pinSession(sessionId: SessionId): Promise<void> {

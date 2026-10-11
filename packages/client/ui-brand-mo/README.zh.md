@@ -43,6 +43,8 @@ web-app bundle 只在 `desktop` profile 且配置了用户中心（`DSH_HUB_ORIG
 
 `quickTasks` 按顺序列出空白新会话输入框下方 `conversation.hero.dock` 插槽里显示的卡片：`multi-publish`、`business-report`、`product-research`、`asset-organize`；重复的 id 只显示一次。每张卡的标题、说明和提示词来自 `ui-brand-mo` 字典，跟随界面语言；点击会把提示词放进草稿，不会发送。`quickTaskAssistant` 指定点击时同时为新会话选中的智能体模板，通过 [ui-assistants](../ui-assistants/README.zh.md) 的 `assistantPicker` 服务选择；这些任务依赖电商管家的 Skill，因此 web-app bundle 配置为 `ecommerce`。提示词在选择绑定后才填入，因此不会在错误的模式下发出；租户没有该模板的智能体时（有多个时取最早创建的），卡片不填入任何内容，并提示先在「智能体」页新建。部署没有智能体界面时保持当前选择；默认空值不改变选择。默认是空列表；web-app bundle 为企业版桌面端组合全部四张。卡片只在草稿没有文字、引用和附件时显示，因此点击不会替换用户已输入的内容；会话一旦不再空白，卡片就会消失。卡片需要语言注册表和设置表单；缺少它们时主题和侧栏品牌照常生效。
 
+`defaultSessionGrouping` 指定用户自己选择之前侧栏会话列表的分组方式，在两个插件都挂载期间通过 [ui-workspace](../ui-workspace/README.zh.md) 的 `uiWorkspace.setDefaultSessionGrouping` 设置：内置视图（`workspace`、`workspace-tree`、`flat`）或已注册分组的 id，如 `assistant`、`date`。web-app bundle 为企业版桌面端配置 `assistant`，因为运营人员按智能体而不是按文件夹分工。默认空值保持侧栏自己的默认；没有任何插件提供的 id 显示按工作区。`sessionsPerGroup`（默认 5，至少 1）是侧栏每个分组在**展开其余**之前列出的空闲 Session 数，通过 `uiWorkspace.setSessionGroupLimit` 设置。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -85,6 +87,7 @@ web-app bundle 只在 `desktop` profile 且配置了用户中心（`DSH_HUB_ORIG
 - **固定调色板**——取值属于名流品牌；其他企业品牌需要自己的 token 表。
 - **深色取值是副本**——覆盖值无法回退到它所替换的样式表取值，因此品牌保留的深色值重复了平台当前的引用，平台调色板以后变化时需要手动跟进。
 - **启动样式表的生命周期**——主机写入的调色板会留在已提供的页面中直到重新加载，因此只卸载浏览器半部（HMR、停用该行）时，品牌颜色会保留到重新加载为止。
+- **默认分组不做校验**——`defaultSessionGrouping` 不校验：分组可以在任意时刻注册，所以没有插件提供的 id（拼写错误，或组合里缺少对应插件）会显示按工作区，不给出告警。
 - **内联图片**——应用图标和字标以 data URI 形式打进主机与客户端 bundle（合计约 40 KB）；字标是 Desktop 欢迎页 `mo-logo.png` 的缩小副本，改版时两处一起更新。
 
 <a id="dev-note"></a>

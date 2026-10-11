@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
 import { SessionSeq, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import { MessageId, freezeMessage } from '@deepseek-ai/dsh-llm'
@@ -28,6 +29,8 @@ import type { SessionHandle, SessionPersistence } from '../src/index.ts'
 /** One backend service instance under test plus its teardown. */
 interface ContractBackendInstance {
   persistence: SessionPersistence
+  /** The Context the backend emits its events on. */
+  ctx: Context
   dispose: () => Promise<void>
 }
 
@@ -243,6 +246,63 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
       try {
         await expect(persistence.open(SessionId('absent'), 'read')).rejects.toBeInstanceOf(SessionPersistenceNotFoundError)
         await expect(persistence.open(SessionId('absent'), 'write')).rejects.toBeInstanceOf(SessionPersistenceNotFoundError)
+      } finally {
+        await dispose()
+      }
+    })
+
+    it('delete removes a stored session from every later observation, announces it, and frees the id', async () => {
+      const backend = await make()
+      try {
+        const { persistence } = backend
+        const kept = meta('kept', '/work')
+        const gone = meta('gone', '/work')
+        for (const header of [kept, gone]) {
+          const handle = await persistence.create(header)
+          await handle.append(oneTurnLog())
+          await handle.close()
+        }
+        const deleted: SessionId[] = []
+        backend.ctx.on('session/deleted', (sessionId) => { deleted.push(sessionId) })
+        // A read handle does not hold the session.
+        const reader = await persistence.open(gone.id, 'read')
+        await persistence.delete(gone.id)
+        await reader.close()
+        expect(deleted).toEqual([gone.id])
+        expect(await persistence.stat(gone.id)).toBeUndefined()
+        expect((await persistence.list()).map(snapshot => snapshot.header.id)).toEqual([kept.id])
+        await expect(persistence.open(gone.id, 'read')).rejects.toBeInstanceOf(SessionPersistenceNotFoundError)
+        await expect(persistence.delete(gone.id)).rejects.toBeInstanceOf(SessionPersistenceNotFoundError)
+        expect((await (await persistence.open(kept.id, 'read')).read()).events).toHaveLength(oneTurnLog().length)
+        if (backend.reopen !== undefined) {
+          const reopened = await backend.reopen()
+          try {
+            expect((await reopened.persistence.list()).map(snapshot => snapshot.header.id)).toEqual([kept.id])
+          } finally {
+            await reopened.dispose()
+          }
+        }
+        // The id is free again.
+        const again = await persistence.create(gone)
+        await again.close()
+      } finally {
+        await backend.dispose()
+      }
+    })
+
+    it('delete refuses a session with an active write handle, and erases a created one once it closes unwritten', async () => {
+      const { persistence, dispose } = await make()
+      try {
+        const owned = meta('owned-delete', '/work')
+        const writer = await persistence.create(owned)
+        await expect(persistence.delete(owned.id)).rejects.toBeInstanceOf(SessionAlreadyOwnedError)
+        await writer.append(oneTurnLog())
+        await expect(persistence.delete(owned.id)).rejects.toBeInstanceOf(SessionAlreadyOwnedError)
+        expect(await persistence.stat(owned.id)).toBeDefined()
+        await writer.close()
+        await persistence.delete(owned.id)
+        expect(await persistence.stat(owned.id)).toBeUndefined()
+        await expect(persistence.delete(SessionId('never-existed'))).rejects.toBeInstanceOf(SessionPersistenceNotFoundError)
       } finally {
         await dispose()
       }

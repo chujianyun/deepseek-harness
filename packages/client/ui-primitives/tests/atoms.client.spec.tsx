@@ -448,6 +448,23 @@ describe('Menu', () => {
     expect(screen.queryByRole('menuitem', { name: 'Sub' })).toBeNull()
   })
 
+  it('marks a submenu parent with its current choice and checks the selected nested row', () => {
+    render(
+      <Menu
+        open
+        anchor={<span>trigger</span>}
+        items={[{ id: 'group', label: 'Group by', detail: 'Date', submenu: [{ id: 'workspace', label: 'Workspace' }, { id: 'date', label: 'Date' }] }]}
+        selectedIds={['date']}
+        onClose={() => {}}
+      />)
+    const parent = screen.getByRole('menuitem', { name: /Group by/u })
+    expect(parent.textContent).toBe('Group byDate')
+    expect(parent.querySelectorAll('svg')).toHaveLength(1)
+    fireEvent.mouseEnter(parent.parentElement as HTMLElement)
+    expect(screen.getByRole('menuitem', { name: 'Date' }).querySelector('svg')).not.toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'Workspace' }).querySelector('svg')).toBeNull()
+  })
+
   it('opens a submenu on hover and selects a nested item', () => {
     const onSelect = vi.fn()
     render(

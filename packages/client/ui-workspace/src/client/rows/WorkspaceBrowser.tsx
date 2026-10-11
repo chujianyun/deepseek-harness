@@ -14,7 +14,7 @@
  * are slot entries with their own behavior, so this component threads no
  * action callbacks and hosts no action surface.
  */
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Button, IconArchiveCheckOutlineRegular, IconArchiveOffOutlineRegular, IconArchiveOutlineRegular,
@@ -31,14 +31,15 @@ import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkspaceBrowserProps } from '../contract/slots.ts'
-import type { ArchivedFilter, GroupNode, SessionNode, SessionOrderBy, SessionRowState } from '../tree.ts'
+import type { ArchivedFilter, GroupingSection, GroupNode, SessionNode, SessionOrderBy, SessionRowState } from '../tree.ts'
 import {
-  deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey, owningParentFolder,
+  deriveFlat, deriveGroupingSections, deriveGroups, deriveSearchResults, mainSessionId, orderByRecency, owningGroupKey, owningParentFolder,
   pinCurrentBlank, reconcileManualOrder, sessionMemberIds, UNGROUPED_KEY,
 } from '../tree.ts'
-import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
+import { GroupingSectionRow, ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
 import { AnimatedRows } from './AnimatedRows.tsx'
-import { FLAT_SESSION_ORDER_KEY, type SessionGroupBy } from '../stores.ts'
+import { FLAT_SESSION_ORDER_KEY, WORKSPACE_VIEW_KEY, type SessionGroupBy } from '../stores.ts'
+import { WORKSPACE_GROUPINGS, type SessionGrouping, type WorkspaceGrouping } from '../groupings.ts'
 import { WorkspacePickFlow } from '../WorkspacePicker.tsx'
 import css from './WorkspaceBrowser.module.css'
 
@@ -51,22 +52,83 @@ const EXPAND_SLIDE_MS = 300
 const SEARCH_DEBOUNCE_MS = 250
 /** `session.search` wire bound, measured in JavaScript UTF-16 code units. */
 const SEARCH_QUERY_MAX_CODE_UNITS = 500
-/** Idle Session rows visible per Workspace before the local overflow control. */
-const COLLAPSED_SESSION_LIMIT = 5
+/** Stable empty fold state for a registered grouping with no folded section. */
+const EMPTY_COLLAPSED: Readonly<Record<string, boolean>> = {}
+/** Stable empty row limits for a view with none saved. */
+const EMPTY_LIMITS: Readonly<Record<string, number>> = {}
+/** What a section shows before its rows are derived. */
+const NO_ROWS: LimitedRows = { rows: [], hidden: 0, overflows: false }
+/** A saved row limit that shows every Session of a group. */
+const ALL_SESSIONS = Number.MAX_SAFE_INTEGER
 
-/** Keep provisional and running rows outside the idle-session quota, including parents with running children. */
-function collapsedSessionRows(sessions: readonly SessionNode[], limit = COLLAPSED_SESSION_LIMIT): {
-  rows: readonly SessionNode[]
-  hiddenCount: number
-} {
-  let idleCount = 0
+/** What a group shows under its row limit. */
+interface LimitedRows {
+  /** Rows to render, in order. */
+  readonly rows: readonly SessionNode[]
+  /** Rows the limit hides now. */
+  readonly hidden: number
+  /** Whether the default limit hides any row, which is when the group has an overflow control. */
+  readonly overflows: boolean
+}
+
+/**
+ * The rows a group shows: blank, running (or with running children), and pinned Sessions and the
+ * ones in `always` (the main view's Session, a search result being revealed) show without counting;
+ * `limit` more idle rows follow.
+ * @param sessions - the group's rows in order.
+ * @param base - rows shown by default.
+ * @param saved - the group's saved limit, never applied below `base`.
+ * @param always - Session ids that show regardless.
+ */
+function limitedRows(
+  sessions: readonly SessionNode[], base: number, saved: number | undefined, always: readonly (string | undefined)[],
+): LimitedRows {
+  const limit = Math.max(saved ?? base, base)
+  let idle = 0
   const rows = sessions.filter((session) => {
-    if (session.blank || session.running || session.runningSubagentCount > 0) return true
-    if (idleCount >= limit) return false
-    idleCount += 1
-    return true
+    if (session.blank || session.running || session.runningSubagentCount > 0 || session.pinned || always.includes(session.id)) return true
+    idle += 1
+    return idle <= limit
   })
-  return { rows, hiddenCount: sessions.length - rows.length }
+  return { rows, hidden: sessions.length - rows.length, overflows: idle > base }
+}
+
+/**
+ * The overflow control under a group: it reveals `base` more rows per click (all of them once no
+ * more than `base` remain), then offers to show less. A saved limit of a loaded group that no
+ * longer overflows is forgotten, so the group starts from the default when it grows again.
+ */
+function SessionOverflowButton({ groupKey, shown, loaded, base, limit, setLimit, t }: {
+  groupKey: string
+  shown: LimitedRows
+  /** The group's rows are loaded and it is open. */
+  loaded: boolean
+  /** Rows shown by default, and the step of each reveal. */
+  base: number
+  /** The group's saved limit, if any. */
+  limit: number | undefined
+  /** Save the group's limit; undefined returns it to the default. */
+  setLimit: (limit: number | undefined) => void
+  t: WorkspaceBrowserProps['t']
+}) {
+  const stale = loaded && !shown.overflows && limit !== undefined
+  useEffect(() => {
+    if (stale) setLimit(undefined)
+  })
+  if (!shown.overflows) return null
+  return (
+    <button
+      type="button"
+      className={css.sessionOverflowButton}
+      data-row-key={`overflow:${groupKey}`}
+      aria-expanded={shown.hidden === 0}
+      onClick={() => {
+        setLimit(shown.hidden === 0 ? undefined : shown.hidden <= base ? ALL_SESSIONS : Math.max(limit ?? base, base) + base)
+      }}
+    >
+      {shown.hidden === 0 ? t('sessions.collapse') : t('sessions.expand', { n: shown.hidden })}
+    </button>
+  )
 }
 
 /** Keep controlled input and RPC payload inside the session.search wire contract. */
@@ -102,9 +164,33 @@ function useNativeDragAcceptance(active: boolean): void {
   }, [active])
 }
 
-/** Grouping, ordering, and archived-filter menu; own open state so it resets with the wide chrome. */
-function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, onGroupPick, onOrderPick, onArchivedFilterPick, t }: {
+/** Built-in Workspace views in the Group by menu, positioned by the same `order` registrations use. */
+const BUILTIN_GROUP_OPTIONS: readonly { id: WorkspaceGrouping; order: number; key: 'groupBy.workspace' | 'groupBy.workspaceTree' | 'groupBy.flat'; icon: ReactNode }[] = [
+  { id: 'workspace', order: 100, key: 'groupBy.workspace', icon: <IconFolderCloseRegular /> },
+  { id: 'workspace-tree', order: 200, key: 'groupBy.workspaceTree', icon: <IconWorkspaceTreeOutlineRegular /> },
+  { id: 'flat', order: 900, key: 'groupBy.flat', icon: <IconFlatListOutlineRegular /> },
+]
+const STATUS_OPTIONS = {
+  default: { id: 'status:active', key: 'status.active', icon: <IconArchiveOffOutlineRegular /> },
+  only: { id: 'status:archived', key: 'status.archived', icon: <IconArchiveCheckOutlineRegular /> },
+  show: { id: 'status:all', key: 'status.all', icon: <IconQueueOutlineRegular /> },
+} as const satisfies Record<ArchivedFilter, object>
+/** Status choices in menu order. */
+const STATUS_ORDER: readonly ArchivedFilter[] = ['default', 'only', 'show']
+const ORDER_OPTIONS = {
+  manual: { key: 'orderBy.manual', icon: <IconChevronsUpDownOutlineRegular /> },
+  updated: { key: 'orderBy.updated', icon: <IconClockOutlineRegular /> },
+} as const satisfies Record<SessionOrderBy, object>
+/** Order choices in menu order. */
+const ORDER_ORDER: readonly SessionOrderBy[] = ['manual', 'updated']
+
+/**
+ * Two-level view menu: Status, Group by, and (for the Workspace views) Order by, each opening its
+ * choices and showing the current one. Owns its open state so it resets with the wide chrome.
+ */
+function ViewOptionsMenu({ groupBy, groupings, orderBy, archivedFilter, onGroupPick, onOrderPick, onArchivedFilterPick, t }: {
   groupBy: SessionGroupBy
+  groupings: readonly SessionGrouping[]
   orderBy: SessionOrderBy
   archivedFilter: ArchivedFilter
   onGroupPick: (mode: SessionGroupBy) => void
@@ -113,36 +199,41 @@ function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, onGroupPick, onOrde
   t: WorkspaceBrowserProps['t']
 }) {
   const [open, setOpen] = useState(false)
+  const groupOptions = [
+    ...BUILTIN_GROUP_OPTIONS.map(option => ({ id: option.id, order: option.order, label: t(option.key), icon: option.icon })),
+    ...groupings.map(grouping => ({ id: grouping.id, order: grouping.order, label: grouping.label(), icon: grouping.icon })),
+  ].sort((left, right) => left.order - right.order)
+  const status = STATUS_OPTIONS[archivedFilter]
+  const workspaceView = (WORKSPACE_GROUPINGS as readonly string[]).includes(groupBy)
   return (
     <Menu
       open={open}
       onClose={() => { setOpen(false) }}
       items={[
-        { type: 'label' as const, id: 'group-by', text: t('groupBy.label') },
-        { id: 'workspace', label: t('groupBy.workspace'), icon: <IconFolderCloseRegular /> },
-        { id: 'workspace-tree', label: t('groupBy.workspaceTree'), icon: <IconWorkspaceTreeOutlineRegular /> },
-        { id: 'flat', label: t('groupBy.flat'), icon: <IconFlatListOutlineRegular /> },
-        { type: 'separator' as const, id: 'order-by-separator' },
-        { type: 'label' as const, id: 'order-by', text: t('orderBy.label') },
-        { id: 'manual', label: t('orderBy.manual'), icon: <IconChevronsUpDownOutlineRegular /> },
-        { id: 'updated', label: t('orderBy.updated'), icon: <IconClockOutlineRegular /> },
-        { type: 'separator' as const, id: 'archived-filter-separator' },
-        { type: 'label' as const, id: 'filter-by', text: t('filterBy.label') },
-        { id: 'hide-archived', label: t('viewOptions.hideArchived'), icon: <IconArchiveOffOutlineRegular /> },
-        { id: 'show-archived', label: t('viewOptions.showArchived'), icon: <IconQueueOutlineRegular /> },
-        { id: 'only-archived', label: t('viewOptions.onlyArchived'), icon: <IconArchiveCheckOutlineRegular /> },
+        {
+          id: 'status', label: t('status.label'), icon: <IconArchiveOutlineRegular />, detail: t(status.key),
+          submenu: STATUS_ORDER.map(filter => STATUS_OPTIONS[filter])
+            .map(option => ({ id: option.id, label: t(option.key), icon: option.icon })),
+        },
+        {
+          id: 'group-by', label: t('groupBy.label'), icon: <IconFolderCloseRegular />,
+          detail: groupOptions.find(option => option.id === groupBy)?.label,
+          submenu: groupOptions.map(option => ({ id: `group:${option.id}`, label: option.label, icon: option.icon })),
+        },
+        // Registered groupings list newest first, so the order choice applies to the Workspace views only.
+        ...workspaceView
+          ? [{
+            id: 'order-by', label: t('orderBy.label'), icon: <IconChevronsUpDownOutlineRegular />, detail: t(ORDER_OPTIONS[orderBy].key),
+            submenu: ORDER_ORDER.map(mode => ({ id: `order:${mode}`, label: t(ORDER_OPTIONS[mode].key), icon: ORDER_OPTIONS[mode].icon })),
+          }]
+          : [],
       ]}
-      selectedIds={[
-        groupBy,
-        orderBy,
-        { default: 'hide-archived', show: 'show-archived', only: 'only-archived' }[archivedFilter],
-      ]}
+      selectedIds={[status.id, `group:${groupBy}`, `order:${orderBy}`]}
       onSelect={(id) => {
-        if (id === 'workspace' || id === 'workspace-tree' || id === 'flat') onGroupPick(id)
-        else if (id === 'manual' || id === 'updated') onOrderPick(id)
-        else if (id === 'hide-archived') onArchivedFilterPick('default')
-        else if (id === 'show-archived') onArchivedFilterPick('show')
-        else if (id === 'only-archived') onArchivedFilterPick('only')
+        const statusPick = STATUS_ORDER.find(filter => STATUS_OPTIONS[filter].id === id)
+        if (statusPick !== undefined) onArchivedFilterPick(statusPick)
+        else if (id.startsWith('group:')) onGroupPick(id.slice('group:'.length))
+        else if (id === 'order:manual' || id === 'order:updated') onOrderPick(id === 'order:manual' ? 'manual' : 'updated')
         setOpen(false)
       }}
       align="end"
@@ -260,6 +351,14 @@ type SessionTreeProps = Pick<
   revealSessionId?: SessionId | undefined
   /** Acknowledge that the chosen Session row has been revealed. */
   onSessionRevealed: (sessionId: SessionId) => void
+  /** The search result last opened, shown whatever the row limit. */
+  keptSessionId?: SessionId | undefined
+  /** Idle Session rows a group shows by default. */
+  sessionLimit: number
+  /** Saved row limits by group key. */
+  sessionLimits: Readonly<Record<string, number>>
+  /** Save one group's row limit; undefined returns it to the default. */
+  setSessionLimit: (key: string, limit: number | undefined) => void
 }
 
 /** The list-empty placeholder — a glyph over the text; the archived-only view names its filter and offers the way back. */
@@ -278,7 +377,7 @@ function EmptySessions({ rowState, onLeaveArchivedOnly, t }: Pick<SessionTreePro
   )
 }
 
-/** The scrolling session tree; unmounting drops the sessions subscription and local row limits. */
+/** The scrolling session tree; unmounting drops the sessions subscription. */
 function SessionTree({
   list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds,
   rowState, onLeaveArchivedOnly,
@@ -289,6 +388,7 @@ function SessionTree({
   nestWorkspaces, groupExpansion, setGroupExpanded,
   setSessionOrder, home, t,
   revealSessionId, onSessionRevealed, shortcuts,
+  sessionLimit, sessionLimits, setSessionLimit, keptSessionId,
 }: SessionTreeProps) {
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
   const statuses = useSessionStatus(s => s)
@@ -298,7 +398,6 @@ function SessionTree({
   const revealGroup = revealSessionId === undefined || !workspaceReady
     ? undefined
     : owningGroupKey(workspaces, revealSessionId)
-  const [sessionLimits, setSessionLimits] = useState<Readonly<Record<string, number>>>({})
   // Transient drag marker state; the selected mode owns the resulting order.
   const [drag, setDrag] = useState<DragState | null>(null)
   const sessionDropCommitted = useRef(false)
@@ -348,13 +447,9 @@ function SessionTree({
       }
     }
   }, [groupExpansion, parents, revealGroup, setGroupExpanded])
-  useEffect(() => {
-    if (revealSessionId === undefined || revealGroup === undefined) return
-    const group = groups.find(candidate => candidate.key === revealGroup)
-    if (group === undefined || !group.expanded || !group.sessions.some(row => row.id === revealSessionId)) return
-    if (collapsedSessionRows(group.sessions).rows.some(row => row.id === revealSessionId)) return
-    setSessionLimits(limits => limits[revealGroup] === Infinity ? limits : { ...limits, [revealGroup]: Infinity })
-  }, [groups, revealGroup, revealSessionId])
+  // The main view's Session and the search result last opened show whatever the row limit, with
+  // or without a panel open over the conversation.
+  const alwaysShown = [mainSessionId(list), keptSessionId]
   const now = Date.now()
   const commitSessionDrag = (activeDrag: DragState, over: NonNullable<DragState['over']>): void => {
     if (sessionDropCommitted.current) return
@@ -367,7 +462,7 @@ function SessionTree({
       ? ungroupedSessionIds
       : workspaces.find(workspace => workspace.workspaceId === activeDrag.accountKey)?.sessionIds
     if (accountSessionIds === undefined) return
-    const renderedSessions = collapsedSessionRows(group.sessions, sessionLimits[group.key]).rows
+    const renderedSessions = limitedRows(group.sessions, sessionLimit, sessionLimits[group.key], alwaysShown).rows
     const nextOrder = sessionDragOrder(accountSessionIds, renderedSessions, activeDrag, over)
     if (nextOrder !== undefined) setSessionOrder(activeDrag.accountKey, nextOrder)
   }
@@ -417,14 +512,12 @@ function SessionTree({
     const workspaceId = group.workspaceId
     const children = childrenByParent.get(group.key) ?? []
     const compatibleDrag = workspaceDrag !== null && parents.get(workspaceDrag.workspaceId) === parents.get(group.key)
-    const collapsed = collapsedSessionRows(group.sessions)
-    const visible = collapsedSessionRows(group.sessions, sessionLimits[group.key])
-    const sessionsExpanded = visible.hiddenCount === 0
+    const visible = limitedRows(group.sessions, sessionLimit, sessionLimits[group.key], alwaysShown)
     rowKeys.push(`workspace:${group.key}`)
     const childRows = group.expanded ? children.map(child => renderGroup(child, depth + 1)) : []
     const sessions = visible.rows
     for (const node of sessions) rowKeys.push(`session:${node.id}`)
-    if (collapsed.hiddenCount > 0) rowKeys.push(`overflow:${group.key}`)
+    if (visible.overflows) rowKeys.push(`overflow:${group.key}`)
     const workspaceMarker = workspaceId !== undefined && workspaceDrag?.over?.id === workspaceId
       ? workspaceDrag.over.half
       : null
@@ -501,9 +594,7 @@ function SessionTree({
           home={home}
           t={t}
           onToggle={() => {
-            if (group.expanded) {
-              setSessionLimits(limits => ({ ...limits, [group.key]: COLLAPSED_SESSION_LIMIT }))
-            }
+            if (group.expanded && sessionLimits[group.key] !== undefined) setSessionLimit(group.key, undefined)
             setGroupExpanded(group.key, !group.expanded)
           }}
           onCreate={() => {
@@ -579,28 +670,15 @@ function SessionTree({
             />
           )
         })}
-        {collapsed.hiddenCount > 0 && (
-          <button
-            type="button"
-            className={css.sessionOverflowButton}
-            data-row-key={`overflow:${group.key}`}
-            aria-expanded={sessionsExpanded}
-            onClick={() => {
-              setSessionLimits(limits => ({
-                ...limits,
-                [group.key]: sessionsExpanded
-                  ? COLLAPSED_SESSION_LIMIT
-                  : visible.hiddenCount <= COLLAPSED_SESSION_LIMIT
-                    ? Infinity
-                    : (limits[group.key] ?? COLLAPSED_SESSION_LIMIT) + COLLAPSED_SESSION_LIMIT,
-              }))
-            }}
-          >
-            {sessionsExpanded
-              ? t('sessions.collapse')
-              : t('sessions.expand', { n: visible.hiddenCount })}
-          </button>
-        )}
+        <SessionOverflowButton
+          groupKey={group.key}
+          shown={visible}
+          loaded={group.expanded && list.phase === 'ready' && workspaceReady}
+          base={sessionLimit}
+          limit={sessionLimits[group.key]}
+          setLimit={(limit) => { setSessionLimit(group.key, limit) }}
+          t={t}
+        />
       </div>
     )
   }
@@ -626,7 +704,7 @@ function SessionTree({
   )
 }
 
-/** The flat "In one list" body: every session is one draggable top-level row. */
+/** The flat "No grouping" body: every session is one draggable top-level row. */
 function FlatList({
   list, sessionIds, rowState, onLeaveArchivedOnly, useSessionStatus, open, onSessionRenameRequest,
   usePanelInfo, setSessionOrder, workspaceReady, animationResetKey,
@@ -723,6 +801,134 @@ function FlatList({
             />
           )
         })}
+      </AnimatedRows>
+      <span className={css.fade} />
+    </div>
+  )
+}
+
+/**
+ * The body of a registered grouping: each section's heading folds it, and its rows list newest
+ * first after the current New Session and pinned rows, under the same row limit and overflow
+ * control as the Workspace views. Rows do not drag: order follows activity. Once the lists are
+ * loaded, folds and row limits of sections that no longer exist are dropped.
+ */
+function GroupedList({
+  list, grouping, rowState, collapsed, setCollapsed, retainSections, onLeaveArchivedOnly, useSessionStatus, open, onSessionRenameRequest,
+  usePanelInfo, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, renderSlot, t,
+  sessionLimit, sessionLimits, setSessionLimit, keptSessionId,
+}: Pick<
+  SessionTreeProps,
+  | 'useSessionStatus'
+  | 'open'
+  | 'onSessionRenameRequest'
+  | 'renderSlot'
+  | 'usePanelInfo'
+  | 'workspaceReady'
+  | 'animationResetKey'
+  | 'revealSessionId'
+  | 'onSessionRevealed'
+  | 'rowState'
+  | 'onLeaveArchivedOnly'
+  | 't'
+  | 'sessionLimit'
+  | 'sessionLimits'
+  | 'setSessionLimit'
+  | 'keptSessionId'
+> & {
+  list: SessionListState
+  grouping: SessionGrouping
+  collapsed: Readonly<Record<string, boolean>>
+  setCollapsed: (key: string, collapsed: boolean) => void
+  retainSections: (keys: readonly string[]) => void
+}) {
+  const panelActive = usePanelInfo(info => info.activePanelId !== null)
+  const statuses = useSessionStatus(s => s)
+  // A grouping's own changes (a renamed assistant, a language switch) regroup without a list change.
+  const [revision, regroup] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => {
+    const stop = grouping.subscribe?.(regroup)
+    // A change between this render and the subscription would otherwise be missed.
+    if (stop !== undefined) regroup()
+    return stop
+  }, [grouping])
+  const sections = useMemo(
+    () => deriveGroupingSections(list, grouping, rowState, statuses, collapsed),
+    [list, grouping, rowState, statuses, collapsed, revision],
+  )
+  // A search result opened into a folded section unfolds it so the row can scroll into view.
+  const revealSection = revealSessionId === undefined
+    ? undefined
+    : sections.find(section => section.sessionIds.includes(revealSessionId))
+  const mainId = mainSessionId(list)
+  const currentId = panelActive ? undefined : mainId
+  // The main view's Session and the search result last opened show whatever the row limit.
+  const shownBySection = useMemo(
+    () => new Map(sections.map(section => [
+      section.key, limitedRows(section.sessions, sessionLimit, sessionLimits[section.key], [mainId, keptSessionId]),
+    ])),
+    [mainId, keptSessionId, sections, sessionLimit, sessionLimits],
+  )
+  const shown = (section: GroupingSection): LimitedRows => shownBySection.get(section.key) ?? NO_ROWS
+  useEffect(() => {
+    if (revealSection?.collapsed === true) setCollapsed(revealSection.key, false)
+  }, [revealSection, setCollapsed])
+  const ready = list.phase === 'ready' && workspaceReady
+  useEffect(() => {
+    if (!ready || grouping.ready?.() === false) return
+    const keys = sections.map(section => section.key)
+    if ([...Object.keys(collapsed), ...Object.keys(sessionLimits)].some(key => !keys.includes(key))) retainSections(keys)
+  }, [collapsed, grouping, ready, retainSections, sessionLimits, sections])
+  const rowKeys = sections.length === 0
+    ? ['empty']
+    : sections.flatMap(section => [
+      `group:${section.key}`,
+      ...shown(section).rows.map(row => `session:${row.id}`),
+      ...shown(section).overflows ? [`overflow:${section.key}`] : [],
+    ])
+  const now = Date.now()
+  const rowProps = { currentId, now, onOpen: open, onRenameRequest: onSessionRenameRequest, renderSlot, t }
+  return (
+    <div className={clsx(css.treeBody, css.wide)}>
+      <AnimatedRows
+        className={clsx(css.list)}
+        label={t('section.sessions')}
+        rowKeys={rowKeys}
+        ready={ready}
+        resetKey={JSON.stringify([animationResetKey, sessionLimits])}
+      >
+        {sections.length === 0 && (
+          <EmptySessions rowState={rowState} onLeaveArchivedOnly={onLeaveArchivedOnly} t={t} />
+        )}
+        {sections.map(section => (
+          <div key={section.key} className={css.groupSection}>
+            <GroupingSectionRow
+              section={section}
+              onToggle={() => {
+                // Folding a section returns it to the default number of rows.
+                if (!section.collapsed && sessionLimits[section.key] !== undefined) setSessionLimit(section.key, undefined)
+                setCollapsed(section.key, !section.collapsed)
+              }}
+            />
+            {shown(section).rows.map(node => (
+              <SessionNodeItem
+                key={node.id}
+                node={node}
+                {...rowProps}
+                onReveal={node.id === revealSessionId ? () => { onSessionRevealed(node.id) } : undefined}
+              />
+            ))}
+            <SessionOverflowButton
+              groupKey={section.key}
+              shown={shown(section)}
+              loaded={ready && !section.collapsed}
+              base={sessionLimit}
+              limit={sessionLimits[section.key]}
+              setLimit={(limit) => { setSessionLimit(section.key, limit) }}
+              t={t}
+            />
+          </div>
+        ))}
       </AnimatedRows>
       <span className={css.fade} />
     </div>
@@ -858,6 +1064,9 @@ export function WorkspaceBrowser({
   useHostInfo,
   useShortcuts,
   useWorkspaceShortcuts,
+  useGroupings,
+  useDefaultGrouping,
+  useSessionLimit,
   requestSearch,
   requestAddWorkspace,
   closeAddWorkspace,
@@ -891,7 +1100,22 @@ export function WorkspaceBrowser({
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
-  const groupBy = useStore(s => s.groupBy)
+  const groupings = useGroupings(rows => rows)
+  const defaultGrouping = useDefaultGrouping(id => id)
+  // Until the user picks a grouping the default applies. A pick is the user's own, and so is a view
+  // saved before defaults existed that is not the Workspace view or that carries a manual order.
+  const storedGroupBy = useStore(s => (
+    s.groupByChosen === true || s.groupBy !== 'workspace' || s.orderBy === 'manual' ? s.groupBy : defaultGrouping
+  ))
+  // A stored grouping whose plugin is gone shows the Workspace view; the choice stays stored, so
+  // it returns with the plugin.
+  const grouping = groupings.find(item => item.id === storedGroupBy)
+  const groupBy: SessionGroupBy = grouping !== undefined || (WORKSPACE_GROUPINGS as readonly string[]).includes(storedGroupBy)
+    ? storedGroupBy
+    : 'workspace'
+  const groupCollapsed = useStore(s => s.groupCollapsed)
+  const sessionLimit = useSessionLimit(limit => limit)
+  const savedSessionLimits = useStore(s => s.sessionLimits)
   const orderBy = useStore(s => s.orderBy)
   // Persisted view blobs written before the archived filter existed rehydrate
   // without the field; they read as the default hide-archived view.
@@ -1015,6 +1239,9 @@ export function WorkspaceBrowser({
   const [query, setQuery] = useState('')
   const [searchExpanded, setSearchExpanded] = useState(false)
   const [revealSessionId, setRevealSessionId] = useState<SessionId | undefined>(undefined)
+  // The search result last opened stays in its group whatever the row limit, until the user opens
+  // another row: it becomes the main view's Session a moment after it is revealed.
+  const [keptSessionId, setKeptSessionId] = useState<SessionId | undefined>(undefined)
   const normalizedQuery = sanitizeSearchQuery(query).trim()
   const [remoteSearch, setRemoteSearch] = useState<RemoteSearchState>({
     query: '',
@@ -1030,12 +1257,17 @@ export function WorkspaceBrowser({
   const wsPlusRef = useRef<HTMLButtonElement>(null)
   const composingRef = useRef(false)
 
+  const openRow = (sessionId: SessionId): void => {
+    setKeptSessionId(undefined)
+    guardedOpen(sessionId)
+  }
   const openSearchResult = (sessionId: SessionId): void => {
     if (archivedSessionIds.includes(sessionId)) {
       notifyArchivedNotOpenable()
       return
     }
     setRevealSessionId(sessionId)
+    setKeptSessionId(sessionId)
     setQuery('')
     setSearchExpanded(false)
     open(sessionId)
@@ -1210,7 +1442,7 @@ export function WorkspaceBrowser({
       <div className={css.sectionHeader}>
         {wide && (
           <span className={clsx(css.sectionLabel, css.wide, searchExpanded && css.sectionLabelHidden)}>
-            {groupBy === 'flat' ? t('section.sessions') : t('section.workspaces')}
+            {groupBy === 'flat' || grouping !== undefined ? t('section.sessions') : t('section.workspaces')}
           </span>
         )}
         {wide && (
@@ -1274,6 +1506,7 @@ export function WorkspaceBrowser({
           {wide && (
             <ViewOptionsMenu
               groupBy={groupBy}
+              groupings={groupings}
               orderBy={orderBy}
               archivedFilter={archivedFilter}
               onGroupPick={actions.setGroupBy}
@@ -1359,65 +1592,95 @@ export function WorkspaceBrowser({
               t={t}
             />
           )
-          : groupBy === 'flat'
+          : grouping !== undefined
             ? (
-              <FlatList
+              <GroupedList
                 usePanelInfo={usePanelInfo}
                 list={list}
-                sessionIds={orderedFlatSessionIds}
+                grouping={grouping}
                 rowState={rowState}
+                collapsed={groupCollapsed?.[grouping.id] ?? EMPTY_COLLAPSED}
+                setCollapsed={(key, collapsed) => { actions.setGroupCollapsed(grouping.id, key, collapsed) }}
+                retainSections={(keys) => { actions.retainGroupSections(grouping.id, keys) }}
+                sessionLimit={sessionLimit}
+                sessionLimits={savedSessionLimits?.[grouping.id] ?? EMPTY_LIMITS}
+                setSessionLimit={(key, limit) => { actions.setSessionLimit(grouping.id, key, limit) }}
                 onLeaveArchivedOnly={leaveArchivedOnly}
                 workspaceReady={workspaceReady}
-                animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
+                animationResetKey={`${groupBy}/${archivedFilter}`}
                 useSessionStatus={useSessionStatus}
-                open={guardedOpen}
+                open={openRow}
                 onSessionRenameRequest={requestSessionRename}
                 renderSlot={renderSlot}
-                setSessionOrder={saveSessionOrder}
                 revealSessionId={revealSessionId}
+                keptSessionId={keptSessionId}
                 onSessionRevealed={acknowledgeSessionReveal}
                 t={t}
               />
             )
-            : (
-              <SessionTree
-                usePanelInfo={usePanelInfo}
-                list={list}
-                shortcuts={shortcuts}
-                useSessionStatus={useSessionStatus}
-                onSessionRenameRequest={requestSessionRename}
-                renderSlot={renderSlot}
-                workspaces={orderedWorkspaces}
-                ungroupedSessionIds={orderedUngroupedSessionIds}
-                workspaceReady={workspaceReady}
-                nestWorkspaces={groupBy === 'workspace-tree'}
-                animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
-                groupExpansion={groupExpansion}
-                setGroupExpanded={actions.setGroupExpanded}
-                setSessionOrder={saveSessionOrder}
-                rowState={rowState}
-                onLeaveArchivedOnly={leaveArchivedOnly}
-                startSession={startSession}
-                open={guardedOpen}
-                insertWorkspaceBefore={insertWorkspaceBefore}
-                revealSessionId={revealSessionId}
-                onSessionRevealed={acknowledgeSessionReveal}
-                home={home}
-                t={t}
-                onRenameRequest={(workspaceId, displayTitle) => {
-                  setRenameTarget({
-                    workspaceId,
-                    storedTitle: storedWorkspaces.find(w => w.workspaceId === workspaceId)?.title ?? displayTitle,
-                  })
-                  setRenameDraft(displayTitle)
-                  setRenameError(null)
-                }}
-                onDeleteRequest={(workspaceId, title) => {
-                  setDeleteTarget({ workspaceId, title })
-                  setDeleteError(null)
-                }}
-              />
-            ))}
+            : groupBy === 'flat'
+              ? (
+                <FlatList
+                  usePanelInfo={usePanelInfo}
+                  list={list}
+                  sessionIds={orderedFlatSessionIds}
+                  rowState={rowState}
+                  onLeaveArchivedOnly={leaveArchivedOnly}
+                  workspaceReady={workspaceReady}
+                  animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
+                  useSessionStatus={useSessionStatus}
+                  open={openRow}
+                  onSessionRenameRequest={requestSessionRename}
+                  renderSlot={renderSlot}
+                  setSessionOrder={saveSessionOrder}
+                  revealSessionId={revealSessionId}
+                  onSessionRevealed={acknowledgeSessionReveal}
+                  t={t}
+                />
+              )
+              : (
+                <SessionTree
+                  usePanelInfo={usePanelInfo}
+                  list={list}
+                  shortcuts={shortcuts}
+                  useSessionStatus={useSessionStatus}
+                  onSessionRenameRequest={requestSessionRename}
+                  renderSlot={renderSlot}
+                  workspaces={orderedWorkspaces}
+                  ungroupedSessionIds={orderedUngroupedSessionIds}
+                  workspaceReady={workspaceReady}
+                  nestWorkspaces={groupBy === 'workspace-tree'}
+                  animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
+                  groupExpansion={groupExpansion}
+                  setGroupExpanded={actions.setGroupExpanded}
+                  sessionLimit={sessionLimit}
+                  sessionLimits={savedSessionLimits?.[WORKSPACE_VIEW_KEY] ?? EMPTY_LIMITS}
+                  setSessionLimit={(key, limit) => { actions.setSessionLimit(WORKSPACE_VIEW_KEY, key, limit) }}
+                  setSessionOrder={saveSessionOrder}
+                  rowState={rowState}
+                  onLeaveArchivedOnly={leaveArchivedOnly}
+                  startSession={startSession}
+                  open={openRow}
+                  insertWorkspaceBefore={insertWorkspaceBefore}
+                  revealSessionId={revealSessionId}
+                  keptSessionId={keptSessionId}
+                  onSessionRevealed={acknowledgeSessionReveal}
+                  home={home}
+                  t={t}
+                  onRenameRequest={(workspaceId, displayTitle) => {
+                    setRenameTarget({
+                      workspaceId,
+                      storedTitle: storedWorkspaces.find(w => w.workspaceId === workspaceId)?.title ?? displayTitle,
+                    })
+                    setRenameDraft(displayTitle)
+                    setRenameError(null)
+                  }}
+                  onDeleteRequest={(workspaceId, title) => {
+                    setDeleteTarget({ workspaceId, title })
+                    setDeleteError(null)
+                  }}
+                />
+              ))}
       </div>
 
       <Modal

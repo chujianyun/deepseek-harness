@@ -8,19 +8,30 @@
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceGrouping } from './groupings.ts'
 import { reconcileManualOrder, type ArchivedFilter, type SessionRowState } from './tree.ts'
 
 /** Browser-local order account for the hierarchy-free flat Session list. */
 export const FLAT_SESSION_ORDER_KEY = '__flat_session_order__'
 
-/** Session-list grouping mode: sibling Workspace sections, a Workspace tree, or one flat list. */
-export type SessionGroupBy = 'workspace' | 'workspace-tree' | 'flat'
+/**
+ * Session-list grouping: a built-in Workspace view (sibling Workspace sections, a Workspace tree,
+ * or one flat list) or the id of a registered grouping. A stored id no registration provides reads
+ * as 'workspace'.
+ */
+export type SessionGroupBy = WorkspaceGrouping | (string & Record<never, never>)
 /** Session order: saved manual positions or current recency. */
 export type SessionOrderBy = 'manual' | 'updated'
 
 /** Workspace browser viewing state persisted across surface remounts and reloads. */
 type WorkspaceViewState = {
   groupBy: SessionGroupBy
+  /**
+   * The user picked `groupBy` in the menu. Until then the sidebar shows the default grouping; a
+   * snapshot written before defaults existed counts as picked when its `groupBy` is not 'workspace'
+   * or its order is manual.
+   */
+  groupByChosen?: boolean
   orderBy: SessionOrderBy
   /** Explicit group expansion keyed by Workspace identity, including descendants in tree mode. */
   groupExpansion: Record<string, boolean>
@@ -28,6 +39,17 @@ type WorkspaceViewState = {
   sessionOrderByAccount: Record<string, string[]>
   /** Archived-row visibility; omitted in pre-filter v5 snapshots and read as 'default'. */
   archivedFilter?: ArchivedFilter
+  /**
+   * Folded sections of registered groupings, keyed by grouping id then section key; omitted in
+   * snapshots written before registered groupings existed.
+   */
+  groupCollapsed?: Record<string, Record<string, boolean>>
+  /**
+   * Idle Session rows an expanded group shows, keyed by view ('workspace' for the Workspace
+   * views, else the grouping id) then group key; `Number.MAX_SAFE_INTEGER` shows all. A group
+   * without an entry shows the default number. Omitted in snapshots written before limits were saved.
+   */
+  sessionLimits?: Record<string, Record<string, number>>
 }
 
 type SessionOrderSource = {
@@ -66,6 +88,17 @@ type WorkspaceViewActions = {
     source: SessionOrderSource,
   ) => void
   setArchivedFilter: (draft: WorkspaceViewState, filter: ArchivedFilter) => void
+  setGroupCollapsed: (draft: WorkspaceViewState, grouping: string, key: string, collapsed: boolean) => void
+  retainGroupSections: (draft: WorkspaceViewState, grouping: string, keys: readonly string[]) => void
+  setSessionLimit: (draft: WorkspaceViewState, view: string, key: string, limit: number | undefined) => void
+}
+
+/** The view key the Workspace views save their Session row limits under. */
+export const WORKSPACE_VIEW_KEY = 'workspace'
+
+/** Keep the entries of one record whose keys pass. */
+function pick<T>(record: Readonly<Record<string, T>> | undefined, keep: (key: string) => boolean): Record<string, T> {
+  return Object.fromEntries(Object.entries(record ?? {}).filter(([key]) => keep(key)))
 }
 
 /** Copy read-only projections into the persisted mutable store representation. */
@@ -90,7 +123,10 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
     }),
     persist: 'dsh.workspace.view.v5',
     actions: {
-      setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
+      setGroupBy: (d, mode: SessionGroupBy) => {
+        d.groupBy = mode
+        d.groupByChosen = true
+      },
       setOrderBy: (d, mode: SessionOrderBy, initialOrders) => {
         if (mode === d.orderBy) return
         d.sessionOrderByAccount = mode === 'manual' ? copySessionOrders(initialOrders) : {}
@@ -105,6 +141,10 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
         d.sessionOrderByAccount = Object.fromEntries(
           Object.entries(d.sessionOrderByAccount).filter(([key]) => retained.has(key)),
         )
+        if (d.sessionLimits?.[WORKSPACE_VIEW_KEY] !== undefined) {
+          const kept = pick(d.sessionLimits[WORKSPACE_VIEW_KEY], key => retained.has(key))
+          d.sessionLimits = { ...d.sessionLimits, [WORKSPACE_VIEW_KEY]: kept }
+        }
         delete (d as WorkspaceViewState & { sessionUpdatedAtByAccount?: unknown }).sessionUpdatedAtByAccount
       },
       syncSessionOrders: (d, orders) => {
@@ -125,6 +165,23 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
         }))
       },
       setArchivedFilter: (d, filter: ArchivedFilter) => { d.archivedFilter = filter },
+      setGroupCollapsed: (d, grouping: string, key: string, collapsed: boolean) => {
+        const sections = pick(d.groupCollapsed?.[grouping], folded => folded !== key)
+        if (collapsed) sections[key] = true
+        d.groupCollapsed = { ...d.groupCollapsed, [grouping]: sections }
+      },
+      retainGroupSections: (d, grouping: string, keys: readonly string[]) => {
+        const retained = new Set(keys)
+        d.groupCollapsed = { ...d.groupCollapsed, [grouping]: pick(d.groupCollapsed?.[grouping], key => retained.has(key)) }
+        if (d.sessionLimits?.[grouping] !== undefined) {
+          d.sessionLimits = { ...d.sessionLimits, [grouping]: pick(d.sessionLimits[grouping], key => retained.has(key)) }
+        }
+      },
+      setSessionLimit: (d, view: string, key: string, limit: number | undefined) => {
+        const limits = pick(d.sessionLimits?.[view], group => group !== key)
+        if (limit !== undefined) limits[key] = limit
+        d.sessionLimits = { ...d.sessionLimits, [view]: limits }
+      },
     },
   })
 }

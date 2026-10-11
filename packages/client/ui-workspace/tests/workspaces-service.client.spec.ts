@@ -20,6 +20,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { DraftInitializationOptions, SessionInputResolver } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { RowToast } from '../src/client/contract/slots.ts'
 import { DirectoryBrowseError, UiWorkspaceService } from '../src/client/navigation.ts'
+import { createSessionGroupingRegistry } from '../src/client/groupings.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { createWorkspaceViewStore, FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
 import { UNGROUPED_KEY } from '../src/client/tree.ts'
@@ -139,6 +140,7 @@ class FakeSessions implements ISessions {
   readonly list: MutableSource<SessionListState>
   readonly create: ReturnType<typeof vi.fn<ISessions['create']>>
   readonly fork = vi.fn<ISessions['fork']>(async () => sid('forked'))
+  readonly delete = vi.fn<ISessions['delete']>(async sessionId => ({ ok: true, value: { deletedSessionIds: [sessionId] } }))
   readonly retained: RetainedSession[] = []
   readonly refreshProjections = vi.fn<ISessions['refreshProjections']>(() => Promise.resolve())
   readonly retain = vi.fn<ISessions['retain']>((target) => {
@@ -302,6 +304,7 @@ function bench(options: BenchOptions = {}) {
   options.configureSessions?.(sessions)
   const view = createWorkspaceViewStore().create()
   const notify = vi.fn<(toast: RowToast) => void>()
+  const groupings = createSessionGroupingRegistry()
   const uiWorkspace = new UiWorkspaceService(
     ctx,
     directoryPicker.remote,
@@ -309,8 +312,11 @@ function bench(options: BenchOptions = {}) {
     sessions,
     view.actions,
     notify,
+    groupings,
   )
-  return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel, view, notify, requestDraftInitialization }
+  return {
+    ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel, view, notify, groupings, requestDraftInitialization,
+  }
 }
 
 function lastOpening(open: MockInstance<UiWorkspaceService['openWorkspace']>): Promise<void> {
@@ -320,6 +326,31 @@ function lastOpening(open: MockInstance<UiWorkspaceService['openWorkspace']>): P
 }
 
 describe('UiWorkspaceService', () => {
+  it('offers a registered Session grouping until its disposer runs', () => {
+    const b = bench()
+    const grouping = { id: 'assistant', label: () => 'Assistant', order: 50, groupOf: () => ({ key: 'a', label: 'A' }) }
+    const dispose = b.uiWorkspace.registerSessionGrouping(grouping)
+    expect(b.groupings.groupings.getSnapshot()).toEqual([grouping])
+    dispose()
+    expect(b.groupings.groupings.getSnapshot()).toEqual([])
+  })
+
+  it('sets the sidebar default grouping until its disposer runs', () => {
+    const b = bench()
+    const restore = b.uiWorkspace.setDefaultSessionGrouping('assistant')
+    expect(b.groupings.defaultGrouping.getSnapshot()).toBe('assistant')
+    restore()
+    expect(b.groupings.defaultGrouping.getSnapshot()).toBe('workspace')
+  })
+
+  it('sets how many rows a sidebar group shows until its disposer runs', () => {
+    const b = bench()
+    const restore = b.uiWorkspace.setSessionGroupLimit(8)
+    expect(b.groupings.sessionLimit.getSnapshot()).toBe(8)
+    restore()
+    expect(b.groupings.sessionLimit.getSnapshot()).toBe(5)
+  })
+
   it('prepares and selects the default Workspace after both startup baselines', async () => {
     const b = bench({ configureWorkspaces: (workspaces) => {
       workspaces.initializeDefault.mockImplementation(async () => {
@@ -1275,6 +1306,45 @@ describe('UiWorkspaceService', () => {
     b.workspaces.onArchive = () => Promise.reject(new Error('archive rejected'))
     await expect(b.uiWorkspace.archiveSession(idle)).rejects.toThrow('archive rejected')
     expect(b.workspaces.archiveCalls).toEqual([idle, idle])
+  })
+
+  it('deletes through the Session Controller, then leaves the selection when it was among the deleted Sessions', async () => {
+    const b = bench()
+    b.uiWorkspace.openSession(sid('current'))
+    await b.uiWorkspace.deleteSession(sid('current'))
+    expect(b.sessions.retained[0]!.release).toHaveBeenCalledOnce()
+    expect(b.sessions.delete).toHaveBeenCalledExactlyOnceWith('current')
+
+    // Another Session's deletion leaves the selection alone.
+    b.uiWorkspace.openSession(sid('kept'))
+    await b.uiWorkspace.deleteSession(sid('other'))
+    expect(b.sessions.retained[1]!.release).not.toHaveBeenCalled()
+
+    // The main view shows a subagent Session the Host deleted with its parent.
+    b.sessions.delete.mockResolvedValueOnce({ ok: true, value: { deletedSessionIds: [sid('parent'), sid('kept')] } })
+    await b.uiWorkspace.deleteSession(sid('parent'))
+    expect(b.sessions.retained[1]!.release).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the selection when the Host refuses a deletion and says why in the UI language', async () => {
+    const b = bench()
+    b.uiWorkspace.openSession(sid('current'))
+    const refuse = (code: 'session/writer-held' | 'session/agent-busy' | 'gateway/bad-request') => {
+      b.sessions.delete.mockResolvedValueOnce({ ok: false, error: new RemoteError(code, 'host words', { sessionId: sid('current') }) } as never)
+      return b.uiWorkspace.deleteSession(sid('current'))
+    }
+    await expect(refuse('session/writer-held')).rejects.toThrow('This session is still being written, so it cannot be deleted now. Try again in a moment.')
+    await expect(refuse('session/agent-busy')).rejects.toThrow('Something else is using this session, so it cannot be deleted now. Try again when that finishes, or restart the app and delete it then.')
+    await expect(refuse('gateway/bad-request')).rejects.toThrow('Could not delete: host words')
+    expect(b.sessions.retained[0]!.release).not.toHaveBeenCalled()
+  })
+
+  it('counts a Session that no longer exists as deleted', async () => {
+    const b = bench()
+    b.uiWorkspace.openSession(sid('current'))
+    b.sessions.delete.mockResolvedValueOnce({ ok: false, error: new RemoteError('session/not-found', 'gone', { sessionId: sid('current') }) })
+    await expect(b.uiWorkspace.deleteSession(sid('current'))).resolves.toBeUndefined()
+    expect(b.sessions.retained[0]!.release).toHaveBeenCalledOnce()
   })
 
   it('forwards unarchive commands and preserves failures', async () => {

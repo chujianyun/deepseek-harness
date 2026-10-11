@@ -48,7 +48,12 @@ async function bench() {
   ctx.provide('sessions', { list } as never)
   const startSession = vi.fn()
   const openSession = vi.fn()
-  ctx.provide('uiWorkspace', { startSession, openSession } as never)
+  const groupings: { id: string; subscribe?: (onChange: () => void) => () => void }[] = []
+  const registerSessionGrouping = vi.fn((grouping: typeof groupings[number]) => {
+    groupings.push(grouping)
+    return () => { groupings.splice(groupings.indexOf(grouping), 1) }
+  })
+  ctx.provide('uiWorkspace', { startSession, openSession, registerSessionGrouping } as never)
   const assistants = {
     select: vi.fn((_sessionId: string, assistantId: string) => Promise.resolve({ ok: true as const, value: assistantId })),
     createAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: { assistantId: 'a9', state } })),
@@ -111,7 +116,7 @@ async function bench() {
   } as never, () => null)
   onTestFinished(removeRoot)
   return {
-    ctx, slots, assistants, session, agentPresets, options, dispose, accepted, list, startSession, openSession,
+    ctx, slots, assistants, session, agentPresets, options, dispose, accepted, list, startSession, openSession, groupings,
     setList: (byId: Record<string, Summary>) => { list.set({ ids: Object.keys(byId), byId }) },
     push: (value: AssistantsState) => { frames.push(value); wake?.() },
     fail: (error: Error) => { fail?.(error) },
@@ -135,7 +140,16 @@ describe('ui-assistants browser plugin', () => {
     expect(b.slots.entries('sidebar.session.row.hover')[0]!.inject!()).toBe(b.slots.entries('main')[0]!.inject!())
     expect(render(<AssistantsPanelIcon {...({} as GlobalStandardProps)} size={18} active={false} />).container.querySelector('svg')).toBeTruthy()
     expect(b.ctx.get('assistantPicker')?.pickTemplate).toBeTypeOf('function')
+    // The sidebar's Assistant grouping, for the plugin's lifetime.
+    expect(b.groupings.map(grouping => grouping.id)).toEqual(['assistant'])
+    // It follows the UI language through the locale service.
+    const relabel = vi.fn()
+    const stopGrouping = b.groupings[0]!.subscribe!(relabel)
+    b.ctx.locale.register('grouping-probe' as never, { zh: {}, en: {} })()
+    expect(relabel).toHaveBeenCalled()
+    stopGrouping()
     await fiber.dispose()
+    expect(b.groupings).toEqual([])
     expect(b.ctx.get('assistantPicker')).toBeUndefined()
     expect(b.slots.entries('main')).toEqual([])
     expect(b.slots.entries('sidebar.panellist')).toEqual([])

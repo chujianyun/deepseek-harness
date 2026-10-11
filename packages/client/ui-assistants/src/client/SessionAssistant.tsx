@@ -7,7 +7,7 @@
 
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
-import { AssistantAvatar } from './AssistantAvatar.tsx'
+import { AssistantAvatar, NEUTRAL_AVATAR } from './AssistantAvatar.tsx'
 import { assistantOf, type AssistantsInjected } from './assistants-source.ts'
 import css from './SessionAssistant.module.css'
 
@@ -35,9 +35,6 @@ function useRowAssistant({ sessionId, useAssistants, useSessions }: Pick<Session
   return elsewhere.otherTenant.includes(bound) ? { kind: 'other-tenant' } : { kind: 'deleted' }
 }
 
-/** A preset key outside the palette, which the avatar draws as a neutral disc. */
-const NEUTRAL = { kind: 'preset', key: 'neutral' } as const
-
 /** The glyph of each mark, the same in every locale. */
 const MARK_GLYPH = { 'other-tenant': '⇄', 'deleted': '?' } as const
 
@@ -64,7 +61,7 @@ export function SessionAssistantBadge(props: SessionAssistantProps) {
   if (shown === undefined) return null
   const label = labelOf(shown, props.t)
   // The marks draw a neutral disc with a fixed glyph: "?" for a deleted assistant, "⇄" for another company's.
-  const avatar = shown.kind === 'assistant' ? shown.avatar : NEUTRAL
+  const avatar = shown.kind === 'assistant' ? shown.avatar : NEUTRAL_AVATAR
   return (
     <span className={css.badge} title={label} aria-label={label} role="img" data-assistant-badge={shown.kind}>
       <AssistantAvatar avatar={avatar} name={shown.kind === 'assistant' ? shown.name : MARK_GLYPH[shown.kind]} size={16} />

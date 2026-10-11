@@ -24,8 +24,9 @@ function controllerAgents(overrides: object = {}): ApiSessionAgentController {
     composeAgent: () => Promise.resolve({ setup: () => {} }),
     presetForSession: () => undefined,
     presetForObservation: () => undefined,
+    own: (_sessionId: SessionId, handle: { agent: Agent }) => handle.agent,
     ...overrides,
-  } as unknown as ApiSessionAgentController
+  } as never
 }
 
 async function baseContext(): Promise<Context> {

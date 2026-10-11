@@ -885,6 +885,14 @@ workspaceDesktop(): { name: string; available: boolean; fileManager: 'finder' | 
 @Remote('rename') rename(request: SessionRenameRequest): Promise<SessionRenameValue>
 
 /**
+ * Delete one Session permanently, with its subagent descendants: stop its work, unload it, and
+ * remove its logs and Workspace records. Nothing can be restored afterwards.
+ * @param request - Session identity to delete.
+ * @returns the deleted Session ids: the requested one, then its descendants.
+ */
+@Remote('delete') delete(request: SessionDeleteRequest): Promise<SessionDeleteValue>
+
+/**
  * Fork one cold-readable exact event prefix into a new Session. An omitted
  * boundary selects the latest completed-turn prefix; an open cut receives
  * synthetic fork closers.
@@ -1253,6 +1261,28 @@ Creation announcement during session publication. A synchronous throw vetoes and
 ```
 
 Types: [Scoped](scope.md)
+
+Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
+
+<a id="sessiondeleted--emit"></a>
+
+#### `session/deleted` — emit
+
+A Session was deleted permanently: its log no longer exists and nothing can be read back. The Session persistence backend emits it once the storage is gone, and the deleter emits it for a Session that never reached storage; owners of data keyed by the Session drop that data. Not scope-filtered: the Session is no longer live.
+
+```ts cordis-catalog
+/**
+ * A Session was deleted permanently: its log no longer exists and nothing can be read back.
+ * The Session persistence backend emits it once the storage is gone, and the deleter emits it
+ * for a Session that never reached storage; owners of data keyed by the Session drop that
+ * data. Not scope-filtered: the Session is no longer live.
+ * @param sessionId - the deleted Session.
+ * @mode emit
+ */
+'session/deleted'(sessionId: SessionId): void
+```
+
+Types: [SessionId](core.md)
 
 Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
 

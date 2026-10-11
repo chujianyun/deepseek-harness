@@ -11,6 +11,9 @@ export const PRESET_AVATAR_KEYS = [
 
 const KNOWN = new Set<string>(PRESET_AVATAR_KEYS)
 
+/** A preset key outside the palette, which the avatar draws as a neutral disc. */
+export const NEUTRAL_AVATAR = { kind: 'preset', key: 'neutral' } as const
+
 /**
  * Render the avatar.
  * @param props - the avatar, the assistant's name, and the edge length in pixels.

@@ -18,7 +18,7 @@ import { createServer, type ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { chromium, type Page } from 'playwright'
 import { expect, it } from 'vitest'
 import { ECOMMERCE_SKILLS, OFFICE_SKILLS } from '@deepseek-ai/dsh-assistants'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
@@ -84,6 +84,14 @@ async function writeShopKeeper(tenantDir: string): Promise<void> {
     version: 1, id: SHOP_ID, name: '店铺测试助手', description: '帮店铺做运营复盘', avatar: { kind: 'preset', key: 'sun' }, createdAt: '2030-01-01T00:00:00.000Z',
   }))
   await writeFile(join(dir, 'IDENTITY.md'), '# 身份\n\n- **名称**：店铺测试助手 SHOP_IDENTITY\n')
+}
+
+/** Each sidebar section's heading with its number of Session rows, top to bottom. */
+function sidebarSections(page: Page): Promise<[string, number][]> {
+  return page.locator('[role="tree"][aria-label="会话"] [class*="groupSection"]').evaluateAll(nodes => nodes.map(node => [
+    node.querySelector('[role="treeitem"][aria-expanded] [class*="title"]')?.textContent ?? '',
+    node.querySelectorAll('[role="treeitem"]:not([aria-expanded])').length,
+  ]))
 }
 
 /** Sign the employee in to a mock user center and open the Desktop web page in Chinese. */
@@ -209,6 +217,14 @@ it('seeds the Daily Assistant, starts new sessions with no assistant, carries a 
     await expect.poll(() => chat.chats.length, { timeout: 30_000 }).toBeGreaterThan(before)
     expect(systemPrompt(chat.chats.at(-1)!)).not.toContain('You are the assistant')
     expect(systemPrompt(chat.chats.at(-1)!)).not.toContain('SHOP_IDENTITY')
+
+    // The sidebar starts grouped by assistant: each session sits under its assistant, most recent section first.
+    await expect.poll(() => sidebarSections(page), { timeout: 15_000 }).toEqual([['通用模式', 1], ['店铺测试助手', 1], ['日常助手', 1]])
+    await page.getByRole('button', { name: '视图选项' }).click()
+    expect(await page.getByRole('menuitem', { name: /^分组方式/u }).textContent()).toBe('分组方式智能体')
+    await page.getByRole('menuitem', { name: /^分组方式/u }).hover()
+    expect(await page.getByRole('menu').last().getByRole('menuitem').allTextContents()).toEqual(['智能体', '按工作区', '按工作区树', '日期', '不分组'])
+    await page.keyboard.press('Escape')
 
     // The wizard creates an E-commerce Manager with an uploaded avatar, its own model, and what it should know about the user.
     await page.getByRole('button', { name: '智能体', exact: true }).click()
@@ -516,6 +532,8 @@ it('tells a session of another company\'s assistant from one whose assistant was
     const state = await scaffold.ctx.assistants.getState()
     expect(await scaffold.ctx.assistants.otherTenantAssistants([SHOP_ID, copyId])).toEqual([SHOP_ID])
     expect(await page.locator('[role="tree"]').first().textContent()).not.toContain('店铺测试助手')
+    // Both sessions fall under Other: neither assistant is one this company lists.
+    await expect.poll(() => sidebarSections(page)).toEqual([['其他', 2]])
     await shot('02-tenant-b-rows')
     await page.locator(`[role="treeitem"][data-row-key="${shop}"]`).hover()
     const hoverLine = page.getByText('其他公司的智能体', { exact: true })
@@ -543,6 +561,7 @@ it('tells a session of another company\'s assistant from one whose assistant was
     await switchTenant({ tenantId: 't-a', tenantName: '甲公司' })
     await expect.poll(() => badge(shop).getAttribute('title')).toBe('智能体：店铺测试助手')
     expect(await badge(gone).getAttribute('data-assistant-badge')).toBe('deleted')
+    await expect.poll(() => sidebarSections(page)).toEqual([['其他', 1], ['店铺测试助手', 1]])
     await shot('07-tenant-a-again')
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {

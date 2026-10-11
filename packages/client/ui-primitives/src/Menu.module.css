@@ -211,6 +211,13 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.detail {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--dsw-alias-label-caption);
+  font-size: 12px;
+}
+
 /* Selected cell keeps the plain fill (marker is the trailing check); the
  * class remains as a hook for owner-side emphasis. */
 .selected {

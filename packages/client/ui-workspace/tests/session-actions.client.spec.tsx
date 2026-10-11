@@ -21,8 +21,9 @@ import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type {
   MenuOpenState, RowToast, RowToastState, SessionArchiveConfirmInjected, SessionArchiveConfirmRequest,
-  SessionRenameDialogInjected, SessionRenameTarget,
+  SessionDeleteConfirmInjected, SessionRenameDialogInjected, SessionRenameTarget,
 } from '../src/client/contract/slots.ts'
+import { DeleteSessionMenuItem, SessionDeleteConfirmDialog } from '../src/client/session-actions/DeleteSession.tsx'
 import {
   ArchiveSessionMenuItem, ArchiveSessionRowButton, SessionArchiveConfirmDialog,
 } from '../src/client/session-actions/ArchiveSession.tsx'
@@ -206,6 +207,97 @@ describe('archive action', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消归档' }))
     expect(archive.unarchiveSession).toHaveBeenCalledWith(sid('one'))
     expect(archive.archiveSession).toHaveBeenCalledOnce()
+  })
+})
+
+describe('delete action', () => {
+  it.each([[t, '删除'], [tEn, 'Delete']])('menu row is destructive, closes the menu, then asks for the confirmation with the row title', (translate, name) => {
+    const { state, setMenuOpen } = openMenu()
+    const requestSessionDelete = vi.fn()
+    render(<DeleteSessionMenuItem {...menuRow(state)} t={translate} requestSessionDelete={requestSessionDelete} />)
+    const row = screen.getByRole('menuitem', { name })
+    expect(row.className).toMatch(/danger/)
+    fireEvent.click(row)
+    expect(requestSessionDelete).toHaveBeenCalledWith(sid('one'), 'Session title')
+    expect(callOrder(setMenuOpen)).toBeLessThan(callOrder(requestSessionDelete))
+  })
+})
+
+describe('delete action on an unnamed Session', () => {
+  it.each([[t, '未命名'], [tEn, 'Untitled']])('asks with the title the sidebar shows', (translate, shown) => {
+    const { state } = openMenu()
+    const requestSessionDelete = vi.fn()
+    render(<DeleteSessionMenuItem {...menuRow(state)} displayTitle="" t={translate} requestSessionDelete={requestSessionDelete} />)
+    fireEvent.click(screen.getByRole('menuitem'))
+    expect(requestSessionDelete).toHaveBeenCalledWith(sid('one'), shown)
+  })
+})
+
+describe('SessionDeleteConfirmDialog', () => {
+  /** The dialog over a test-owned request source; settling clears the request the way apply does. */
+  function deleteDialog(deleteSession: SessionDeleteConfirmInjected['deleteSession'], translate = t) {
+    const request = createSnapshotStore<{ sessionId: SessionId; displayTitle: string } | null>(null)
+    const settleSessionDelete = vi.fn(() => { request.set(null) })
+    render(
+      <SessionDeleteConfirmDialog
+        {...overlay}
+        t={translate}
+        useDeleteRequest={bindSnapshotSelector(request)}
+        settleSessionDelete={settleSessionDelete}
+        deleteSession={deleteSession}
+      />,
+    )
+    const ask = (): void => { act(() => { request.set({ sessionId: sid('one'), displayTitle: '双十一复盘' }) }) }
+    return { settleSessionDelete, ask }
+  }
+
+  it('renders nothing until a deletion is requested', () => {
+    deleteDialog(vi.fn(async () => {}))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('names the session, says it cannot be restored and that running work stops, and deletes on confirm', async () => {
+    const pending = Promise.withResolvers<undefined>()
+    const deleteSession = vi.fn(() => pending.promise)
+    const { settleSessionDelete, ask } = deleteDialog(deleteSession)
+    ask()
+    const dialog = screen.getByRole('dialog', { name: '删除此会话？' })
+    expect(dialog.textContent).toContain('“双十一复盘”会被永久删除，无法恢复')
+    expect(dialog.textContent).toContain('正在进行的工作会先停止')
+    fireEvent.click(screen.getByRole('button', { name: '删除' }))
+    expect(deleteSession).toHaveBeenCalledWith(sid('one'))
+    // While the Host call is pending, closing is blocked and the status shows.
+    expect(screen.getByRole('status').textContent).toBe('正在删除…')
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(settleSessionDelete).not.toHaveBeenCalled()
+    await act(async () => { pending.resolve(undefined) })
+    expect(settleSessionDelete).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('keeps the dialog open with the refusal, reports a non-Error reason as text, and Cancel settles without deleting again', async () => {
+    const deleteSession = vi.fn<SessionDeleteConfirmInjected['deleteSession']>()
+      .mockRejectedValueOnce(new Error('session/writer-held: still being written'))
+      .mockRejectedValueOnce('offline')
+    const { settleSessionDelete, ask } = deleteDialog(deleteSession)
+    ask()
+    fireEvent.click(screen.getByRole('button', { name: '删除' }))
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('session/writer-held: still being written') })
+    fireEvent.click(screen.getByRole('button', { name: '删除' }))
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('offline') })
+    expect(settleSessionDelete).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(settleSessionDelete).toHaveBeenCalledOnce()
+    expect(deleteSession).toHaveBeenCalledTimes(2)
+  })
+
+  it('reads in English', () => {
+    const { ask } = deleteDialog(vi.fn(async () => {}), tEn)
+    ask()
+    const dialog = screen.getByRole('dialog', { name: 'Delete this session?' })
+    expect(dialog.textContent).toContain('“双十一复盘” will be deleted permanently and cannot be restored')
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy()
   })
 })
 
@@ -584,6 +676,21 @@ describe('RowActionToast', () => {
       act(() => { vi.advanceTimersByTime(4000) })
       expect(dismissToast).toHaveBeenCalledOnce()
       expect(screen.queryByRole('alert')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows the deleted notice as a success without actions and takes it down when its hold ends', () => {
+    vi.useFakeTimers()
+    try {
+      const { dismissToast, notify } = toastSurface()
+      notify({ kind: 'deleted' })
+      const alert = screen.getByRole('alert')
+      expect(alert.textContent).toBe('会话已删除')
+      expect(alert.querySelector('button')).toBeNull()
+      act(() => { vi.advanceTimersByTime(4000) })
+      expect(dismissToast).toHaveBeenCalledOnce()
     } finally {
       vi.useRealTimers()
     }

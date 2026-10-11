@@ -204,7 +204,14 @@ export class ScheduleService extends TypertRemoteService {
       const stop = ctx.on('workspace/session-stop', async ({ sessionId }) => {
         await this.stopSessionTasks(sessionId)
       })
+      // A deleted Session can receive nothing: its remaining rows, finished ones included, go with it.
+      const deleted = ctx.on('session/deleted', (sessionId) => {
+        this.stopSessionTasks(sessionId, true).catch((error: unknown) => {
+          ctx.logger.warn(`schedule: removing the tasks of deleted Session "${sessionId}" failed: ${String(error)}`)
+        })
+      })
       return () => {
+        deleted()
         stop()
         activity()
       }
@@ -459,12 +466,13 @@ export class ScheduleService extends TypertRemoteService {
    * leave an armed reminder behind. Re-entering the public `delete()` from here
    * would deadlock on this queue, so the rows are removed directly.
    * @param sessionId - Session whose active Host tasks must stop.
+   * @param every - remove the Session's finished tasks too, for a Session that no longer exists.
    */
-  private async stopSessionTasks(sessionId: SessionId): Promise<void> {
+  private async stopSessionTasks(sessionId: SessionId, every = false): Promise<void> {
     await this.serialize(async () => {
       const tasks = (await this.getDomain()).table('tasks')
       const active = [...tasks.entries()]
-        .filter(([, task]) => task.sessionId === sessionId && task.status === 'active')
+        .filter(([, task]) => task.sessionId === sessionId && (every || task.status === 'active'))
         .map(([, task]) => task.record.id)
       if (active.length === 0) return
       // One row per write: the domain table has no batch delete, and each row is

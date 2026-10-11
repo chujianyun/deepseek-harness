@@ -7,6 +7,7 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type {
   SessionControlBaseline,
   SessionControlFrame,
+  SessionDeleteValue,
   SessionProjectionHints,
   SessionRenameValue,
   SessionSummary,
@@ -560,6 +561,26 @@ export class SessionManager {
     const result = await this.remote.session.rename({ sessionId, title })
     if (result.ok) {
       this.projectionStore(sessionId).apply('title', result.value.title, SessionSeq(result.value.seq))
+    }
+    return result
+  }
+
+  /**
+   * Delete a Session on the Host and drop it and its descendants from the catalog.
+   * @param sessionId - Session to delete.
+   * @returns the deleted ids, or the Remote failure with the catalog unchanged.
+   */
+  async delete(sessionId: SessionId): Promise<RemoteResult<SessionDeleteValue>> {
+    const result = await this.remote.session.delete({ sessionId })
+    if (!result.ok) return result
+    for (const id of result.value.deletedSessionIds) {
+      // Unlike an unloaded Session, a deleted one leaves no durable row, a subagent child included.
+      this.recordMutation({ kind: 'remove', sessionId: id })
+      this.sessions.get(id)?.handleRemoved()
+      this.projectionStores.delete(id)
+      this.projectionInflight.get(id)?.controller.abort()
+      this.projectionInflight.delete(id)
+      this.projectionLoads.delete(id)
     }
     return result
   }

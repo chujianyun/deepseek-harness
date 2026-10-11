@@ -10,6 +10,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import { rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import z from '@deepseek-ai/schemastery'
@@ -17,7 +18,7 @@ import { SpillLocator, SpillStore } from '@deepseek-ai/dsh-spill'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
 import { gatherSweepRoots, sweepSpillRoots } from './cleanup.ts'
 import type { SweepRoot, WarnFn } from './cleanup.ts'
-import { privateRoot, saveTextFile } from './store.ts'
+import { privateRoot, saveTextFile, sessionDir } from './store.ts'
 
 export { discoverDefaultRoots, sweepSpillRoots } from './cleanup.ts'
 export type { SweepOptions, SweepRoot, WarnFn } from './cleanup.ts'
@@ -86,6 +87,14 @@ export class LocalSpillStore extends SpillStore {
     // cast records that runtime fact for exactOptionalPropertyTypes.
     this.config = config as ResolvedConfig
     this.root = config.root !== undefined ? resolve(config.root) : privateRoot()
+
+    // A deleted Session's spilled tool results go with it instead of waiting for the age sweep.
+    ctx.on('session/deleted', (sessionId) => {
+      /* v8 ignore next 3 -- a forced recursive removal rejects only on a filesystem fault; the age sweep then reclaims the files */
+      rm(sessionDir(this.root, sessionId), { recursive: true, force: true }).catch((error: unknown) => {
+        this.ctx.logger.warn(`spill-local: removing the spill files of deleted session "${sessionId}" failed: ${String(error)}`)
+      })
+    })
 
     // One best-effort startup sweep, owned by the fiber. The generator body runs
     // at activation but does NOT await the sweep — it launches it and yields an

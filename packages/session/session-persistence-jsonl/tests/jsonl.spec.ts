@@ -39,6 +39,13 @@ const readdirFailure = vi.hoisted(() => ({
   error: undefined as Error | undefined,
 }))
 
+/** Removal or directory-open failures injected for one path. */
+const removalFailure = vi.hoisted(() => ({
+  rmPath: undefined as string | undefined,
+  openPath: undefined as string | undefined,
+  error: undefined as Error | undefined,
+}))
+
 const readTally = vi.hoisted(() => ({
   /** Physical whole-file reads per path suffix; keyed by session id segment. */
   bySuffix: new Map<string, number>(),
@@ -94,6 +101,14 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         finished?.()
       }
     }) as typeof actual.readFile,
+    rm: async (...args: Parameters<typeof actual.rm>) => {
+      if (String(args[0]) === removalFailure.rmPath && removalFailure.error !== undefined) throw removalFailure.error
+      return actual.rm(...args)
+    },
+    open: async (...args: Parameters<typeof actual.open>) => {
+      if (String(args[0]) === removalFailure.openPath && removalFailure.error !== undefined) throw removalFailure.error
+      return actual.open(...args)
+    },
     readdir: (async (...args: Parameters<typeof actual.readdir>) => {
       if (String(args[0]) === readdirFailure.path && readdirFailure.error !== undefined) {
         throw readdirFailure.error
@@ -311,17 +326,19 @@ afterEach(async () => {
 
 runPersistenceContract('jsonl-none', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-jsonl-'))
-  const instance = async (): Promise<{ persistence: SessionPersistence; dispose: () => Promise<void> }> => {
+  const instance = async (): Promise<{ persistence: SessionPersistence; ctx: Context; dispose: () => Promise<void> }> => {
     const ctx = new Context()
     const fiber = await ctx.plugin(JsonlSessionPersistence, { root: dir, compression: 'none' })
     return {
       persistence: ctx.sessionPersistence,
+      ctx,
       dispose: async () => { await fiber.dispose() },
     }
   }
   const primary = await instance()
   return {
     persistence: primary.persistence,
+    ctx: primary.ctx,
     dispose: async () => {
       await primary.dispose()
       await rm(dir, { recursive: true, force: true })
@@ -504,6 +521,64 @@ describe('JsonlSessionPersistence: format helpers', () => {
     await writeLog(ctx.sessionPersistence, m, oneTurnLog())
     expect((await stat(rawLogPath(resolve(absoluteRoot), '/work', m.id))).isFile()).toBe(true)
     await fiber.dispose()
+  })
+})
+
+describe('JsonlSessionPersistence: deleting a session', () => {
+  let dir: string
+  let ctx: Context
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'dsh-jsonl-delete-'))
+    ctx = new Context()
+    await ctx.plugin(JsonlSessionPersistence, { root: dir, compression: 'none' })
+  })
+  afterEach(async () => {
+    Object.assign(removalFailure, { rmPath: undefined, openPath: undefined, error: undefined })
+    await ctx.fiber.dispose()
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  async function stored(id: string): Promise<SessionHeader> {
+    const header = meta(id, '/work')
+    const handle = await ctx.sessionPersistence.create(header)
+    await handle.append(oneTurnLog())
+    await handle.close()
+    return header
+  }
+
+  it('removes the session directory, lock file included, and leaves its neighbors', async () => {
+    const gone = await stored('gone')
+    const kept = await stored('kept')
+    const goneDir = sessionDir(dir, gone.cwd, gone.id)
+    expect((await readdir(goneDir)).sort()).toEqual(['session.lock', generationLogFilename(SESSION_FORMAT_VERSION, 'none')].sort())
+    await ctx.sessionPersistence.delete(gone.id)
+    await expect(stat(goneDir)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await readdir(sessionDir(dir, kept.cwd, kept.id))).length).toBe(2)
+  })
+
+  it('keeps the session and frees its lock when the removal itself fails, so the delete can be retried', async () => {
+    const header = await stored('retry')
+    const deleted: string[] = []
+    ctx.on('session/deleted', (id) => { deleted.push(id) })
+    Object.assign(removalFailure, { rmPath: sessionDir(dir, header.cwd, header.id), error: new Error('injected rm failure') })
+    await expect(ctx.sessionPersistence.delete(header.id)).rejects.toThrow('injected rm failure')
+    expect(deleted).toEqual([])
+    expect(await ctx.sessionPersistence.stat(header.id)).toBeDefined()
+    removalFailure.error = undefined
+    await ctx.sessionPersistence.delete(header.id)
+    expect(deleted).toEqual([header.id])
+  })
+
+  it('still announces the deletion when finishing the removal fails after the directory is gone', async () => {
+    const header = await stored('finish')
+    const deleted: string[] = []
+    ctx.on('session/deleted', (id) => { deleted.push(id) })
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    Object.assign(removalFailure, { openPath: projectDir(dir, header.cwd), error: new Error('injected sync failure') })
+    await ctx.sessionPersistence.delete(header.id)
+    expect(deleted).toEqual([header.id])
+    expect(await ctx.sessionPersistence.stat(header.id)).toBeUndefined()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('was deleted, but finishing the removal failed: Error: injected sync failure'))
   })
 })
 

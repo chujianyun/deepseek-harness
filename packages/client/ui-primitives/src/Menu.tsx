@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode, SyntheticEvent } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
-import { IconCheckOutlineRegular } from './icons/index.tsx'
+import { IconCheckOutlineRegular, IconChevronRightOutlineRegular } from './icons/index.tsx'
 import { overlayTopMargin } from './overlay-top-margin.ts'
 import { usePointerGrace } from './pointer-grace.ts'
 import { isBehindModal } from './useModalLayer.ts'
@@ -23,8 +23,10 @@ export interface MenuItem {
   icon?: ReactNode
   /** Destructive row: error-colored text/icon and danger hover fill. */
   danger?: boolean
-  /** Nested card opened to the right on hover/focus. */
+  /** Nested card opened to the right on hover/focus; its rows honor `selectedId`/`selectedIds` like top-level rows. */
   submenu?: readonly MenuItem[]
+  /** Trailing secondary text, such as the current choice a submenu parent leads to. */
+  detail?: ReactNode
 }
 
 /** Hairline between item groups (not selectable). */
@@ -473,26 +475,32 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
           {entry.icon !== undefined && <span className={css.itemIcon}>{entry.icon}</span>}
           <span className={css.itemLabel}>{entry.label}</span>
           {entry.shortcut !== undefined && <span aria-hidden="true" className={css.shortcut}><ShortcutKeys keys={entry.shortcut.keys} className={css.shortcutKeys} /></span>}
+          {entry.detail !== undefined && <span className={css.detail}>{entry.detail}</span>}
+          {hasSub && <IconChevronRightOutlineRegular aria-hidden="true" className={css.check} />}
           {/* Selection marker is a trailing check (figma .Menu_cell) unless the fill mode carries it. */}
           {selected && selection === 'check' && <IconCheckOutlineRegular className={css.check} />}
         </button>
         {subOpen && entry.submenu !== undefined && (
           <MenuSurface compact={compact} className={clsx(css.submenu, compact && css.compactList)} role="menu">
-            {entry.submenu.map(sub => (
-              <button
-                key={sub.id}
-                type="button"
-                role="menuitem"
-                className={css.item}
-                disabled={sub.disabled}
-                aria-keyshortcuts={sub.shortcut?.aria}
-                onClick={() => { onSelect?.(sub.id); refocusAfterSelection() }}
-              >
-                {sub.icon !== undefined && <span className={css.itemIcon}>{sub.icon}</span>}
-                <span className={css.itemLabel}>{sub.label}</span>
-                {sub.shortcut !== undefined && <span aria-hidden="true" className={css.shortcut}><ShortcutKeys keys={sub.shortcut.keys} className={css.shortcutKeys} /></span>}
-              </button>
-            ))}
+            {entry.submenu.map((sub) => {
+              const subSelected = sub.id === selectedId || selectedIds?.includes(sub.id) === true
+              return (
+                <button
+                  key={sub.id}
+                  type="button"
+                  role="menuitem"
+                  className={clsx(css.item, subSelected && (selection === 'fill' ? css.selectedFill : css.selected))}
+                  disabled={sub.disabled}
+                  aria-keyshortcuts={sub.shortcut?.aria}
+                  onClick={() => { onSelect?.(sub.id); refocusAfterSelection() }}
+                >
+                  {sub.icon !== undefined && <span className={css.itemIcon}>{sub.icon}</span>}
+                  <span className={css.itemLabel}>{sub.label}</span>
+                  {sub.shortcut !== undefined && <span aria-hidden="true" className={css.shortcut}><ShortcutKeys keys={sub.shortcut.keys} className={css.shortcutKeys} /></span>}
+                  {subSelected && selection === 'check' && <IconCheckOutlineRegular className={css.check} />}
+                </button>
+              )
+            })}
           </MenuSurface>
         )}
       </div>

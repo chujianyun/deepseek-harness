@@ -4,7 +4,7 @@ import { mkdir } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type {
-  Agent, AgentOptions, AgentSetup, ModelSelection as AgentModelSelection, ModelSelectionRef,
+  Agent, AgentHandle, AgentOptions, AgentSetup, ModelSelection as AgentModelSelection, ModelSelectionRef,
 } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
@@ -136,10 +136,19 @@ export async function inspectApiSession(
   }
 }
 
+/** The refusal for a Session a deletion is removing. */
+function beingDeleted(sessionId: SessionId): ApiSessionAgentError {
+  return new RemoteError('session/not-found', `session "${sessionId}" is being deleted`, { sessionId })
+}
+
 /** Owns every operation that may create, resume, or configure a Web Agent. */
 export class ApiSessionAgentController {
   private readonly resumes = new Map<SessionId, Promise<Agent>>()
   private readonly creations = new Map<SessionId, Promise<Agent>>()
+  /** Teardown capabilities of the Agents this controller created or resumed, by Session. */
+  private readonly handles = new Map<SessionId, AgentHandle>()
+  /** Sessions being deleted: nothing may create or resume them meanwhile. */
+  private readonly deleting = new Set<SessionId>()
   private readonly selections = new WeakMap<Agent, InstalledSelection>()
   private readonly imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
 
@@ -184,6 +193,7 @@ export class ApiSessionAgentController {
     sessionId: SessionId,
     observation?: SessionObservation,
   ): Promise<ApiSessionAgentResult> {
+    if (this.deleting.has(sessionId)) return { error: beingDeleted(sessionId) }
     const live = this.liveAgent(sessionId)
     if (live !== undefined) return live
     const attached = this.ctx.sessions.get(sessionId)
@@ -242,6 +252,7 @@ export class ApiSessionAgentController {
     checkPersistedIdentity: boolean,
     presetId?: string,
   ): Promise<Agent> {
+    if (this.deleting.has(sessionId)) throw beingDeleted(sessionId)
     let creation = this.creations.get(sessionId)
     if (creation === undefined) {
       creation = this.createOrAdopt(sessionId, cwd, checkPersistedIdentity, presetId)
@@ -434,11 +445,11 @@ export class ApiSessionAgentController {
     if (published !== undefined && hasApiSessionSubagentOwner(this.ctx, published, live)) {
       throw new ApiSessionSubagentOwnership(sessionId)
     }
-    return (await this.ctx.agents.resume({
+    return this.own(sessionId, await this.ctx.agents.resume({
       resumeSessionId: sessionId,
       agentOptions: this.agentOptions(),
       setup: composition.setup,
-    })).agent
+    }))
   }
 
   private async createOrAdopt(
@@ -466,11 +477,11 @@ export class ApiSessionAgentController {
         const storedPreset = this.presetForObservation(observation)
         this.assertPresetUnchanged(sessionId, presetId, storedPreset)
         const composition = await this.composeAgent(storedPreset)
-        return (await this.ctx.agents.resume({
+        return this.own(sessionId, await this.ctx.agents.resume({
           resumeSessionId: sessionId,
           agentOptions: this.agentOptions(),
           setup: composition.setup,
-        })).agent
+        }))
       } catch (error: unknown) {
         if (!(error instanceof SessionQueryError)
           || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error
@@ -483,7 +494,7 @@ export class ApiSessionAgentController {
       throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
     }
     const composition = await this.composeAgent(presetId)
-    return (await this.ctx.agents.create({
+    return this.own(sessionId, await this.ctx.agents.create({
       sessionId,
       agentOptions: this.agentOptions(),
       meta: {
@@ -491,7 +502,49 @@ export class ApiSessionAgentController {
         ...(composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset }),
       },
       setup: composition.setup,
-    })).agent
+    }))
+  }
+
+  /**
+   * Keep the teardown capability of an Agent created or resumed for this controller, so
+   * {@link release} can unload its Session.
+   * @param sessionId - the Agent's Session.
+   * @param handle - the owned Agent handle.
+   * @returns the Agent.
+   */
+  own(sessionId: SessionId, handle: AgentHandle): Agent {
+    this.handles.set(sessionId, handle)
+    return handle.agent
+  }
+
+  /**
+   * Refuse to create or resume these Sessions until the returned disposer runs. A deletion holds
+   * this from before it unloads them until their logs are gone, so no request can load one again
+   * in between.
+   * @param sessionIds - Sessions being deleted.
+   * @returns the disposer that lifts the refusal.
+   */
+  blockOpens(sessionIds: readonly SessionId[]): () => void {
+    for (const id of sessionIds) this.deleting.add(id)
+    return () => {
+      for (const id of sessionIds) this.deleting.delete(id)
+    }
+  }
+
+  /**
+   * Unload one Session this controller holds: wait for a creation or resume in flight, then stop
+   * its Agent, await the loop's exit, and remove the Session from the store. A Session this
+   * controller holds no Agent for resolves without effect.
+   * @param sessionId - Session to unload.
+   * @returns resolution once the Agent is disposed.
+   */
+  async release(sessionId: SessionId): Promise<void> {
+    // A racing open must finish first, or its Agent would outlive this unload; its failure leaves nothing to unload.
+    await Promise.allSettled([this.creations.get(sessionId), this.resumes.get(sessionId)])
+    const handle = this.handles.get(sessionId)
+    if (handle === undefined) return
+    this.handles.delete(sessionId)
+    await handle.dispose()
   }
 
   private agentOptions(): AgentOptions {

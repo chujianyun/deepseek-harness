@@ -52,6 +52,7 @@ import type { SessionActivity, WorkspaceId, WorkspaceView } from '@deepseek-ai/d
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { WorkspaceShortcutState } from '../shortcuts.ts'
+import type { SessionGrouping } from '../groupings.ts'
 import type { createWorkspaceViewStore } from '../stores.ts'
 
 /**
@@ -231,6 +232,12 @@ export type WorkspaceBrowserInjected = {
     hostInfo: HostObservable<RemoteHostFacts>
     workspaceShortcuts: HostObservable<WorkspaceShortcutState>
     shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
+    /** Registered Session groupings, offered under Group by beside the built-in Workspace views. */
+    groupings: HostObservable<readonly SessionGrouping[]>
+    /** The grouping shown until the user picks one. */
+    defaultGrouping: HostObservable<string>
+    /** Idle Session rows a group shows before its overflow control. */
+    sessionLimit: HostObservable<number>
   }
   /** Open the browser search and focus its input. */
   requestSearch: () => void
@@ -298,6 +305,7 @@ export type SessionRowActionProps<Injected extends object = object> =
 export type RowToast =
   | { kind: 'archived'; sessionId: SessionId }
   | { kind: 'stoppedAndArchived'; sessionId: SessionId }
+  | { kind: 'deleted' }
   | { kind: 'pinFailed' }
   | { kind: 'unpinFailed' }
   | { kind: 'archivedNotOpenable' }
@@ -392,6 +400,35 @@ export interface ForkSessionInjected {
   forkSession: (sessionId: SessionId) => void
 }
 
+/** Delete action share: the row only raises the request; the confirmation entry answers it. */
+export interface DeleteSessionInjected {
+  /** Ask for the delete confirmation, naming the row's current title. */
+  requestSessionDelete: (sessionId: SessionId, displayTitle: string) => void
+}
+
+/** A Session deletion the delete action asked for; the confirmation opens on it. */
+export interface SessionDeleteTarget {
+  /** Session to delete. */
+  sessionId: SessionId
+  /** The row's display title, named in the dialog. */
+  displayTitle: string
+}
+
+/** Delete confirmation share: the pending request, its settlement, and the deletion itself. */
+export interface SessionDeleteConfirmInjected {
+  hooks: {
+    /** The deletion asked for, until the dialog consumes or cancels it. */
+    deleteRequest: HostObservable<SessionDeleteTarget | null>
+  }
+  /** Consume or cancel the pending request. */
+  settleSessionDelete: () => void
+  /**
+   * Delete a Session permanently on the Host; resolves once it is gone and raises the deleted
+   * notice, or rejects with the Host's refusal and leaves the Session in place.
+   */
+  deleteSession: (sessionId: SessionId) => Promise<void>
+}
+
 /** Rename action share: the row only raises the request; the dialog entry answers it. */
 export interface RenameSessionInjected {
   /** Ask for the rename dialog, seeded with the row's current title. */
@@ -445,6 +482,13 @@ export type SessionArchiveConfirmProps =
   & PropsLocale<'workspace'>
   & Omit<SessionArchiveConfirmInjected, 'hooks'>
   & PropsHooks<SessionArchiveConfirmInjected['hooks']>
+
+/** Props of the delete confirmation entry in `shell.overlay`. */
+export type SessionDeleteConfirmProps =
+  PropsRuntime<'shell.overlay'>
+  & PropsLocale<'workspace'>
+  & Omit<SessionDeleteConfirmInjected, 'hooks'>
+  & PropsHooks<SessionDeleteConfirmInjected['hooks']>
 
 /**
  * Props of the row toast entry in `shell.overlay`. The declared viewing store

@@ -106,6 +106,9 @@
       "path": "../../schedule/automation-tasks"
     },
     {
+      "path": "../../session-query/session-share"
+    },
+    {
       "path": "../../connector/connectors"
     },
     {

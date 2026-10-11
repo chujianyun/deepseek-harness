@@ -149,6 +149,19 @@ describe('LocalSpillStore service', () => {
     expect(ref.retrievalHint).toBe('Use read with offset/limit, or grep this path to search within it.')
   })
 
+  it('removes a deleted Session\'s spill files at once, and leaves other Sessions\' files', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LocalSpillStore, { root, cleanupPeriodDays: 0 })
+    const gone = await ctx.spillStore.saveText(request({ owner: { sessionId: SessionId('sess-gone') } }))
+    const kept = await ctx.spillStore.saveText(request({ owner: { sessionId: SessionId('sess-kept') } }))
+    ctx.emit('session/deleted', SessionId('sess-gone'))
+    await vi.waitFor(() => { expect(existsSync(sessionDir(root, 'sess-gone'))).toBe(false) })
+    expect(existsSync(gone.locator)).toBe(false)
+    expect(readFileSync(kept.locator, 'utf8')).toBe('the full body')
+    // A Session that never spilled has nothing to remove.
+    ctx.emit('session/deleted', SessionId('sess-never'))
+  })
+
   it('resolves a relative configured root to absolute', async () => {
     const ctx = new Context()
     await ctx.plugin(LocalSpillStore, { root: '.', cleanupPeriodDays: 0 })

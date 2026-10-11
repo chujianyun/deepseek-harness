@@ -156,17 +156,19 @@ afterEach(async () => {
 
 runPersistenceContract('jsonl-zstd', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-jsonl-zstd-contract-'))
-  const instance = async (): Promise<{ persistence: SessionPersistence; dispose: () => Promise<void> }> => {
+  const instance = async (): Promise<{ persistence: SessionPersistence; ctx: Context; dispose: () => Promise<void> }> => {
     const ctx = new Context()
     const fiber = await ctx.plugin(JsonlSessionPersistence, { root })
     return {
       persistence: ctx.sessionPersistence,
+      ctx,
       dispose: async () => { await fiber.dispose() },
     }
   }
   const primary = await instance()
   return {
     persistence: primary.persistence,
+    ctx: primary.ctx,
     dispose: async () => {
       await primary.dispose()
       await rm(root, { recursive: true, force: true })
