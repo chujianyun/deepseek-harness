@@ -8,7 +8,6 @@ import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/ds
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import { SessionAlreadyOwnedError, SessionPersistenceNotFoundError } from '@deepseek-ai/dsh-session-persistence'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ApiSessionAgentController } from '../src/agent.ts'
 import { SessionCommandController } from '../src/commands.ts'
 import { createSessionTestRemote, installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
 
@@ -51,7 +50,7 @@ async function bench(stored: SessionHeader[]) {
   ctx.on('api-session/removed', (id) => { removed.push(id) })
   const deleted: SessionId[] = []
   ctx.on('session/deleted', (id) => { deleted.push(id) })
-  const controller = new SessionCommandController(ctx, agents as unknown as ApiSessionAgentController, '/proj')
+  const controller = new SessionCommandController(ctx, agents as never, '/proj')
   return { ctx, controller, steps, removeLog, stop, release, removed, deleted, blocked }
 }
 
@@ -146,7 +145,7 @@ describe('sessions.delete', () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
-    const controller = new SessionCommandController(ctx, {} as unknown as ApiSessionAgentController, '/proj')
+    const controller = new SessionCommandController(ctx, {} as never, '/proj')
     await expect(controller.delete({ sessionId: SessionId('root') })).rejects.toMatchObject({ code: 'gateway/internal' })
   })
 
