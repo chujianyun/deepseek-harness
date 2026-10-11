@@ -184,6 +184,7 @@ flowchart TD
     pkg_client_ui_directory_picker_native["client-ui-directory-picker-native"]
     pkg_client_ui_dockkit["client-ui-dockkit"]
     pkg_client_ui_ecommerce_accounts["client-ui-ecommerce-accounts"]
+    pkg_client_ui_feedback_report["client-ui-feedback-report"]
     pkg_client_ui_goal["client-ui-goal"]
     pkg_client_ui_hub_account["client-ui-hub-account"]
     pkg_client_ui_input_trigger["client-ui-input-trigger"]
@@ -1546,6 +1547,7 @@ flowchart TD
 | [`client-ui-directory-picker-native`](../packages/client/ui-directory-picker-native) | `client` | — |
 | [`client-ui-dockkit`](../packages/client/ui-dockkit) | `client` | — |
 | [`client-ui-ecommerce-accounts`](../packages/client/ui-ecommerce-accounts) | `client` | — |
+| [`client-ui-feedback-report`](../packages/client/ui-feedback-report) | `client` | — |
 | [`client-ui-goal`](../packages/client/ui-goal) | `client` | — |
 | [`client-ui-hub-account`](../packages/client/ui-hub-account) | `client` | — |
 | [`client-ui-input-trigger`](../packages/client/ui-input-trigger) | `client` | — |

@@ -314,6 +314,8 @@
       "@deepseek-ai/dsh-client-ui-automation-tasks/client": ["./packages/client/ui-automation-tasks/src/client/index.ts"],
       "@deepseek-ai/dsh-client-ui-session-share": ["./packages/client/ui-session-share/src"],
       "@deepseek-ai/dsh-client-ui-session-share/client": ["./packages/client/ui-session-share/src/client/index.ts"],
+      "@deepseek-ai/dsh-client-ui-feedback-report": ["./packages/client/ui-feedback-report/src"],
+      "@deepseek-ai/dsh-client-ui-feedback-report/client": ["./packages/client/ui-feedback-report/src/client/index.ts"],
       "@deepseek-ai/dsh-client-ui-connectors": ["./packages/client/ui-connectors/src"],
       "@deepseek-ai/dsh-client-ui-connectors/client": ["./packages/client/ui-connectors/src/client/index.ts"],
       "@deepseek-ai/dsh-client-ui-ecommerce-accounts": ["./packages/client/ui-ecommerce-accounts/src"],

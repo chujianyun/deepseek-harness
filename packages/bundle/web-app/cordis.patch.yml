@@ -552,6 +552,11 @@
       name: '@deepseek-ai/dsh-client-ui-session-share'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
+    # Report a problem button in the Session header and its dialog, over the feedback-report row.
+    - id: ui-feedback-report
+      name: '@deepseek-ai/dsh-client-ui-feedback-report'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     # Goal surface: GoalBar in the input dock over the goal session projection.
     - id: ui-goal
       name: '@deepseek-ai/dsh-client-ui-goal'

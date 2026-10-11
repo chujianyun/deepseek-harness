@@ -1,0 +1,9 @@
+# Enables problem reports for the keyless Web e2e (`feedback-report.e2e.ts`), beside the Hub
+# sign-in (`hub-account.overlay.yml`). The shipped web-app bundle enables them only for the
+# `desktop` profile with a configured user center.
+- id: feedback-report
+  disabled: false
+  config:
+    appVersion: 9.9.9-e2e
+- id: ui-feedback-report
+  disabled: false

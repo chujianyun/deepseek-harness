@@ -4803,6 +4803,7 @@ export interface Config {
 | `@deepseek-ai/dsh-client-ui-directory-picker-browse` | — | [`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-directory-picker-native` | — | [`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-ecommerce-accounts` | — | [`packages/client/ui-ecommerce-accounts/src/index.ts`](../packages/client/ui-ecommerce-accounts/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-feedback-report` | — | [`packages/client/ui-feedback-report/src/index.ts`](../packages/client/ui-feedback-report/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-goal` | — | [`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-hub-account` | — | [`packages/client/ui-hub-account/src/index.ts`](../packages/client/ui-hub-account/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-input-trigger` | — | [`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts) |
