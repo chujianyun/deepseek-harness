@@ -33,7 +33,7 @@ The button shows only while the `hubAccount` state stream reports a sign-in, and
 - **Type** — one of Error, Slow, Not working, Wrong result, or Other; required.
 - **Description** — required, at most 2000 characters, with a counter.
 - **Screenshots** — up to three PNG, JPEG, WebP, or GIF images of at most 5 MB each, picked from the add tile or pasted anywhere in the dialog, with overlapping adds sharing the room; each thumbnail has a remove button. A file over a limit is refused with the reason and the rest are kept.
-- **Include this session's conversation** — shown when the report is about a Session, unticked until the user ticks it, since it sends the conversation to the platform's super administrators.
+- **Include this session's conversation** — shown when the report is about a Session, unticked until the user ticks it; its label says the conversation goes to the MO WorkAI platform and not to the company's admins. A ticked conversation over the user center's size limit is dropped by the Host and the report is sent without it.
 - **Footer** — a note that the app version, system, and current model are sent along, **Cancel**, and **Submit**, which is enabled once the type and description are set.
 
 While sending, the controls are disabled, a status line says so, and the dialog cannot be closed. A refusal shows in the dialog in the UI language (no sign-in, unreachable server, or the user center's own reason) and the draft stays. A stored report closes the dialog and shows a success notice.

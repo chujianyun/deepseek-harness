@@ -57,10 +57,9 @@ it('reports a problem from the header, with no More actions menu, and an explain
     await dialog.getByRole('textbox', { name: 'Description' }).fill('Publishing spins forever, then fails')
     await dialog.getByLabel('Add screenshot', { exact: true }).setInputFiles({ name: 'spinner.png', mimeType: 'image/png', buffer: PNG })
     await dialog.getByRole('img', { name: 'spinner.png' }).waitFor()
-    // Attaching the conversation is the user's explicit choice: unticked until they tick it.
     expect(await dialog.getByRole('checkbox').isChecked()).toBe(false)
-    await dialog.getByRole('checkbox').check()
     await shot(page, 'e2e-report-dialog')
+    await dialog.getByRole('checkbox').check()
     await submit.click()
     await page.getByRole('alert').filter({ hasText: 'Sent. Thanks for the report' }).waitFor({ timeout: 15_000 })
     await expect.poll(() => dialog.count()).toBe(0)
@@ -74,6 +73,14 @@ it('reports a problem from the header, with no More actions menu, and an explain
       images: [{ name: 'spinner.png', type: 'image/png', size: PNG.length }],
     })
 
+    // Left unticked, the report reaches the user center without the conversation.
+    await page.getByRole('button', { name: 'Report a problem', exact: true }).click()
+    await dialog.getByRole('radio', { name: 'Other' }).click()
+    await dialog.getByRole('textbox', { name: 'Description' }).fill('Sent without the conversation')
+    await submit.click()
+    await expect.poll(() => center.feedback.length, { timeout: 15_000 }).toBe(2)
+    expect(center.feedback[1]!.payload).toMatchObject({ category: 'other', session: null })
+
     // The enterprise header has no More actions menu: Report a problem is its feedback entry.
     expect(await page.getByRole('button', { name: 'More actions', exact: true }).count()).toBe(0)
 
@@ -86,8 +93,8 @@ it('reports a problem from the header, with no More actions menu, and an explain
     await rating.getByRole('button', { name: 'Task result', exact: true }).click()
     await rating.getByRole('textbox', { name: 'Feedback details' }).fill('One shop is missing')
     await rating.getByRole('button', { name: 'Submit', exact: true }).click()
-    await expect.poll(() => center.feedback.length, { timeout: 15_000 }).toBe(2)
-    expect(center.feedback[1]!.payload).toMatchObject({
+    await expect.poll(() => center.feedback.length, { timeout: 15_000 }).toBe(3)
+    expect(center.feedback[2]!.payload).toMatchObject({
       source: 'message', category: 'task-result', description: 'One shop is missing', session: { sessionId },
     })
     expect(tripwire.pageErrors).toEqual([])

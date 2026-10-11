@@ -71,7 +71,7 @@ describe('report dialog', () => {
   it('needs a type and a description, then sends them with the Session and the screenshots, and thanks the user', async () => {
     const d = dialog()
     d.ask()
-    expect(screen.getByRole('dialog', { name: '报告问题' }).textContent).toContain('遇到报错、卡顿、无法操作或结果与预期不一致')
+    expect(screen.getByRole('dialog', { name: '报告问题' }).textContent).toContain('告诉 MO WorkAI 平台')
     expect(button('提交').disabled).toBe(true)
     fireEvent.click(screen.getByRole('radio', { name: '卡顿' }))
     expect(screen.getByRole('radio', { name: '卡顿' }).getAttribute('aria-checked')).toBe('true')
@@ -80,7 +80,6 @@ describe('report dialog', () => {
     expect(screen.getByText('12/2000')).toBeTruthy()
     await addFiles([png('a.png')])
     expect(screen.getByRole('img', { name: 'a.png' })).toBeTruthy()
-    // Attaching the conversation is the user's explicit choice (ADR-0008): unticked until they tick it.
     expect(screen.getByRole<HTMLInputElement>('checkbox').checked).toBe(false)
     fireEvent.click(screen.getByRole('checkbox'))
 
