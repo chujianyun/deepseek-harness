@@ -45,7 +45,7 @@ import { Bridge, SCRIPT, type BridgeReply, type Grant } from './bridge.ts'
 import { writeJsonAtomic } from './files.ts'
 import { applyUpdate, DamagedMemory, MemoryUpdate, readMemory } from './memory.ts'
 import { Cdp, closeBlankTabs, hideWindows, pageTabs, probe, showSignIn, type ProbeResult } from './cdp.ts'
-import { alive, closeChrome, ensureTab, findChrome, launchChrome, profileHolder, readRecord, type ChromeInfo } from './chrome.ts'
+import { alive, closeChrome, ensureTab, findChrome, launchChrome, profileHolder, readRecord, type ChromeInfo, type ChromeProcess } from './chrome.ts'
 import { guardBrowser, type GuardRules } from './guard.ts'
 import { ECOMMERCE_PLATFORMS, PUBLIC_PAGE, specOf, type PlatformSpec } from './platforms.ts'
 import { SKILL_CONTENT, SKILL_DESCRIPTION, SKILL_NAME } from './skill.ts'
@@ -218,6 +218,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
   private readonly leases = new Map<string, { readonly callId: string; stop?: () => void }>()
   /** The tenant's own daily page limit for buyer accounts, once set. */
   private dailyPages: number | undefined
+  /** Sessions with a turn under way; Chrome closes only while there is none. */
+  private readonly turns = new Set<string>()
   /** Checks of accounts a task found signed out, by account, while they run. */
   private readonly rechecks = new Map<string, Promise<CheckResult>>()
   private readonly bridge = new Bridge({
@@ -258,9 +260,13 @@ export class EcommerceAccountsService extends TypertRemoteService {
       this.endLeases(lease => lease.callId === exec.callId)
       this.changed()
     })
-    // A finished turn of any Session lets every account's Chrome close until a task needs it again.
-    ctx.on('session/event', (_session, event) => {
-      if (event.type === 'turn/end') void this.closeIdle(() => true)
+    // Once no Session has a turn under way, every account's Chrome closes until a task needs it again:
+    // a task between two bash calls of its turn keeps its browser.
+    ctx.on('session/event', (session, event) => {
+      if (event.type === 'turn/start') this.turns.add(session.header.id)
+      if (event.type !== 'turn/end') return
+      this.turns.delete(session.header.id)
+      this.closeQuietly(() => true)
     })
   }
 
@@ -380,6 +386,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
         }
         // A Chrome running in the background, or one an earlier DSH kept running minimized, starts again
         // on screen, so the sign-in page comes to the front.
+        // A task may have taken the account over while Chrome was looked for.
+        this.requireIdle(current)
         const dir = this.dirOf(current.id)
         if (!again && (await readRecord(dir))?.background !== false) await closeChrome(dir, this.options.chromeTimeoutMs)
         const { port, started } = await this.ensureChrome(current, chrome, false, 'about:blank')
@@ -419,7 +427,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     if (signingIn !== undefined && result.kind === 'signed-in') {
       signingIn.abort()
       this.signIns.delete(entry.id)
-      await this.closeIdle(item => item.id === entry.id)
+      this.closeQuietly(item => item.id === entry.id)
     } else if (signingIn !== undefined) {
       this.setStatus(entry.id, 'signing-in')
     }
@@ -571,7 +579,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     }
     // The sign-in is done: its window closes, and the session waits in Chrome's data for the next task.
     // A sign-in started again meanwhile keeps the window.
-    if (done) await this.closeIdle(item => item.id === entry.id)
+    if (done) this.closeQuietly(item => item.id === entry.id)
   }
 
   private async leftSignInPage(entry: Entry, spec: PlatformSpec, tab: string): Promise<boolean> {
@@ -648,10 +656,9 @@ export class EcommerceAccountsService extends TypertRemoteService {
       if (await profileHolder(dir) !== undefined) return { kind: 'busy' }
       port = (await this.ensureChrome(entry, this.chrome, true, 'about:blank')).port
     }
-    const opened = await ensureTab(port)
+    await this.ensureBackgroundTab(port)
     const cdp = await Cdp.connect(port, this.options.chromeTimeoutMs)
     try {
-      if (opened) await hideWindows(cdp)
       const spec = specOf(entry.platform, entry.kind)
       let result = await probe(cdp, spec, this.options.checkTimeoutMs)
       if (result.kind !== 'signed-in') result = await probe(cdp, spec, this.options.checkTimeoutMs)
@@ -677,8 +684,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
       if (!this.recentlySignedIn(now) || chrome === undefined) return undefined
       try {
         if (await this.heldElsewhere(now)) return undefined
-        const { port } = await this.ensureChrome(now, chrome, true, 'about:blank')
-        if (await ensureTab(port)) await this.minimize(port)
+        await this.ensureBackgroundTab((await this.ensureChrome(now, chrome, true, 'about:blank')).port)
         return { kind: 'signed-in' }
       } catch (error) {
         this.ctx.logger.warn(`ecommerce-accounts: reusing the sign-in of ${entry.id} failed: ${String(error)}`)
@@ -828,8 +834,9 @@ export class EcommerceAccountsService extends TypertRemoteService {
           : `the ${name} could not be checked: ${PROBLEM_TEXT[PROBLEMS[result.kind]]}. Stop, and tell the user; they can check it in DSH Settings → E-commerce accounts (设置 → 电商账号).`,
       }
     }
-    // A signed-in check leaves the account's Chrome running and recorded.
-    const { port } = await readRecord(this.dirOf(entry.id)) as { port: number }
+    // A signed-in check leaves the account's Chrome running and recorded; one still on screen from a sign-in goes out of sight.
+    const { port, background } = await readRecord(this.dirOf(entry.id)) as ChromeProcess
+    if (background === false) await this.minimize(port)
     held.stop ??= await guardBrowser(port, this.options.chromeTimeoutMs, this.rulesFor(entry))
     const reply = {
       id: entry.id, platform: entry.platform, kind: entry.kind, ...entry.storeName === '' ? {} : { store: entry.storeName }, account: entry.account,
@@ -942,14 +949,25 @@ export class EcommerceAccountsService extends TypertRemoteService {
 
   /**
    * Close the Chrome of each matching account that no task, sign-in, or other operation of the account
-   * uses, so Chrome runs only while it is needed. Chrome writes its cookies as it closes and restores
-   * its session when it starts again; an account without a running Chrome is left as it is.
+   * uses, while no Session has a turn under way, so Chrome runs only while it is needed; the last turn
+   * end closes what was left. Chrome writes its cookies as it closes and restores its session when it
+   * starts again; an account without a running Chrome is left as it is.
    */
   private async closeIdle(matches: (entry: Entry) => boolean): Promise<void> {
     await Promise.all(this.entries.filter(matches).map(entry => this.queued(entry.id, async () => {
-      if (!this.listed(entry.id) || this.leases.has(entry.id) || this.signIns.has(entry.id)) return
+      if (this.turns.size > 0 || !this.listed(entry.id) || this.leases.has(entry.id) || this.signIns.has(entry.id)) return
       await closeChrome(this.dirOf(entry.id), this.options.chromeTimeoutMs)
     })))
+  }
+
+  /** {@link closeIdle} without waiting, logging a Chrome that cannot be closed. */
+  private closeQuietly(matches: (entry: Entry) => boolean): void {
+    this.closeIdle(matches).catch((error: unknown) => { this.ctx.logger.warn(`ecommerce-accounts: closing Chrome failed: ${String(error)}`) })
+  }
+
+  /** Make sure the Chrome on a port has a tab, minimizing the window a new one opens in. */
+  private async ensureBackgroundTab(port: number): Promise<void> {
+    if (await ensureTab(port)) await this.minimize(port)
   }
 
   /** Minimize the windows of the Chrome on a port that are not minimized yet. */
@@ -1066,6 +1084,13 @@ export class EcommerceAccountsService extends TypertRemoteService {
     for (const controller of this.signIns.values()) controller.abort()
     this.signIns.clear()
     this.endLeases(() => true)
+    // The previous tenant's Chromes close with it: nothing of that tenant can use them any more.
+    const previous = this.tenantId
+    if (previous !== null) {
+      await Promise.all(this.entries.map(entry => closeChrome(join(this.root, previous, 'browsers', entry.id), this.options.chromeTimeoutMs).catch((error: unknown) => {
+        this.ctx.logger.warn(`ecommerce-accounts: closing the Chrome of ${entry.id} failed: ${String(error)}`)
+      })))
+    }
     if (tenantId === null) {
       this.skill?.()
       this.skill = undefined

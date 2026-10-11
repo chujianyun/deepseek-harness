@@ -15,7 +15,7 @@ import { SKILL_CONTENT } from '../src/skill.ts'
 import EcommerceAccountsService, {
   DOUDIAN, matchesCheckApi, mtopUserNick, parseJsonOrJsonp, PINDUODUO, PUBLIC_PAGE, RISK_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL,
 } from '../src/index.ts'
-import { alive, backgroundBundle, closeChrome, ensureTab, findChrome, launchChrome, readRecord } from '../src/chrome.ts'
+import { alive, backgroundBundle, browserPid, closeChrome, ensureTab, findChrome, launchChrome, readRecord } from '../src/chrome.ts'
 import { Cdp, pageTabs } from '../src/cdp.ts'
 import type { AddEcommerceAccountInput, EcommerceAccountsState } from '../src/types.ts'
 import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
@@ -130,6 +130,17 @@ describe('Chrome processes', () => {
     expect(backgroundBundle(mac, false, 'darwin')).toBeUndefined()
     expect(backgroundBundle(mac, true, 'win32')).toBeUndefined()
     expect(backgroundBundle('/usr/bin/google-chrome', true, 'darwin')).toBeUndefined()
+  })
+
+  it('reads the browser process id Chrome names, and refuses when it names none', async () => {
+    const dir = await tempDir()
+    cleanups.push(() => closeChrome(dir, 2000))
+    const started = await launchChrome({ chrome: FAKE, dir, url: 'about:blank', hidden: true, timeoutMs: 5000, env: process.env })
+    expect(await browserPid(started.port, 2000)).toBe(started.pid)
+    const other = await tempDir()
+    cleanups.push(() => closeChrome(other, 2000))
+    const silent = await launchChrome({ chrome: FAKE, dir: other, url: 'about:blank', hidden: true, timeoutMs: 5000, env: { ...process.env, FAKE_CHROME_NO_BROWSER_PID: '1' } })
+    await expect(browserPid(silent.port, 2000)).rejects.toThrow('Chrome named no browser process')
   })
 
   it('talks CDP: answers calls, rejects refused ones, and ignores events nobody listens to', async () => {
@@ -316,7 +327,7 @@ describe('e-commerce accounts', () => {
     expect(await readRecord(dir)).toEqual(record)
     // Its tabs were all closed: a blank one opens, in a new window that is minimized at once.
     const closeTabs = async () => {
-      const cdp = await Cdp.connect(record!.port, 2000)
+      const cdp = await Cdp.connect((await readRecord(dir))!.port, 2000)
       try {
         for (const tab of await pageTabs(cdp)) await cdp.send('Target.closeTarget', { targetId: tab.targetId })
       } finally {
@@ -328,12 +339,25 @@ describe('e-commerce accounts', () => {
     expect((await runCommand(second, varsOf(second, bashCall('c-2')), 'browser', accountId)).code).toBe(0)
     expect(JSON.parse(await readFile(join(dir, 'user-data', 'fake-window.json'), 'utf8'))).toMatchObject({ windowState: 'minimized' })
     // A turn ends while the call still holds the account: Chrome stays.
-    const turnEnd = () => { second.ctx.emit('session/event', {} as never, { type: 'turn/end', data: { turn: 1, reason: 'complete' } } as never) }
-    turnEnd()
+    const turn = (session: string, type: 'turn/start' | 'turn/end') => {
+      second.ctx.emit('session/event', { header: { id: session } } as never, { type, data: { turn: 1, reason: 'complete' } } as never)
+    }
+    turn('s-1', 'turn/start')
+    turn('s-1', 'turn/end')
     await new Promise(resolve => setTimeout(resolve, 200))
     expect(await alive(record!.port)).toBe(true)
     endCall(second, bashCall('c-2'))
-    // A check the user asks for meanwhile, in a Chrome without tabs, minimizes the new window and closes Chrome after.
+    // Another Session's turn is under way: neither a turn end nor a check closes Chrome, which that task may need between its calls.
+    turn('s-2', 'turn/start')
+    turn('s-1', 'turn/start')
+    turn('s-1', 'turn/end')
+    expect((await second.service.checkAccounts([accountId])).accounts[0]!.status).toBe('signed-in')
+    expect(await alive(record!.port)).toBe(true)
+    turn('s-2', 'turn/end')
+    await expect.poll(() => readRecord(dir)).toBeUndefined()
+    // A check the user asks for, in a Chrome without tabs, minimizes the new window and closes Chrome after.
+    expect((await runCommand(second, varsOf(second, bashCall('c-4')), 'browser', accountId)).code).toBe(0)
+    endCall(second, bashCall('c-4'))
     await closeTabs()
     expect((await second.service.checkAccounts([accountId])).accounts[0]!.status).toBe('signed-in')
     expect(await readRecord(dir)).toBeUndefined()
@@ -343,14 +367,56 @@ describe('e-commerce accounts', () => {
     expect(JSON.parse(await readFile(join(dir, 'user-data', 'fake-window.json'), 'utf8'))).toMatchObject({ windowState: 'minimized' })
     const third = await readRecord(dir)
     endCall(second, bashCall('c-3'))
-    second.ctx.emit('session/event', {} as never, { type: 'turn/start', data: { turn: 2 } } as never)
-    turnEnd()
+    turn('s-1', 'turn/start')
+    turn('s-1', 'turn/end')
     await expect.poll(() => readRecord(dir)).toBeUndefined()
     expect(await alive(third!.port)).toBe(false)
     // A check the user asks for starts Chrome in the background and closes it again; a lost session shows signed out.
     await rm(join(dir, 'user-data', 'fake-signed-in'))
     expect((await second.service.checkAccounts()).accounts[0]!.status).toBe('signed-out')
     expect(await readRecord(dir)).toBeUndefined()
+  })
+
+  it('hides a sign-in window left on screen once a task takes the account over', async () => {
+    const env = await setup({ config: { signInTimeoutMs: 400 } })
+    const { accountId } = await env.service.addAccount(merchant)
+    const dir = env.browserDir(accountId)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    await env.settle(s => s.accounts[0]!.status === 'signed-in')
+    // Signing in again is left unfinished: its window stays on screen, and the account shows signed out.
+    await rm(join(dir, 'user-data', 'fake-signed-in'))
+    await env.service.startSignIn(accountId)
+    await env.settle(s => s.accounts[0]!.status === 'signed-out')
+    expect(await readRecord(dir)).toMatchObject({ background: false })
+    await env.signIn(accountId, 'nick')
+    await rm(join(dir, 'user-data', 'fake-window.json'), { force: true })
+    expect((await runCommand(env, varsOf(env, bashCall('c-1')), 'browser', accountId)).code).toBe(0)
+    expect(JSON.parse(await readFile(join(dir, 'user-data', 'fake-window.json'), 'utf8'))).toMatchObject({ windowState: 'minimized' })
+  })
+
+  // A directory without write permission stops the closing only for a user other than root, and not on Windows.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('logs a Chrome that cannot be closed at a turn end or a switch of tenant', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    const dir = env.browserDir(accountId)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    await env.settle(s => s.accounts[0]!.status === 'signed-in')
+    const warn = vi.spyOn(env.ctx.logger, 'warn')
+    const exec = bashCall('c-1')
+    expect((await runCommand(env, varsOf(env, exec), 'browser', accountId)).code).toBe(0)
+    endCall(env, exec)
+    await chmod(dir, 0o500)
+    try {
+      env.ctx.emit('session/event', { header: { id: 's-1' } } as never, { type: 'turn/end', data: { turn: 1, reason: 'complete' } } as never)
+      await expect.poll(() => warn.mock.calls.some(([line]) => String(line).startsWith('ecommerce-accounts: closing Chrome failed'))).toBe(true)
+      env.hub.set('t-b')
+      await env.settle(s => s.tenantId === 't-b')
+      expect(warn.mock.calls.some(([line]) => String(line).includes(`closing the Chrome of ${accountId} failed`))).toBe(true)
+    } finally {
+      await chmod(dir, 0o700)
+    }
   })
 
   it('shows a check that got no answer as failed, reads base64 bodies, and leaves a never-signed-in account without Chrome', async () => {

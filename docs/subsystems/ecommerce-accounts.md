@@ -18,7 +18,7 @@ A check opens the platform's business page in a background tab and reads the pla
 
 ## Across restarts
 
-Chrome runs only while it is needed: a check or task starts the account's Chrome in the background, without taking focus, minimizes its window once, and restores its last session; it closes when a check the user asked for or a sign-in ends, and once any Session's turn ends, for every account no task uses. A check tells whether the platform kept the sign-in. A Chrome that outlived DSH is reattached to. Deleting an account closes its Chrome so it writes its cookies, then deletes its data.
+Chrome runs only while it is needed: a check or task starts the account's Chrome in the background, without taking focus, minimizes its window once, and restores its last session; it closes when a check the user asked for or a sign-in ends, or the tenant switches, but only once no Session has a turn under way, so a task keeps its browser between the calls of its turn. A check tells whether the platform kept the sign-in. A Chrome that outlived DSH is reattached to. Deleting an account closes its Chrome so it writes its cookies, then deletes its data.
 
 ## Use by the model
 

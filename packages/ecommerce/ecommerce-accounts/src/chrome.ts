@@ -203,18 +203,26 @@ export async function launchChrome(options: LaunchOptions): Promise<ChromeProces
     options.url,
   ]
   const bundle = backgroundBundle(options.chrome, options.hidden, process.platform)
-  /* v8 ignore else -- needs a registered macOS app bundle; `open` starts it apart from DSH, without DSH's environment. */
+  let pid: number
+  /* v8 ignore else -- needs a registered macOS app bundle. */
   if (bundle === undefined) {
-    spawn(options.chrome, args, { detached: true, stdio: 'ignore', env: options.env }).unref()
+    const child = spawn(options.chrome, args, { detached: true, stdio: 'ignore', env: options.env })
+    child.unref()
+    await answers(port, options.timeoutMs)
+    pid = child.pid as number
   } else {
-    await run('open', ['-n', '-g', '-a', bundle, '--args', ...args])
+    // A Chrome LaunchServices starts is no child of DSH, so Chrome names its own process once it answers;
+    // one that cannot is closed rather than left running unrecorded.
+    await run('open', ['-n', '-g', '-a', bundle, '--args', ...args], { env: options.env, timeout: options.timeoutMs })
+    await answers(port, options.timeoutMs)
+    try {
+      pid = await browserPid(port, options.timeoutMs)
+    } catch (error) {
+      await Cdp.connect(port, options.timeoutMs).then(cdp => cdp.send('Browser.close').finally(() => { cdp.close() })).catch(() => undefined)
+      throw error
+    }
   }
-  const deadline = Date.now() + options.timeoutMs
-  while (!await alive(port)) {
-    if (Date.now() > deadline) throw new Error(`Chrome did not answer on port ${String(port)} in ${String(options.timeoutMs)} ms`)
-    await new Promise(resolve => setTimeout(resolve, 200))
-  }
-  const record = { pid: await browserPid(port, options.timeoutMs), port, background: options.hidden }
+  const record = { pid, port, background: options.hidden }
   await writeFile(join(options.dir, RECORD), `${JSON.stringify(record)}\n`)
   return record
 }
@@ -238,16 +246,33 @@ export function backgroundBundle(executable: string, hidden: boolean, platform: 
 }
 
 /**
+ * Wait until a starting Chrome answers on its port.
+ * @param port - its remote-debugging port.
+ * @param timeoutMs - how long to wait.
+ * @throws when Chrome does not answer in time.
+ */
+async function answers(port: number, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!await alive(port)) {
+    if (Date.now() > deadline) throw new Error(`Chrome did not answer on port ${String(port)} in ${String(timeoutMs)} ms`)
+    await new Promise(resolve => setTimeout(resolve, 200))
+  }
+}
+
+/**
  * The process id of the Chrome answering on a port, as Chrome reports it.
  * @param port - its remote-debugging port.
  * @param timeoutMs - how long to wait for the connection.
  * @returns the browser process id.
+ * @throws when Chrome names no browser process.
  */
-async function browserPid(port: number, timeoutMs: number): Promise<number> {
+export async function browserPid(port: number, timeoutMs: number): Promise<number> {
   const cdp = await Cdp.connect(port, timeoutMs)
   try {
     const { processInfo } = await cdp.send<{ processInfo: { type: string; id: number }[] }>('SystemInfo.getProcessInfo')
-    return (processInfo.find(item => item.type === 'browser') as { id: number }).id
+    const browser = processInfo.find(item => item.type === 'browser')
+    if (browser === undefined) throw new Error('Chrome named no browser process')
+    return browser.id
   } finally {
     cdp.close()
   }

@@ -134,7 +134,11 @@ it.skipIf(process.platform === 'win32')('lets the model list the accounts, take 
     const browserCall = chat.chats.at(-1)!.messages.at(-1)!
     expect(browserCall.role).toBe('tool')
     // The address the call got was the account's own Chrome, which the turn's end has closed since.
-    expect(JSON.stringify(browserCall.content)).toMatch(/cdpUrl.{1,8}http:\/\/127\.0\.0\.1:\d+/u)
+    const launchedPort = async () => {
+      const args = JSON.parse(await readFile(join(accountDir!, 'user-data', 'fake-args.json'), 'utf8')) as string[]
+      return args.find(arg => arg.startsWith('--remote-debugging-port='))!.split('=')[1]!
+    }
+    expect(JSON.stringify(browserCall.content)).toContain(`http://127.0.0.1:${await launchedPort()}`)
     const listed = JSON.stringify(chat.chats.find(request => request.messages.filter(message => message.role === 'tool').length === 1)!.messages.at(-1)!.content)
     expect(listed).toContain('名流旗舰店')
     expect(listed).not.toMatch(/cookie|user-data/iu)
@@ -146,7 +150,7 @@ it.skipIf(process.platform === 'win32')('lets the model list the accounts, take 
     await send('再看一下天猫店铺的数据')
     await expect.poll(() => page.getByText(ANSWER).count(), { timeout: 30_000 }).toBe(2)
     // Chrome started again in the background for the second task, without a check.
-    expect(JSON.stringify(chat.chats.at(-1)!.messages.at(-1)!.content)).toMatch(/cdpUrl/u)
+    expect(JSON.stringify(chat.chats.at(-1)!.messages.at(-1)!.content)).toContain(`http://127.0.0.1:${await launchedPort()}`)
     expect((await accounts.getState()).accounts[0]!.checkedAt).toBe(checkedAt)
 
     // Signed out, and checked, the same request stops with the way to Settings.
