@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-feedback-report",
   "description": "Report a problem from Desktop to the super administrators of the user center: category, description, images, environment, and optionally the Session conversation",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publishConfig": {
     "access": "public"
   },
