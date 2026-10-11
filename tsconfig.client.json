@@ -119,6 +119,7 @@
     { "path": "./packages/client/ui-knowledge" },
     { "path": "./packages/client/ui-automation-tasks" },
     { "path": "./packages/client/ui-session-share" },
+    { "path": "./packages/client/ui-feedback-report" },
     { "path": "./packages/client/ui-connectors" },
     { "path": "./packages/client/ui-assistants" },
     { "path": "./packages/client/ui-ecommerce-accounts" },

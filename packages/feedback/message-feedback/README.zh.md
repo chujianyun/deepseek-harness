@@ -57,6 +57,8 @@ kind: "package-reference"
 
 冷会话的实质修改在 flush 后发出 `feedback/committed` 通知，其中携带借用的只读权威日志前缀；观察方在转移所有权前必须对其进行深拷贝。观察方在写入所有权释放前完成，不得等待同一 Session 的其他反馈操作，也不能使已提交的修改失败。活跃会话消费方观察 `session/event`。
 
+每次 `put` 提交成功后（活跃会话与冷会话都一样），在写入持久且该 Session 的队列释放后发出 `feedback/message-recorded(sessionId, item, previous)`（`previous` 是被替换的旧项，新建时为 undefined）；相同值的空操作、被拒绝的请求和删除不发出。[feedback-report](../feedback-report/README.zh.md) 用它上报用户写了原因的点踩反馈。
+
 ### 源码地图
 
 | 文件 | 职责 |

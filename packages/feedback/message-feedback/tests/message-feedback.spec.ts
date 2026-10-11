@@ -590,6 +590,37 @@ describe('canonical message feedback history', () => {
     await expect(ctx.messageFeedback.list({ sessionId: childId })).resolves.toEqual({ ok: true, value: { items: [childItem] } })
   })
 
+  it('announces each committed change once it is durable, for cold and live Sessions, and not no-ops, refusals, or deletions', async () => {
+    const { ctx, persistence } = await harness()
+    const recorded: [string, MessageFeedbackItem, MessageFeedbackItem | undefined][] = []
+    ctx.on('feedback/message-recorded', (sessionId, item, previous) => { recorded.push([sessionId, item, previous]) })
+    const cold = messageFixture('announced-cold')
+    persistence.persist(cold.session)
+    const coldRequest = { sessionId: cold.session.id, messageId: cold.assistantMessageIds[0], rating: 'negative' as const, category: 'task-result' as const, ifVersion: null }
+    const created = expectItem(await ctx.messageFeedback.put(coldRequest))
+    expect(recorded).toEqual([[cold.session.id, created, undefined]])
+    // The same value again appends nothing and announces nothing.
+    expectItem(await ctx.messageFeedback.put({ ...coldRequest, ifVersion: created.version }))
+    // A stale version is refused.
+    expect((await ctx.messageFeedback.put({ ...coldRequest, note: 'x', ifVersion: staleVersion() })).ok).toBe(false)
+    const target = { sessionId: cold.session.id, messageId: created.messageId }
+    const deleted = await ctx.messageFeedback.delete({ ...target, ifVersion: created.version })
+    expect(deleted.ok).toBe(true)
+    expect(recorded).toHaveLength(1)
+    // A replacement carries the item it replaced.
+    const again = expectItem(await ctx.messageFeedback.put({ ...coldRequest, ifVersion: null }))
+    const edited = expectItem(await ctx.messageFeedback.put({ ...coldRequest, note: '补充', ifVersion: again.version }))
+    expect(recorded.slice(1)).toEqual([[cold.session.id, again, undefined], [cold.session.id, edited, again]])
+
+    const live = ctx.sessions.create(SessionId('announced-live'))
+    const fixture = appendMessageFixture(live)
+    ctx.on('session/flush', (current) => { persistence.persist(current) })
+    const liveItem = expectItem(await ctx.messageFeedback.put({
+      sessionId: live.id, messageId: fixture.assistantMessageIds[0], rating: 'negative', note: '不对', ifVersion: null,
+    }))
+    expect(recorded.at(-1)).toEqual([live.id, liveItem, undefined])
+  })
+
   it('flushes live feedback with the target and retries durability without a duplicate event', async () => {
     const { ctx, persistence } = await harness()
     const session = ctx.sessions.create(SessionId('live-log'))

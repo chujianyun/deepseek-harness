@@ -1474,6 +1474,25 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-agent-team -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-feedback-report -->
+<a id="deepseek-aidsh-feedback-report"></a>
+
+## `@deepseek-ai/dsh-feedback-report`
+
+- `inject`: `hubAccount` · `sessionQuery`
+- `source`: [`packages/feedback/feedback-report/src/index.ts:37`](../packages/feedback/feedback-report/src/index.ts)
+
+```ts config-catalog
+/** Deployment configuration. */
+export interface Config {
+  /** Version of the Desktop client, shown to administrators. */
+  appVersion?: string
+  /** Deadline of each report request, in milliseconds. */
+  requestTimeoutMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-feedback-report -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-file-reference-local -->
 <a id="deepseek-aidsh-file-reference-local"></a>
 
@@ -4782,6 +4801,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-directory-picker-browse` | — | [`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-directory-picker-native` | — | [`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-ecommerce-accounts` | — | [`packages/client/ui-ecommerce-accounts/src/index.ts`](../packages/client/ui-ecommerce-accounts/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-feedback-report` | — | [`packages/client/ui-feedback-report/src/index.ts`](../packages/client/ui-feedback-report/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-goal` | — | [`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-hub-account` | — | [`packages/client/ui-hub-account/src/index.ts`](../packages/client/ui-hub-account/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-input-trigger` | — | [`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts) |

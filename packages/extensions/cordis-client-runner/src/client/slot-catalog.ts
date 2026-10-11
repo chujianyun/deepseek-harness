@@ -1625,6 +1625,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.session.header\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-feedback-report ReportButton id \'feedback-report\'',
       'client-ui-open-in-app SessionOpenInAppAction id \'open-in-app\'',
       'client-ui-schedule ScheduleCatalogAction id \'schedule-catalog\'',
       'session-log-export SessionLogDownloadHeaderAction id \'session-log-download\'',
@@ -3052,6 +3053,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-chat QuotaNoticeHost id \'chat.quota-notice\'',
       'client-ui-ecommerce-accounts ExpiredToast id \'ecommerce-accounts.expired\'',
+      'client-ui-feedback-report ReportCorner id \'feedback-report.corner\'',
+      'client-ui-feedback-report ReportDialog id \'feedback-report\'',
+      'client-ui-feedback-report ReportNotice id \'feedback-report.notice\'',
       'client-ui-plugin-manager PluginRefreshToast id \'plugin-manager.refresh-toast\'',
       'client-ui-schedule ScheduleDeleteToast id \'schedule.delete-toast\'',
       'client-ui-session-share SessionShareDialog id \'session-share\'',

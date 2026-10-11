@@ -184,6 +184,7 @@ flowchart TD
     pkg_client_ui_directory_picker_native["client-ui-directory-picker-native"]
     pkg_client_ui_dockkit["client-ui-dockkit"]
     pkg_client_ui_ecommerce_accounts["client-ui-ecommerce-accounts"]
+    pkg_client_ui_feedback_report["client-ui-feedback-report"]
     pkg_client_ui_goal["client-ui-goal"]
     pkg_client_ui_hub_account["client-ui-hub-account"]
     pkg_client_ui_input_trigger["client-ui-input-trigger"]
@@ -307,6 +308,7 @@ flowchart TD
   end
   subgraph group_feedback["packages/feedback"]
     pkg_command_feedback["command-feedback"]
+    pkg_feedback_report["feedback-report"]
     pkg_message_feedback["message-feedback"]
   end
   subgraph group_guard["packages/guard"]
@@ -1479,6 +1481,16 @@ flowchart TD
   pkg_automation_tasks --> pkg_session
   pkg_automation_tasks --> pkg_typert_protocol
   pkg_automation_tasks --> pkg_workspace
+  pkg_feedback_report --> pkg_api_session_controller
+  pkg_feedback_report --> pkg_assistants
+  pkg_feedback_report --> pkg_hub_account
+  pkg_feedback_report --> pkg_llm
+  pkg_feedback_report --> pkg_message_feedback
+  pkg_feedback_report --> pkg_session
+  pkg_feedback_report --> pkg_session_query
+  pkg_feedback_report --> pkg_session_share
+  pkg_feedback_report --> pkg_session_title
+  pkg_feedback_report --> pkg_typert_protocol
 ```
 
 <!-- BEGIN GENERATED module-graph:packages -->
@@ -1536,6 +1548,7 @@ flowchart TD
 | [`client-ui-directory-picker-native`](../packages/client/ui-directory-picker-native) | `client` | — |
 | [`client-ui-dockkit`](../packages/client/ui-dockkit) | `client` | — |
 | [`client-ui-ecommerce-accounts`](../packages/client/ui-ecommerce-accounts) | `client` | — |
+| [`client-ui-feedback-report`](../packages/client/ui-feedback-report) | `client` | — |
 | [`client-ui-goal`](../packages/client/ui-goal) | `client` | — |
 | [`client-ui-hub-account`](../packages/client/ui-hub-account) | `client` | — |
 | [`client-ui-input-trigger`](../packages/client/ui-input-trigger) | `client` | — |
@@ -1826,4 +1839,5 @@ flowchart TD
 | [`assistants`](../packages/assistant/assistants) | `assistant` | [`agent`](../packages/core/agent), [`agent-default-model`](../packages/core/agent-default-model), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`api-session-controller`](../packages/api/session-controller), [`connectors`](../packages/connector/connectors), [`hub-account`](../packages/credentials/hub-account), [`knowledge-base`](../packages/knowledge/knowledge-base), [`knowledge-selection`](../packages/knowledge/knowledge-selection), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`skill`](../packages/skill/skill), [`system-prompt`](../packages/core/system-prompt), [`typert-protocol`](../packages/typert/protocol) |
 | [`session-share`](../packages/session-query/session-share) | `session-query` | [`assistants`](../packages/assistant/assistants), [`hub-account`](../packages/credentials/hub-account), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-query`](../packages/session-query/session-query), [`typert-protocol`](../packages/typert/protocol) |
 | [`automation-tasks`](../packages/schedule/automation-tasks) | `schedule` | [`api-session-controller`](../packages/api/session-controller), [`assistants`](../packages/assistant/assistants), [`connectors`](../packages/connector/connectors), [`permission-presets`](../packages/interaction/permission-presets), [`schedule`](../packages/schedule/schedule), [`session`](../packages/core/session), [`typert-protocol`](../packages/typert/protocol), [`workspace`](../packages/workspace/workspace) |
+| [`feedback-report`](../packages/feedback/feedback-report) | `feedback` | [`api-session-controller`](../packages/api/session-controller), [`assistants`](../packages/assistant/assistants), [`hub-account`](../packages/credentials/hub-account), [`llm`](../packages/llm/llm), [`message-feedback`](../packages/feedback/message-feedback), [`session`](../packages/core/session), [`session-query`](../packages/session-query/session-query), [`session-share`](../packages/session-query/session-share), [`session-title`](../packages/session/session-title), [`typert-protocol`](../packages/typert/protocol) |
 <!-- END GENERATED module-graph:packages -->

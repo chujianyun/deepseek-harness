@@ -72,15 +72,29 @@
       config:
         maxNoteBytes: 8192
 
+    # Problem reports for Desktop: posted to the user center of the Hub sign-in
+    # for its super administrators; mounted exactly when hub-account is.
+    - id: feedback-report
+      name: '@deepseek-ai/dsh-feedback-report'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+      config:
+        appVersion: !!js process.env.DSH_CLIENT_VERSION
+
     # Browser Session export: `/export` command plus the shared download dialog.
+    # The enterprise Desktop (desktop profile with a user center) leaves it out:
+    # its header keeps only Report a problem, which also carries the conversation.
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     # Session-header "Open In..." split button over the host application
     # resolution (macOS/Windows/Linux; a host with no resolved application
     # renders no button). Two halves: the host routes and the browser surface.
+    # The enterprise Desktop (desktop profile with a user center) leaves both out:
+    # opening the workspace in Finder, VS Code, or a terminal is a developer tool.
     - id: open-in-app
       name: '@deepseek-ai/dsh-host-open-in-app'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
       config:
         probeTimeoutMs: 10000
         iconTimeoutMs: 10000
@@ -88,6 +102,7 @@
 
     - id: ui-open-in-app
       name: '@deepseek-ai/dsh-client-ui-open-in-app'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
@@ -538,6 +553,11 @@
     # Share session row of the Session menu and its dialog, over the session-share row.
     - id: ui-session-share
       name: '@deepseek-ai/dsh-client-ui-session-share'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # Report a problem button in the Session header and its dialog, over the feedback-report row.
+    - id: ui-feedback-report
+      name: '@deepseek-ai/dsh-client-ui-feedback-report'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
     # Goal surface: GoalBar in the input dock over the goal session projection.

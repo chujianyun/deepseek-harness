@@ -57,6 +57,8 @@ A per-Session queue serializes operations within one service instance; the persi
 
 Cold material mutations emit `feedback/committed` after flush with a borrowed read-only canonical prefix; observers must deep-clone it before transferring ownership. Observers finish before write ownership is released, must not await another feedback operation for that Session, and cannot reject an already committed mutation. Live consumers observe `session/event`.
 
+Every committed `put`, for live and cold Sessions alike, then emits `feedback/message-recorded(sessionId, item, previous)`, with the item it replaced (undefined for a new one), once the write is durable and the Session's queue is released; matching no-ops, refusals, and deletions do not. [feedback-report](../feedback-report/README.md) uses it to report thumbs-down feedback the user explained.
+
 ### Source map
 
 | File | Role |

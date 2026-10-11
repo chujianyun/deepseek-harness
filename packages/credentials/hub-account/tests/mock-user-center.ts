@@ -2,7 +2,7 @@
  * A loopback stand-in for the user center's OAuth2 endpoints, enough for Hub sign-in: authorize
  * (redirecting straight back with a code, as a browser with a signed-in session and a recorded
  * consent would), token (authorization_code with PKCE S256, refresh_token with rotation), userinfo,
- * and revoke; the client Skill, login-page branding, and Session share APIs. Shared by the package specs and the
+ * and revoke; the client Skill, login-page branding, Session share, and problem-report APIs. Shared by the package specs and the
  * Desktop web e2e.
  */
 import { createHash, randomBytes } from 'node:crypto'
@@ -64,6 +64,14 @@ export interface MockShare {
   readonly updatedAt: string
 }
 
+/** One problem report the mock received. */
+export interface MockFeedback {
+  /** The parsed `payload` field. */
+  readonly payload: unknown
+  /** The `images` files. */
+  readonly images: readonly { readonly name: string; readonly type: string; readonly size: number }[]
+}
+
 /** Control and observation surface of the mock user center. */
 export interface MockUserCenter {
   readonly origin: string
@@ -120,6 +128,12 @@ export interface MockUserCenter {
   shares: Record<string, MockShare>
   /** When set, a session-share call is answered with this raw reply, or its connection is dropped. */
   shareReply: { status: number; body: string } | 'drop' | undefined
+  /** Problem reports received through `/api/client/feedback`, in order. */
+  readonly feedback: MockFeedback[]
+  /** When set, a problem report is answered with this raw reply, or its connection is dropped. */
+  feedbackReply: { status: number; body: string } | 'drop' | undefined
+  /** When set, the next problem report only is answered with this raw reply. */
+  feedbackReplyOnce: { status: number; body: string } | undefined
   close(): Promise<void>
 }
 
@@ -199,6 +213,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
         }
         if (url.pathname.startsWith('/api/client/branding')) brandingApi(url, res, json, bound)
         else if (url.pathname.startsWith('/api/client/session-shares/')) await shareApi(url, req, res, json)
+        else if (url.pathname === '/api/client/feedback' && req.method === 'POST') await feedbackApi(url, req, res, json)
         else await clientApi(url, req, res, json)
       } else if (url.pathname === '/oauth/userinfo' && mock.userinfoReply !== undefined) {
         res.writeHead(mock.userinfoReply.status, { 'content-type': 'application/json' }).end(mock.userinfoReply.body)
@@ -366,6 +381,30 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
       res.writeHead(204).end()
     } else json(200, link(held))
   }
+  const feedbackApi = async (url: URL, req: IncomingMessage, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void): Promise<void> => {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) chunks.push(chunk as Buffer)
+    const once = mock.feedbackReplyOnce
+    mock.feedbackReplyOnce = undefined
+    if (once !== undefined) {
+      res.writeHead(once.status, { 'content-type': 'application/json' }).end(once.body)
+      return
+    }
+    if (mock.feedbackReply === 'drop') { res.destroy(); return }
+    if (mock.feedbackReply !== undefined) {
+      res.writeHead(mock.feedbackReply.status, { 'content-type': 'application/json' }).end(mock.feedbackReply.body)
+      return
+    }
+    const form = await new Request(url, { method: 'POST', headers: { 'content-type': req.headers['content-type'] ?? '' }, body: Buffer.concat(chunks) }).formData()
+    const field = form.get('payload')
+    const payload: unknown = JSON.parse(typeof field === 'string' ? field : '')
+    const images = form.getAll('images').filter((entry): entry is File => typeof entry !== 'string')
+    mock.feedback.push({
+      payload,
+      images: images.map(image => ({ name: image.name, type: image.type, size: image.size })),
+    })
+    json(201, { id: `fb-${String(mock.feedback.length)}`, createdAt: new Date().toISOString() })
+  }
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const mock: MockUserCenter = {
     origin: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
@@ -375,6 +414,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     skills: [], downloadBody: undefined, clientStatus: undefined, clientRequests: [],
     tenantAdmin: false, owned: [], uploads: [], uploadReply: undefined, uploadHook: undefined, optionsReply: undefined,
     brandings: {}, brandingGate: undefined, logoReply: undefined, shares: {}, shareReply: undefined,
+    feedback: [], feedbackReply: undefined, feedbackReplyOnce: undefined,
     authorizeRequests: [], tokenRequests: [], revoked: [],
     close: () => new Promise((resolve) => { server.closeAllConnections(); server.close(() => { resolve() }) }),
   }

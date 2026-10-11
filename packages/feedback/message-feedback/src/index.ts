@@ -56,6 +56,16 @@ declare module '@deepseek-ai/cordis' {
      * @mode parallel
      */
     'feedback/committed'(inspection: SessionInspection): void
+    /**
+     * Feedback for one message changed: `put` committed a new or replaced item. Fires after the
+     * write is durable and its Session queue is released, for live and cold Sessions alike;
+     * matching no-ops and deletions do not fire it.
+     * @param sessionId - Session that owns the message.
+     * @param item - the committed item, cloned for the listener.
+     * @param previous - the item it replaced, or undefined for a new one.
+     * @mode emit
+     */
+    'feedback/message-recorded'(sessionId: SessionId, item: MessageFeedbackItem, previous: MessageFeedbackItem | undefined): void
   }
 }
 
@@ -164,10 +174,11 @@ export class MessageFeedbackService extends TypertRemoteService {
    * @returns the durable item or an explicit business failure.
    */
   @Remote('put')
-  put(request: MessageFeedbackPutRequest): Promise<MessageFeedbackPutResult> {
+  async put(request: MessageFeedbackPutRequest): Promise<MessageFeedbackPutResult> {
     const note = this.resolveNote(request.note)
-    if (!note.ok) return Promise.resolve(note)
-    return this.enqueue(request.sessionId, () => this.withSession(request.sessionId, true, async (events, append) => {
+    if (!note.ok) return note
+    let recorded: { item: MessageFeedbackItem; previous: MessageFeedbackItem | undefined } | undefined
+    const result = await this.enqueue(request.sessionId, () => this.withSession(request.sessionId, true, async (events, append) => {
       const items = currentItems(request.sessionId, events)
       if (!events.some(event => event.type === 'assistant/message'
         && isAppendSurfaceEvent(event)
@@ -194,8 +205,14 @@ export class MessageFeedbackService extends TypertRemoteService {
         updatedAt: existing === undefined ? now : Math.max(now, existing.updatedAt),
       }
       await append({ type: 'feedback/message-put', data: { sessionId: request.sessionId, item } })
+      recorded = { item, previous: existing }
       return success(snapshotItem(item))
     }))
+    if (recorded !== undefined) {
+      const { item, previous } = recorded
+      this.ctx.emit('feedback/message-recorded', request.sessionId, snapshotItem(item), previous === undefined ? undefined : snapshotItem(previous))
+    }
+    return result
   }
 
   /**

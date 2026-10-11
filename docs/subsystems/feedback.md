@@ -322,6 +322,25 @@ Either unrecorded rating opens the Session's feedback dialog, the `feedback-dial
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxfeedbackreport--feedbackreport"></a>
+
+### `ctx.feedbackReport` — `FeedbackReport`
+
+Host owner of problem reports and of the `feedbackReport` Remote namespace.
+
+```ts cordis-catalog
+/**
+ * Report a problem to the super administrators of the user center.
+ * @param request - category, description, images, and the Session it is about.
+ * @returns the stored report.
+ * @throws RemoteError `feedback-report/signed-out`, `feedback-report/invalid` (`reason` names the
+ *   broken limit), `feedback-report/refused` (the user center's reason), or `feedback-report/unreachable`.
+ */
+@Remote async submit(request: FeedbackReportRequest): Promise<FeedbackReportReceipt>
+```
+
+Source: [`packages/feedback/feedback-report/src/index.ts`](../../packages/feedback/feedback-report/src/index.ts)
+
 <a id="ctxmessagefeedback--messagefeedbackservice"></a>
 
 ### `ctx.messageFeedback` — `MessageFeedbackService`
@@ -342,7 +361,7 @@ Session-log service; cold operations never construct a Session or Agent.
  * @param request - Target, desired value, and observed item version.
  * @returns the durable item or an explicit business failure.
  */
-@Remote('put') put(request: MessageFeedbackPutRequest): Promise<MessageFeedbackPutResult>
+@Remote('put') async put(request: MessageFeedbackPutRequest): Promise<MessageFeedbackPutResult>
 
 /**
  * Delete one item after checking its version; absence succeeds without an event.
@@ -395,6 +414,29 @@ Observe a durable cold feedback mutation without publishing a live Session. Obse
 ```
 
 Types: [SessionInspection](persistence.md)
+
+Source: [`packages/feedback/message-feedback/src/index.ts`](../../packages/feedback/message-feedback/src/index.ts)
+
+<a id="feedbackmessage-recorded--emit"></a>
+
+#### `feedback/message-recorded` — emit
+
+Feedback for one message changed: `put` committed a new or replaced item. Fires after the write is durable and its Session queue is released, for live and cold Sessions alike; matching no-ops and deletions do not fire it.
+
+```ts cordis-catalog
+/**
+ * Feedback for one message changed: `put` committed a new or replaced item. Fires after the
+ * write is durable and its Session queue is released, for live and cold Sessions alike;
+ * matching no-ops and deletions do not fire it.
+ * @param sessionId - Session that owns the message.
+ * @param item - the committed item, cloned for the listener.
+ * @param previous - the item it replaced, or undefined for a new one.
+ * @mode emit
+ */
+'feedback/message-recorded'(sessionId: SessionId, item: MessageFeedbackItem, previous: MessageFeedbackItem | undefined): void
+```
+
+Types: [SessionId](core.md)
 
 Source: [`packages/feedback/message-feedback/src/index.ts`](../../packages/feedback/message-feedback/src/index.ts)
 <!-- END GENERATED cordis-surface -->
