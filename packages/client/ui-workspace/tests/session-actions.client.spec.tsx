@@ -223,6 +223,16 @@ describe('delete action', () => {
   })
 })
 
+describe('delete action on an unnamed Session', () => {
+  it.each([[t, '未命名'], [tEn, 'Untitled']])('asks with the title the sidebar shows', (translate, shown) => {
+    const { state } = openMenu()
+    const requestSessionDelete = vi.fn()
+    render(<DeleteSessionMenuItem {...menuRow(state)} displayTitle="" t={translate} requestSessionDelete={requestSessionDelete} />)
+    fireEvent.click(screen.getByRole('menuitem'))
+    expect(requestSessionDelete).toHaveBeenCalledWith(sid('one'), shown)
+  })
+})
+
 describe('SessionDeleteConfirmDialog', () => {
   /** The dialog over a test-owned request source; settling clears the request the way apply does. */
   function deleteDialog(deleteSession: SessionDeleteConfirmInjected['deleteSession'], translate = t) {
@@ -653,7 +663,6 @@ describe('RowActionToast', () => {
   it.each([
     ['pinFailed', '置顶失败，请稍后重试'],
     ['unpinFailed', '取消置顶失败，请稍后重试'],
-    ['deleted', '会话已删除'],
     ['archivedNotOpenable', '已归档对话暂时无法查看，请取消归档后查看'],
     ['defaultWorkspaceFailed', '无法创建默认工作区，请通过“选择工作区”选择文件夹'],
   ] as const)('shows the %s warning and takes it down when its hold ends', (kind, text) => {
@@ -667,6 +676,21 @@ describe('RowActionToast', () => {
       act(() => { vi.advanceTimersByTime(4000) })
       expect(dismissToast).toHaveBeenCalledOnce()
       expect(screen.queryByRole('alert')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows the deleted notice as a success without actions and takes it down when its hold ends', () => {
+    vi.useFakeTimers()
+    try {
+      const { dismissToast, notify } = toastSurface()
+      notify({ kind: 'deleted' })
+      const alert = screen.getByRole('alert')
+      expect(alert.textContent).toBe('会话已删除')
+      expect(alert.querySelector('button')).toBeNull()
+      act(() => { vi.advanceTimersByTime(4000) })
+      expect(dismissToast).toHaveBeenCalledOnce()
     } finally {
       vi.useRealTimers()
     }

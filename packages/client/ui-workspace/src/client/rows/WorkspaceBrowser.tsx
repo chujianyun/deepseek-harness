@@ -887,6 +887,7 @@ function GroupedList({
       ...shown(section).overflows ? [`overflow:${section.key}`] : [],
     ])
   const now = Date.now()
+  const rowProps = { currentId, now, onOpen: open, onRenameRequest: onSessionRenameRequest, renderSlot, t }
   return (
     <div className={clsx(css.treeBody, css.wide)}>
       <AnimatedRows
@@ -913,13 +914,8 @@ function GroupedList({
               <SessionNodeItem
                 key={node.id}
                 node={node}
-                currentId={currentId}
-                now={now}
-                onOpen={open}
-                onRenameRequest={onSessionRenameRequest}
-                renderSlot={renderSlot}
+                {...rowProps}
                 onReveal={node.id === revealSessionId ? () => { onSessionRevealed(node.id) } : undefined}
-                t={t}
               />
             ))}
             <SessionOverflowButton

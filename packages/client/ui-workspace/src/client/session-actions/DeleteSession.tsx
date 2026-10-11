@@ -12,7 +12,7 @@ import type {
 import browserCss from '../rows/WorkspaceBrowser.module.css'
 
 /**
- * Menu row (order 900, so plugin rows land before it): ask to delete the Session.
+ * Menu row (order 900, after rows of a lower order): ask to delete the Session.
  * @param props - owner share, the delete share, and the menu open state.
  * @returns the row.
  */
@@ -27,7 +27,8 @@ export function DeleteSessionMenuItem({
       icon={<IconTrashOutlineRegular size={14} />}
       onSelect={() => {
         setMenuOpen(false)
-        requestSessionDelete(sessionId, displayTitle)
+        // The row passes the stored title, which is empty until the Session is named.
+        requestSessionDelete(sessionId, displayTitle === '' ? t('session.untitled') : displayTitle)
       }}
     >
       {t('menu.deleteSession')}

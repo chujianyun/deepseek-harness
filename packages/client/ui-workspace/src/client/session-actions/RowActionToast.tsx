@@ -17,8 +17,9 @@ const LONG_TOAST_HOLD_MS = 6000
  * Render the current notice: the archived and stopped-and-archived notices
  * with their undo action — plus the show-archived action while archived rows
  * are hidden — on a 6 s hold, a refused Session creation with the Host's
- * reason on the same hold, or a plain warning for a failed pin, an archived
- * row that was clicked, or default Workspace creation.
+ * reason on the same hold, a success notice for a deleted Session, or a plain
+ * warning for a failed pin, an archived row that was clicked, or default
+ * Workspace creation.
  * @param props - the notice hook, the shared viewing store, the notice dismissal, the two archived-notice actions, and the locale seat.
  * @returns the notice on display, or null.
  */
@@ -55,6 +56,9 @@ export function RowActionToast({ useToast, useStore, dismissToast, undoArchive, 
       />
     )
   }
+  if (toast.kind === 'deleted') {
+    return <Toast key={`toast-${String(toast.seq)}`} text={t('toast.deleted')} tone="success" onDone={dismissToast} />
+  }
   return (
     <Toast
       key={`toast-${String(toast.seq)}`}
@@ -67,7 +71,7 @@ export function RowActionToast({ useToast, useStore, dismissToast, undoArchive, 
 
 /** The copy of one plain warning, keyed by the notice kind the union closes over. */
 function plainNoticeText(
-  toast: Exclude<RowToastState, { kind: 'archived' | 'stoppedAndArchived' | 'createFailed' }>,
+  toast: Exclude<RowToastState, { kind: 'archived' | 'stoppedAndArchived' | 'createFailed' | 'deleted' }>,
   t: RowToastProps['t'],
 ): string {
   switch (toast.kind) {
@@ -75,7 +79,6 @@ function plainNoticeText(
     case 'unpinFailed': return t('toast.unpinFailed')
     case 'defaultWorkspaceFailed': return t('defaultWorkspace.failed')
     case 'archivedNotOpenable': return t('toast.archivedNotOpenable')
-    case 'deleted': return t('toast.deleted')
     /* v8 ignore next 2 -- closed-union backstop; only reached if a notice kind is forged */
     default:
       return assertNever(toast)

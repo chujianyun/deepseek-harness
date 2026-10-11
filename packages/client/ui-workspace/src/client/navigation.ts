@@ -75,10 +75,10 @@ export interface UiWorkspace {
    */
   archiveSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void>
   /**
-   * Delete a Session permanently on the Host, with its subagent descendants. When it is the
-   * current selection the main view leaves it first, since the Host unloads it.
+   * Delete a Session permanently on the Host, with its subagent descendants. Once they are gone
+   * the main view leaves whichever of them it shows. A Session that no longer exists counts as deleted.
    * @param sessionId - Session to delete.
-   * @throws with the Host's refusal as `code: message`; the Session then still exists.
+   * @throws with the refusal in the UI language; the Session then still exists and stays selected.
    */
   deleteSession(sessionId: SessionId): Promise<void>
   /**
@@ -321,9 +321,20 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   async deleteSession(sessionId: SessionId): Promise<void> {
-    if (this.mainReference?.sessionId === sessionId) this.clearMain()
     const result = await this.sessions.delete(sessionId)
-    if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+    const t = this.ctx.locale.bind('workspace')
+    if (!result.ok) {
+      switch (result.error.code) {
+        // Already gone, for example deleted from another window: the request is met.
+        case 'session/not-found': break
+        case 'session/agent-busy': throw new Error(t('delete.session.busy'))
+        case 'session/writer-held': throw new Error(t('delete.session.writing'))
+        default: throw new Error(t('delete.session.failed', { reason: result.error.message }))
+      }
+    }
+    const deleted = result.ok ? result.value.deletedSessionIds : [sessionId]
+    const current = this.mainReference?.sessionId
+    if (current !== undefined && deleted.includes(current)) this.clearMain()
   }
 
   async pinSession(sessionId: SessionId): Promise<void> {
