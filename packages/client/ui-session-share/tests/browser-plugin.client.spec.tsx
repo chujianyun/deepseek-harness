@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { Context, Service } from '@deepseek-ai/cordis'
-import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionShareId } from '@deepseek-ai/dsh-session-share/client'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
 import { SessionShareDialog, ShareSessionMenuItem, type SessionShareDialogInjected, type ShareSessionInjected } from '../src/client/ShareSession.tsx'
@@ -13,6 +14,17 @@ import { SessionShareDialog, ShareSessionMenuItem, type SessionShareDialogInject
 const view = (status: HubAccountView['status']): HubAccountView => ({ status, profile: null, reason: null, attempt: null, branding: null })
 
 describe('ui-session-share browser plugin', () => {
+  beforeAll(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 }, configurable: true }) })
+  afterAll(() => { Reflect.deleteProperty(globalThis, 'dshDesktop') })
+
+  it('adds nothing in a browser tab, which has no Hub sign-in of its own', async () => {
+    Reflect.deleteProperty(globalThis, 'dshDesktop')
+    const slots = { inject: vi.fn() }
+    apply({ slots, effect: vi.fn() } as never)
+    expect(slots.inject).not.toHaveBeenCalled()
+    Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 }, configurable: true })
+  })
+
   it('adds the menu row and the dialog over the Remotes, follows the sign-in, and leaves with the plugin', async () => {
     const ctx = new Context()
     onTestFinished(async () => { await ctx.fiber.dispose() })
@@ -23,7 +35,7 @@ describe('ui-session-share browser plugin', () => {
     }
     new LocaleHolder(ctx)
     const ok = <T,>(value: T) => vi.fn(async () => ({ ok: true as const, value }))
-    const link = { shareId: 'sh-1', url: 'https://hub.example/share/sh-1', createdAt: 'c', updatedAt: 'u' }
+    const link = { shareId: 'sh-1' as SessionShareId, url: 'https://hub.example/share/sh-1', createdAt: 'c', updatedAt: 'u' }
     const sessionShare = { status: ok({ signedIn: true, link: null }), share: ok(link), revoke: ok(undefined) }
     const hubAccount = { watch: vi.fn() }
     const remote = new TestRemote(ctx, { sessionShare, hubAccount })

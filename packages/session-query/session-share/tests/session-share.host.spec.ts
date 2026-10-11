@@ -1,5 +1,5 @@
 /** The `sessionShare` Remote over a mock user center and a real Hub sign-in, with Session reads stubbed. */
-import { mkdtemp, realpath, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -35,7 +35,7 @@ const TALK = [user(1_000, '帮我复盘双十一'), assistant(2_000, '成交额�
 interface BootOptions {
   signedIn?: boolean
   assistants?: boolean
-  config?: { requestTimeoutMs?: number }
+  config?: { requestTimeoutMs?: number; dshHome?: string }
 }
 
 async function boot({ signedIn = true, assistants = true, config = {} }: BootOptions = {}) {
@@ -60,10 +60,13 @@ async function boot({ signedIn = true, assistants = true, config = {} }: BootOpt
   if (assistants) {
     ctx.provide('assistants', { getState: async () => ({ assistants: [{ id: 'a-shop', name: '电商管家' }] }) } as never)
   }
-  await ctx.plugin(SessionShare, config)
+  const dshHome = join(home, '.dsh')
+  await ctx.plugin(SessionShare, { dshHome, ...config })
   const share = ctx.get('sessionShare')!
   const shareRequests = () => center.clientRequests.filter(path => path.startsWith('/api/client/session-shares/'))
-  return { ctx, center, hub, share, logs, shareRequests }
+  const recordFile = join(dshHome, 'session-shares.json')
+  const recorded = async (): Promise<unknown> => JSON.parse(await readFile(recordFile, 'utf8')) as object
+  return { ctx, center, hub, share, logs, shareRequests, home, dshHome, recordFile, recorded }
 }
 
 describe('sessionShare', () => {
@@ -134,11 +137,80 @@ describe('sessionShare', () => {
     await expect(share.revoke({ sessionId: S1 })).resolves.toBeUndefined()
   })
 
-  it('withdraws the share of a deleted Session', async () => {
-    const { ctx, share, center } = await boot()
-    await share.share({ sessionId: S1, title: 't' })
+  it('withdraws the share of a deleted Session and forgets it', async () => {
+    const { ctx, share, center, recorded } = await boot()
+    const link = await share.share({ sessionId: S1, title: 't' })
+    expect(await recorded()).toEqual({ version: 1, shares: { [S1]: { tenantId: 't-a', shareId: link.shareId } } })
     ctx.emit('session/deleted', S1)
     await expect.poll(() => center.shares).toEqual({})
+    await expect.poll(recorded).toEqual({ version: 1, shares: {} })
+  })
+
+  it('makes no request for a deleted Session this machine never shared', async () => {
+    const { ctx, shareRequests } = await boot()
+    ctx.emit('session/deleted', SessionId('never-shared'))
+    await new Promise((resolve) => { setTimeout(resolve, 20) })
+    expect(shareRequests()).toEqual([])
+  })
+
+  it('leaves the share of a deleted Session shared under another tenant, and says so', async () => {
+    const { ctx, share, center, hub, shareRequests, recorded } = await boot()
+    await share.share({ sessionId: S1, title: 't' })
+    center.tenant = { tenantId: 't-b', tenantName: '乙公司' }
+    await hub.switchTenant()
+    await expect.poll(async () => (await hub.getState()).attempt?.authorizeUrl).toBeDefined()
+    await browse((await hub.getState()).attempt!.authorizeUrl!)
+    await expect.poll(async () => (await hub.getState()).profile?.tenantId).toBe('t-b')
+    // Tenant A's record stays after the switch.
+    expect(await recorded()).toMatchObject({ shares: { [S1]: { tenantId: 't-a' } } })
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const before = shareRequests().length
+    ctx.emit('session/deleted', S1)
+    await expect.poll(() => info.mock.calls.some(call => call[0] === '[session-share] share of a deleted Session not withdrawn: shared under another sign-in')).toBe(true)
+    expect(shareRequests()).toHaveLength(before)
+    expect(Object.keys(center.shares)).toEqual([S1])
+    await expect.poll(recorded).toEqual({ version: 1, shares: {} })
+  })
+
+  it('records a sign-in without a tenant under an empty tenant', async () => {
+    const { share, hub, recorded } = await boot()
+    const state = await hub.getState()
+    vi.spyOn(hub, 'getState').mockResolvedValue({ ...state, profile: null })
+    const link = await share.share({ sessionId: S1, title: 't' })
+    expect(await recorded()).toEqual({ version: 1, shares: { [S1]: { tenantId: '', shareId: link.shareId } } })
+  })
+
+  it('records a share the user center reports, and forgets one it no longer has', async () => {
+    const { share, center, recorded } = await boot()
+    await share.share({ sessionId: S1, title: 't' })
+    const shareId = center.shares[S1]!.shareId
+    center.shares = {}
+    expect(await share.status({ sessionId: S1 })).toEqual({ signedIn: true, link: null })
+    expect(await recorded()).toEqual({ version: 1, shares: {} })
+    center.shares = { [S1]: { shareId, body: {}, createdAt: '2026-10-11T00:00:00.000Z', updatedAt: '2026-10-11T00:00:00.000Z' } }
+    expect((await share.status({ sessionId: S1 })).link?.shareId).toBe(shareId)
+    expect(await recorded()).toEqual({ version: 1, shares: { [S1]: { tenantId: 't-a', shareId } } })
+  })
+
+  it('reads a damaged record file as empty and replaces it on the next write', async () => {
+    const { share, recordFile, dshHome, recorded } = await boot()
+    await mkdir(dshHome, { recursive: true })
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    for (const damaged of ['{not json', JSON.stringify({ version: 2 })]) {
+      await writeFile(recordFile, damaged)
+      const link = await share.share({ sessionId: S1, title: 't' })
+      expect(await recorded()).toEqual({ version: 1, shares: { [S1]: { tenantId: 't-a', shareId: link.shareId } } })
+    }
+    expect(info).toHaveBeenCalledWith('[session-share] unreadable share record file ignored', { path: recordFile })
+  })
+
+  it('logs a deleted Session whose record cannot be read', async () => {
+    const { ctx, recordFile } = await boot()
+    // A directory where the file belongs: the read fails with something other than a missing file.
+    await mkdir(recordFile, { recursive: true })
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    ctx.emit('session/deleted', S1)
+    await expect.poll(() => info.mock.calls.some(call => call[0] === '[session-share] share of a deleted Session not withdrawn')).toBe(true)
   })
 
   it('logs and keeps running when the share of a deleted Session cannot be withdrawn', async () => {
@@ -191,6 +263,9 @@ describe('sessionShare', () => {
   it('refuses an answer that is not a share link', async () => {
     const { share, center } = await boot()
     center.shareReply = { status: 200, body: JSON.stringify({ shareId: '' }) }
+    expect(remoteErrorOf(await share.share({ sessionId: S1, title: 't' }).catch((error: unknown) => error)))
+      .toMatchObject({ code: 'session-share/refused', message: 'the user center answered an unreadable share' })
+    center.shareReply = { status: 200, body: JSON.stringify({ shareId: 's', url: 'u', createdAt: '1760000000', updatedAt: '1760000000' }) }
     expect(remoteErrorOf(await share.share({ sessionId: S1, title: 't' }).catch((error: unknown) => error)))
       .toMatchObject({ code: 'session-share/refused', message: 'the user center answered an unreadable share' })
     center.shareReply = { status: 200, body: 'not json' }

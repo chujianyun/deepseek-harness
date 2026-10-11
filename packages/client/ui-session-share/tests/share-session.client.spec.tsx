@@ -5,17 +5,17 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { SessionShareLink } from '@deepseek-ai/dsh-session-share/client'
+import type { SessionShareId, SessionShareLink, SessionShareRequest } from '@deepseek-ai/dsh-session-share/client'
 import { en, zh, type SessionShareLocaleKey } from '../src/client/locales.ts'
 import {
-  SessionShareDialog, ShareSessionMenuItem, type SessionShareDialogProps, type SessionShareTarget, type ShareSessionMenuItemProps,
+  SessionShareDialog, ShareSessionMenuItem, type SessionShareDialogProps, type ShareSessionMenuItemProps,
 } from '../src/client/ShareSession.tsx'
 
 afterEach(cleanup)
 
 const sid = (id: string) => id as SessionId
 const AT = '2026-10-11T12:00:00.000Z'
-const LINK: SessionShareLink = { shareId: 'sh-1', url: 'https://hub.example/share/sh-1', createdAt: AT, updatedAt: AT }
+const LINK: SessionShareLink = { shareId: 'sh-1' as SessionShareId, url: 'https://hub.example/share/sh-1', createdAt: AT, updatedAt: AT }
 const ok = <T,>(value: T) => ({ ok: true as const, value })
 const refused = (code: string, message: string, details: object = {}) => ({
   ok: false as const, error: new RemoteError(code as never, message, details as never),
@@ -55,7 +55,7 @@ describe('share menu row', () => {
 })
 
 function dialog(options: { copy?: Record<SessionShareLocaleKey, string>; status?: unknown } = {}) {
-  const request = createSnapshotStore<SessionShareTarget | null>(null)
+  const request = createSnapshotStore<SessionShareRequest | null>(null)
   const settleSessionShare = vi.fn(() => { request.set(null) })
   const loadStatus = vi.fn<SessionShareDialogProps['loadStatus']>(async () => (options.status ?? ok({ signedIn: true, link: null })) as never)
   const share = vi.fn<SessionShareDialogProps['share']>(async () => ok(LINK))
@@ -164,12 +164,25 @@ describe('share dialog', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('says why the status could not be read, keeps a failed withdrawal shared, and closes while reading', async () => {
+  it('says why the status could not be read, offers to read it again instead of a new link, keeps a failed withdrawal shared, and closes while reading', async () => {
     const failing = dialog({ status: refused('session-share/unreachable', 'x') })
     failing.ask()
     await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('连接不上服务器，请检查网络后重试。') })
+    expect(screen.queryByRole('button', { name: '生成链接' })).toBeNull()
+    failing.loadStatus.mockResolvedValueOnce(ok({ signedIn: true, link: LINK }))
+    fireEvent.click(button('重试'))
+    await screen.findByRole('textbox', { name: '分享链接' })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(failing.loadStatus).toHaveBeenCalledTimes(2)
+    cleanup()
+
+    const signedOut = dialog({ status: ok({ signedIn: false, link: null }) })
+    signedOut.ask()
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('请先登录后再分享。') })
+    expect(screen.queryByRole('button', { name: '生成链接' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
     fireEvent.click(button('取消'))
-    expect(failing.settleSessionShare).toHaveBeenCalledOnce()
+    expect(signedOut.settleSessionShare).toHaveBeenCalledOnce()
     cleanup()
 
     const shared = dialog({ status: ok({ signedIn: true, link: LINK }) })

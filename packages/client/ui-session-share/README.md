@@ -23,7 +23,7 @@ Adds **Share session** to a Session row's menu in the [sidebar](../ui-workspace/
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the browser row beside the Host `session-share` row with the same `disabled` condition; the web-app bundle enables both for the `desktop` profile with a configured user center. The plugin injects `slots`, `locale`, and the `hubAccount` and `sessionShare` Remotes. For exactly the plugin lifetime it registers the `share` entry of `sidebar.workspaces.session.menu.item` at order 350, between Fork and Archive, and the `session-share` entry of `shell.overlay`.
+Mount the browser row beside the Host `session-share` row with the same `disabled` condition; the web-app bundle enables both for the `desktop` profile with a configured user center. Like ui-hub-account, it adds nothing outside the Desktop window, since a browser tab has no Hub sign-in of its own. The plugin injects `slots`, `locale`, and the `hubAccount` and `sessionShare` Remotes. For exactly the plugin lifetime it registers the `share` entry of `sidebar.workspaces.session.menu.item` at order 350, between Fork and Archive, and the `session-share` entry of `shell.overlay`.
 
 The menu row shows only while the `hubAccount` state stream reports a sign-in. Selecting it closes the menu and opens the dialog for that Session, named by the title the sidebar shows (**Untitled** for an unnamed Session); that title is also the title the share carries.
 
@@ -31,6 +31,9 @@ The dialog states who can open the link and that the share is the conversation a
 
 - **Not shared** — **Create link** uploads the snapshot and shows the link.
 - **Shared** — the link sits in a read-only field that selects itself on focus, with **Copy link** and the time the content was last updated. **Update content** uploads the conversation as it is now under the same link, **Stop sharing** withdraws the share and returns to the not-shared state, and **Done** closes the dialog.
+
+- **Signed out** — the status read found no sign-in: the dialog says to sign in and offers only **Cancel**.
+- **Status unknown** — the status read failed: the dialog shows why and offers **Try again** instead of a new link, since a share may exist.
 
 While a call is in flight the buttons are disabled, a status line names it, and the dialog cannot be closed. A refusal shows under the link in the UI language: no sign-in, a Session without conversation, a conversation over the user center's size limits, the user center's own reason for any other refusal, or an unreachable server. The dialog then keeps its state, so the user can try again.
 

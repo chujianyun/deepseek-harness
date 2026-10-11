@@ -85,6 +85,19 @@ describe('the share snapshot', () => {
     expect(snapshot).toEqual([{ role: 'assistant', text: '', tools: [{ name: 'list' }, { name: 'nothing' }, { name: 'count' }], at: at(2_000) }])
   })
 
+  it('keeps one reply whole across a message the user did not type', () => {
+    const snapshot = buildShareSnapshot([
+      user(1_000, '整理一下'),
+      assistant(2_000, [{ type: 'text', text: '第一步。' }]),
+      user(2_500, 'compacted context', 'compaction'),
+      assistant(3_000, [{ type: 'text', text: '第二步。' }]),
+    ])
+    expect(snapshot).toEqual([
+      { role: 'user', text: '整理一下', at: at(1_000) },
+      { role: 'assistant', text: '第一步。\n\n第二步。', at: at(2_000) },
+    ])
+  })
+
   it('is empty for a log without a conversation', () => {
     expect(buildShareSnapshot([event('turn/start', 1, { turn: 1 })])).toEqual([])
   })

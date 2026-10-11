@@ -3065,13 +3065,15 @@ export interface Config {
 ## `@deepseek-ai/dsh-session-share`
 
 - `inject`: `hubAccount` · `sessionQuery`
-- `source`: [`packages/session-query/session-share/src/index.ts:33`](../packages/session-query/session-share/src/index.ts)
+- `source`: [`packages/session-query/session-share/src/index.ts:37`](../packages/session-query/session-share/src/index.ts)
 
 ```ts config-catalog
 /** Deployment configuration. */
 export interface Config {
   /** Deadline of each user-center request, in milliseconds. */
   requestTimeoutMs?: number
+  /** DeepSeek Harness home; the share record lives at `<dshHome>/session-shares.json`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-share -->

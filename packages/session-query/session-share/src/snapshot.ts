@@ -67,9 +67,10 @@ export function buildShareSnapshot(events: readonly SessionEvent[]): SessionShar
   }
   for (const event of events) {
     if (event.type === 'user/message') {
-      flush()
-      // A user-role message from a schedule, a subagent, or another producer is not what the user said.
+      // A user-role message from a schedule, a subagent, compaction, or another producer is not what
+      // the user said, and does not end the reply around it.
       if (event.data.source.kind !== 'user') continue
+      flush()
       const text = userText(event.data.content)
       if (text !== '') messages.push({ role: 'user', text, at: new Date(event.time).toISOString() })
     } else if (event.type === 'assistant/message') {

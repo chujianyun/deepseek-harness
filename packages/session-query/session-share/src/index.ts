@@ -14,10 +14,14 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-session-query'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { join } from 'node:path'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
+import { ShareRecords } from './records.ts'
 import { buildShareSnapshot } from './snapshot.ts'
-import type { SessionShareLink, SessionShareRequest, SessionShareStatus, SessionShareTarget } from './types.ts'
+import type { SessionShareId, SessionShareLink, SessionShareRequest, SessionShareStatus, SessionShareTarget } from './types.ts'
 
 export type * from './types.ts'
 export { buildShareSnapshot } from './snapshot.ts'
@@ -33,14 +37,22 @@ declare module '@deepseek-ai/cordis' {
 export interface Config {
   /** Deadline of each user-center request, in milliseconds. */
   requestTimeoutMs?: number
+  /** DeepSeek Harness home; the share record lives at `<dshHome>/session-shares.json`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
 }
 
 /** Validated deployment configuration. */
 export const Config: Schema<Config> = Schema.object({
   requestTimeoutMs: Schema.number().min(1).max(600_000).default(60_000).description('Deadline of each user-center request, in milliseconds.'),
+  dshHome: Schema.string().description('DeepSeek Harness home; the share record lives at `<dshHome>/session-shares.json`. Defaults to `$DSH_HOME` or `~/.dsh`.'),
 })
 
-const linkSchema = z.object({ shareId: z.string().min(1), url: z.string().min(1), createdAt: z.string(), updatedAt: z.string() })
+const linkSchema = z.object({
+  shareId: z.string().min(1).transform(id => brandString<SessionShareId>(id)),
+  url: z.string().min(1),
+  createdAt: z.iso.datetime({ offset: true }),
+  updatedAt: z.iso.datetime({ offset: true }),
+})
 
 /** The user center's own words for a refusal, or its status when the body carries none. */
 async function refusal(res: Response): Promise<RemoteError> {
@@ -68,13 +80,16 @@ export class SessionShare extends TypertRemoteService {
   static Config = Config
 
   private readonly requestTimeoutMs: number
+  private readonly records: ShareRecords
 
-  /** @param ctx - Host with the Hub sign-in and Session reads. @param config - request deadline. */
+  /** @param ctx - Host with the Hub sign-in and Session reads. @param config - request deadline and home. */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'sessionShare', { namespace: 'sessionShare' })
-    this.requestTimeoutMs = (Config(config) as Required<Config>).requestTimeoutMs
+    const resolved = Config(config) as Required<Omit<Config, 'dshHome'>> & Pick<Config, 'dshHome'>
+    this.requestTimeoutMs = resolved.requestTimeoutMs
+    this.records = new ShareRecords(join(resolveDshHome(resolved.dshHome), 'session-shares.json'))
     ctx.on('session/deleted', (sessionId) => {
-      void this.withdraw(sessionId).catch((error: unknown) => {
+      void this.withdrawDeleted(sessionId).catch((error: unknown) => {
         // The Session is already gone; its share stays on the user center until its owner or an administrator withdraws it there.
         console.info('[session-share] share of a deleted Session not withdrawn', { sessionId, error: String(error) })
       })
@@ -89,13 +104,17 @@ export class SessionShare extends TypertRemoteService {
    */
   @Remote
   async status(request: SessionShareTarget): Promise<SessionShareStatus> {
-    if (!await this.signedIn()) return { signedIn: false, link: null }
+    const tenant = await this.tenant()
+    if (tenant === undefined) return { signedIn: false, link: null }
     const res = await this.call(request.sessionId, { method: 'GET' })
     if (res.status === 404) {
       await res.body?.cancel()
+      await this.forget(request.sessionId, tenant)
       return { signedIn: true, link: null }
     }
-    return { signedIn: true, link: await this.link(res) }
+    const link = await this.link(res)
+    await this.records.set(request.sessionId, { tenantId: tenant, shareId: link.shareId })
+    return { signedIn: true, link }
   }
 
   /**
@@ -108,14 +127,17 @@ export class SessionShare extends TypertRemoteService {
    */
   @Remote
   async share(request: SessionShareRequest): Promise<SessionShareLink> {
-    if (!await this.signedIn()) throw new RemoteError('session-share/signed-out', 'sign in to the user center before sharing', {})
+    const tenant = await this.tenant()
+    if (tenant === undefined) throw new RemoteError('session-share/signed-out', 'sign in to the user center before sharing', {})
     const { events } = await this.ctx.sessionQuery.readSession(request.sessionId)
     const messages = buildShareSnapshot(events)
     if (messages.length === 0) {
       throw new RemoteError('session-share/empty', 'the Session has no conversation to share', { sessionId: request.sessionId })
     }
     const body = JSON.stringify({ title: request.title, assistantName: await this.assistantName(events), messages })
-    return this.link(await this.call(request.sessionId, { method: 'PUT', headers: { 'content-type': 'application/json' }, body }))
+    const link = await this.link(await this.call(request.sessionId, { method: 'PUT', headers: { 'content-type': 'application/json' }, body }))
+    await this.records.set(request.sessionId, { tenantId: tenant, shareId: link.shareId })
+    return link
   }
 
   /**
@@ -125,20 +147,46 @@ export class SessionShare extends TypertRemoteService {
    */
   @Remote
   async revoke(request: SessionShareTarget): Promise<void> {
-    if (!await this.signedIn()) throw new RemoteError('session-share/signed-out', 'sign in to the user center before withdrawing a share', {})
+    const tenant = await this.tenant()
+    if (tenant === undefined) throw new RemoteError('session-share/signed-out', 'sign in to the user center before withdrawing a share', {})
     await this.withdraw(request.sessionId)
+    await this.forget(request.sessionId, tenant)
   }
 
-  private async signedIn(): Promise<boolean> {
-    return (await this.ctx.hubAccount.getState()).status === 'signed-in'
+  /** Tenant of the current sign-in (empty for none), or undefined while signed out. */
+  private async tenant(): Promise<string | undefined> {
+    const state = await this.ctx.hubAccount.getState()
+    return state.status === 'signed-in' ? state.profile?.tenantId ?? '' : undefined
   }
 
-  /** Withdraw as the signed-in employee; signed out, there is no one to withdraw as. */
+  /** Forget the Session's record when it was made under this tenant; another tenant's record still names its share. */
+  private async forget(sessionId: SessionId, tenant: string): Promise<void> {
+    if ((await this.records.get(sessionId))?.tenantId === tenant) await this.records.set(sessionId, undefined)
+  }
+
+  /** Withdraw as the signed-in employee. */
   private async withdraw(sessionId: SessionId): Promise<void> {
-    if (!await this.signedIn()) return
     const res = await this.call(sessionId, { method: 'DELETE' })
     if (res.ok || res.status === 404) await res.body?.cancel()
     else throw await refusal(res)
+  }
+
+  /**
+   * Withdraw a deleted Session's share when this machine recorded one. Only the tenant that shared it
+   * can withdraw it; under another sign-in, or signed out, it is logged and left on the user center.
+   */
+  private async withdrawDeleted(sessionId: SessionId): Promise<void> {
+    const record = await this.records.get(sessionId)
+    if (record === undefined) return
+    try {
+      if (record.tenantId !== await this.tenant()) {
+        console.info('[session-share] share of a deleted Session not withdrawn: shared under another sign-in', { sessionId, shareId: record.shareId })
+        return
+      }
+      await this.withdraw(sessionId)
+    } finally {
+      await this.records.set(sessionId, undefined)
+    }
   }
 
   /** Name of the assistant the Session is bound to; null for none, or one this tenant no longer has. */

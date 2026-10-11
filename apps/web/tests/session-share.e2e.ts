@@ -41,6 +41,8 @@ it('shares a Session from its row menu, copies nothing it should not, refreshes 
     await ctx.sessionController.rename({ sessionId, title: '双十一复盘' })
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
     onTestFailed(() => saveFailureShot(page, 'web-e2e-session-share'))
+    // The share row is Desktop's: a browser tab has no Hub sign-in of its own.
+    await page.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })

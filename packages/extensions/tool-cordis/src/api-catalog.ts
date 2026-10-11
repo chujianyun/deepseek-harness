@@ -8270,8 +8270,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SessionSeqCursor = SessionSeq | -1;',
   },
   {
+    name: 'SessionShareId',
+    declaration: 'export type SessionShareId = Branded<\'SessionShareId\'>;',
+  },
+  {
     name: 'SessionShareLink',
-    declaration: 'export interface SessionShareLink {\n    readonly shareId: string;\n    readonly url: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface SessionShareLink {\n    readonly shareId: SessionShareId;\n    readonly url: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'SessionShareRequest',

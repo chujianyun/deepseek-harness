@@ -4,22 +4,15 @@
  * refreshes its content, and withdraws it. The dialog lives outside the row menu because the row
  * unmounts with the menu.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Button, IconShareOutlineRegular, MenuItemButton, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { HostObservable, InjectFace, PropsHooks, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { SessionShareLink, SessionShareStatus } from '@deepseek-ai/dsh-session-share/client'
+import type { SessionShareLink, SessionShareRequest, SessionShareStatus } from '@deepseek-ai/dsh-session-share/client'
 import css from './ShareSession.module.css'
-
-/** A share the menu row asked for; the dialog opens on it. */
-export interface SessionShareTarget {
-  readonly sessionId: SessionId
-  /** The title the dialog names and the share carries. */
-  readonly title: string
-}
 
 /** Menu row share: whether a sign-in exists, and the request the row raises. */
 export interface ShareSessionInjected {
@@ -28,21 +21,21 @@ export interface ShareSessionInjected {
     signedIn: HostObservable<boolean>
   }
   /** Ask for the share dialog. */
-  requestSessionShare: (target: SessionShareTarget) => void
+  requestSessionShare: (target: SessionShareRequest) => void
 }
 
 /** Dialog share: the pending request, its settlement, and the Remote calls. */
 export interface SessionShareDialogInjected {
   hooks: {
     /** The share asked for, until the dialog closes. */
-    shareRequest: HostObservable<SessionShareTarget | null>
+    shareRequest: HostObservable<SessionShareRequest | null>
   }
   /** Close the dialog. */
   settleSessionShare: () => void
   /** Read the Session's current share. */
   loadStatus: (sessionId: SessionId) => Promise<RemoteResult<SessionShareStatus>>
   /** Share the Session, or replace its share's content with the conversation as it is now. */
-  share: (target: SessionShareTarget) => Promise<RemoteResult<SessionShareLink>>
+  share: (target: SessionShareRequest) => Promise<RemoteResult<SessionShareLink>>
   /** Withdraw the Session's share. */
   revoke: (sessionId: SessionId) => Promise<RemoteResult<void>>
   /** Put the link on the clipboard; false when the host refused. */
@@ -121,7 +114,7 @@ function formatTime(iso: string, locale: string): string {
 
 /** One request's dialog: the link, in-flight state, and notices die with it. */
 function ShareForm({ request, face, t }: {
-  request: SessionShareTarget
+  request: SessionShareRequest
   face: Omit<SessionShareDialogProps, 'useShareRequest' | 't'>
   t: SessionShareDialogProps['t']
 }) {
@@ -130,18 +123,8 @@ function ShareForm({ request, face, t }: {
   const [link, setLink] = useState<SessionShareLink | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  useEffect(() => {
-    let current = true
-    void loadStatus(request.sessionId).then((result) => {
-      if (!current) return
-      if (result.ok) setLink(result.value.link)
-      else setError(failureText(result.error, t))
-      setBusy('idle')
-    })
-    return () => { current = false }
-    // The dialog is keyed by the Session, so one read per mount is the read of this request.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  /** What the status read found: nothing yet (or it failed), no sign-in, or the share state. */
+  const [read, setRead] = useState<'unread' | 'signed-out' | 'ready'>('unread')
   const run = <T,>(doing: Busy, call: () => Promise<RemoteResult<T>>, done: (value: T) => void): void => {
     setBusy(doing)
     setNotice(null)
@@ -152,6 +135,16 @@ function ShareForm({ request, face, t }: {
       setBusy('idle')
     })
   }
+  const readStatus = (): void => {
+    run('loading', () => loadStatus(request.sessionId), (value) => {
+      setRead(value.signedIn ? 'ready' : 'signed-out')
+      setLink(value.link)
+      if (!value.signedIn) setError(t('error.signedOut'))
+    })
+  }
+  // The dialog is keyed by the Session, so the read on mount is the read of this request.
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(readStatus, [])
   const upload = (doing: 'creating' | 'updating'): void => {
     run(doing, () => share(request), (value) => {
       setLink(value)
@@ -166,20 +159,21 @@ function ShareForm({ request, face, t }: {
       setNotice(t('revoked'))
     })
   }
-  const footer = link === null
-    ? (
-      <>
-        <Button variant="outline" disabled={busy === 'creating'} onClick={settleSessionShare}>{t('cancel')}</Button>
-        <Button variant="primary" disabled={working} onClick={() => { upload('creating') }}>{t('create')}</Button>
-      </>
-    )
-    : (
+  const cancel = <Button variant="outline" disabled={working && busy !== 'loading'} onClick={settleSessionShare}>{t('cancel')}</Button>
+  let footer: ReactNode
+  if (link !== null) {
+    footer = (
       <>
         <Button variant="outline" className={css.revoke} disabled={working} onClick={stop}>{t('revoke')}</Button>
         <Button variant="outline" disabled={working} onClick={() => { upload('updating') }}>{t('update')}</Button>
         <Button variant="primary" disabled={working} onClick={settleSessionShare}>{t('done')}</Button>
       </>
     )
+  } else if (read === 'signed-out') footer = cancel
+  else if (read === 'unread' && !working) {
+    // The status read failed: whether a share exists is unknown, so offer the read again rather than a new link.
+    footer = <>{cancel}<Button variant="primary" onClick={readStatus}>{t('retry')}</Button></>
+  } else footer = <>{cancel}<Button variant="primary" disabled={working} onClick={() => { upload('creating') }}>{t('create')}</Button></>
   return (
     <Modal
       open

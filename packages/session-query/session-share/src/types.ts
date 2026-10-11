@@ -5,6 +5,7 @@
  *
  * @module @deepseek-ai/dsh-session-share/types
  */
+import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -36,9 +37,12 @@ export interface SessionShareMessage {
   readonly at: string
 }
 
+/** Id of a share on the user center. */
+export type SessionShareId = Branded<'SessionShareId'>
+
 /** A share's link on the user center. */
 export interface SessionShareLink {
-  readonly shareId: string
+  readonly shareId: SessionShareId
   /** The page a signed-in member of the same company opens. */
   readonly url: string
   readonly createdAt: string

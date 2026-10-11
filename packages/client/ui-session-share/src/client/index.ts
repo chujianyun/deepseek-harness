@@ -14,12 +14,13 @@ import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
 import { en, zh, type SessionShareLocaleKey } from './locales.ts'
 import {
-  SessionShareDialog, ShareSessionMenuItem, type SessionShareDialogInjected, type SessionShareTarget, type ShareSessionInjected,
+  SessionShareDialog, ShareSessionMenuItem, type SessionShareDialogInjected, type ShareSessionInjected,
 } from './ShareSession.tsx'
+import type { SessionShareRequest } from '@deepseek-ai/dsh-session-share/client'
 
 export type { SessionShareLocaleKey } from './locales.ts'
 export type {
-  SessionShareDialogInjected, SessionShareDialogProps, SessionShareTarget, ShareSessionInjected, ShareSessionMenuItemProps,
+  SessionShareDialogInjected, SessionShareDialogProps, ShareSessionInjected, ShareSessionMenuItemProps,
 } from './ShareSession.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -39,6 +40,8 @@ export const inject = ['slots', 'locale', 'remote', 'remote.hubAccount', 'remote
  * @param ctx - Client root context.
  */
 export function apply(ctx: ClientContext): void {
+  // Desktop only: a browser tab of the same roster has no Hub sign-in of its own.
+  if (!('dshDesktop' in globalThis)) return
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-session-share: dictionaries')
   const remote = ctx.remote
   const signedIn = createSnapshotStore(false)
@@ -54,7 +57,7 @@ export function apply(ctx: ClientContext): void {
   })().catch(() => {
     // The stream reconnects on its own; a disposed plugin simply stops listening.
   })
-  const shareRequest = createSnapshotStore<SessionShareTarget | null>(null)
+  const shareRequest = createSnapshotStore<SessionShareRequest | null>(null)
   const rowFace: ShareSessionInjected = {
     hooks: { signedIn },
     requestSessionShare: (target) => { shareRequest.set(target) },
