@@ -45,7 +45,7 @@ type WorkspaceViewState = {
    */
   groupCollapsed?: Record<string, Record<string, boolean>>
   /**
-   * Idle Session rows a group shows beyond the default, keyed by view ('workspace' for the Workspace
+   * Idle Session rows an expanded group shows, keyed by view ('workspace' for the Workspace
    * views, else the grouping id) then group key; `Number.MAX_SAFE_INTEGER` shows all. A group
    * without an entry shows the default number. Omitted in snapshots written before limits were saved.
    */

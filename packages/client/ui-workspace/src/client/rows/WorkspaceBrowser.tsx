@@ -56,54 +56,77 @@ const SEARCH_QUERY_MAX_CODE_UNITS = 500
 const EMPTY_COLLAPSED: Readonly<Record<string, boolean>> = {}
 /** Stable empty row limits for a view with none saved. */
 const EMPTY_LIMITS: Readonly<Record<string, number>> = {}
+/** What a section shows before its rows are derived. */
+const NO_ROWS: LimitedRows = { rows: [], hidden: 0, overflows: false }
 /** A saved row limit that shows every Session of a group. */
 const ALL_SESSIONS = Number.MAX_SAFE_INTEGER
 
+/** What a group shows under its row limit. */
+interface LimitedRows {
+  /** Rows to render, in order. */
+  readonly rows: readonly SessionNode[]
+  /** Rows the limit hides now. */
+  readonly hidden: number
+  /** Whether the default limit hides any row, which is when the group has an overflow control. */
+  readonly overflows: boolean
+}
+
 /**
- * The rows a group shows under its limit: blank, running (or with running children), pinned, and
- * the current Session always show and do not count; `limit` more idle rows follow.
+ * The rows a group shows: blank, running (or with running children), and pinned Sessions and the
+ * ones in `always` (the main view's Session, a search result being revealed) show without counting;
+ * `limit` more idle rows follow.
+ * @param sessions - the group's rows in order.
+ * @param base - rows shown by default.
+ * @param saved - the group's saved limit, never applied below `base`.
+ * @param always - Session ids that show regardless.
  */
-function collapsedSessionRows(sessions: readonly SessionNode[], limit: number, currentId: string | undefined): {
-  rows: readonly SessionNode[]
-  hiddenCount: number
-} {
-  let idleCount = 0
+function limitedRows(
+  sessions: readonly SessionNode[], base: number, saved: number | undefined, always: readonly (string | undefined)[],
+): LimitedRows {
+  const limit = Math.max(saved ?? base, base)
+  let idle = 0
   const rows = sessions.filter((session) => {
-    if (session.blank || session.running || session.runningSubagentCount > 0 || session.pinned || session.id === currentId) return true
-    if (idleCount >= limit) return false
-    idleCount += 1
-    return true
+    if (session.blank || session.running || session.runningSubagentCount > 0 || session.pinned || always.includes(session.id)) return true
+    idle += 1
+    return idle <= limit
   })
-  return { rows, hiddenCount: sessions.length - rows.length }
+  return { rows, hidden: sessions.length - rows.length, overflows: idle > base }
 }
 
 /**
  * The overflow control under a group: it reveals `base` more rows per click (all of them once no
- * more than `base` remain), then offers to show less.
+ * more than `base` remain), then offers to show less. A saved limit of a loaded group that no
+ * longer overflows is forgotten, so the group starts from the default when it grows again.
  */
-function SessionOverflowButton({ groupKey, sessions, base, limit, currentId, setLimit, t }: {
+function SessionOverflowButton({ groupKey, shown, loaded, base, limit, setLimit, t }: {
   groupKey: string
-  sessions: readonly SessionNode[]
+  shown: LimitedRows
+  /** The group's rows are loaded and it is open. */
+  loaded: boolean
   /** Rows shown by default, and the step of each reveal. */
   base: number
   /** The group's saved limit, if any. */
   limit: number | undefined
-  currentId: string | undefined
   /** Save the group's limit; undefined returns it to the default. */
   setLimit: (limit: number | undefined) => void
   t: WorkspaceBrowserProps['t']
 }) {
-  if (collapsedSessionRows(sessions, base, currentId).hiddenCount === 0) return null
-  const hidden = collapsedSessionRows(sessions, limit ?? base, currentId).hiddenCount
+  const stale = loaded && !shown.overflows && limit !== undefined
+  useEffect(() => {
+    if (stale) setLimit(undefined)
+  })
+  if (!shown.overflows) return null
   return (
     <button
       type="button"
       className={css.sessionOverflowButton}
       data-row-key={`overflow:${groupKey}`}
-      aria-expanded={hidden === 0}
-      onClick={() => { setLimit(hidden === 0 ? undefined : hidden <= base ? ALL_SESSIONS : (limit ?? base) + base) }}
+      aria-expanded={shown.hidden === 0}
+      onClick={() => {
+        setLimit(shown.hidden === 0 ? undefined : shown.hidden <= base ? ALL_SESSIONS : Math.max(limit ?? base, base) + base)
+      }}
     >
-      {hidden === 0 ? t('sessions.collapse') : t('sessions.expand', { n: hidden })}
+      {shown.hidden === 0 ? t('sessions.collapse') : t('sessions.expand', { n: shown.hidden })}
     </button>
   )
 }
@@ -328,6 +351,8 @@ type SessionTreeProps = Pick<
   revealSessionId?: SessionId | undefined
   /** Acknowledge that the chosen Session row has been revealed. */
   onSessionRevealed: (sessionId: SessionId) => void
+  /** The search result last opened, shown whatever the row limit. */
+  keptSessionId?: SessionId | undefined
   /** Idle Session rows a group shows by default. */
   sessionLimit: number
   /** Saved row limits by group key. */
@@ -363,7 +388,7 @@ function SessionTree({
   nestWorkspaces, groupExpansion, setGroupExpanded,
   setSessionOrder, home, t,
   revealSessionId, onSessionRevealed, shortcuts,
-  sessionLimit, sessionLimits, setSessionLimit,
+  sessionLimit, sessionLimits, setSessionLimit, keptSessionId,
 }: SessionTreeProps) {
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
   const statuses = useSessionStatus(s => s)
@@ -422,14 +447,9 @@ function SessionTree({
       }
     }
   }, [groupExpansion, parents, revealGroup, setGroupExpanded])
-  useEffect(() => {
-    if (revealSessionId === undefined || revealGroup === undefined) return
-    const group = groups.find(candidate => candidate.key === revealGroup)
-    if (group === undefined || !group.expanded || !group.sessions.some(row => row.id === revealSessionId)) return
-    const shown = collapsedSessionRows(group.sessions, sessionLimits[revealGroup] ?? sessionLimit, current).rows
-    if (shown.some(row => row.id === revealSessionId)) return
-    setSessionLimit(revealGroup, ALL_SESSIONS)
-  }, [current, groups, revealGroup, revealSessionId, sessionLimit, sessionLimits, setSessionLimit])
+  // The main view's Session and the search result last opened show whatever the row limit, with
+  // or without a panel open over the conversation.
+  const alwaysShown = [mainSessionId(list), keptSessionId]
   const now = Date.now()
   const commitSessionDrag = (activeDrag: DragState, over: NonNullable<DragState['over']>): void => {
     if (sessionDropCommitted.current) return
@@ -442,7 +462,7 @@ function SessionTree({
       ? ungroupedSessionIds
       : workspaces.find(workspace => workspace.workspaceId === activeDrag.accountKey)?.sessionIds
     if (accountSessionIds === undefined) return
-    const renderedSessions = collapsedSessionRows(group.sessions, sessionLimits[group.key] ?? sessionLimit, current).rows
+    const renderedSessions = limitedRows(group.sessions, sessionLimit, sessionLimits[group.key], alwaysShown).rows
     const nextOrder = sessionDragOrder(accountSessionIds, renderedSessions, activeDrag, over)
     if (nextOrder !== undefined) setSessionOrder(activeDrag.accountKey, nextOrder)
   }
@@ -492,13 +512,12 @@ function SessionTree({
     const workspaceId = group.workspaceId
     const children = childrenByParent.get(group.key) ?? []
     const compatibleDrag = workspaceDrag !== null && parents.get(workspaceDrag.workspaceId) === parents.get(group.key)
-    const collapsed = collapsedSessionRows(group.sessions, sessionLimit, current)
-    const visible = collapsedSessionRows(group.sessions, sessionLimits[group.key] ?? sessionLimit, current)
+    const visible = limitedRows(group.sessions, sessionLimit, sessionLimits[group.key], alwaysShown)
     rowKeys.push(`workspace:${group.key}`)
     const childRows = group.expanded ? children.map(child => renderGroup(child, depth + 1)) : []
     const sessions = visible.rows
     for (const node of sessions) rowKeys.push(`session:${node.id}`)
-    if (collapsed.hiddenCount > 0) rowKeys.push(`overflow:${group.key}`)
+    if (visible.overflows) rowKeys.push(`overflow:${group.key}`)
     const workspaceMarker = workspaceId !== undefined && workspaceDrag?.over?.id === workspaceId
       ? workspaceDrag.over.half
       : null
@@ -653,10 +672,10 @@ function SessionTree({
         })}
         <SessionOverflowButton
           groupKey={group.key}
-          sessions={group.sessions}
+          shown={visible}
+          loaded={group.expanded && list.phase === 'ready' && workspaceReady}
           base={sessionLimit}
           limit={sessionLimits[group.key]}
-          currentId={current}
           setLimit={(limit) => { setSessionLimit(group.key, limit) }}
           t={t}
         />
@@ -788,11 +807,6 @@ function FlatList({
   )
 }
 
-/** A stable text form of the saved row limits, for effect and animation keys. */
-function sectionLimitsKey(limits: Readonly<Record<string, number>>): string {
-  return JSON.stringify(limits)
-}
-
 /**
  * The body of a registered grouping: each section's heading folds it, and its rows list newest
  * first after the current New Session and pinned rows, under the same row limit and overflow
@@ -802,7 +816,7 @@ function sectionLimitsKey(limits: Readonly<Record<string, number>>): string {
 function GroupedList({
   list, grouping, rowState, collapsed, setCollapsed, retainSections, onLeaveArchivedOnly, useSessionStatus, open, onSessionRenameRequest,
   usePanelInfo, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, renderSlot, t,
-  sessionLimit, sessionLimits, setSessionLimit,
+  sessionLimit, sessionLimits, setSessionLimit, keptSessionId,
 }: Pick<
   SessionTreeProps,
   | 'useSessionStatus'
@@ -820,6 +834,7 @@ function GroupedList({
   | 'sessionLimit'
   | 'sessionLimits'
   | 'setSessionLimit'
+  | 'keptSessionId'
 > & {
   list: SessionListState
   grouping: SessionGrouping
@@ -845,24 +860,32 @@ function GroupedList({
   const revealSection = revealSessionId === undefined
     ? undefined
     : sections.find(section => section.sessionIds.includes(revealSessionId))
-  const currentId = panelActive ? undefined : mainSessionId(list)
-  const shown = (section: GroupingSection): readonly SessionNode[] =>
-    collapsedSessionRows(section.sessions, sessionLimits[section.key] ?? sessionLimit, currentId).rows
+  const mainId = mainSessionId(list)
+  const currentId = panelActive ? undefined : mainId
+  // The main view's Session and the search result last opened show whatever the row limit.
+  const shownBySection = useMemo(
+    () => new Map(sections.map(section => [
+      section.key, limitedRows(section.sessions, sessionLimit, sessionLimits[section.key], [mainId, keptSessionId]),
+    ])),
+    [mainId, keptSessionId, sections, sessionLimit, sessionLimits],
+  )
+  const shown = (section: GroupingSection): LimitedRows => shownBySection.get(section.key) ?? NO_ROWS
   useEffect(() => {
-    if (revealSection === undefined || revealSessionId === undefined) return
-    if (revealSection.collapsed) setCollapsed(revealSection.key, false)
-    // The row limit may hide it too.
-    else if (!shown(revealSection).some(row => row.id === revealSessionId)) setSessionLimit(revealSection.key, ALL_SESSIONS)
-  })
+    if (revealSection?.collapsed === true) setCollapsed(revealSection.key, false)
+  }, [revealSection, setCollapsed])
   const ready = list.phase === 'ready' && workspaceReady
   useEffect(() => {
     if (!ready || grouping.ready?.() === false) return
     const keys = sections.map(section => section.key)
     if ([...Object.keys(collapsed), ...Object.keys(sessionLimits)].some(key => !keys.includes(key))) retainSections(keys)
-  }, [collapsed, grouping, ready, retainSections, sectionLimitsKey(sessionLimits), sections])
+  }, [collapsed, grouping, ready, retainSections, sessionLimits, sections])
   const rowKeys = sections.length === 0
     ? ['empty']
-    : sections.flatMap(section => [`group:${section.key}`, ...shown(section).map(row => `session:${row.id}`), `overflow:${section.key}`])
+    : sections.flatMap(section => [
+      `group:${section.key}`,
+      ...shown(section).rows.map(row => `session:${row.id}`),
+      ...shown(section).overflows ? [`overflow:${section.key}`] : [],
+    ])
   const now = Date.now()
   return (
     <div className={clsx(css.treeBody, css.wide)}>
@@ -871,7 +894,7 @@ function GroupedList({
         label={t('section.sessions')}
         rowKeys={rowKeys}
         ready={ready}
-        resetKey={`${animationResetKey}/${sectionLimitsKey(sessionLimits)}`}
+        resetKey={JSON.stringify([animationResetKey, sessionLimits])}
       >
         {sections.length === 0 && (
           <EmptySessions rowState={rowState} onLeaveArchivedOnly={onLeaveArchivedOnly} t={t} />
@@ -886,7 +909,7 @@ function GroupedList({
                 setCollapsed(section.key, !section.collapsed)
               }}
             />
-            {shown(section).map(node => (
+            {shown(section).rows.map(node => (
               <SessionNodeItem
                 key={node.id}
                 node={node}
@@ -901,10 +924,10 @@ function GroupedList({
             ))}
             <SessionOverflowButton
               groupKey={section.key}
-              sessions={section.sessions}
+              shown={shown(section)}
+              loaded={ready && !section.collapsed}
               base={sessionLimit}
               limit={sessionLimits[section.key]}
-              currentId={currentId}
               setLimit={(limit) => { setSessionLimit(section.key, limit) }}
               t={t}
             />
@@ -1220,6 +1243,9 @@ export function WorkspaceBrowser({
   const [query, setQuery] = useState('')
   const [searchExpanded, setSearchExpanded] = useState(false)
   const [revealSessionId, setRevealSessionId] = useState<SessionId | undefined>(undefined)
+  // The search result last opened stays in its group whatever the row limit, until the user opens
+  // another row: it becomes the main view's Session a moment after it is revealed.
+  const [keptSessionId, setKeptSessionId] = useState<SessionId | undefined>(undefined)
   const normalizedQuery = sanitizeSearchQuery(query).trim()
   const [remoteSearch, setRemoteSearch] = useState<RemoteSearchState>({
     query: '',
@@ -1235,12 +1261,17 @@ export function WorkspaceBrowser({
   const wsPlusRef = useRef<HTMLButtonElement>(null)
   const composingRef = useRef(false)
 
+  const openRow = (sessionId: SessionId): void => {
+    setKeptSessionId(undefined)
+    guardedOpen(sessionId)
+  }
   const openSearchResult = (sessionId: SessionId): void => {
     if (archivedSessionIds.includes(sessionId)) {
       notifyArchivedNotOpenable()
       return
     }
     setRevealSessionId(sessionId)
+    setKeptSessionId(sessionId)
     setQuery('')
     setSearchExpanded(false)
     open(sessionId)
@@ -1582,10 +1613,11 @@ export function WorkspaceBrowser({
                 workspaceReady={workspaceReady}
                 animationResetKey={`${groupBy}/${archivedFilter}`}
                 useSessionStatus={useSessionStatus}
-                open={guardedOpen}
+                open={openRow}
                 onSessionRenameRequest={requestSessionRename}
                 renderSlot={renderSlot}
                 revealSessionId={revealSessionId}
+                keptSessionId={keptSessionId}
                 onSessionRevealed={acknowledgeSessionReveal}
                 t={t}
               />
@@ -1601,7 +1633,7 @@ export function WorkspaceBrowser({
                   workspaceReady={workspaceReady}
                   animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
                   useSessionStatus={useSessionStatus}
-                  open={guardedOpen}
+                  open={openRow}
                   onSessionRenameRequest={requestSessionRename}
                   renderSlot={renderSlot}
                   setSessionOrder={saveSessionOrder}
@@ -1632,9 +1664,10 @@ export function WorkspaceBrowser({
                   rowState={rowState}
                   onLeaveArchivedOnly={leaveArchivedOnly}
                   startSession={startSession}
-                  open={guardedOpen}
+                  open={openRow}
                   insertWorkspaceBefore={insertWorkspaceBefore}
                   revealSessionId={revealSessionId}
+                  keptSessionId={keptSessionId}
                   onSessionRevealed={acknowledgeSessionReveal}
                   home={home}
                   t={t}

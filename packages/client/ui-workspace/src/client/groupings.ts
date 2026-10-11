@@ -102,6 +102,7 @@ export function createSessionGroupingRegistry(): SessionGroupingRegistry {
     setSessionLimit: (limit) => {
       if (!Number.isInteger(limit) || limit < 1) throw new Error(`ui-workspace: a group's session limit must be a positive whole number, got ${String(limit)}`)
       sessionLimit.set(limit)
+      // A caller that replaces its own value sets the new one before withdrawing the old.
       return () => {
         if (sessionLimit.getSnapshot() === limit) sessionLimit.set(DEFAULT_SESSION_LIMIT)
       }

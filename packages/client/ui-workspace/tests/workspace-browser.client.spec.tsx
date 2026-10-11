@@ -1518,7 +1518,8 @@ describe('WorkspaceBrowser', () => {
       expect(b.store.getSnapshot().groupExpansion).toEqual({ root: true, research: true })
       const targetRow = screen.getByText('Research notes').closest('[role="treeitem"]')
       expect(targetRow).toBeTruthy()
-      expect(screen.getByRole('button', { name: '收起' })).toBeTruthy()
+      // The opened row shows beside the five newest; the group is not expanded for it.
+      expect(screen.queryByRole('button', { name: '收起' })).toBeNull()
       expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
       expect(scrollIntoView.mock.instances.at(-1)).toBe(targetRow)
     } finally {
@@ -1555,7 +1556,7 @@ describe('WorkspaceBrowser', () => {
     })
     const targetRow = screen.getByText('Needle session').closest('[role="treeitem"]')
     expect(scrollIntoView.mock.instances.at(-1)).toBe(targetRow)
-    expect(screen.getByRole('button', { name: '收起' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '收起' })).toBeNull()
   })
 
   it('waits for the reconnect baseline before resolving reveal membership', async () => {
@@ -1591,7 +1592,7 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().groupExpansion).not.toHaveProperty('stale')
   })
 
-  it('reveals every session when a search result is beyond the initial five-row quota', () => {
+  it('shows a search result beyond the five-row quota beside the newest five until another row is opened', () => {
     const items = Array.from({ length: 17 }, (_, index) => summary(`session-${index + 1}`, 17 - index))
     const b = mount({
       useSessions: hook(sessionState(items)),
@@ -1603,19 +1604,19 @@ describe('WorkspaceBrowser', () => {
 
     expect(b.props.open).toHaveBeenCalledWith(sid('session-11'))
     expect(input.value).toBe('')
-    for (const item of items) expect(screen.getByText(item.displayTitle)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /展开其余/ })).toBeNull()
-    expect(scrollIntoView.mock.instances.at(-1)).toBe(screen.getByText('session-11').closest('[role="treeitem"]'))
-    fireEvent.click(screen.getByRole('button', { name: '收起' }))
+    for (const item of items.slice(0, 5)) expect(screen.getByText(item.displayTitle)).toBeTruthy()
     expect(screen.queryByText('session-6')).toBeNull()
+    expect(scrollIntoView.mock.instances.at(-1)).toBe(screen.getByText('session-11').closest('[role="treeitem"]'))
+    // The group keeps its limit and saves no expansion.
+    expect(screen.getByRole('button', { name: '展开其余 11 个会话' })).toBeTruthy()
+    expect(b.store.getSnapshot().sessionLimits).toBeUndefined()
+    // Opening another row lets it go.
+    fireEvent.click(screen.getByText('session-1'))
     expect(screen.queryByText('session-11')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '展开其余 12 个会话' }))
-    expect(screen.getByText('session-10')).toBeTruthy()
-    expect(screen.queryByText('session-11')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 7 个会话' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '展开其余 12 个会话' })).toBeTruthy()
   })
 
-  it('keeps the bounded group projection when the revealed result is already within it', () => {
+  it('counts the revealed result outside the quota, so one more idle row fits', () => {
     const sessions = sessionState([
       summary('target', 6, { displayTitle: 'Needle session' }),
       summary('second', 5),
@@ -1633,8 +1634,8 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('treeitem'))
 
     expect(screen.getByText('Needle session')).toBeTruthy()
-    expect(screen.queryByText('hidden')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 1 个会话' })).toBeTruthy()
+    expect(screen.getByText('hidden')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /展开其余/ })).toBeNull()
     expect(scrollIntoView).toHaveBeenCalledOnce()
   })
 
@@ -2877,8 +2878,26 @@ describe('a registered grouping', () => {
       grouped()
       fireEvent.change(screen.getByPlaceholderText('搜索会话名称'), { target: { value: 'a1' } })
       fireEvent.click(screen.getByRole('treeitem'))
+      // The opened row shows beside the newest five; nothing is saved.
+      expect(rows()).toEqual(['b1', 'a8', 'a7', 'a6', 'a5', 'a4', 'a1'])
+      expect(screen.getByRole('button', { name: '展开其余 2 个会话' })).toBeTruthy()
+    })
+
+    it('never shows fewer than the default for a saved number below it, and forgets an expansion once nothing overflows', () => {
+      const b = grouped()
+      b.store.actions.setSessionLimit('letter', 'a', 2)
+      rerender(b, {})
+      expect(rows()).toEqual(['b1', 'a8', 'a7', 'a6', 'a5', 'a4'])
+      // Three archived leave five: the saved expansion goes with the overflow control.
+      b.store.actions.setSessionLimit('letter', 'a', Number.MAX_SAFE_INTEGER)
+      rerender(b, { useWorkspaces: hook(workspaceState([], [sid('a1'), sid('a2'), sid('a3')])) })
+      expect(screen.queryByRole('button', { name: '收起' })).toBeNull()
+      expect(b.store.getSnapshot().sessionLimits).toEqual({ letter: {} })
+    })
+
+    it('keeps the main view\'s Session listed while a panel covers the conversation', () => {
+      grouped({ usePanelInfo: selector => selector({ activePanelId: 'assistants' as MainPanelId }) }, many({ a1: { retainedBy: { mainView: 1 } } }))
       expect(rows()).toContain('a1')
-      expect(screen.getByRole('button', { name: '收起' })).toBeTruthy()
     })
   })
 

@@ -69,9 +69,11 @@ export function apply(ctx: ClientContext): void {
           const sync = (): void => {
             const next = read(brandSettings.getSnapshot().value)
             if (next === current) return
-            withdraw?.()
+            // The new value is in place before the old one is withdrawn, so the sidebar never shows its own default between them.
+            const previous = withdraw
             current = next
             withdraw = next === undefined ? undefined : apply(next)
+            previous?.()
           }
           sync()
           const stop = brandSettings.subscribe(sync)

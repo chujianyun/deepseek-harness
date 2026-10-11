@@ -1,0 +1,7 @@
+# For `session-group-limit.e2e.ts`: the MO brand row with non-default sidebar settings, so the spec
+# sees the brand configuration reach the Session list (three rows per group, grouped by date).
+- id: ui-brand-mo
+  disabled: false
+  config:
+    defaultSessionGrouping: date
+    sessionsPerGroup: 3
