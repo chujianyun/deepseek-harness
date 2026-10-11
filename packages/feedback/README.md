@@ -23,6 +23,7 @@ The feedback group collects human opinions about the harness's work: users can s
 | Package | Role |
 |---|---|
 | [`command-feedback`](command-feedback/README.md) | Session-level feedback: the `/feedback` command, the `sessionFeedback` Remote behind the Web dialog, and the fixed category taxonomy, all without a model turn |
+| [`feedback-report`](feedback-report/README.md) | Problem reports from Desktop to the super administrators of the user center, with environment details, images, and optionally the Session conversation |
 | [`message-feedback`](message-feedback/README.md) | Per-message ratings, categories, and notes, served to product surfaces through the `messageFeedback` service |
 
 Session remarks are a one-way signal: recording one is safe at any point in a conversation and never changes what the model sees. With a feedback-gated sharing policy, recording a session remark is what releases the session for sharing.

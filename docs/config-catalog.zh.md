@@ -1476,6 +1476,25 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-agent-team -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-feedback-report -->
+<a id="deepseek-aidsh-feedback-report"></a>
+
+## `@deepseek-ai/dsh-feedback-report`
+
+- `inject`: `hubAccount` · `sessionQuery`
+- `source`: [`packages/feedback/feedback-report/src/index.ts:36`](../packages/feedback/feedback-report/src/index.ts)
+
+```ts config-catalog
+/** Deployment configuration. */
+export interface Config {
+  /** Version of the Desktop client, shown to administrators. */
+  appVersion?: string
+  /** Deadline of each report request, in milliseconds. */
+  requestTimeoutMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-feedback-report -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-file-reference-local -->
 <a id="deepseek-aidsh-file-reference-local"></a>
 

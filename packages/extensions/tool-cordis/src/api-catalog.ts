@@ -1377,6 +1377,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'feedbackReport',
+    summary: 'Host owner of problem reports and of the `feedbackReport` Remote namespace.',
+    description: 'Host owner of problem reports and of the `feedbackReport` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote async submit(request: FeedbackReportRequest): Promise<FeedbackReportReceipt>',
+        description: 'Report a problem to the super administrators of the user center.',
+        parameters: [{ name: 'request', description: 'category, description, images, and the Session it is about.' }],
+        returns: 'the stored report.',
+        throws: ['RemoteError `feedback-report/signed-out`, `feedback-report/invalid` (`reason` names the broken limit), `feedback-report/refused` (the user center\'s reason), or `feedback-report/unreachable`.'],
+      },
+    ],
+  },
+  {
     key: 'fileReferences',
     summary: 'Host capability for cancellable file-reference discovery.',
     description: 'Host capability for cancellable file-reference discovery.',
@@ -2114,7 +2128,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'immutable items or a definite persistence miss.',
       },
       {
-        signature: '@Remote(\'put\') put(request: MessageFeedbackPutRequest): Promise<MessageFeedbackPutResult>',
+        signature: '@Remote(\'put\') async put(request: MessageFeedbackPutRequest): Promise<MessageFeedbackPutResult>',
         description: 'Create or replace feedback after checking its current version. Matching no-ops retain the version and append no event.',
         parameters: [{ name: 'request', description: 'Target, desired value, and observed item version.' }],
         returns: 'the durable item or an explicit business failure.',
@@ -4906,6 +4920,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'inspection', description: 'committed canonical prefix, including the feedback as its last event.' }],
   },
   {
+    name: 'feedback/message-recorded',
+    mode: 'emit',
+    signature: '\'feedback/message-recorded\'(sessionId: SessionId, item: MessageFeedbackItem): void',
+    summary: 'Feedback for one message changed: `put` committed a new or replaced item.',
+    description: 'Feedback for one message changed: `put` committed a new or replaced item. Fires after the write is durable and its Session queue is released, for live and cold Sessions alike; matching no-ops and deletions do not fire it.',
+    parameters: [{ name: 'sessionId', description: 'Session that owns the message.' }, { name: 'item', description: 'the committed item, cloned for the listener.' }],
+  },
+  {
     name: 'fs/edit-intent',
     mode: 'waterfall',
     signature: '\'fs/edit-intent\'(target: FsTarget, actor: object | undefined, next: () => { version: FsVersion } | undefined | Promise<{ version: FsVersion } | undefined>): Promise<{ version: FsVersion } | undefined>',
@@ -6260,6 +6282,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FeedbackCategory',
     declaration: 'export type FeedbackCategory = \'task-result\' | \'instruction-following\' | \'product-interaction\' | \'service-stability\' | \'resource-cost\' | \'security-privacy-permission\' | \'other\';',
+  },
+  {
+    name: 'FeedbackReportCategory',
+    declaration: 'export type FeedbackReportCategory = \'error\' | \'lag\' | \'unavailable\' | \'wrong-result\' | \'other\';',
+  },
+  {
+    name: 'FeedbackReportId',
+    declaration: 'export type FeedbackReportId = Branded<\'FeedbackReportId\'>;',
+  },
+  {
+    name: 'FeedbackReportImage',
+    declaration: 'export interface FeedbackReportImage {\n    readonly name: string;\n    readonly contentType: string;\n    readonly data: string;\n}',
+  },
+  {
+    name: 'FeedbackReportReceipt',
+    declaration: 'export interface FeedbackReportReceipt {\n    readonly id: FeedbackReportId;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'FeedbackReportRequest',
+    declaration: 'export interface FeedbackReportRequest {\n    readonly category: FeedbackReportCategory;\n    readonly description: string;\n    readonly sessionId?: SessionId | null;\n    readonly attachSession: boolean;\n    readonly images: readonly FeedbackReportImage[];\n    readonly uiLanguage?: string;\n}',
   },
   {
     name: 'FiberState',

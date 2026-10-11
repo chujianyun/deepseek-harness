@@ -240,6 +240,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | Package | Config | Description |
 |---|---|---|
 | `@deepseek-ai/dsh-command-feedback` | no | Log-only session feedback: the record event, the sessionFeedback Host Remote, and the human-facing slash command |
+| `@deepseek-ai/dsh-feedback-report` | yes | Report a problem from Desktop to the super administrators of the user center: category, description, images, environment, and optionally the Session conversation |
 | `@deepseek-ai/dsh-message-feedback` | yes | Canonical Session-log ratings and notes for finalized assistant messages |
 
 ## fs

@@ -72,6 +72,14 @@
       config:
         maxNoteBytes: 8192
 
+    # Problem reports for Desktop: posted to the user center of the Hub sign-in
+    # for its super administrators; mounted exactly when hub-account is.
+    - id: feedback-report
+      name: '@deepseek-ai/dsh-feedback-report'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+      config:
+        appVersion: !!js process.env.DSH_CLIENT_VERSION
+
     # Browser Session export: `/export` command plus the shared download dialog.
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'

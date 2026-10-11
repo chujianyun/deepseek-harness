@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/feedback/feedback-report/README.md
+/:
+  en: 9d6a626e93e2d633
+  zh: 9837ba84c7e0f5e8
+/feedback-report:
+  en: 820165ba202456dd
+  zh: 38ad4a7945d3c6d3
+/feedback-report/summary:
+  en: d5277da591a77225
+  zh: edb8eaf00ba80a16
+/feedback-report/table-of-contents:
+  en: 4e53164159b5ce41
+  zh: 89582dc0294d0776
+/feedback-report/use-this-package:
+  en: d87250d8705a8d6a
+  zh: a70f51b06f41e353
+/feedback-report/use-this-package/what-a-report-carries:
+  en: 177c330eca180f30
+  zh: f0718c8ce7e4061c
+/feedback-report/use-this-package/errors:
+  en: 1aff9d354e548e83
+  zh: fd5532484777dbd8
+/feedback-report/model-experience:
+  en: 718ea8f817fa6ae3
+  zh: 0af84922e3e1ffa6
+/feedback-report/model-experience/kv-cache-effect:
+  en: e277b74f9b721f5e
+  zh: 014c91db5c8570d0
+/feedback-report/known-limitations-and-deferred-work:
+  en: 5239b19fc773b5b8
+  zh: 82dd2e82440f8190
+/feedback-report/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 3bb0c20c93f16f98

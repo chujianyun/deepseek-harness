@@ -1289,6 +1289,9 @@ importers:
       '@deepseek-ai/dsh-embedding':
         specifier: workspace:*
         version: link:../../llm/embedding
+      '@deepseek-ai/dsh-feedback-report':
+        specifier: workspace:*
+        version: link:../../feedback/feedback-report
       '@deepseek-ai/dsh-file-reference':
         specifier: workspace:*
         version: link:../../context/file-reference
@@ -2796,6 +2799,9 @@ importers:
       '@deepseek-ai/dsh-embedding':
         specifier: workspace:*
         version: link:../../llm/embedding
+      '@deepseek-ai/dsh-feedback-report':
+        specifier: workspace:*
+        version: link:../../feedback/feedback-report
       '@deepseek-ai/dsh-file-reference':
         specifier: workspace:*
         version: link:../../context/file-reference
@@ -9627,6 +9633,49 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:*
         version: link:../../core/session
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:*
+        version: link:../../typert/protocol
+
+  packages/feedback/feedback-report:
+    dependencies:
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: workspace:*
+        version: link:../../api/session-controller
+      '@deepseek-ai/dsh-assistants':
+        specifier: workspace:*
+        version: link:../../assistant/assistants
+      '@deepseek-ai/dsh-hub-account':
+        specifier: workspace:*
+        version: link:../../credentials/hub-account
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:*
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-message-feedback':
+        specifier: workspace:*
+        version: link:../message-feedback
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:*
+        version: link:../../core/session
+      '@deepseek-ai/dsh-session-query':
+        specifier: workspace:*
+        version: link:../../session-query/session-query
+      '@deepseek-ai/dsh-session-share':
+        specifier: workspace:*
+        version: link:../../session-query/session-share
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:*
         version: link:../../typert/protocol

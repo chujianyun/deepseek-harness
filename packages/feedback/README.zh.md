@@ -23,6 +23,7 @@ feedback 组收集用户对 harness 工作成果的意见：用户可以提交�
 | 包 | 职责 |
 |---|---|
 | [`command-feedback`](command-feedback/README.zh.md) | 会话级反馈：`/feedback` 命令、Web 弹窗背后的 `sessionFeedback` Remote，以及固定分类表，均无需模型轮次 |
+| [`feedback-report`](feedback-report/README.zh.md) | 从桌面端向用户中心的超管报告问题，附环境信息、图片，可选附上会话内容 |
 | [`message-feedback`](message-feedback/README.zh.md) | 逐消息评分、分类与备注，通过 `messageFeedback` 服务提供给产品界面 |
 
 会话评价是单向信号：在对话的任何时刻记录它都是安全的，且绝不会改变模型看到的内容。在 feedback-gated 共享策略下，记录会话评价会触发放行，使该会话可供共享。

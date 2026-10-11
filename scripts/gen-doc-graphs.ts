@@ -524,6 +524,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns per-assistant-message feedback in the canonical Session log, target validation, per-item compare-and-set, and the Host unary Remote contract. Feedback stays outside model history; log export follows the consumer policy.',
   },
   {
+    key: 'feedbackReport',
+    pkg: 'feedback-report',
+    title: 'Problem reports to the user center',
+    mode: 'core',
+    note: "Posts a user's problem report with environment details, images, and optionally a Session's conversation snapshot to the user center of the Hub sign-in for its super administrators.",
+  },
+  {
     key: 'sessionFeedback',
     pkg: 'command-feedback',
     title: 'Session-level feedback recorder',

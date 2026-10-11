@@ -109,6 +109,9 @@
       "path": "../../session-query/session-share"
     },
     {
+      "path": "../../feedback/feedback-report"
+    },
+    {
       "path": "../../connector/connectors"
     },
     {

@@ -315,6 +315,7 @@
     { "path": "./packages/knowledge/knowledge-selection" },
     { "path": "./packages/schedule/automation-tasks" },
     { "path": "./packages/session-query/session-share" },
+    { "path": "./packages/feedback/feedback-report" },
     { "path": "./packages/connector/connectors" },
     { "path": "./packages/assistant/assistants" },
     { "path": "./packages/ecommerce/ecommerce-accounts" },

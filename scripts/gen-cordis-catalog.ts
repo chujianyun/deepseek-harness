@@ -106,6 +106,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   lsp: 'lsp.md',
   messageFeedback: 'feedback.md',
   sessionFeedback: 'feedback.md',
+  feedbackReport: 'feedback.md',
   permissionPresets: 'permission-presets.md',
   planMode: 'plan.md',
   terminals: 'terminal.md',
@@ -919,6 +920,9 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   AutomationTaskCreateRequest: 'the automation-task request is owned by packages/schedule/automation-tasks/README.md and src/types.ts',
   AutomationTaskCreateValue: 'the automation-task result is owned by packages/schedule/automation-tasks/README.md and src/types.ts',
+  FeedbackReportRequest: 'the problem-report request is owned by packages/feedback/feedback-report/README.md and src/types.ts',
+  FeedbackReportImage: 'the problem-report request is owned by packages/feedback/feedback-report/README.md and src/types.ts',
+  FeedbackReportReceipt: 'the problem-report result is owned by packages/feedback/feedback-report/README.md and src/types.ts',
   SessionShareTarget: 'the Session-share request is owned by packages/session-query/session-share/README.md and src/types.ts',
   SessionShareRequest: 'the Session-share request is owned by packages/session-query/session-share/README.md and src/types.ts',
   SessionShareStatus: 'the Session-share result is owned by packages/session-query/session-share/README.md and src/types.ts',
