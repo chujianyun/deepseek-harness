@@ -221,6 +221,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     browser: (grant, id) => this.modelBrowser(grant, id),
     buyer: (grant, platform) => this.modelBuyer(grant, platform),
     risk: (grant, id) => this.modelRisk(grant, id),
+    signedOut: (grant, id) => this.modelSignedOut(grant, id),
     memory: grant => this.modelMemory(grant),
     remember: (grant, body) => this.modelRemember(grant, body),
   })
@@ -830,7 +831,9 @@ export class EcommerceAccountsService extends TypertRemoteService {
    * the platform's risk control shows.
    */
   private rulesFor(entry: Entry): GuardRules {
-    if (entry.kind === 'merchant') return { page: url => !PUBLIC_PAGE.test(url), risk: () => {} }
+    const spec = specOf(entry.platform, entry.kind)
+    const signIn = { signInPage: (url: string) => spec.isLoginPage(url), signedOut: () => { void this.expire(entry.id) } }
+    if (entry.kind === 'merchant') return { page: url => !PUBLIC_PAGE.test(url), risk: () => {}, ...signIn }
     // The watch ends before its account can be deleted or its tenant switched, so the account is always listed.
     const current = (): Entry => this.entries.find(item => item.id === entry.id) as Entry
     return {
@@ -844,6 +847,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
         this.ctx.logger.warn(`ecommerce-accounts: risk control on ${entry.id} at ${url}`)
         this.rest(current())
       },
+      ...signIn,
     }
   }
 
@@ -868,6 +872,37 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const rested = this.rest(entry)
     const body = JSON.stringify({ id: rested.id, account: rested.account, cooldownUntil: rested.cooldownUntil }, null, 2)
     return Promise.resolve({ status: 200, body })
+  }
+
+  /**
+   * Answer `dsh-ecommerce signed-out <id>`: a script found the account it took over signed out, so
+   * DSH records that at once instead of waiting for the next check.
+   */
+  private async modelSignedOut(grant: Grant, accountId: string): Promise<BridgeReply> {
+    if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
+    const entry = this.entries.find(item => item.id === accountId)
+    if (entry === undefined || this.leases.get(entry.id)?.callId !== grant.callId) {
+      return refused(`DSH: a sign-out can only be reported for an account this shell call took over, not "${accountId}".`)
+    }
+    await this.expire(entry.id)
+    return { status: 200, body: JSON.stringify({ id: entry.id, status: 'signed-out' }, null, 2) }
+  }
+
+  /**
+   * Record that a signed-in account is signed out now, as a check would: its saved answer and status
+   * change, and the Desktop announces it expired. An account that is not shown signed in stays as it is.
+   */
+  private expire(accountId: string): Promise<void> {
+    return this.serialized(async () => {
+      const entry = this.entries.find(item => item.id === accountId)
+      if (entry === undefined || this.statuses.get(accountId) !== 'signed-in') return
+      this.ctx.logger.warn(`ecommerce-accounts: ${accountId} found signed out during a task`)
+      const checkedAt = new Date().toISOString()
+      this.entries = this.entries.map(item => item.id === accountId ? { ...item, signedIn: false, checkedAt } : item)
+      this.statuses.set(accountId, 'signed-out')
+      await this.saveLedger(this.requireTenant())
+      this.changed()
+    })
   }
 
   /** Replace an account's ledger row now, and save it. */

@@ -125,6 +125,17 @@ export async function reportRisk(accountId: string, run = runDshEcommerce): Prom
   return `DSH 已让买家号 ${account} 冷却到 ${cooldownUntil}，期间不会再被挑选。`
 }
 
+/**
+ * Tell DSH that the account this bash call took over turned out signed out, so DSH shows it expired
+ * at once instead of handing it over again.
+ * @param accountId - the account.
+ * @param run - runs `dsh-ecommerce`.
+ */
+export async function reportSignedOut(accountId: string, run = runDshEcommerce): Promise<void> {
+  // DSH out of reach changes nothing about the stop, whose message already tells the user to sign in again.
+  await run(['signed-out', accountId])
+}
+
 export type { CategoryMemory, EcommercePlatform, PublishMemory }
 
 /**

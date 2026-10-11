@@ -3,8 +3,8 @@
 // employee adds a Tmall merchant account, which opens the sign-in page in that account's own
 // Chrome, and the dialog turns to success once the platform answers with the account's nick. A
 // second add of the same account is refused, and the account name is corrected to the one Tmall
-// reports. A Pinduoduo shop signs in the same way; when its sign-in ends, an app-wide notice leads
-// back to Settings. Deleting an account closes its Chrome and removes its browser data.
+// reports. A Pinduoduo shop signs in the same way; when a task finds its sign-in ended, an app-wide
+// notice leads back to Settings. Deleting an account closes its Chrome and removes its browser data.
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -117,9 +117,14 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     const pddRow = section.getByRole('button', { name: '查看 拼多多小店 的详情' })
     await expect.poll(() => pddRow.textContent()).toContain('已登录')
 
-    // Its sign-in ends: the next check the user asks for finds it signed out, and a notice leads back to Settings.
+    // Its sign-in ends during a task: the task's page lands on the sign-in page, and a notice leads back to Settings.
+    const task = bashCall('pdd-1')
+    const pddId = (await scaffold.ctx.ecommerceAccounts.getState()).accounts[1]!.id
+    const pddTaken = await fetch(`${scaffold.ctx.shellEnv.collect(task).DSH_ECOMMERCE_URL!}/browser?id=${pddId}`)
+    const { cdpUrl: pddCdpUrl } = JSON.parse(await pddTaken.text()) as { cdpUrl: string }
     await rm(join(pddDir, 'user-data', 'fake-signed-in'))
-    await scaffold.ctx.ecommerceAccounts.checkAccounts()
+    expect(await openPages(pddCdpUrl, 'https://mms.pinduoduo.com/home/')).toEqual(['ok'])
+    scaffold.ctx.emit('tools/result', task, { isError: false, value: { exitCode: 3 } } as object as ToolExecutionResult)
     const notice = page.getByRole('alert').filter({ hasText: '电商账号「拼多多小店」的登录已失效' })
     await notice.waitFor({ timeout: 10_000 })
     await page.keyboard.press('Escape')

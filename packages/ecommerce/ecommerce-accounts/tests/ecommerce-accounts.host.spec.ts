@@ -764,7 +764,7 @@ describe('e-commerce accounts for the model', () => {
     ])
     expect(listed.stdout).not.toMatch(/cookie|user-data|ecommerce\//iu)
     const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id>'
-      + ' | dsh-ecommerce memory | dsh-ecommerce remember <json-file>\n'
+      + ' | dsh-ecommerce signed-out <account-id> | dsh-ecommerce memory | dsh-ecommerce remember <json-file>\n'
     expect(await runCommand(env, varsOf(env, exec))).toMatchObject({ code: 2, stderr: usage })
     expect(await runCommand(env, varsOf(env, exec), 'browser')).toMatchObject({ code: 2, stderr: usage })
     expect(await runCommand(env, varsOf(env, exec), 'risk')).toMatchObject({ code: 2, stderr: usage })
@@ -773,6 +773,7 @@ describe('e-commerce accounts for the model', () => {
     expect(await (await fetch(`${url}/other`)).text()).toBe('DSH: unknown command "other".')
     expect(await (await fetch(`${url}/browser`)).text()).toBe('DSH: there is no e-commerce account "". Run dsh-ecommerce accounts to list them.')
     expect(await (await fetch(`${url}/risk`)).text()).toBe('DSH: risk control can only be reported for a buyer account this shell call took over, not "".')
+    expect(await (await fetch(`${url}/signed-out`)).text()).toBe('DSH: a sign-out can only be reported for an account this shell call took over, not "".')
     // Once the call ends, its address reaches nothing.
     const vars = env.ctx.shellEnv.collect(exec)
     endCall(env, exec)
@@ -935,7 +936,9 @@ describe('e-commerce accounts for the model', () => {
 
   it('answers a command that fails instead of leaving the script waiting', async () => {
     const broken = () => Promise.reject(new Error('broken'))
-    const bridge = new Bridge({ accounts: broken, browser: broken, buyer: broken, risk: broken, memory: broken, remember: broken })
+    const bridge = new Bridge({
+      accounts: broken, browser: broken, buyer: broken, risk: broken, signedOut: broken, memory: broken, remember: broken,
+    })
     const stop = await bridge.start()
     try {
       const url = bridge.urlFor({ callId: 'c-1', tenantId: 't-a' })
@@ -1013,6 +1016,57 @@ describe('buyer accounts and risk protection', () => {
     expect(await openPages(cdpUrl, 'https://myseller.taobao.com/home.htm?risk=1', 'https://myseller.taobao.com/home.htm'))
       .toEqual(['ok', 'net::ERR_BLOCKED_BY_CLIENT'])
     expect((await env.service.getState()).accounts[0]!.cooldownUntil).toBeUndefined()
+  })
+
+  it('records an account signed out once a task\'s tab lands on the sign-in page, not a frame or a page passing through', async () => {
+    const env = await setup()
+    await env.service.addAccount(merchant)
+    const { accountId } = await env.service.addAccount({ ...merchant, platform: 'pinduoduo' })
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    await env.settle(s => s.accounts[1]!.status === 'signed-in')
+    const exec = bashCall('c-1')
+    const { cdpUrl } = JSON.parse((await runCommand(env, varsOf(env, exec), 'browser', accountId)).stdout) as { cdpUrl: string }
+    // Signed in, a page with a sign-in frame and one passing through a sign-in host change nothing.
+    expect(await openPages(cdpUrl, 'https://mms.pinduoduo.com/home/', 'https://mms.pinduoduo.com/home/?sso=1')).toEqual(['ok', 'ok'])
+    await new Promise(resolve => setTimeout(resolve, 200))
+    expect((await env.service.getState()).accounts[1]!.status).toBe('signed-in')
+    // The session ends: the next page lands on the sign-in page, which still loads for the task.
+    await rm(join(env.browserDir(accountId), 'user-data', 'fake-signed-in'))
+    expect(await openPages(cdpUrl, 'https://mms.pinduoduo.com/home/')).toEqual(['ok'])
+    const state = await env.settle(s => s.accounts[1]!.status === 'signed-out')
+    expect(state.accounts[1]).toMatchObject({ expired: true })
+    const ledger = JSON.parse(await readFile(join(env.home, 'ecommerce', 't-a', 'accounts.json'), 'utf8')) as { accounts: { signedIn?: boolean }[] }
+    expect(ledger.accounts.map(account => account.signedIn)).toEqual([undefined, false])
+    // The next task is told at once, without standing by the earlier answer.
+    endCall(env, exec)
+    expect((await runCommand(env, varsOf(env, bashCall('c-2')), 'browser', accountId)).stderr).toContain('is signed out')
+  })
+
+  it('records a sign-out a script reports for the account its call took over, and refuses any other', async () => {
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    await env.settle(s => s.accounts[0]!.status === 'signed-in')
+    const exec = bashCall('c-1')
+    const other = bashCall('c-2')
+    expect(await runCommand(env, varsOf(env, exec), 'signed-out', accountId)).toMatchObject({
+      code: 1, stderr: `DSH: a sign-out can only be reported for an account this shell call took over, not "${accountId}".\n`,
+    })
+    expect((await runCommand(env, varsOf(env, exec), 'browser', accountId)).code).toBe(0)
+    expect((await runCommand(env, varsOf(env, other), 'signed-out', accountId)).code).toBe(1)
+    expect((await runCommand(env, varsOf(env, exec), 'signed-out')).code).toBe(2)
+    const reported = await runCommand(env, varsOf(env, exec), 'signed-out', accountId)
+    expect(JSON.parse(reported.stdout)).toEqual({ id: accountId, status: 'signed-out' })
+    expect((await env.service.getState()).accounts[0]).toMatchObject({ status: 'signed-out', expired: true })
+    // Reported again, it stays as it is.
+    const { checkedAt } = (await env.service.getState()).accounts[0]!
+    expect((await runCommand(env, varsOf(env, exec), 'signed-out', accountId)).code).toBe(0)
+    expect((await env.service.getState()).accounts[0]!.checkedAt).toBe(checkedAt)
+    env.hub.set('t-b')
+    await env.settle(s => s.tenantId === 't-b')
+    expect((await runCommand(env, varsOf(env, exec), 'signed-out', accountId)).stderr).toContain('signed out of the user center')
   })
 
   it('counts a buyer account\'s pages, stops at the daily limit, refuses it for the rest of the day, and lets it again the next day', async () => {

@@ -38,6 +38,7 @@ DSH watches the browser while your bash call uses it; a page it refuses fails to
 - A buyer account opens at most \`pageLimit\` pages a day; every page you open counts, so open only the pages you need.
 - When the platform's risk control shows (a slider or verification page), DSH stops the task's pages at once and rests the buyer account (72 hours by default). Stop: do not retry, do not solve the verification, and do not switch to another account. Tell the user.
 - Risk control met through the platform's APIs (a call answered with a slider or \`RGV587\`) loads no page, so DSH cannot see it: report it with \`dsh-ecommerce risk <id>\` in the same bash call, which rests that buyer account the same way.
+- When a page lands on the platform's sign-in page, DSH records the account as signed out, and the user is told it expired. A sign-out found only through the platform's APIs loads no such page: report it with \`dsh-ecommerce signed-out <id>\` in the same bash call. Never sign in on the user's behalf.
 
 ## Choosing a merchant account
 
@@ -47,5 +48,6 @@ DSH watches the browser while your bash call uses it; a page it refuses fails to
 - Use one account per task. If it fails, do not switch to another store.
 - If none is signed in, stop and ask the user to add or sign in to the account in DSH Settings → E-commerce accounts (设置 → 电商账号).
 - When \`dsh-ecommerce browser\` says the account is signed out, could not be checked, or is in use, stop and tell the user what it said.
+- When an account turns out signed out during the task, stop using it. In your reply, name its store and ask the user to sign in again in DSH Settings → E-commerce accounts (设置 → 电商账号). A task across several stores skips that store and goes on with the others.
 - Only read data. Do not change anything on the platform.
 `
