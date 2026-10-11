@@ -75,6 +75,13 @@ export interface UiWorkspace {
    */
   archiveSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void>
   /**
+   * Delete a Session permanently on the Host, with its subagent descendants. When it is the
+   * current selection the main view leaves it first, since the Host unloads it.
+   * @param sessionId - Session to delete.
+   * @throws with the Host's refusal as `code: message`; the Session then still exists.
+   */
+  deleteSession(sessionId: SessionId): Promise<void>
+  /**
    * Unarchive a Session, restoring it to its recorded Workspace position.
    * @param sessionId - Session to unarchive.
    */
@@ -311,6 +318,12 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   async unarchiveSession(sessionId: SessionId): Promise<void> {
     await this.workspaces.unarchiveSession(sessionId)
+  }
+
+  async deleteSession(sessionId: SessionId): Promise<void> {
+    if (this.mainReference?.sessionId === sessionId) this.clearMain()
+    const result = await this.sessions.delete(sessionId)
+    if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
   }
 
   async pinSession(sessionId: SessionId): Promise<void> {

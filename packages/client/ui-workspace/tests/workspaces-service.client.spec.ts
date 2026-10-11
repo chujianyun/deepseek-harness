@@ -1308,6 +1308,24 @@ describe('UiWorkspaceService', () => {
     expect(b.workspaces.archiveCalls).toEqual([idle, idle])
   })
 
+  it('leaves a selected Session before deleting it, deletes through the Session Controller, and reports a refusal by its code', async () => {
+    const b = bench()
+    b.uiWorkspace.openSession(sid('current'))
+    await b.uiWorkspace.deleteSession(sid('current'))
+    expect(b.sessions.retained[0]!.release).toHaveBeenCalledOnce()
+    expect(b.sessions.delete).toHaveBeenCalledExactlyOnceWith('current')
+
+    // Another Session's deletion leaves the selection alone.
+    b.uiWorkspace.openSession(sid('kept'))
+    await b.uiWorkspace.deleteSession(sid('other'))
+    expect(b.sessions.retained[1]!.release).not.toHaveBeenCalled()
+
+    b.sessions.delete.mockResolvedValueOnce({
+      ok: false, error: new RemoteError('session/writer-held', 'still being written', { sessionId: sid('other') }),
+    })
+    await expect(b.uiWorkspace.deleteSession(sid('other'))).rejects.toThrow('session/writer-held: still being written')
+  })
+
   it('forwards unarchive commands and preserves failures', async () => {
     const idle = sid('idle')
     const b = bench()
