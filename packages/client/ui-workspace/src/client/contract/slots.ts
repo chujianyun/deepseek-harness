@@ -236,6 +236,8 @@ export type WorkspaceBrowserInjected = {
     groupings: HostObservable<readonly SessionGrouping[]>
     /** The grouping shown until the user picks one. */
     defaultGrouping: HostObservable<string>
+    /** Idle Session rows a group shows before its overflow control. */
+    sessionLimit: HostObservable<number>
   }
   /** Open the browser search and focus its input. */
   requestSearch: () => void

@@ -61,6 +61,25 @@ describe('the default grouping', () => {
   })
 })
 
+describe('the row limit of a group', () => {
+  it('is five until a caller sets a positive whole number, and returns when that caller leaves', () => {
+    const registry = createSessionGroupingRegistry()
+    expect(registry.sessionLimit.getSnapshot()).toBe(5)
+    const restoreEight = registry.setSessionLimit(8)
+    expect(registry.sessionLimit.getSnapshot()).toBe(8)
+    const restoreThree = registry.setSessionLimit(3)
+    // A replaced caller leaving changes nothing.
+    restoreEight()
+    expect(registry.sessionLimit.getSnapshot()).toBe(3)
+    restoreThree()
+    expect(registry.sessionLimit.getSnapshot()).toBe(5)
+    for (const bad of [0, -1, 2.5, Number.NaN]) {
+      expect(() => registry.setSessionLimit(bad)).toThrow(`a group's session limit must be a positive whole number, got ${String(bad)}`)
+    }
+    expect(registry.sessionLimit.getSnapshot()).toBe(5)
+  })
+})
+
 describe('sections of a registered grouping', () => {
   it('orders ranked sections first, then by latest activity, with rows newest first and the same visibility rules', () => {
     const state = list(

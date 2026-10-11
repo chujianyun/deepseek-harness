@@ -124,6 +124,13 @@ export interface UiWorkspace {
    * @returns the disposer that withdraws the default.
    */
   setDefaultSessionGrouping(id: string): () => void
+  /**
+   * Set how many idle Session rows each sidebar group shows before its overflow control, for as
+   * long as the caller keeps it. Pinned, current, running, and blank rows always show.
+   * @param limit - a positive whole number; anything else throws.
+   * @returns the disposer that restores the default of five.
+   */
+  setSessionGroupLimit(limit: number): () => void
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -168,7 +175,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     private readonly sessions: ISessions,
     private readonly view: Pick<WorkspaceViewStoreActions, 'pinSessionOrder'>,
     private readonly notify: (toast: RowToast) => void,
-    private readonly groupings: Pick<SessionGroupingRegistry, 'register' | 'setDefault'>,
+    private readonly groupings: Pick<SessionGroupingRegistry, 'register' | 'setDefault' | 'setSessionLimit'>,
   ) {
     super(ctx, 'uiWorkspace')
     ctx.effect(() => {
@@ -189,6 +196,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   setDefaultSessionGrouping(id: string): () => void {
     return this.groupings.setDefault(id)
+  }
+
+  setSessionGroupLimit(limit: number): () => void {
+    return this.groupings.setSessionLimit(limit)
   }
 
   async connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId> {

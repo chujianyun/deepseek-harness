@@ -24,6 +24,8 @@ export interface BrandSettings {
   readonly quickTaskAssistant?: string
   /** Grouping the sidebar shows until the user picks one; empty or absent keeps the sidebar's own. */
   readonly defaultSessionGrouping?: string
+  /** Idle Sessions each sidebar group shows before its overflow control. */
+  readonly sessionsPerGroup?: number
 }
 
 /** Props of the `conversation.hero.dock` quick-task occupant. */

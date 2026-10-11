@@ -24,6 +24,8 @@ export interface Config {
    * `date`; empty keeps the sidebar's own default.
    */
   defaultSessionGrouping: Volatile<string>
+  /** Idle Sessions each sidebar group shows before its overflow control; pinned, current, running, and blank ones always show. */
+  sessionsPerGroup: Volatile<number>
 }
 
 /** Brand configuration projected to the browser. */
@@ -31,6 +33,7 @@ export const Config = z.object({
   quickTasks: z.array(z.union(QUICK_TASK_IDS.map(id => z.const(id)))).default([]).volatile(),
   quickTaskAssistant: z.string().default('').volatile(),
   defaultSessionGrouping: z.string().default('').volatile(),
+  sessionsPerGroup: z.natural().min(1).default(5).volatile(),
 })
 
 /**

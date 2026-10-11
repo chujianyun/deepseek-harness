@@ -8,3 +8,5 @@
     quickTaskAssistant: ecommerce
     # As shipped: the Session list starts grouped by assistant.
     defaultSessionGrouping: assistant
+    # Each group lists its five most recent Sessions before "show more".
+    sessionsPerGroup: 5

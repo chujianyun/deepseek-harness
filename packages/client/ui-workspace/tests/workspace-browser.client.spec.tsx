@@ -111,6 +111,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     useShortcuts: select => select([]),
     useGroupings: select => select([]),
     useDefaultGrouping: select => select('workspace'),
+    useSessionLimit: select => select(5),
     useWorkspaceShortcuts: bindSnapshotSelector(controls.state),
     requestSearch: controls.search,
     requestAddWorkspace: controls.add,
@@ -959,7 +960,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByRole('button', { name: '展开其余 12 个会话' })).toBeTruthy()
   })
 
-  it('keeps the blank New Session outside the five-row folding quota', () => {
+  it('keeps the blank New Session and the current Session outside the five-row folding quota', () => {
     const ordinary = Array.from({ length: 6 }, (_, index) => summary(`session-${index + 1}`, 6 - index))
     const blank = summary('blank', 7, { blank: true })
     const b = mount({
@@ -979,9 +980,11 @@ describe('WorkspaceBrowser', () => {
     rerender(b, {
       useSessions: hook(sessionState([{ ...blank, blank: false }, ...ordinary], { main: blank.id })),
     })
+    // Once started it is the current Session, which always shows and stays outside the quota.
     expect(screen.getByText('blank')).toBeTruthy()
-    expect(screen.queryByText('session-5')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 2 个会话' })).toBeTruthy()
+    expect(screen.getByText('session-5')).toBeTruthy()
+    expect(screen.queryByText('session-6')).toBeNull()
+    expect(screen.getByRole('button', { name: '展开其余 1 个会话' })).toBeTruthy()
   })
 
   it('pins the blank while collapsed drags keep an ordinary source visible', async () => {
@@ -2779,6 +2782,104 @@ describe('a registered grouping', () => {
     ready = true
     rerender(b, { useSessions: hook(sessions()) })
     expect(store.getSnapshot().groupCollapsed).toEqual({ letter: {} })
+  })
+
+  describe('with more Sessions than a section shows', () => {
+    /** Eight `a` Sessions, newest first a8..a1, plus one `b`. */
+    const many = (patch: Record<string, Partial<SessionSummary>> = {}) => sessionState([
+      ...Array.from({ length: 8 }, (_unused, index) => summary(`a${String(index + 1)}`, index + 1, patch[`a${String(index + 1)}`])),
+      summary('b1', 100),
+    ])
+    const grouped = (overrides: Partial<WorkspaceBrowserProps> = {}, sessionsState = many()) => {
+      localStorage.clear()
+      const store = createWorkspaceViewStore().create()
+      store.actions.setGroupBy('letter')
+      const b = mount({
+        useSessions: hook(sessionsState),
+        useGroupings: select => select([letter()]),
+        useStore: bindSnapshotSelector(store),
+        actions: store.actions,
+        ...overrides,
+      })
+      return { ...b, store }
+    }
+
+    it('shows the newest five, reveals the rest in steps, and shows less again', () => {
+      const b = grouped()
+      expect(rows()).toEqual(['b1', 'a8', 'a7', 'a6', 'a5', 'a4'])
+      fireEvent.click(screen.getByRole('button', { name: '展开其余 3 个会话' }))
+      expect(rows()).toEqual(['b1', 'a8', 'a7', 'a6', 'a5', 'a4', 'a3', 'a2', 'a1'])
+      // The expansion is saved with the view.
+      expect(b.store.getSnapshot().sessionLimits).toEqual({ letter: { a: Number.MAX_SAFE_INTEGER } })
+      fireEvent.click(screen.getByRole('button', { name: '收起' }))
+      expect(rows()).toEqual(['b1', 'a8', 'a7', 'a6', 'a5', 'a4'])
+      expect(b.store.getSnapshot().sessionLimits).toEqual({ letter: {} })
+    })
+
+    it('opens with a saved expansion, and folding the section forgets it', () => {
+      const b = grouped()
+      fireEvent.click(screen.getByRole('button', { name: '展开其余 3 个会话' }))
+      b.view.unmount()
+      mount({
+        useSessions: hook(many()), useGroupings: select => select([letter()]),
+        useStore: bindSnapshotSelector(b.store), actions: b.store.actions,
+      })
+      expect(rows()).toHaveLength(9)
+      fireEvent.click(screen.getByText('A'))
+      fireEvent.click(screen.getByText('A'))
+      expect(rows()).toEqual(['b1', 'a8', 'a7', 'a6', 'a5', 'a4'])
+    })
+
+    it('always shows pinned and current Sessions beyond the limit', () => {
+      grouped(
+        { useWorkspaces: hook(workspaceState([], [], [sid('a1')])) },
+        many({ a2: { retainedBy: { mainView: 1 } } }),
+      )
+      // Pinned a1 leads; the current a2 stays although it is older than the five shown.
+      expect(rows()).toEqual(['b1', 'a1', 'a8', 'a7', 'a6', 'a5', 'a4', 'a2'])
+      expect(screen.getByRole('button', { name: '展开其余 1 个会话' })).toBeTruthy()
+    })
+
+    it('follows the configured limit and steps by it', () => {
+      grouped({ useSessionLimit: select => select(2) })
+      expect(rows()).toEqual(['b1', 'a8', 'a7'])
+      fireEvent.click(screen.getByRole('button', { name: '展开其余 6 个会话' }))
+      expect(rows()).toEqual(['b1', 'a8', 'a7', 'a6', 'a5'])
+      expect(screen.getByRole('button', { name: '展开其余 4 个会话' })).toBeTruthy()
+    })
+
+    it('forgets the saved limits of sections and Workspaces that are gone', () => {
+      const b = grouped()
+      b.store.actions.setSessionLimit('letter', 'gone', 10)
+      b.store.actions.setSessionLimit('workspace', 'old-workspace', 10)
+      b.store.actions.setSessionLimit('workspace', 'alpha', 10)
+      rerender(b, { useWorkspaces: hook(workspaceState([workspace('alpha', [])])) })
+      expect(b.store.getSnapshot().sessionLimits).toEqual({ letter: {}, workspace: { alpha: 10 } })
+    })
+
+    it('saves an expansion of a Workspace group with the view', () => {
+      localStorage.clear()
+      const ids = Array.from({ length: 7 }, (_unused, index) => `s${String(index + 1)}`)
+      const state = sessionState(ids.map((id, index) => summary(id, index + 1)))
+      const b = mount({ useSessions: hook(state), useWorkspaces: hook(workspaceState([workspace('alpha', ids)])) })
+      fireEvent.click(screen.getByText('alpha'))
+      fireEvent.click(screen.getByRole('button', { name: '展开其余 2 个会话' }))
+      expect(b.store.getSnapshot().sessionLimits).toEqual({ workspace: { alpha: Number.MAX_SAFE_INTEGER } })
+      b.view.unmount()
+      mount({
+        useSessions: hook(state), useWorkspaces: hook(workspaceState([workspace('alpha', ids)])),
+        useStore: bindSnapshotSelector(b.store), actions: b.store.actions,
+      })
+      expect(screen.getByRole('button', { name: '收起' })).toBeTruthy()
+    })
+
+    it('reveals a Session opened from search that the limit hid', () => {
+      grouped()
+      fireEvent.change(screen.getByPlaceholderText('搜索会话名称'), { target: { value: 'a1' } })
+      fireEvent.click(screen.getByRole('treeitem'))
+      expect(rows()).toContain('a1')
+      expect(screen.getByRole('button', { name: '收起' })).toBeTruthy()
+    })
   })
 
   it('unfolds the section of a Session opened from search', () => {

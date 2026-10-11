@@ -44,6 +44,12 @@ type WorkspaceViewState = {
    * snapshots written before registered groupings existed.
    */
   groupCollapsed?: Record<string, Record<string, boolean>>
+  /**
+   * Idle Session rows a group shows beyond the default, keyed by view ('workspace' for the Workspace
+   * views, else the grouping id) then group key; `Number.MAX_SAFE_INTEGER` shows all. A group
+   * without an entry shows the default number. Omitted in snapshots written before limits were saved.
+   */
+  sessionLimits?: Record<string, Record<string, number>>
 }
 
 type SessionOrderSource = {
@@ -84,6 +90,15 @@ type WorkspaceViewActions = {
   setArchivedFilter: (draft: WorkspaceViewState, filter: ArchivedFilter) => void
   setGroupCollapsed: (draft: WorkspaceViewState, grouping: string, key: string, collapsed: boolean) => void
   retainGroupSections: (draft: WorkspaceViewState, grouping: string, keys: readonly string[]) => void
+  setSessionLimit: (draft: WorkspaceViewState, view: string, key: string, limit: number | undefined) => void
+}
+
+/** The view key the Workspace views save their Session row limits under. */
+export const WORKSPACE_VIEW_KEY = 'workspace'
+
+/** Keep the entries of one record whose keys pass. */
+function pick<T>(record: Readonly<Record<string, T>> | undefined, keep: (key: string) => boolean): Record<string, T> {
+  return Object.fromEntries(Object.entries(record ?? {}).filter(([key]) => keep(key)))
 }
 
 /** Copy read-only projections into the persisted mutable store representation. */
@@ -126,6 +141,10 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
         d.sessionOrderByAccount = Object.fromEntries(
           Object.entries(d.sessionOrderByAccount).filter(([key]) => retained.has(key)),
         )
+        if (d.sessionLimits?.[WORKSPACE_VIEW_KEY] !== undefined) {
+          const kept = pick(d.sessionLimits[WORKSPACE_VIEW_KEY], key => retained.has(key))
+          d.sessionLimits = { ...d.sessionLimits, [WORKSPACE_VIEW_KEY]: kept }
+        }
         delete (d as WorkspaceViewState & { sessionUpdatedAtByAccount?: unknown }).sessionUpdatedAtByAccount
       },
       syncSessionOrders: (d, orders) => {
@@ -147,14 +166,21 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
       },
       setArchivedFilter: (d, filter: ArchivedFilter) => { d.archivedFilter = filter },
       setGroupCollapsed: (d, grouping: string, key: string, collapsed: boolean) => {
-        const sections = Object.fromEntries(Object.entries(d.groupCollapsed?.[grouping] ?? {}).filter(([folded]) => folded !== key))
+        const sections = pick(d.groupCollapsed?.[grouping], folded => folded !== key)
         if (collapsed) sections[key] = true
         d.groupCollapsed = { ...d.groupCollapsed, [grouping]: sections }
       },
       retainGroupSections: (d, grouping: string, keys: readonly string[]) => {
         const retained = new Set(keys)
-        const sections = Object.fromEntries(Object.entries(d.groupCollapsed?.[grouping] ?? {}).filter(([key]) => retained.has(key)))
-        d.groupCollapsed = { ...d.groupCollapsed, [grouping]: sections }
+        d.groupCollapsed = { ...d.groupCollapsed, [grouping]: pick(d.groupCollapsed?.[grouping], key => retained.has(key)) }
+        if (d.sessionLimits?.[grouping] !== undefined) {
+          d.sessionLimits = { ...d.sessionLimits, [grouping]: pick(d.sessionLimits[grouping], key => retained.has(key)) }
+        }
+      },
+      setSessionLimit: (d, view: string, key: string, limit: number | undefined) => {
+        const limits = pick(d.sessionLimits?.[view], group => group !== key)
+        if (limit !== undefined) limits[key] = limit
+        d.sessionLimits = { ...d.sessionLimits, [view]: limits }
       },
     },
   })

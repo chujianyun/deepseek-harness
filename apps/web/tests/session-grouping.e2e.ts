@@ -15,7 +15,12 @@ const SESSIONS = [
   ['Yesterday conversation', DAY],
   ['Three days conversation', 3 * DAY],
   ['Old conversation', 10 * DAY],
+  // Six more old ones, so Earlier holds more than a group shows.
+  ...Array.from({ length: 6 }, (_unused, index) => [`Older conversation ${String(index + 2)}`, (11 + index) * DAY] as const),
 ] as const
+/** The five Earlier rows a group shows before its overflow control, newest first. */
+const EARLIER_SHOWN = ['Old conversation', ...[2, 3, 4, 5].map(n => `Older conversation ${String(n)}`)]
+const EARLIER_ALL = [...EARLIER_SHOWN, 'Older conversation 6', 'Older conversation 7']
 
 describe('web e2e: session grouping', () => {
   let scaffold: WebScaffold
@@ -59,7 +64,7 @@ describe('web e2e: session grouping', () => {
     await page.getByRole('menuitem', { name, exact: true }).click()
   }
 
-  it('sections Sessions by day under Date, keeps a folded section across reload, and switches back', async () => {
+  it('sections Sessions by day under Date, shows five per section with the rest behind show more, keeps a folded section across reload, and switches back', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-session-grouping'))
     await page.getByRole('button', { name: 'View options' }).click()
     await page.getByRole('menuitem', { name: /^Group by/u }).hover()
@@ -71,13 +76,25 @@ describe('web e2e: session grouping', () => {
       ['Today', ['New Session', 'Today conversation']],
       ['Yesterday', ['Yesterday conversation']],
       [threeDaysLabel, ['Three days conversation']],
-      ['Earlier', ['Old conversation']],
+      ['Earlier', EARLIER_SHOWN],
     ])
     expect(await page.getByText('Sessions', { exact: true }).count()).toBeGreaterThanOrEqual(1)
     // Rows follow activity under a registered grouping, so Order by is not offered.
     await page.getByRole('button', { name: 'View options' }).click()
     expect(await page.getByRole('menuitem').allTextContents()).toEqual(['StatusActive', 'Group byDate'])
     await page.keyboard.press('Escape')
+
+    // A group lists its five most recent Sessions; the rest sit behind "show more", and the expansion survives a reload.
+    const tree = page.getByRole('tree', { name: 'Sessions' })
+    await tree.getByRole('button', { name: 'Show 2 more sessions' }).click()
+    await expect.poll(async () => (await sections()).at(-1)).toEqual(['Earlier', EARLIER_ALL])
+    const expandedStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    acknowledgeReloadConnectionLoss(tripwire, expandedStart)
+    await expect.poll(async () => (await sections()).at(-1), { timeout: 15_000 }).toEqual(['Earlier', EARLIER_ALL])
+    await tree.getByRole('button', { name: 'Show less' }).click()
+    await expect.poll(async () => (await sections()).at(-1)).toEqual(['Earlier', EARLIER_SHOWN])
 
     await page.getByRole('treeitem', { name: 'Earlier' }).click()
     await expect.poll(sections).toEqual([
@@ -102,5 +119,5 @@ describe('web e2e: session grouping', () => {
     await pick(/^Group by/u, 'WorkSpace')
     await expect.poll(() => page.getByText('Workspaces', { exact: true }).count()).toBe(1)
     expect(tripwire.pageErrors).toEqual([])
-  }, 90_000)
+  }, 120_000)
 })

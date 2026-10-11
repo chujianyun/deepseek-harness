@@ -71,7 +71,19 @@ export interface SessionGroupingRegistry {
    * @returns the disposer; the default returns to 'workspace' unless another call replaced it since.
    */
   readonly setDefault: (id: string) => () => void
+  /** Idle Session rows a group shows before its overflow control: {@link DEFAULT_SESSION_LIMIT} unless a caller set another. */
+  readonly sessionLimit: HostObservable<number>
+  /**
+   * Set the rows a group shows for as long as the caller keeps it.
+   * @param limit - a positive whole number of idle Session rows.
+   * @returns the disposer; the limit returns to the default unless another call replaced it since.
+   * @throws when `limit` is not a positive whole number.
+   */
+  readonly setSessionLimit: (limit: number) => () => void
 }
+
+/** Idle Session rows a group shows before its overflow control, unless configured. */
+export const DEFAULT_SESSION_LIMIT = 5
 
 /** Browser storage key of the remembered default grouping. */
 const DEFAULT_GROUPING_KEY = 'dsh.workspace.defaultGrouping'
@@ -83,8 +95,17 @@ const DEFAULT_GROUPING_KEY = 'dsh.workspace.defaultGrouping'
 export function createSessionGroupingRegistry(): SessionGroupingRegistry {
   const store = createSnapshotStore<readonly SessionGrouping[]>([])
   const defaultGrouping = createSnapshotStore<string>('workspace', { persist: { name: DEFAULT_GROUPING_KEY } })
+  const sessionLimit = createSnapshotStore<number>(DEFAULT_SESSION_LIMIT)
   return {
     groupings: store,
+    sessionLimit,
+    setSessionLimit: (limit) => {
+      if (!Number.isInteger(limit) || limit < 1) throw new Error(`ui-workspace: a group's session limit must be a positive whole number, got ${String(limit)}`)
+      sessionLimit.set(limit)
+      return () => {
+        if (sessionLimit.getSnapshot() === limit) sessionLimit.set(DEFAULT_SESSION_LIMIT)
+      }
+    },
     defaultGrouping,
     setDefault: (id) => {
       defaultGrouping.set(id)

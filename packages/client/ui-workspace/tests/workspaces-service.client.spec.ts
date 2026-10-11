@@ -342,6 +342,14 @@ describe('UiWorkspaceService', () => {
     expect(b.groupings.defaultGrouping.getSnapshot()).toBe('workspace')
   })
 
+  it('sets how many rows a sidebar group shows until its disposer runs', () => {
+    const b = bench()
+    const restore = b.uiWorkspace.setSessionGroupLimit(8)
+    expect(b.groupings.sessionLimit.getSnapshot()).toBe(8)
+    restore()
+    expect(b.groupings.sessionLimit.getSnapshot()).toBe(5)
+  })
+
   it('prepares and selects the default Workspace after both startup baselines', async () => {
     const b = bench({ configureWorkspaces: (workspaces) => {
       workspaces.initializeDefault.mockImplementation(async () => {

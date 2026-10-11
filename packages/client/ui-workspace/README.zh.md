@@ -27,7 +27,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-用侧边栏浏览 Workspace 及其 Session、重排它们并新建会话；在 Session Intent 主视觉区用选择器为新会话选择 Workspace。打开的 Workspace 默认显示五条空闲的非空白 Session。正在运行的 Session（包括有子会话正在运行的父会话）始终按原顺序显示，不占用这五条配额；当前选中的空白**新会话**在首条提示词落地前也作为额外行。每次点击**展开其余**最多再显示五条空闲 Session；全部显示后，**收起**恢复初始行数，但仍显示正在运行的 Session。关闭再打开 Workspace 也会恢复该折叠投影。
+用侧边栏浏览 Workspace 及其 Session、重排它们并新建会话；在 Session Intent 主视觉区用选择器为新会话选择 Workspace。打开的分组（Workspace，或注册分组的一个组）默认显示五条空闲 Session；插件可在保留期间通过 `uiWorkspace.setSessionGroupLimit` 修改这个数目。正在运行的 Session（包括有子会话正在运行的父会话）、置顶的 Session、当前 Session 和选中的空白**新会话**始终按原顺序显示，不占用这个配额。每次点击**展开其余**再显示同样数目的空闲 Session，剩余不超过一步时全部显示；之后**收起**恢复初始行数。展开状态按分组保存在当前浏览器中；折叠分组会让它回到默认数目，已不存在的分组的保存值会被清除。从搜索结果打开被该限制隐藏的 Session 会显示整个分组。
 
 未保存标题的历史会话显示本地化名称「未命名 / Untitled」，不使用目录名兜底。当前空会话仍显示「新会话」，其他空会话仍隐藏。重命名草稿使用已保存标题，无标题时留空；无标题行不提供标题复制。
 
