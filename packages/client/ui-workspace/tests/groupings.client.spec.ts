@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
@@ -42,18 +43,21 @@ describe('the grouping registry', () => {
 })
 
 describe('the default grouping', () => {
-  it('is the Workspace view until a caller sets one, and returns when the latest setter leaves', () => {
+  it('is the Workspace view until a caller sets one, returns when that caller leaves, and is remembered', () => {
+    localStorage.removeItem('dsh.workspace.defaultGrouping')
     const registry = createSessionGroupingRegistry()
     expect(registry.defaultGrouping.getSnapshot()).toBe('workspace')
     const restoreAssistant = registry.setDefault('assistant')
     expect(registry.defaultGrouping.getSnapshot()).toBe('assistant')
+    // The next start shows it from the first frame.
+    expect(createSessionGroupingRegistry().defaultGrouping.getSnapshot()).toBe('assistant')
     const restoreDate = registry.setDefault('date')
-    expect(registry.defaultGrouping.getSnapshot()).toBe('date')
-    // An earlier setter leaving does not undo a later one.
+    // A replaced caller leaving changes nothing.
     restoreAssistant()
     expect(registry.defaultGrouping.getSnapshot()).toBe('date')
     restoreDate()
     expect(registry.defaultGrouping.getSnapshot()).toBe('workspace')
+    expect(createSessionGroupingRegistry().defaultGrouping.getSnapshot()).toBe('workspace')
   })
 })
 

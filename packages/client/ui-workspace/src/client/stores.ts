@@ -28,7 +28,8 @@ type WorkspaceViewState = {
   groupBy: SessionGroupBy
   /**
    * The user picked `groupBy` in the menu. Until then the sidebar shows the default grouping; a
-   * snapshot written before defaults existed counts as picked when its `groupBy` is not 'workspace'.
+   * snapshot written before defaults existed counts as picked when its `groupBy` is not 'workspace'
+   * or its order is manual.
    */
   groupByChosen?: boolean
   orderBy: SessionOrderBy

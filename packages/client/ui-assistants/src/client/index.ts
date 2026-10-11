@@ -123,7 +123,9 @@ export function apply(ctx: ClientContext): void {
     })
     scope.effect(() => scope.sessions.list.subscribe(() => { void source.sessionsChanged() }), 'ui-assistants: session list')
     scope.provide('assistantPicker', { pickTemplate: source.pickTemplate } satisfies AssistantPicker)
-    scope.effect(() => scope.uiWorkspace.registerSessionGrouping(assistantGrouping(t, source.hooks.assistants)), 'ui-assistants: Assistant grouping')
+    scope.effect(() => scope.uiWorkspace.registerSessionGrouping(assistantGrouping(
+      t, source.hooks.assistants, onChange => scope.locale.subscribe(onChange),
+    )), 'ui-assistants: Assistant grouping')
     scope.slots.inject('main', () => scope.slots.register({ name: 'main', key: PANEL_ID, locale: NS, inject: () => source }, AssistantsPage))
     scope.slots.inject('sidebar.panellist', () => scope.slots.register({
       name: 'sidebar.panellist', id: PANEL_ID, order: 8, label: () => t('panel'), locale: NS,

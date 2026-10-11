@@ -6,27 +6,43 @@
  */
 
 import { IconUserOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { AssistantsState } from '@deepseek-ai/dsh-assistants/types'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionGrouping } from '@deepseek-ai/dsh-client-ui-workspace/client'
-import { AssistantAvatar } from './AssistantAvatar.tsx'
+import type { SessionGroupHeading, SessionGrouping } from '@deepseek-ai/dsh-client-ui-workspace/client'
+import { AssistantAvatar, NEUTRAL_AVATAR } from './AssistantAvatar.tsx'
 import { assistantOf, type AssistantsSnapshot } from './assistants-source.ts'
 
 /** Dictionary keys the grouping reads. */
 export type AssistantGroupingKey = 'groupByAssistant' | 'noAssistant' | 'groupOther'
 
-/** A preset key outside the palette, which the avatar draws as a neutral disc. */
-const NEUTRAL = { kind: 'preset', key: 'neutral' } as const
-
 /**
  * Build the Assistant grouping.
  * @param t - translator owning {@link AssistantGroupingKey}.
- * @param assistants - the assistants snapshot; each change regroups the sidebar.
+ * @param assistants - the assistants snapshot; a change of its Host state regroups the sidebar.
+ * @param localeChanges - subscription to language switches, which relabel General mode and Other.
  * @returns the grouping, listed first under Group by; its sections follow their most recent Session.
+ *   It reads as not ready until the signed-in tenant's assistants are known.
  */
 export function assistantGrouping(
   t: (key: AssistantGroupingKey) => string,
   assistants: HostObservable<AssistantsSnapshot>,
+  localeChanges: (onChange: () => void) => () => void,
 ): SessionGrouping {
+  // One heading per assistant for as long as the Host state stays the same object.
+  let headingsOf: AssistantsState | undefined
+  let headings = new Map<string, SessionGroupHeading>()
+  const assistantHeading = (id: string): SessionGroupHeading | undefined => {
+    const state = assistants.getSnapshot().state
+    if (state === undefined) return undefined
+    if (state !== headingsOf) {
+      headingsOf = state
+      headings = new Map(state.assistants.map(assistant => [assistant.id, {
+        key: `assistant:${assistant.id}`, label: assistant.name,
+        icon: <AssistantAvatar avatar={assistant.avatar} name={assistant.name} size={16} />,
+      }]))
+    }
+    return headings.get(id)
+  }
   return {
     id: 'assistant',
     label: () => t('groupByAssistant'),
@@ -36,17 +52,28 @@ export function assistantGrouping(
       const bound = assistantOf(session)
       if (bound === null) {
         const label = t('noAssistant')
-        return { key: 'general', label, icon: <AssistantAvatar avatar={NEUTRAL} name={label} size={16} /> }
+        return { key: 'general', label, icon: <AssistantAvatar avatar={NEUTRAL_AVATAR} name={label} size={16} /> }
       }
-      const assistant = assistants.getSnapshot().state?.assistants.find(item => item.id === bound)
-      if (assistant === undefined) {
-        return { key: 'other', label: t('groupOther'), icon: <AssistantAvatar avatar={NEUTRAL} name="?" size={16} /> }
-      }
-      return {
-        key: `assistant:${assistant.id}`, label: assistant.name,
-        icon: <AssistantAvatar avatar={assistant.avatar} name={assistant.name} size={16} />,
+      return assistantHeading(bound)
+        ?? { key: 'other', label: t('groupOther'), icon: <AssistantAvatar avatar={NEUTRAL_AVATAR} name="?" size={16} /> }
+    },
+    subscribe: (onChange) => {
+      let seen = assistants.getSnapshot().state
+      const stopAssistants = assistants.subscribe(() => {
+        const state = assistants.getSnapshot().state
+        if (state === seen) return
+        seen = state
+        onChange()
+      })
+      const stopLocale = localeChanges(onChange)
+      return () => {
+        stopAssistants()
+        stopLocale()
       }
     },
-    subscribe: onChange => assistants.subscribe(onChange),
+    ready: () => {
+      const state = assistants.getSnapshot().state
+      return state !== undefined && state.tenantId !== null
+    },
   }
 }

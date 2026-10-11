@@ -43,6 +43,11 @@ export interface SessionGrouping {
   readonly groupOf: (session: SessionSummary) => SessionGroupHeading
   /** Changes that regroup or relabel Sessions, such as a renamed assistant; the sidebar re-derives on each. */
   readonly subscribe?: (onChange: () => void) => () => void
+  /**
+   * Whether the grouping can name every section now. While false (its data is still loading, say)
+   * the sidebar keeps the stored folds of sections it does not see; absent means always ready.
+   */
+  readonly ready?: () => boolean
 }
 
 /** The groupings registered beside the built-in views, and their registration. */
@@ -55,15 +60,21 @@ export interface SessionGroupingRegistry {
    * @returns the disposer that removes it.
    */
   readonly register: (grouping: SessionGrouping) => () => void
-  /** The grouping a sidebar shows before its user picks one: 'workspace' unless a caller set another. */
+  /**
+   * The grouping a sidebar shows before its user picks one: 'workspace' unless a caller set another.
+   * The value is remembered in the browser, so the next start shows it from the first frame.
+   */
   readonly defaultGrouping: HostObservable<string>
   /**
-   * Set the default grouping for as long as the caller keeps it; the latest setter wins.
+   * Set the default grouping for as long as the caller keeps it.
    * @param id - a built-in view or a registered grouping's id.
-   * @returns the disposer; the default returns to the latest remaining setter's, or to 'workspace'.
+   * @returns the disposer; the default returns to 'workspace' unless another call replaced it since.
    */
   readonly setDefault: (id: string) => () => void
 }
+
+/** Browser storage key of the remembered default grouping. */
+const DEFAULT_GROUPING_KEY = 'dsh.workspace.defaultGrouping'
 
 /**
  * Create the registry the UiWorkspace service exposes.
@@ -71,19 +82,14 @@ export interface SessionGroupingRegistry {
  */
 export function createSessionGroupingRegistry(): SessionGroupingRegistry {
   const store = createSnapshotStore<readonly SessionGrouping[]>([])
-  const defaultGrouping = createSnapshotStore<string>('workspace')
-  let defaults: readonly { readonly id: string }[] = []
-  const publishDefault = (): void => { defaultGrouping.set(defaults.at(-1)?.id ?? 'workspace') }
+  const defaultGrouping = createSnapshotStore<string>('workspace', { persist: { name: DEFAULT_GROUPING_KEY } })
   return {
     groupings: store,
     defaultGrouping,
     setDefault: (id) => {
-      const entry = { id }
-      defaults = [...defaults, entry]
-      publishDefault()
+      defaultGrouping.set(id)
       return () => {
-        defaults = defaults.filter(item => item !== entry)
-        publishDefault()
+        if (defaultGrouping.getSnapshot() === id) defaultGrouping.set('workspace')
       }
     },
     register: (grouping) => {

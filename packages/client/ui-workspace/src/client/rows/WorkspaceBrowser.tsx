@@ -794,7 +794,12 @@ function GroupedList({
   const statuses = useSessionStatus(s => s)
   // A grouping's own changes (a renamed assistant, a language switch) regroup without a list change.
   const [revision, regroup] = useReducer((n: number) => n + 1, 0)
-  useEffect(() => grouping.subscribe?.(regroup), [grouping])
+  useEffect(() => {
+    const stop = grouping.subscribe?.(regroup)
+    // A change between this render and the subscription would otherwise be missed.
+    if (stop !== undefined) regroup()
+    return stop
+  }, [grouping])
   const sections = useMemo(
     () => deriveGroupingSections(list, grouping, rowState, statuses, collapsed),
     [list, grouping, rowState, statuses, collapsed, revision],
@@ -808,10 +813,10 @@ function GroupedList({
   }, [revealSection, setCollapsed])
   const ready = list.phase === 'ready' && workspaceReady
   useEffect(() => {
-    if (!ready) return
+    if (!ready || grouping.ready?.() === false) return
     const keys = sections.map(section => section.key)
     if (Object.keys(collapsed).some(key => !keys.includes(key))) retainSections(keys)
-  }, [collapsed, ready, retainSections, sections])
+  }, [collapsed, grouping, ready, retainSections, sections])
   const currentId = panelActive ? undefined : mainSessionId(list)
   const rowKeys = sections.length === 0
     ? ['empty']
@@ -1019,9 +1024,11 @@ export function WorkspaceBrowser({
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
   const groupings = useGroupings(rows => rows)
   const defaultGrouping = useDefaultGrouping(id => id)
-  // Until the user picks a grouping the default applies; a pick, or a view saved before defaults
-  // existed that is not the Workspace view, is the user's own.
-  const storedGroupBy = useStore(s => (s.groupByChosen === true || s.groupBy !== 'workspace' ? s.groupBy : defaultGrouping))
+  // Until the user picks a grouping the default applies. A pick is the user's own, and so is a view
+  // saved before defaults existed that is not the Workspace view or that carries a manual order.
+  const storedGroupBy = useStore(s => (
+    s.groupByChosen === true || s.groupBy !== 'workspace' || s.orderBy === 'manual' ? s.groupBy : defaultGrouping
+  ))
   // A stored grouping whose plugin is gone shows the Workspace view; the choice stays stored, so
   // it returns with the plugin.
   const grouping = groupings.find(item => item.id === storedGroupBy)

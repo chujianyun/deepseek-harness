@@ -29,9 +29,12 @@ function presetLabel(value: string, name: string, t: TaskFormProps['t']): string
   return BUILT_IN_PRESETS.has(value) && name === value ? t(`permission.${value}` as TaskFormLocaleKey) : name
 }
 
+/** The name field's id, held apart so the map below reads as field ids rather than UI copy. */
+const NAME_FIELD: TaskFormField = 'title'
+
 /** The field whose message a value belongs under. */
 const FIELD_OF: Record<keyof TaskFormValues, TaskFormField> = {
-  title: 'title', workspaceId: 'workspace', prompt: 'prompt', assistantId: 'prompt', model: 'prompt', permission: 'prompt',
+  title: NAME_FIELD, workspaceId: 'workspace', prompt: 'prompt', assistantId: 'prompt', model: 'prompt', permission: 'prompt',
   connectors: 'prompt', mode: 'frequency', repeat: 'frequency', weekdays: 'frequency', time: 'frequency', interval: 'frequency',
   unit: 'frequency', date: 'frequency', start: 'window', end: 'window',
 }

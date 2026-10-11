@@ -2744,21 +2744,41 @@ describe('a registered grouping', () => {
     expect(screen.getByText('工作区')).toBeTruthy()
   })
 
-  it('keeps a grouping chosen before defaults existed', () => {
+  it.each([
+    ['another grouping', { groupBy: 'flat', orderBy: 'updated' }],
+    ['a manual order in the Workspace view', { groupBy: 'workspace', orderBy: 'manual' }],
+  ])('keeps a view saved before defaults existed with %s', (_name, saved) => {
     const key = 'dsh.workspace.view.v5'
-    localStorage.setItem(key, JSON.stringify({ groupBy: 'flat', orderBy: 'updated', groupExpansion: {}, sessionOrderByAccount: {} }))
+    localStorage.setItem(key, JSON.stringify({ ...saved, groupExpansion: {}, sessionOrderByAccount: {} }))
     try {
       mount({
         useSessions: hook(sessions()),
         useGroupings: select => select([letter()]),
         useDefaultGrouping: select => select('letter'),
       })
-      expect(headings()).toEqual([])
-      expect(rows()).toEqual(['apple', 'banana', 'avocado'])
+      expect(headings()).not.toContain('A')
+      expect(screen.getByText(saved.groupBy === 'flat' ? '会话' : '工作区')).toBeTruthy()
     } finally {
       cleanup()
       localStorage.removeItem(key)
     }
+  })
+
+  it('keeps the folds of sections it cannot see while the grouping is not ready', () => {
+    let ready = false
+    const store = createWorkspaceViewStore().create()
+    store.actions.setGroupBy('letter')
+    store.actions.setGroupCollapsed('letter', 'z', true)
+    const b = mount({
+      useSessions: hook(sessions()),
+      useGroupings: select => select([letter({ ready: () => ready })]),
+      useStore: bindSnapshotSelector(store),
+      actions: store.actions,
+    })
+    expect(store.getSnapshot().groupCollapsed).toEqual({ letter: { z: true } })
+    ready = true
+    rerender(b, { useSessions: hook(sessions()) })
+    expect(store.getSnapshot().groupCollapsed).toEqual({ letter: {} })
   })
 
   it('unfolds the section of a Session opened from search', () => {

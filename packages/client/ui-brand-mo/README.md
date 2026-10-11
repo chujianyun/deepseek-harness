@@ -87,6 +87,7 @@ None; this package neither assembles nor sends a provider request.
 - **Fixed palette** — the values are the 名流 brand's; another enterprise brand needs its own token table.
 - **Dark values are copies** — an override cannot defer to the stylesheet value it replaces, so dark values the brand keeps repeat the platform's current references and must follow later palette changes by hand.
 - **Boot stylesheet lifetime** — the host's seeded palette stays in the served page until it reloads, so unloading only the browser half (HMR, a disabled row) keeps the brand colors until then.
+- **Unchecked default grouping** — `defaultSessionGrouping` is not validated: groupings register at any time, so an id nothing provides (a typo, or a plugin left out of the composition) shows the Workspace view without a warning.
 - **Inline artwork** — the app icon and the wordmark ship as data URIs in the host and client bundles (about 40 KB together); the wordmark is a downscaled copy of the Desktop welcome page's `mo-logo.png`, so a redesign updates both.
 
 <a id="dev-note"></a>

@@ -48,8 +48,8 @@ async function bench() {
   ctx.provide('sessions', { list } as never)
   const startSession = vi.fn()
   const openSession = vi.fn()
-  const groupings: { id: string }[] = []
-  const registerSessionGrouping = vi.fn((grouping: { id: string }) => {
+  const groupings: { id: string; subscribe?: (onChange: () => void) => () => void }[] = []
+  const registerSessionGrouping = vi.fn((grouping: typeof groupings[number]) => {
     groupings.push(grouping)
     return () => { groupings.splice(groupings.indexOf(grouping), 1) }
   })
@@ -142,6 +142,12 @@ describe('ui-assistants browser plugin', () => {
     expect(b.ctx.get('assistantPicker')?.pickTemplate).toBeTypeOf('function')
     // The sidebar's Assistant grouping, for the plugin's lifetime.
     expect(b.groupings.map(grouping => grouping.id)).toEqual(['assistant'])
+    // It follows the UI language through the locale service.
+    const relabel = vi.fn()
+    const stopGrouping = b.groupings[0]!.subscribe!(relabel)
+    b.ctx.locale.register('grouping-probe' as never, { zh: {}, en: {} })()
+    expect(relabel).toHaveBeenCalled()
+    stopGrouping()
     await fiber.dispose()
     expect(b.groupings).toEqual([])
     expect(b.ctx.get('assistantPicker')).toBeUndefined()
