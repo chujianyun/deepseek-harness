@@ -40,6 +40,9 @@
     },
     {
       "path": "../message-feedback"
+    },
+    {
+      "path": "../../session/session-title"
     }
   ]
 }

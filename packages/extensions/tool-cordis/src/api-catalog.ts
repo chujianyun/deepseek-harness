@@ -4922,10 +4922,10 @@ export const EVENT_API: readonly EventApiEntry[] = [
   {
     name: 'feedback/message-recorded',
     mode: 'emit',
-    signature: '\'feedback/message-recorded\'(sessionId: SessionId, item: MessageFeedbackItem): void',
+    signature: '\'feedback/message-recorded\'(sessionId: SessionId, item: MessageFeedbackItem, previous: MessageFeedbackItem | undefined): void',
     summary: 'Feedback for one message changed: `put` committed a new or replaced item.',
     description: 'Feedback for one message changed: `put` committed a new or replaced item. Fires after the write is durable and its Session queue is released, for live and cold Sessions alike; matching no-ops and deletions do not fire it.',
-    parameters: [{ name: 'sessionId', description: 'Session that owns the message.' }, { name: 'item', description: 'the committed item, cloned for the listener.' }],
+    parameters: [{ name: 'sessionId', description: 'Session that owns the message.' }, { name: 'item', description: 'the committed item, cloned for the listener.' }, { name: 'previous', description: 'the item it replaced, or undefined for a new one.' }],
   },
   {
     name: 'fs/edit-intent',

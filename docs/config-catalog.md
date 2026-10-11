@@ -1480,7 +1480,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-feedback-report`
 
 - `inject`: `hubAccount` · `sessionQuery`
-- `source`: [`packages/feedback/feedback-report/src/index.ts:36`](../packages/feedback/feedback-report/src/index.ts)
+- `source`: [`packages/feedback/feedback-report/src/index.ts:37`](../packages/feedback/feedback-report/src/index.ts)
 
 ```ts config-catalog
 /** Deployment configuration. */

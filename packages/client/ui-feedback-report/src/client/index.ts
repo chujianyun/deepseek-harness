@@ -10,6 +10,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HubAccountView } from '@deepseek-ai/dsh-hub-account/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-session-log-export/client'
 import { en, zh, type FeedbackReportLocaleKey } from './locales.ts'
 import {
@@ -44,19 +45,30 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-feedback-report: dictionaries')
   const remote = ctx.remote
   const signedIn = createSnapshotStore(false)
+  const reportRequest = createSnapshotStore<ReportTarget | null>(null)
   const stream = remote.$stream<HubAccountView>({
     name: 'feedbackReport.hubAccount', open: signal => remote.hubAccount.watch(signal), ended: () => new Error('hub account stream ended'),
   })
   ctx.effect(() => () => stream.dispose(), 'ui-feedback-report: sign-in stream')
+  // The header menu's Feedback row opens this dialog instead of the message-feedback form, while signed in.
+  const entry = { open: (sessionId: SessionId) => { reportRequest.set({ sessionId }) } }
+  let entryFiber: ReturnType<ClientContext['plugin']> | undefined
+  const followSignIn = (now: boolean): void => {
+    signedIn.set(now)
+    if (now && entryFiber === undefined) entryFiber = ctx.plugin((scope: ClientContext) => { scope.provide('sessionFeedbackEntry', entry) })
+    if (!now && entryFiber !== undefined) {
+      void entryFiber.dispose()
+      entryFiber = undefined
+    }
+  }
   void (async () => {
     for await (const frame of stream) {
-      signedIn.set(frame.value.status === 'signed-in')
+      followSignIn(frame.value.status === 'signed-in')
       frame.accept()
     }
   })().catch(() => {
     // The stream reconnects on its own; a disposed plugin simply stops listening.
   })
-  const reportRequest = createSnapshotStore<ReportTarget | null>(null)
   const submitted = createSnapshotStore(0)
   const buttonFace: ReportButtonInjected = { hooks: { signedIn }, requestReport: (target) => { reportRequest.set(target) } }
   const dialogFace: ReportDialogInjected = {
@@ -67,8 +79,6 @@ export function apply(ctx: ClientContext): void {
     uiLanguage: () => ctx.locale.getSnapshot().active,
   }
   const noticeFace: ReportNoticeInjected = { hooks: { submitted }, dismissNotice: () => { submitted.set(0) } }
-  // The header menu's Feedback row opens this dialog instead of the message-feedback form.
-  ctx.provide('sessionFeedbackEntry', { open: (sessionId) => { reportRequest.set({ sessionId }) } })
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     // Left of the schedule catalog (-5) and the overflow menu (0).
     name: 'conversation.session.header.utilities', id: 'feedback-report', order: -8, locale: NS, inject: () => buttonFace,

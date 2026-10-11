@@ -140,6 +140,16 @@ describe('report dialog', () => {
     fireEvent.click(button('添加截图'))
     expect(click).toHaveBeenCalledOnce()
 
+    // Overlapping adds share the room: two pastes of two images while one slot is left keep one.
+    const body = screen.getByRole('dialog').firstElementChild!
+    await act(async () => {
+      fireEvent.paste(body, { clipboardData: { files: [png('p1.png'), png('p2.png')] } })
+      fireEvent.paste(body, { clipboardData: { files: [png('p3.png'), png('p4.png')] } })
+      await new Promise((resolve) => { setTimeout(resolve, 30) })
+    })
+    expect(screen.getAllByRole('img').map(img => img.getAttribute('alt'))).toEqual(['1.png', '3.png', 'p1.png'])
+    expect(screen.getByRole('alert').textContent).toBe('最多添加 3 张截图')
+    fireEvent.click(button('移除 p1.png'))
     const dialogBody = screen.getByRole('dialog').firstElementChild!
     await act(async () => {
       fireEvent.paste(dialogBody, { clipboardData: { files: [png('pasted.png')] } })

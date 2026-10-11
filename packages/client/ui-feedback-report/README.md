@@ -23,7 +23,7 @@ Adds **Report a problem** to the Session header and the dialog it opens. The dia
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the browser row beside the Host `feedback-report` row with the same `disabled` condition; the web-app bundle enables both for the `desktop` profile with a configured user center. Like ui-hub-account, it adds nothing outside the Desktop window. The plugin injects `slots`, `locale`, and the `hubAccount` and `feedbackReport` Remotes. For exactly the plugin lifetime it registers the `feedback-report` entry of `conversation.session.header.utilities` at order -8 (left of the schedule catalog and the overflow menu), the `feedback-report` and `feedback-report.notice` entries of `shell.overlay`, and provides `sessionFeedbackEntry`, which makes the [session-log-export](../../session-query/session-log-export/README.md) header menu's **Feedback** row open this dialog.
+Mount the browser row beside the Host `feedback-report` row with the same `disabled` condition; the web-app bundle enables both for the `desktop` profile with a configured user center. Like ui-hub-account, it adds nothing outside the Desktop window. The plugin injects `slots`, `locale`, and the `hubAccount` and `feedbackReport` Remotes. For exactly the plugin lifetime it registers the `feedback-report` entry of `conversation.session.header.utilities` at order -8 (left of the schedule catalog and the overflow menu), the `feedback-report` and `feedback-report.notice` entries of `shell.overlay`, and, while signed in, provides `sessionFeedbackEntry`, which makes the [session-log-export](../../session-query/session-log-export/README.md) header menu's **Feedback** row open this dialog; signed out, the row keeps opening the message-feedback form.
 
 The button shows only while the `hubAccount` state stream reports a sign-in, and asks for the dialog about the open Session.
 
@@ -32,7 +32,7 @@ The button shows only while the `hubAccount` state stream reports a sign-in, and
 - **Header** — a warning badge, the title, and a sentence on what to report.
 - **Type** — one of Error, Slow, Not working, Wrong result, or Other; required.
 - **Description** — required, at most 2000 characters, with a counter.
-- **Screenshots** — up to three PNG, JPEG, WebP, or GIF images of at most 5 MB each, picked from the add tile or pasted anywhere in the dialog; each thumbnail has a remove button. A file over a limit is refused with the reason and the rest are kept.
+- **Screenshots** — up to three PNG, JPEG, WebP, or GIF images of at most 5 MB each, picked from the add tile or pasted anywhere in the dialog, with overlapping adds sharing the room; each thumbnail has a remove button. A file over a limit is refused with the reason and the rest are kept.
 - **Include this session's conversation** — shown when the report is about a Session, ticked by default.
 - **Footer** — a note that the app version, system, and current model are sent along, **Cancel**, and **Submit**, which is enabled once the type and description are set.
 

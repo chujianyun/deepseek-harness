@@ -132,6 +132,8 @@ export interface MockUserCenter {
   readonly feedback: MockFeedback[]
   /** When set, a problem report is answered with this raw reply, or its connection is dropped. */
   feedbackReply: { status: number; body: string } | 'drop' | undefined
+  /** When set, the next problem report only is answered with this raw reply. */
+  feedbackReplyOnce: { status: number; body: string } | undefined
   close(): Promise<void>
 }
 
@@ -382,6 +384,12 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
   const feedbackApi = async (url: URL, req: IncomingMessage, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void): Promise<void> => {
     const chunks: Buffer[] = []
     for await (const chunk of req) chunks.push(chunk as Buffer)
+    const once = mock.feedbackReplyOnce
+    mock.feedbackReplyOnce = undefined
+    if (once !== undefined) {
+      res.writeHead(once.status, { 'content-type': 'application/json' }).end(once.body)
+      return
+    }
     if (mock.feedbackReply === 'drop') { res.destroy(); return }
     if (mock.feedbackReply !== undefined) {
       res.writeHead(mock.feedbackReply.status, { 'content-type': 'application/json' }).end(mock.feedbackReply.body)
@@ -405,7 +413,8 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     exchangeStatus: undefined, tokenBody: undefined, tokenGate: undefined, userinfoReply: undefined,
     skills: [], downloadBody: undefined, clientStatus: undefined, clientRequests: [],
     tenantAdmin: false, owned: [], uploads: [], uploadReply: undefined, uploadHook: undefined, optionsReply: undefined,
-    brandings: {}, brandingGate: undefined, logoReply: undefined, shares: {}, shareReply: undefined, feedback: [], feedbackReply: undefined,
+    brandings: {}, brandingGate: undefined, logoReply: undefined, shares: {}, shareReply: undefined,
+    feedback: [], feedbackReply: undefined, feedbackReplyOnce: undefined,
     authorizeRequests: [], tokenRequests: [], revoked: [],
     close: () => new Promise((resolve) => { server.closeAllConnections(); server.close(() => { resolve() }) }),
   }

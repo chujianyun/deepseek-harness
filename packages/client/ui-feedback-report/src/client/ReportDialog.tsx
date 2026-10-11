@@ -160,19 +160,23 @@ function ReportForm({ target, face, t }: { target: ReportTarget; face: Omit<Repo
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const picker = useRef<HTMLInputElement>(null)
+  // Slots taken by screenshots shown or still being read, so adds that overlap cannot overfill.
+  const taken = useRef(0)
   const mounted = useRef(true)
   useEffect(() => () => { mounted.current = false }, [])
 
   const add = async (files: readonly File[]): Promise<void> => {
     if (files.length === 0) return
     setError(null)
-    const room = MAX_IMAGES - shots.length
-    if (files.length > room) setError(t('images.tooMany'))
-    const read = await Promise.all(files.slice(0, Math.max(room, 0)).map(readImage))
+    const chosen = files.slice(0, MAX_IMAGES - taken.current)
+    if (chosen.length < files.length) setError(t('images.tooMany'))
+    taken.current += chosen.length
+    const read = await Promise.all(chosen.map(readImage))
     const problem = read.find((item): item is FeedbackReportLocaleKey => typeof item === 'string')
     if (problem !== undefined) setError(t(problem))
     const accepted = read.filter((item): item is Shot => typeof item !== 'string')
-    setShots(current => [...current, ...accepted].slice(0, MAX_IMAGES))
+    taken.current -= chosen.length - accepted.length
+    setShots(current => [...current, ...accepted])
   }
   const onPaste = (event: ClipboardEvent<HTMLDivElement>): void => {
     const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/'))
@@ -246,7 +250,10 @@ function ReportForm({ target, face, t }: { target: ReportTarget; face: Omit<Repo
                   <img src={shot.preview} alt={shot.name} />
                   <button
                     type="button" className={css.remove} aria-label={t('images.remove', { name: shot.name })} disabled={sending}
-                    onClick={() => { setShots(current => current.filter((_, at) => at !== index)) }}
+                    onClick={() => {
+                      taken.current -= 1
+                      setShots(current => current.filter((_, at) => at !== index))
+                    }}
                   >
                     <IconCloseOutlineRegular size={12} />
                   </button>

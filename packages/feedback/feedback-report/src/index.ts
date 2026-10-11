@@ -13,7 +13,8 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-assistants'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type {} from '@deepseek-ai/dsh-hub-account'
-import type {} from '@deepseek-ai/dsh-message-feedback'
+import type { MessageFeedbackItem } from '@deepseek-ai/dsh-message-feedback'
+import type {} from '@deepseek-ai/dsh-session-title'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-session-query'
@@ -62,6 +63,31 @@ async function refusal(res: Response): Promise<RemoteError> {
   return new RemoteError('feedback-report/refused', reason, { status: res.status })
 }
 
+/** A thumbs-down with a category or note. */
+function explainedDislike(item: MessageFeedbackItem): boolean {
+  return item.rating === 'negative' && (item.category !== undefined || item.note !== undefined)
+}
+
+/** Longest excerpt of the rated reply a thumbs-down report carries. */
+const RATED_REPLY_MAX = 200
+
+/** The text of the assistant message with `messageId`, clipped, or undefined when the log lacks it. */
+function replyText(events: readonly SessionEvent[], messageId: string): string | undefined {
+  const message = lastOf(events, event => event.type === 'assistant/message' && event.data.message.id === messageId ? event.data.message : undefined)
+  if (message === undefined) return undefined
+  const text = message.content.flatMap(block => block.type === 'text' ? [block.text.trim()] : []).join(' ').replaceAll(/\s+/gu, ' ')
+  const points = Array.from(text)
+  return points.length <= RATED_REPLY_MAX ? text : `${points.slice(0, RATED_REPLY_MAX - 1).join('')}…`
+}
+
+/** The Session's title and conversation snapshot, or null when it has no conversation. */
+function snapshotOf(sessionId: SessionId, events: readonly SessionEvent[]) {
+  const messages = buildShareSnapshot(events)
+  if (messages.length === 0) return null
+  const title = lastOf(events, event => event.type === 'session/title' ? event.data.title : undefined)
+  return { sessionId, title: title ?? '', messages }
+}
+
 /** The last value `read` finds in the log, or undefined. */
 function lastOf<T>(events: readonly SessionEvent[], read: (event: SessionEvent) => T | undefined): T | undefined {
   let found: T | undefined
@@ -80,10 +106,11 @@ export class FeedbackReport extends TypertRemoteService {
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'feedbackReport', { namespace: 'feedbackReport' })
     this.config = Config(config) as Pick<Config, 'appVersion'> & { requestTimeoutMs: number }
-    // Thumbs-down feedback the user explained is a report too; plain ratings are not.
-    ctx.on('feedback/message-recorded', (sessionId, item) => {
-      if (item.rating !== 'negative' || (item.category === undefined && item.note === undefined)) return
-      void this.reportMessage(sessionId, item.category, item.note).catch((error: unknown) => {
+    // Thumbs-down feedback the user explained is a report too, once: editing an explained
+    // thumbs-down does not report it again, and plain ratings are not reported.
+    ctx.on('feedback/message-recorded', (sessionId, item, previous) => {
+      if (!explainedDislike(item) || (previous !== undefined && explainedDislike(previous))) return
+      void this.reportMessage(sessionId, item).catch((error: unknown) => {
         // The rating is recorded in the Session either way; only its copy for the administrators is lost.
         console.info('[feedback-report] thumbs-down feedback not reported', { sessionId, error: String(error) })
       })
@@ -111,12 +138,15 @@ export class FeedbackReport extends TypertRemoteService {
     }, images)
   }
 
-  /** Report thumbs-down feedback the user explained, with the Session it belongs to. */
-  private async reportMessage(sessionId: SessionId, category: string | undefined, note: string | undefined) {
+  /**
+   * Report thumbs-down feedback the user explained, with the Session it belongs to and an excerpt
+   * of the rated reply. The rating dialog tells the user the conversation is included.
+   */
+  private async reportMessage(sessionId: SessionId, item: MessageFeedbackItem) {
     return this.send({
-      source: 'message', category: category ?? 'other',
-      description: note === undefined ? '（未填写说明）' : note.slice(0, DESCRIPTION_MAX_LENGTH),
-      sessionId, attachSession: true,
+      source: 'message', category: item.category ?? 'other',
+      description: item.note === undefined ? '（未填写说明）' : item.note.slice(0, DESCRIPTION_MAX_LENGTH),
+      sessionId, attachSession: true, ratedMessageId: item.messageId,
     }, [])
   }
 
@@ -132,45 +162,71 @@ export class FeedbackReport extends TypertRemoteService {
   }
 
   private async send(
-    report: { source: 'report' | 'message'; category: string; description: string; sessionId: SessionId | null; attachSession: boolean; uiLanguage?: string | undefined },
+    report: {
+      source: 'report' | 'message'
+      category: string
+      description: string
+      sessionId: SessionId | null
+      attachSession: boolean
+      uiLanguage?: string | undefined
+      ratedMessageId?: string
+    },
     images: readonly { name: string; contentType: string; bytes: Buffer }[],
   ): Promise<FeedbackReportReceipt> {
     const state = await this.ctx.hubAccount.getState()
     if (state.status !== 'signed-in') throw new RemoteError('feedback-report/signed-out', 'sign in to the user center before reporting', {})
-    const events = report.sessionId === null ? [] : (await this.ctx.sessionQuery.readSession(report.sessionId)).events
+    const events = report.sessionId === null ? [] : await this.readEvents(report.sessionId)
+    const rated = report.ratedMessageId === undefined ? undefined : replyText(events, report.ratedMessageId)
     const environment: Record<string, string> = {
       ...this.config.appVersion === undefined ? {} : { appVersion: this.config.appVersion },
       os: `${platform()} ${release()}`,
       arch: arch(),
       ...report.uiLanguage === undefined ? {} : { locale: report.uiLanguage },
       ...await this.sessionEnvironment(events),
+      ...rated === undefined ? {} : { ratedReply: rated },
       ...state.profile?.tenantName ? { tenant: state.profile.tenantName } : {},
     }
-    const session = report.sessionId === null || !report.attachSession ? null : await this.snapshotOf(report.sessionId, events)
+    const session = report.sessionId === null || !report.attachSession ? null : snapshotOf(report.sessionId, events)
     const payload = { source: report.source, category: report.category, description: report.description, environment, session }
+    const res = await this.post(payload, images)
+    if (res.status === 413 && session !== null) {
+      // The conversation is over the user center's limit: the report still goes, without it.
+      await res.body?.cancel()
+      return this.receipt(await this.post({ ...payload, environment: { ...environment, sessionOmitted: 'too-large' }, session: null }, images))
+    }
+    return this.receipt(res)
+  }
+
+  /** The Session's log, or an empty one when it cannot be read: the report goes either way. */
+  private async readEvents(sessionId: SessionId): Promise<readonly SessionEvent[]> {
+    try {
+      return (await this.ctx.sessionQuery.readSession(sessionId)).events
+    } catch (error: unknown) {
+      console.info('[feedback-report] Session not readable; reporting without it', { sessionId, error: String(error) })
+      return []
+    }
+  }
+
+  /** One report request; a transport failure reads as `feedback-report/unreachable`. */
+  private async post(payload: object, images: readonly { name: string; contentType: string; bytes: Buffer }[]): Promise<Response> {
     const form = new FormData()
     form.set('payload', JSON.stringify(payload))
     for (const image of images) form.append('images', new Blob([new Uint8Array(image.bytes)], { type: image.contentType }), image.name)
-    let res: Response
     try {
-      res = await this.ctx.hubAccount.request('/api/client/feedback', { method: 'POST', body: form, signal: AbortSignal.timeout(this.config.requestTimeoutMs) })
+      return await this.ctx.hubAccount.request('/api/client/feedback', { method: 'POST', body: form, signal: AbortSignal.timeout(this.config.requestTimeoutMs) })
     } catch (error: unknown) {
       if (error instanceof RemoteError && error.code === 'hub-account/signed-out') {
         throw new RemoteError('feedback-report/signed-out', 'sign in to the user center before reporting', {}, { cause: error })
       }
       throw new RemoteError('feedback-report/unreachable', 'the user center cannot be reached', {}, { cause: error })
     }
+  }
+
+  private async receipt(res: Response): Promise<FeedbackReportReceipt> {
     if (!res.ok) throw await refusal(res)
     const parsed = receiptSchema.safeParse(await res.json().catch(() => undefined))
     if (!parsed.success) throw new RemoteError('feedback-report/refused', 'the user center answered an unreadable receipt', { status: res.status })
     return { id: brandString<FeedbackReportId>(parsed.data.id), createdAt: parsed.data.createdAt }
-  }
-
-  /** The Session's title and conversation snapshot, or null when it has no conversation. */
-  private async snapshotOf(sessionId: SessionId, events: readonly SessionEvent[]) {
-    const messages = buildShareSnapshot(events)
-    if (messages.length === 0) return null
-    return { sessionId, title: (await this.ctx.sessionQuery.readTitle(sessionId))?.title ?? '', messages }
   }
 
   /** The model and assistant the Session last recorded. */

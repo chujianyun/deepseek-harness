@@ -62,9 +62,10 @@ declare module '@deepseek-ai/cordis' {
      * matching no-ops and deletions do not fire it.
      * @param sessionId - Session that owns the message.
      * @param item - the committed item, cloned for the listener.
+     * @param previous - the item it replaced, or undefined for a new one.
      * @mode emit
      */
-    'feedback/message-recorded'(sessionId: SessionId, item: MessageFeedbackItem): void
+    'feedback/message-recorded'(sessionId: SessionId, item: MessageFeedbackItem, previous: MessageFeedbackItem | undefined): void
   }
 }
 
@@ -176,7 +177,7 @@ export class MessageFeedbackService extends TypertRemoteService {
   async put(request: MessageFeedbackPutRequest): Promise<MessageFeedbackPutResult> {
     const note = this.resolveNote(request.note)
     if (!note.ok) return note
-    let recorded: MessageFeedbackItem | undefined
+    let recorded: { item: MessageFeedbackItem; previous: MessageFeedbackItem | undefined } | undefined
     const result = await this.enqueue(request.sessionId, () => this.withSession(request.sessionId, true, async (events, append) => {
       const items = currentItems(request.sessionId, events)
       if (!events.some(event => event.type === 'assistant/message'
@@ -204,10 +205,13 @@ export class MessageFeedbackService extends TypertRemoteService {
         updatedAt: existing === undefined ? now : Math.max(now, existing.updatedAt),
       }
       await append({ type: 'feedback/message-put', data: { sessionId: request.sessionId, item } })
-      recorded = item
+      recorded = { item, previous: existing }
       return success(snapshotItem(item))
     }))
-    if (recorded !== undefined) this.ctx.emit('feedback/message-recorded', request.sessionId, snapshotItem(recorded))
+    if (recorded !== undefined) {
+      const { item, previous } = recorded
+      this.ctx.emit('feedback/message-recorded', request.sessionId, snapshotItem(item), previous === undefined ? undefined : snapshotItem(previous))
+    }
     return result
   }
 

@@ -430,9 +430,10 @@ Feedback for one message changed: `put` committed a new or replaced item. Fires 
  * matching no-ops and deletions do not fire it.
  * @param sessionId - Session that owns the message.
  * @param item - the committed item, cloned for the listener.
+ * @param previous - the item it replaced, or undefined for a new one.
  * @mode emit
  */
-'feedback/message-recorded'(sessionId: SessionId, item: MessageFeedbackItem): void
+'feedback/message-recorded'(sessionId: SessionId, item: MessageFeedbackItem, previous: MessageFeedbackItem | undefined): void
 ```
 
 Types: [SessionId](core.zh.md)

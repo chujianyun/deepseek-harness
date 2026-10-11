@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-将浏览器行与 Host 的 `feedback-report` 行一起挂载，使用相同的 `disabled` 条件；web-app bundle 在配置了用户中心的 `desktop` profile 下同时启用两者。和 ui-hub-account 一样，它在桌面窗口之外不添加任何内容。插件注入 `slots`、`locale`，以及 `hubAccount` 和 `feedbackReport` Remote。在插件生命周期内，它在 `conversation.session.header.utilities` 注册 `feedback-report` 条目（order -8，位于定时任务目录和溢出菜单左侧），在 `shell.overlay` 注册 `feedback-report` 与 `feedback-report.notice` 条目，并提供 `sessionFeedbackEntry`，使 [session-log-export](../../session-query/session-log-export/README.zh.md) 头部菜单的**反馈**打开这个对话框。
+将浏览器行与 Host 的 `feedback-report` 行一起挂载，使用相同的 `disabled` 条件；web-app bundle 在配置了用户中心的 `desktop` profile 下同时启用两者。和 ui-hub-account 一样，它在桌面窗口之外不添加任何内容。插件注入 `slots`、`locale`，以及 `hubAccount` 和 `feedbackReport` Remote。在插件生命周期内，它在 `conversation.session.header.utilities` 注册 `feedback-report` 条目（order -8，位于定时任务目录和溢出菜单左侧），在 `shell.overlay` 注册 `feedback-report` 与 `feedback-report.notice` 条目，并在登录期间提供 `sessionFeedbackEntry`，使 [session-log-export](../../session-query/session-log-export/README.zh.md) 头部菜单的**反馈**打开这个对话框；未登录时这一项仍打开消息反馈弹窗。
 
 按钮只在 `hubAccount` 状态流报告已登录时显示，点击后为当前会话打开对话框。
 
@@ -32,7 +32,7 @@ kind: "package-reference"
 - **头部** —— 警示图标、标题，以及一句说明该反馈什么。
 - **问题类型** —— 报错、卡顿、功能不可用、结果异常、其他之一；必选。
 - **问题描述** —— 必填，最多 2000 字，带字数统计。
-- **截图** —— 最多三张 PNG、JPEG、WebP 或 GIF 图片，每张最多 5 MB，可点添加格选择，也可在对话框任意位置粘贴；每张缩略图有移除按钮。超出限制的文件会被拒绝并说明原因，其余保留。
+- **截图** —— 最多三张 PNG、JPEG、WebP 或 GIF 图片，每张最多 5 MB，可点添加格选择，也可在对话框任意位置粘贴，同时进行的添加共用剩余名额；每张缩略图有移除按钮。超出限制的文件会被拒绝并说明原因，其余保留。
 - **附上当前会话内容** —— 反馈针对某个会话时显示，默认勾选。
 - **底部** —— 提示会附带客户端版本、系统和当前模型，**取消**，以及选好类型、填好描述后可用的**提交**。
 

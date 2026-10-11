@@ -86,6 +86,8 @@ describe('ui-feedback-report browser plugin', () => {
     expect(accepted).toHaveBeenCalledOnce()
 
     const one = 'one' as SessionId
+    // The header menu's Feedback row opens the dialog only while signed in.
+    await vi.waitFor(() => { expect(ctx.get('sessionFeedbackEntry')).toBeDefined() })
     buttonFace.requestReport({ sessionId: one })
     expect(dialogFace.hooks.reportRequest.getSnapshot()).toEqual({ sessionId: one })
     dialogFace.settleReport()
@@ -103,6 +105,19 @@ describe('ui-feedback-report browser plugin', () => {
     noticeFace.dismissNotice()
     expect(noticeFace.hooks.submitted.getSnapshot()).toBe(0)
 
+    // Signing out withdraws the menu takeover; signing in again restores it.
+    frames.push(view('signed-out'))
+    wake?.()
+    await vi.waitFor(() => { expect(ctx.get('sessionFeedbackEntry')).toBeUndefined() })
+    frames.push(view('signed-out'))
+    wake?.()
+    await vi.waitFor(() => { expect(accepted).toHaveBeenCalledTimes(3) })
+    frames.push(view('signed-in'))
+    wake?.()
+    await vi.waitFor(() => { expect(ctx.get('sessionFeedbackEntry')).toBeDefined() })
+    frames.push(view('signed-in'))
+    wake?.()
+    await vi.waitFor(() => { expect(accepted).toHaveBeenCalledTimes(5) })
     fail?.(new Error('stream broke'))
     await fiber.dispose()
     expect(dispose).toHaveBeenCalledOnce()
