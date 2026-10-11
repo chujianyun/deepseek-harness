@@ -4,7 +4,7 @@
 // typed draft, same-basename directory adoption, the rename round
 // trip over the real wire (workspace.rename RPC + durable registry), the
 // duplicate-name pre-check, the
-// flat "In one list" and opt-in Workspace tree views with persisted grouping, the session
+// flat "No grouping" and opt-in Workspace tree views with persisted grouping, the session
 // hover card and row action menu, and the session archive round trip (row
 // menu → workspace.archiveSession RPC → durable global set → row hidden
 // across reload). Zero model calls: workspace.create/rename/archiveSession
@@ -409,14 +409,15 @@ describe('web e2e: workspace management (create / rename / grouping / hover affo
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
-  it('switches to the flat "In one list" view and persists the preference', async () => {
+  it('switches to the flat "No grouping" view and persists the preference', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-flat'))
     // Grouped default: workspace group rows render (the seeded session sits
     // under Ungrouped; the created workspaces are empty groups).
     await expect.poll(() => page.getByText('Workspaces', { exact: true }).count(), { timeout: 10_000 }).toBe(1)
     // Grouping and ordering moved into the View options menu.
     await page.getByRole('button', { name: 'View options' }).click()
-    await page.getByRole('menuitem', { name: 'In one list' }).click()
+    await page.getByRole('menuitem', { name: /^Group by/u }).hover()
+    await page.getByRole('menuitem', { name: 'No grouping', exact: true }).click()
     // Flat mode: the section label flips and the seeded session is a
     // top-level row with no group headers above it.
     await expect.poll(() => page.getByText('Sessions', { exact: true }).count(), { timeout: 10_000 }).toBeGreaterThanOrEqual(1)
@@ -430,6 +431,7 @@ describe('web e2e: workspace management (create / rename / grouping / hover affo
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     await expect.poll(() => page.getByText('Ungrouped', { exact: true }).count(), { timeout: 15_000 }).toBe(0)
     await page.getByRole('button', { name: 'View options' }).click()
+    await page.getByRole('menuitem', { name: /^Group by/u }).hover()
     await page.getByRole('menuitem', { name: 'WorkSpace', exact: true }).click()
     await expect.poll(() => page.getByText('Ungrouped', { exact: true }).count(), { timeout: 10_000 }).toBeGreaterThanOrEqual(1)
     expect(tripwire.pageErrors).toEqual([])
@@ -683,6 +685,7 @@ describe('web e2e: workspace management (create / rename / grouping / hover affo
     await page.getByRole('tree', { name: 'Sessions', exact: true }).getByText('project-one', { exact: true }).waitFor()
     expect(await section.getByText('project-one', { exact: true }).count()).toBe(0)
     await page.getByRole('button', { name: 'View options', exact: true }).click()
+    await page.getByRole('menuitem', { name: /^Group by/u }).hover()
     const optionsExpected = fileURLToPath(new URL('./expected/workspace-management/grouping-options.expected.md', import.meta.url))
     await compareOrRefreshGolden(optionsExpected, await captureStableAria(page, '[role="menu"]', scaffold.workspaceCwd), MODE)
     await page.getByRole('menuitem', { name: 'Workspace Tree', exact: true }).click()
@@ -737,10 +740,12 @@ describe('web e2e: workspace management (create / rename / grouping / hover affo
     await parent.click()
     await section.getByText('project-two', { exact: true }).waitFor()
     await page.getByRole('button', { name: 'View options', exact: true }).click()
+    await page.getByRole('menuitem', { name: /^Group by/u }).hover()
     await page.getByRole('menuitem', { name: 'WorkSpace', exact: true }).click()
     await page.getByRole('tree', { name: 'Sessions', exact: true }).getByText('project-two', { exact: true }).waitFor()
     expect(await section.getByText('project-two', { exact: true }).count()).toBe(0)
     await page.getByRole('button', { name: 'View options', exact: true }).click()
+    await page.getByRole('menuitem', { name: /^Group by/u }).hover()
     await page.getByRole('menuitem', { name: 'Workspace Tree', exact: true }).click()
     await section.getByText('project-two', { exact: true }).waitFor()
     await clickHoverAction(parent, 'New session in folder-group')

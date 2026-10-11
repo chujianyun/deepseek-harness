@@ -19,6 +19,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { DraftInitializationOptions } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { RowToast } from './contract/slots.ts'
+import type { SessionGrouping, SessionGroupingRegistry } from './groupings.ts'
 import { pinOrderAccounts, pinOrderSource } from './pin-order.ts'
 import type { WorkspaceViewStoreActions } from './stores.ts'
 
@@ -110,6 +111,12 @@ export interface UiWorkspace {
    * @returns created absolute path.
    */
   createDirectory(path: string, name: string): Promise<string>
+  /**
+   * Offer a Session grouping in the sidebar's Group by menu for as long as the caller keeps it.
+   * @param grouping - the grouping; an id a built-in view or another registration already uses throws.
+   * @returns the disposer that removes it; a sidebar grouped by it then shows the Workspace view.
+   */
+  registerSessionGrouping(grouping: SessionGrouping): () => void
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -145,6 +152,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
    * @param sessions - pure Session Controller.
    * @param view - the browser's viewing-store write set (one instance shared with its registration).
    * @param notify - show one notice through the Workspace notice channel.
+   * @param groupings - the registry the sidebar lists its registered groupings from.
    */
   constructor(
     ctx: Context,
@@ -153,6 +161,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     private readonly sessions: ISessions,
     private readonly view: Pick<WorkspaceViewStoreActions, 'pinSessionOrder'>,
     private readonly notify: (toast: RowToast) => void,
+    private readonly groupings: Pick<SessionGroupingRegistry, 'register'>,
   ) {
     super(ctx, 'uiWorkspace')
     ctx.effect(() => {
@@ -165,6 +174,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         reference?.release()
       }
     }, 'ui-workspace: Workspace navigation policy')
+  }
+
+  registerSessionGrouping(grouping: SessionGrouping): () => void {
+    return this.groupings.register(grouping)
   }
 
   async connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId> {

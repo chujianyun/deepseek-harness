@@ -144,6 +144,7 @@
 .projectRow .chevron { display: none; }
 .projectRow:hover .chevron { display: inline-flex; }
 .projectRow:hover .folder { display: none; }
+.projectRow .chevronShown { display: inline-flex; }
 
 /* Expand arrow (filled triangle): points right closed, rotates to point down open. */
 .arrow {

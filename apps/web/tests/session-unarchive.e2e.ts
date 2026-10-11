@@ -102,7 +102,8 @@ describe('web e2e: archived sessions are restored from the sidebar filter', () =
       .toContain(SessionId(SEED_ID))
 
     await page.getByRole('button', { name: 'View options' }).click()
-    await page.getByRole('menuitem', { name: 'All conversations (show archived)', exact: true }).click()
+    await page.getByRole('menuitem', { name: /^Status/u }).hover()
+    await page.getByRole('menuitem', { name: 'All', exact: true }).click()
     await ungroupedSection()
     await expect.poll(() => sessionRow.count(), { timeout: 10_000 }).toBe(1)
     await clickHoverAction(sessionRow, `Session actions for ${title}`)
@@ -114,7 +115,8 @@ describe('web e2e: archived sessions are restored from the sidebar filter', () =
     // Back to the default filter: the restored row must be an ordinary row
     // again, visible without any archived rows in the view.
     await page.getByRole('button', { name: 'View options' }).click()
-    await page.getByRole('menuitem', { name: 'Hide archived', exact: true }).click()
+    await page.getByRole('menuitem', { name: /^Status/u }).hover()
+    await page.getByRole('menuitem', { name: 'Active', exact: true }).click()
     await ungroupedSection()
     await expect.poll(() => sessionRow.count(), { timeout: 15_000 }).toBe(1)
 

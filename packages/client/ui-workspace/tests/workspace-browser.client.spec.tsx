@@ -13,6 +13,7 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import type { DirectoryFlowOwnerProps, WorkspaceBrowserProps } from '../src/client/contract/slots.ts'
+import { createSessionGroupingRegistry, type SessionGrouping } from '../src/client/groupings.ts'
 import { createWorkspaceShortcutControls } from '../src/client/shortcuts.ts'
 import { createWorkspaceViewStore, FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
 import { UNGROUPED_KEY } from '../src/client/tree.ts'
@@ -108,6 +109,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
   const store = createWorkspaceViewStore().create()
   const props: WorkspaceBrowserProps = {
     useShortcuts: select => select([]),
+    useGroupings: select => select([]),
     useWorkspaceShortcuts: bindSnapshotSelector(controls.state),
     requestSearch: controls.search,
     requestAddWorkspace: controls.add,
@@ -142,6 +144,24 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
   }
   const view = render(<WorkspaceBrowser {...props} />)
   return { view, props, store, controls }
+}
+
+/** Where each view choice sits in the two-level view menu. */
+const VIEW_PARENT: Record<string, string> = {
+  活跃: '状态', 已归档: '状态', 全部: '状态',
+  按工作区: '分组方式', 按工作区树: '分组方式', 日期: '分组方式', 不分组: '分组方式', 按字母: '分组方式',
+  手动排序: '排序方式', 最近更新: '排序方式',
+}
+/** Open the submenu holding a view choice in the open view menu, and return the choice's row. */
+function viewItem(name: string): HTMLElement {
+  const parent = screen.getByRole('menuitem', { name: new RegExp(`^${VIEW_PARENT[name]!}`, 'u') })
+  fireEvent.mouseEnter(parent.parentElement!)
+  return screen.getByRole('menuitem', { name })
+}
+
+/** Row labels of the open submenu. */
+function submenuItems(): (string | null)[] {
+  return within(screen.getAllByRole('menu').at(-1)!).getAllByRole('menuitem').map(item => item.textContent)
 }
 
 /** Re-render with (possibly) changed props — WorkspaceBrowser has no side channel. */
@@ -216,7 +236,7 @@ describe('WorkspaceBrowser', () => {
       .map(row => row.querySelector('[class*="title"]')?.textContent)
     const pick = (name: string) => {
       fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-      fireEvent.click(screen.getByRole('menuitem', { name }))
+      fireEvent.click(viewItem(name))
     }
     expect(names()).toEqual(['a', 'b', 'c'])
     pick('手动排序')
@@ -436,7 +456,7 @@ describe('WorkspaceBrowser', () => {
       expect(screen.getByText('alive')).toBeTruthy()
       expect(screen.queryByText('gone')).toBeNull()
       fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: '全部对话（显示已归档）' }))
+      fireEvent.click(viewItem('全部'))
       expect(b.store.getSnapshot().archivedFilter).toBe('show')
       expect(screen.getByText('gone')).toBeTruthy()
     } finally {
@@ -458,14 +478,18 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('alpha-s')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    expect(screen.getByText('分组方式')).toBeTruthy() // the menu heading label
-    expect(screen.getAllByRole('separator')).toHaveLength(2)
+    // Each top-level row leads to its choices and shows the current one.
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      '按工作区', '按工作区树', '单列表', '手动排序', '最近更新', '隐藏已归档', '全部对话（显示已归档）', '仅显示已归档',
+      '状态活跃', '分组方式按工作区', `排序方式${b.store.getSnapshot().orderBy === 'manual' ? '手动排序' : '最近更新'}`,
     ])
-    expect(screen.getByRole('menuitem', { name: '按工作区' }).querySelector('svg')).toBeTruthy()
-    expect(screen.getByRole('menuitem', { name: '手动排序' }).querySelector('svg')).toBeTruthy()
-    fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
+    expect(viewItem('活跃').querySelectorAll('svg')).toHaveLength(2) // icon + check
+    expect(viewItem('全部').querySelectorAll('svg')).toHaveLength(1)
+    viewItem('按工作区')
+    expect(submenuItems()).toEqual([
+      '按工作区', '按工作区树', '不分组',
+    ])
+    expect(viewItem('手动排序').querySelector('svg')).toBeTruthy()
+    fireEvent.click(viewItem('不分组'))
     // Store-driven flip: title changes, rows flatten newest-first, headers gone.
     expect(b.store.getSnapshot().groupBy).toBe('flat')
     expect(screen.getByText('会话')).toBeTruthy()
@@ -475,8 +499,8 @@ describe('WorkspaceBrowser', () => {
 
     // Back to workspace grouping through the same menu.
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    expect(screen.getByRole('menuitem', { name: '手动排序' }).hasAttribute('disabled')).toBe(false)
-    fireEvent.click(screen.getByRole('menuitem', { name: '按工作区' }))
+    expect(viewItem('手动排序').hasAttribute('disabled')).toBe(false)
+    fireEvent.click(viewItem('按工作区'))
     expect(b.store.getSnapshot().groupBy).toBe('workspace')
     expect(screen.getByText('工作区')).toBeTruthy()
 
@@ -487,7 +511,7 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().groupBy).toBe('workspace')
   })
 
-  it('picking 全部对话（显示已归档） keeps existing rows and reveals archived ones in place', () => {
+  it('picking 全部 keeps existing rows and reveals archived ones in place', () => {
     mount({
       useSessions: hook(sessionState([summary('kept', 2), summary('stored', 1)])),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['kept', 'stored'])], [sid('stored')])),
@@ -497,7 +521,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('stored')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '全部对话（显示已归档）' }))
+    fireEvent.click(viewItem('全部'))
     expect(screen.getByText('kept')).toBeTruthy()
     expect(screen.getByText('stored')).toBeTruthy()
   })
@@ -510,29 +534,29 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByText('alpha'))
     const pick = (name: string) => {
       fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-      fireEvent.click(screen.getByRole('menuitem', { name }))
+      fireEvent.click(viewItem(name))
     }
 
     // 仅显示已归档 hides the live rows and shows the archived one.
-    pick('仅显示已归档')
+    pick('已归档')
     expect(b.store.getSnapshot().archivedFilter).toBe('only')
     expect(screen.queryByText('kept')).toBeNull()
     expect(screen.getByText('stored')).toBeTruthy()
 
     // Picking another filter replaces it: everything visible.
-    pick('全部对话（显示已归档）')
+    pick('全部')
     expect(b.store.getSnapshot().archivedFilter).toBe('show')
     expect(screen.getByText('kept')).toBeTruthy()
     expect(screen.getByText('stored')).toBeTruthy()
 
     // Re-picking the selected filter keeps it selected.
-    pick('全部对话（显示已归档）')
+    pick('全部')
     expect(b.store.getSnapshot().archivedFilter).toBe('show')
     expect(screen.getByText('kept')).toBeTruthy()
     expect(screen.getByText('stored')).toBeTruthy()
 
     // 隐藏已归档 is the explicit way back to the default hidden view.
-    pick('隐藏已归档')
+    pick('活跃')
     expect(b.store.getSnapshot().archivedFilter).toBe('default')
     expect(screen.getByText('kept')).toBeTruthy()
     expect(screen.queryByText('stored')).toBeNull()
@@ -550,12 +574,12 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByText('beta')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '仅显示已归档' }))
+    fireEvent.click(viewItem('已归档'))
     expect(screen.getByText('alpha')).toBeTruthy()
     expect(screen.queryByText('beta')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '隐藏已归档' }))
+    fireEvent.click(viewItem('活跃'))
     expect(screen.getByText('beta')).toBeTruthy()
   })
 
@@ -565,7 +589,7 @@ describe('WorkspaceBrowser', () => {
       useWorkspaces: hook(workspaceState([workspace('alpha', ['kept'])])),
     })
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '仅显示已归档' }))
+    fireEvent.click(viewItem('已归档'))
     expect(screen.getByText('暂无已归档会话')).toBeTruthy()
     expect(screen.queryByText('暂无会话')).toBeNull()
 
@@ -589,14 +613,14 @@ describe('WorkspaceBrowser', () => {
     })
     const choose = (name: string) => {
       fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-      fireEvent.click(screen.getByRole('menuitem', { name }))
+      fireEvent.click(viewItem(name))
     }
     choose('按工作区树')
     const parentSection = screen.getByText('Projects').closest<HTMLElement>('[class*="groupSection"]')!
     expect(within(parentSection).getByText('Child')).toBeTruthy()
 
     // Projects keeps no archived Sessions, so Child rises to the top level.
-    choose('仅显示已归档')
+    choose('已归档')
     expect(screen.queryByText('Projects')).toBeNull()
     expect(screen.getByText('Child')).toBeTruthy()
   })
@@ -609,7 +633,7 @@ describe('WorkspaceBrowser', () => {
     const b = mount(seats)
     fireEvent.click(screen.getByText('alpha'))
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '全部对话（显示已归档）' }))
+    fireEvent.click(viewItem('全部'))
     expect(b.store.getSnapshot().archivedFilter).toBe('show')
 
     cleanup()
@@ -629,7 +653,7 @@ describe('WorkspaceBrowser', () => {
     const parentSection = () => screen.getByText('Projects').closest<HTMLElement>('[class*="groupSection"]')!
     const choose = (name: string) => {
       fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-      fireEvent.click(screen.getByRole('menuitem', { name }))
+      fireEvent.click(viewItem(name))
     }
     expect(b.store.getSnapshot().groupBy).toBe('workspace')
     expect(screen.getByText('Child')).toBeTruthy()
@@ -650,7 +674,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('Child')).toBeNull()
     fireEvent.click(screen.getByText('Projects'))
     expect(within(parentSection()).getByText('Child')).toBeTruthy()
-    choose('单列表')
+    choose('不分组')
     expect(screen.queryByText('Projects')).toBeNull()
     expect(screen.getByText('child-session')).toBeTruthy()
   })
@@ -666,7 +690,7 @@ describe('WorkspaceBrowser', () => {
       useWorkspaces: hook(workspaces),
     })
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
+    fireEvent.click(viewItem('不分组'))
     expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toBeUndefined()
 
     const one = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
@@ -681,7 +705,7 @@ describe('WorkspaceBrowser', () => {
       .toEqual(['two', 'three', 'one'])
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
+    fireEvent.click(viewItem('最近更新'))
     await waitFor(() => {
       expect(screen.getAllByRole('treeitem').map(row => row.textContent)).toEqual([
         expect.stringContaining('one'), expect.stringContaining('two'), expect.stringContaining('three'),
@@ -690,7 +714,7 @@ describe('WorkspaceBrowser', () => {
     })
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '手动排序' }))
+    fireEvent.click(viewItem('手动排序'))
     fireEvent.dragStart(one, { dataTransfer: dragData() })
     fireDrag(three, 'drop', 180)
     b.view.unmount()
@@ -1028,7 +1052,7 @@ describe('WorkspaceBrowser', () => {
     })
     fireEvent.click(screen.getByText('alpha'))
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
+    fireEvent.click(viewItem('最近更新'))
     await waitFor(() => {
       const rows = screen.getAllByRole('treeitem').slice(1)
       expect(rows[0]?.textContent).toContain('one')
@@ -1048,7 +1072,7 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['two', 'one'])
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '手动排序' }))
+    fireEvent.click(viewItem('手动排序'))
     expect(screen.getAllByRole('treeitem').slice(1)[0]?.textContent).toContain('two')
 
     const updated = sessionState([summary('one', 4), summary('two', 2)])
@@ -1057,7 +1081,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getAllByRole('treeitem').slice(1)[0]?.textContent).toContain('two')
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
+    fireEvent.click(viewItem('最近更新'))
     await waitFor(() => {
       expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({})
       expect(screen.getAllByRole('treeitem').slice(1)[0]?.textContent).toContain('one')
@@ -1091,7 +1115,7 @@ describe('WorkspaceBrowser', () => {
     rerender(b, { useWorkspaces: hook(workspaceState([workspace('alpha', ['kept-s', 'gone-s'])], [sid('gone-s')])) })
     expect(screen.queryByText('gone-s')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
+    fireEvent.click(viewItem('不分组'))
     expect(screen.getByText('kept-s')).toBeTruthy()
     expect(screen.queryByText('gone-s')).toBeNull()
   })
@@ -1216,7 +1240,7 @@ describe('WorkspaceBrowser', () => {
       unarchiveSession,
     })
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '全部对话（显示已归档）' }))
+    fireEvent.click(viewItem('全部'))
     fireEvent.click(screen.getByRole('button', { name: '搜索会话' }))
     fireEvent.change(screen.getByPlaceholderText('搜索会话名称'), { target: { value: 'e' } })
     await act(async () => { await Promise.resolve() })
@@ -1333,7 +1357,7 @@ describe('WorkspaceBrowser', () => {
       .map(row => row.querySelector('[class*="title"]')?.textContent)
     const pick = (name: string) => {
       fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-      fireEvent.click(screen.getByRole('menuitem', { name }))
+      fireEvent.click(viewItem(name))
     }
     pick('手动排序')
     pick('最近更新')
@@ -1637,7 +1661,7 @@ describe('WorkspaceBrowser', () => {
       open,
     })
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
+    fireEvent.click(viewItem('不分组'))
     const input = screen.getByPlaceholderText<HTMLInputElement>('搜索会话名称')
     fireEvent.change(input, { target: { value: 'needle' } })
     fireEvent.click(screen.getByRole('treeitem'))
@@ -2094,7 +2118,7 @@ describe('WorkspaceBrowser', () => {
       useWorkspaces: hook(workspaceState([], [], [sid('one'), sid('two')])),
     })
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
+    fireEvent.click(viewItem('不分组'))
     expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toBeUndefined()
     const one = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
     const two = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
@@ -2143,7 +2167,7 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().sessionOrderByAccount[UNGROUPED_KEY]).toEqual(['three', 'one', 'two'])
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
+    fireEvent.click(viewItem('最近更新'))
     await waitFor(() => {
       expect(screen.getAllByRole('treeitem').slice(1).map(row => row.textContent)).toEqual([
         expect.stringContaining('one'), expect.stringContaining('two'), expect.stringContaining('three'),
@@ -2561,5 +2585,138 @@ describe('Workspace tree grouping', () => {
     fireEvent.dragEnd(alpha)
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledOnce()
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledWith(wid('alpha'), wid('gamma'))
+  })
+})
+
+describe('a registered grouping', () => {
+  /** Sections Sessions by the first letter of the title; the `a` section carries a glyph. */
+  const letter = (patch: Partial<SessionGrouping> = {}): SessionGrouping => ({
+    id: 'letter', label: () => '按字母', order: 150, icon: <svg data-testid="letter-menu" />,
+    groupOf: session => ({
+      key: session.title!.slice(0, 1), label: session.title!.slice(0, 1).toUpperCase(),
+      ...session.title!.startsWith('a') ? { icon: <svg data-testid="a-glyph" /> } : {},
+    }),
+    ...patch,
+  })
+  const sessions = () => sessionState([summary('apple', 30), summary('banana', 20), summary('avocado', 10)])
+  const headings = () => screen.getAllByRole('treeitem').filter(row => row.getAttribute('aria-expanded') !== null)
+    .map(row => row.textContent)
+  const rows = () => screen.getAllByRole('treeitem').filter(row => row.getAttribute('aria-expanded') === null)
+    .map(row => row.querySelector('[class*="title"]')?.textContent)
+
+  it('is listed under Group by in order, sections the Sessions by it, and folds a section', () => {
+    localStorage.clear()
+    const registry = createSessionGroupingRegistry()
+    registry.register(letter())
+    const b = mount({
+      useSessions: hook(sessionState([summary('apple', 30, { retainedBy: { mainView: 1 } }), summary('banana', 20), summary('avocado', 10)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['apple', 'banana', 'avocado'])])),
+      useGroupings: bindSnapshotSelector(registry.groupings),
+    })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    viewItem('按工作区')
+    expect(submenuItems()).toEqual(['按工作区', '按字母', '按工作区树', '不分组'])
+    expect(screen.getByTestId('letter-menu')).toBeTruthy()
+    fireEvent.click(viewItem('按字母'))
+    expect(b.store.getSnapshot().groupBy).toBe('letter')
+    expect(screen.getByText('会话')).toBeTruthy()
+    expect(headings()).toEqual(['A', 'B'])
+    expect(rows()).toEqual(['apple', 'avocado', 'banana'])
+    // The section holding the current Session marks its glyph.
+    expect(screen.getByTestId('a-glyph').parentElement!.className).toMatch(/folderActive/u)
+
+    // Rows follow activity, so the order choice is not offered.
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['状态活跃', '分组方式按字母'])
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    fireEvent.click(screen.getByText('B'))
+    expect(b.store.getSnapshot().groupCollapsed).toEqual({ letter: { b: true } })
+    expect(rows()).toEqual(['apple', 'avocado'])
+    fireEvent.click(screen.getByText('B'))
+    expect(b.store.getSnapshot().groupCollapsed).toEqual({ letter: {} })
+    expect(rows()).toEqual(['apple', 'avocado', 'banana'])
+    fireEvent.click(screen.getByText('apple'))
+    expect(b.props.open).toHaveBeenCalledWith(sid('apple'))
+  })
+
+  it('shows the empty state when the status filter leaves no Session', () => {
+    const store = createWorkspaceViewStore().create()
+    store.actions.setGroupBy('letter')
+    store.actions.setArchivedFilter('only')
+    mount({
+      useSessions: hook(sessions()),
+      useGroupings: select => select([letter()]),
+      useStore: bindSnapshotSelector(store),
+      actions: store.actions,
+    })
+    expect(screen.queryAllByRole('treeitem')).toEqual([])
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['状态已归档', '分组方式按字母'])
+  })
+
+  it('regroups when the grouping reports its own change', () => {
+    const listeners = new Set<() => void>()
+    let upper = true
+    const store = createWorkspaceViewStore().create()
+    store.actions.setGroupBy('letter')
+    const view = mount({
+      useSessions: hook(sessions()),
+      useGroupings: select => select([letter({
+        groupOf: (session) => {
+          const first = session.title!.slice(0, 1)
+          return { key: first, label: upper ? first.toUpperCase() : first }
+        },
+        subscribe: (onChange) => { listeners.add(onChange); return () => { listeners.delete(onChange) } },
+      })]),
+      useStore: bindSnapshotSelector(store),
+      actions: store.actions,
+    })
+    expect(headings()).toEqual(['A', 'B'])
+    upper = false
+    act(() => { for (const listener of listeners) listener() })
+    expect(headings()).toEqual(['a', 'b'])
+    view.view.unmount()
+    expect(listeners.size).toBe(0)
+  })
+
+  it('shows the Workspace view while the chosen grouping is not registered, and returns to it once it is', () => {
+    const registry = createSessionGroupingRegistry()
+    const store = createWorkspaceViewStore().create()
+    store.actions.setGroupBy('letter')
+    mount({
+      useSessions: hook(sessions()),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['apple', 'banana', 'avocado'])])),
+      useGroupings: bindSnapshotSelector(registry.groupings),
+      useStore: bindSnapshotSelector(store),
+      actions: store.actions,
+    })
+    expect(screen.getByText('工作区')).toBeTruthy()
+    expect(screen.getByText('alpha')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent).slice(0, 2)).toEqual(['状态活跃', '分组方式按工作区'])
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(store.getSnapshot().groupBy).toBe('letter')
+    act(() => { registry.register(letter()) })
+    expect(headings()).toEqual(['A', 'B'])
+  })
+
+  it('unfolds the section of a Session opened from search', () => {
+    const store = createWorkspaceViewStore().create()
+    store.actions.setGroupBy('letter')
+    store.actions.setGroupCollapsed('letter', 'b', true)
+    mount({
+      useSessions: hook(sessions()),
+      useGroupings: select => select([letter()]),
+      useStore: bindSnapshotSelector(store),
+      actions: store.actions,
+    })
+    expect(rows()).toEqual(['apple', 'avocado'])
+    fireEvent.change(screen.getByPlaceholderText('搜索会话名称'), { target: { value: 'banana' } })
+    expect(headings()).toEqual([])
+    fireEvent.click(screen.getByRole('treeitem'))
+    expect(store.getSnapshot().groupCollapsed).toEqual({ letter: {} })
+    expect(rows()).toEqual(['apple', 'avocado', 'banana'])
+    expect(scrollIntoView.mock.instances.at(-1)).toBe(screen.getByText('banana').closest('[role="treeitem"]'))
   })
 })

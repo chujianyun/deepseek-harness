@@ -14,7 +14,7 @@
  * are slot entries with their own behavior, so this component threads no
  * action callbacks and hosts no action surface.
  */
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Button, IconArchiveCheckOutlineRegular, IconArchiveOffOutlineRegular, IconArchiveOutlineRegular,
@@ -33,12 +33,13 @@ import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkspaceBrowserProps } from '../contract/slots.ts'
 import type { ArchivedFilter, GroupNode, SessionNode, SessionOrderBy, SessionRowState } from '../tree.ts'
 import {
-  deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey, owningParentFolder,
+  deriveFlat, deriveGroupingSections, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey, owningParentFolder,
   pinCurrentBlank, reconcileManualOrder, sessionMemberIds, UNGROUPED_KEY,
 } from '../tree.ts'
-import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
+import { GroupingSectionRow, ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
 import { AnimatedRows } from './AnimatedRows.tsx'
 import { FLAT_SESSION_ORDER_KEY, type SessionGroupBy } from '../stores.ts'
+import { WORKSPACE_GROUPINGS, type SessionGrouping, type WorkspaceGrouping } from '../groupings.ts'
 import { WorkspacePickFlow } from '../WorkspacePicker.tsx'
 import css from './WorkspaceBrowser.module.css'
 
@@ -51,6 +52,8 @@ const EXPAND_SLIDE_MS = 300
 const SEARCH_DEBOUNCE_MS = 250
 /** `session.search` wire bound, measured in JavaScript UTF-16 code units. */
 const SEARCH_QUERY_MAX_CODE_UNITS = 500
+/** Stable empty fold state for a registered grouping with no folded section. */
+const EMPTY_COLLAPSED: Readonly<Record<string, boolean>> = {}
 /** Idle Session rows visible per Workspace before the local overflow control. */
 const COLLAPSED_SESSION_LIMIT = 5
 
@@ -102,9 +105,33 @@ function useNativeDragAcceptance(active: boolean): void {
   }, [active])
 }
 
-/** Grouping, ordering, and archived-filter menu; own open state so it resets with the wide chrome. */
-function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, onGroupPick, onOrderPick, onArchivedFilterPick, t }: {
+/** Built-in Workspace views in the Group by menu, positioned by the same `order` registrations use. */
+const BUILTIN_GROUP_OPTIONS: readonly { id: WorkspaceGrouping; order: number; key: 'groupBy.workspace' | 'groupBy.workspaceTree' | 'groupBy.flat'; icon: ReactNode }[] = [
+  { id: 'workspace', order: 100, key: 'groupBy.workspace', icon: <IconFolderCloseRegular /> },
+  { id: 'workspace-tree', order: 200, key: 'groupBy.workspaceTree', icon: <IconWorkspaceTreeOutlineRegular /> },
+  { id: 'flat', order: 900, key: 'groupBy.flat', icon: <IconFlatListOutlineRegular /> },
+]
+const STATUS_OPTIONS = {
+  default: { id: 'status:active', key: 'status.active', icon: <IconArchiveOffOutlineRegular /> },
+  only: { id: 'status:archived', key: 'status.archived', icon: <IconArchiveCheckOutlineRegular /> },
+  show: { id: 'status:all', key: 'status.all', icon: <IconQueueOutlineRegular /> },
+} as const satisfies Record<ArchivedFilter, object>
+/** Status choices in menu order. */
+const STATUS_ORDER: readonly ArchivedFilter[] = ['default', 'only', 'show']
+const ORDER_OPTIONS = {
+  manual: { key: 'orderBy.manual', icon: <IconChevronsUpDownOutlineRegular /> },
+  updated: { key: 'orderBy.updated', icon: <IconClockOutlineRegular /> },
+} as const satisfies Record<SessionOrderBy, object>
+/** Order choices in menu order. */
+const ORDER_ORDER: readonly SessionOrderBy[] = ['manual', 'updated']
+
+/**
+ * Two-level view menu: Status, Group by, and (for the Workspace views) Order by, each opening its
+ * choices and showing the current one. Owns its open state so it resets with the wide chrome.
+ */
+function ViewOptionsMenu({ groupBy, groupings, orderBy, archivedFilter, onGroupPick, onOrderPick, onArchivedFilterPick, t }: {
   groupBy: SessionGroupBy
+  groupings: readonly SessionGrouping[]
   orderBy: SessionOrderBy
   archivedFilter: ArchivedFilter
   onGroupPick: (mode: SessionGroupBy) => void
@@ -113,36 +140,41 @@ function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, onGroupPick, onOrde
   t: WorkspaceBrowserProps['t']
 }) {
   const [open, setOpen] = useState(false)
+  const groupOptions = [
+    ...BUILTIN_GROUP_OPTIONS.map(option => ({ id: option.id, order: option.order, label: t(option.key), icon: option.icon })),
+    ...groupings.map(grouping => ({ id: grouping.id, order: grouping.order, label: grouping.label(), icon: grouping.icon })),
+  ].sort((left, right) => left.order - right.order)
+  const status = STATUS_OPTIONS[archivedFilter]
+  const workspaceView = (WORKSPACE_GROUPINGS as readonly string[]).includes(groupBy)
   return (
     <Menu
       open={open}
       onClose={() => { setOpen(false) }}
       items={[
-        { type: 'label' as const, id: 'group-by', text: t('groupBy.label') },
-        { id: 'workspace', label: t('groupBy.workspace'), icon: <IconFolderCloseRegular /> },
-        { id: 'workspace-tree', label: t('groupBy.workspaceTree'), icon: <IconWorkspaceTreeOutlineRegular /> },
-        { id: 'flat', label: t('groupBy.flat'), icon: <IconFlatListOutlineRegular /> },
-        { type: 'separator' as const, id: 'order-by-separator' },
-        { type: 'label' as const, id: 'order-by', text: t('orderBy.label') },
-        { id: 'manual', label: t('orderBy.manual'), icon: <IconChevronsUpDownOutlineRegular /> },
-        { id: 'updated', label: t('orderBy.updated'), icon: <IconClockOutlineRegular /> },
-        { type: 'separator' as const, id: 'archived-filter-separator' },
-        { type: 'label' as const, id: 'filter-by', text: t('filterBy.label') },
-        { id: 'hide-archived', label: t('viewOptions.hideArchived'), icon: <IconArchiveOffOutlineRegular /> },
-        { id: 'show-archived', label: t('viewOptions.showArchived'), icon: <IconQueueOutlineRegular /> },
-        { id: 'only-archived', label: t('viewOptions.onlyArchived'), icon: <IconArchiveCheckOutlineRegular /> },
+        {
+          id: 'status', label: t('status.label'), icon: <IconArchiveOutlineRegular />, detail: t(status.key),
+          submenu: STATUS_ORDER.map(filter => STATUS_OPTIONS[filter])
+            .map(option => ({ id: option.id, label: t(option.key), icon: option.icon })),
+        },
+        {
+          id: 'group-by', label: t('groupBy.label'), icon: <IconFolderCloseRegular />,
+          detail: groupOptions.find(option => option.id === groupBy)?.label,
+          submenu: groupOptions.map(option => ({ id: `group:${option.id}`, label: option.label, icon: option.icon })),
+        },
+        // Registered groupings list newest first, so the order choice applies to the Workspace views only.
+        ...workspaceView
+          ? [{
+            id: 'order-by', label: t('orderBy.label'), icon: <IconChevronsUpDownOutlineRegular />, detail: t(ORDER_OPTIONS[orderBy].key),
+            submenu: ORDER_ORDER.map(mode => ({ id: `order:${mode}`, label: t(ORDER_OPTIONS[mode].key), icon: ORDER_OPTIONS[mode].icon })),
+          }]
+          : [],
       ]}
-      selectedIds={[
-        groupBy,
-        orderBy,
-        { default: 'hide-archived', show: 'show-archived', only: 'only-archived' }[archivedFilter],
-      ]}
+      selectedIds={[status.id, `group:${groupBy}`, `order:${orderBy}`]}
       onSelect={(id) => {
-        if (id === 'workspace' || id === 'workspace-tree' || id === 'flat') onGroupPick(id)
-        else if (id === 'manual' || id === 'updated') onOrderPick(id)
-        else if (id === 'hide-archived') onArchivedFilterPick('default')
-        else if (id === 'show-archived') onArchivedFilterPick('show')
-        else if (id === 'only-archived') onArchivedFilterPick('only')
+        const statusPick = STATUS_ORDER.find(filter => STATUS_OPTIONS[filter].id === id)
+        if (statusPick !== undefined) onArchivedFilterPick(statusPick)
+        else if (id.startsWith('group:')) onGroupPick(id.slice('group:'.length))
+        else if (id === 'order:manual' || id === 'order:updated') onOrderPick(id === 'order:manual' ? 'manual' : 'updated')
         setOpen(false)
       }}
       align="end"
@@ -729,6 +761,91 @@ function FlatList({
   )
 }
 
+/**
+ * The body of a registered grouping: each section's heading folds it, and its rows list newest
+ * first after the current New Session and pinned rows. Rows do not drag: order follows activity.
+ */
+function GroupedList({
+  list, grouping, rowState, collapsed, setCollapsed, onLeaveArchivedOnly, useSessionStatus, open, onSessionRenameRequest,
+  usePanelInfo, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, renderSlot, t,
+}: Pick<
+  SessionTreeProps,
+  | 'useSessionStatus'
+  | 'open'
+  | 'onSessionRenameRequest'
+  | 'renderSlot'
+  | 'usePanelInfo'
+  | 'workspaceReady'
+  | 'animationResetKey'
+  | 'revealSessionId'
+  | 'onSessionRevealed'
+  | 'rowState'
+  | 'onLeaveArchivedOnly'
+  | 't'
+> & {
+  list: SessionListState
+  grouping: SessionGrouping
+  collapsed: Readonly<Record<string, boolean>>
+  setCollapsed: (key: string, collapsed: boolean) => void
+}) {
+  const panelActive = usePanelInfo(info => info.activePanelId !== null)
+  const statuses = useSessionStatus(s => s)
+  // A grouping's own changes (a renamed assistant, a language switch) regroup without a list change.
+  const [revision, regroup] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => grouping.subscribe?.(regroup), [grouping])
+  const sections = useMemo(
+    () => deriveGroupingSections(list, grouping, rowState, statuses, collapsed),
+    [list, grouping, rowState, statuses, collapsed, revision],
+  )
+  // A search result opened into a folded section unfolds it so the row can scroll into view.
+  const revealSummary = revealSessionId === undefined ? undefined : list.byId[revealSessionId]
+  const revealKey = revealSummary === undefined ? undefined : grouping.groupOf(revealSummary).key
+  useEffect(() => {
+    if (revealKey !== undefined && collapsed[revealKey] === true) setCollapsed(revealKey, false)
+  }, [collapsed, revealKey, setCollapsed])
+  const currentId = panelActive
+    ? undefined
+    : Object.values(list.byId).find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
+  const rowKeys = sections.length === 0
+    ? ['empty']
+    : sections.flatMap(section => [`group:${section.key}`, ...section.sessions.map(row => `session:${row.id}`)])
+  const now = Date.now()
+  return (
+    <div className={clsx(css.treeBody, css.wide)}>
+      <AnimatedRows
+        className={clsx(css.list)}
+        label={t('section.sessions')}
+        rowKeys={rowKeys}
+        ready={list.phase === 'ready' && workspaceReady}
+        resetKey={animationResetKey}
+      >
+        {sections.length === 0 && (
+          <EmptySessions rowState={rowState} onLeaveArchivedOnly={onLeaveArchivedOnly} t={t} />
+        )}
+        {sections.map(section => (
+          <div key={section.key} className={css.groupSection}>
+            <GroupingSectionRow section={section} onToggle={() => { setCollapsed(section.key, !section.collapsed) }} />
+            {section.sessions.map(node => (
+              <SessionNodeItem
+                key={node.id}
+                node={node}
+                currentId={currentId}
+                now={now}
+                onOpen={open}
+                onRenameRequest={onSessionRenameRequest}
+                renderSlot={renderSlot}
+                onReveal={node.id === revealSessionId ? () => { onSessionRevealed(node.id) } : undefined}
+                t={t}
+              />
+            ))}
+          </div>
+        ))}
+      </AnimatedRows>
+      <span className={css.fade} />
+    </div>
+  )
+}
+
 interface RemoteSearchState {
   query: string
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -858,6 +975,7 @@ export function WorkspaceBrowser({
   useHostInfo,
   useShortcuts,
   useWorkspaceShortcuts,
+  useGroupings,
   requestSearch,
   requestAddWorkspace,
   closeAddWorkspace,
@@ -891,7 +1009,15 @@ export function WorkspaceBrowser({
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
-  const groupBy = useStore(s => s.groupBy)
+  const groupings = useGroupings(rows => rows)
+  const storedGroupBy = useStore(s => s.groupBy)
+  // A stored grouping whose plugin is gone shows the Workspace view; the choice stays stored, so
+  // it returns with the plugin.
+  const grouping = groupings.find(item => item.id === storedGroupBy)
+  const groupBy: SessionGroupBy = grouping !== undefined || (WORKSPACE_GROUPINGS as readonly string[]).includes(storedGroupBy)
+    ? storedGroupBy
+    : 'workspace'
+  const groupCollapsed = useStore(s => s.groupCollapsed)
   const orderBy = useStore(s => s.orderBy)
   // Persisted view blobs written before the archived filter existed rehydrate
   // without the field; they read as the default hide-archived view.
@@ -1210,7 +1336,7 @@ export function WorkspaceBrowser({
       <div className={css.sectionHeader}>
         {wide && (
           <span className={clsx(css.sectionLabel, css.wide, searchExpanded && css.sectionLabelHidden)}>
-            {groupBy === 'flat' ? t('section.sessions') : t('section.workspaces')}
+            {groupBy === 'flat' || grouping !== undefined ? t('section.sessions') : t('section.workspaces')}
           </span>
         )}
         {wide && (
@@ -1274,6 +1400,7 @@ export function WorkspaceBrowser({
           {wide && (
             <ViewOptionsMenu
               groupBy={groupBy}
+              groupings={groupings}
               orderBy={orderBy}
               archivedFilter={archivedFilter}
               onGroupPick={actions.setGroupBy}
@@ -1359,65 +1486,86 @@ export function WorkspaceBrowser({
               t={t}
             />
           )
-          : groupBy === 'flat'
+          : grouping !== undefined
             ? (
-              <FlatList
+              <GroupedList
                 usePanelInfo={usePanelInfo}
                 list={list}
-                sessionIds={orderedFlatSessionIds}
+                grouping={grouping}
                 rowState={rowState}
+                collapsed={groupCollapsed?.[grouping.id] ?? EMPTY_COLLAPSED}
+                setCollapsed={(key, collapsed) => { actions.setGroupCollapsed(grouping.id, key, collapsed) }}
                 onLeaveArchivedOnly={leaveArchivedOnly}
                 workspaceReady={workspaceReady}
-                animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
+                animationResetKey={`${groupBy}/${archivedFilter}`}
                 useSessionStatus={useSessionStatus}
                 open={guardedOpen}
                 onSessionRenameRequest={requestSessionRename}
                 renderSlot={renderSlot}
-                setSessionOrder={saveSessionOrder}
                 revealSessionId={revealSessionId}
                 onSessionRevealed={acknowledgeSessionReveal}
                 t={t}
               />
             )
-            : (
-              <SessionTree
-                usePanelInfo={usePanelInfo}
-                list={list}
-                shortcuts={shortcuts}
-                useSessionStatus={useSessionStatus}
-                onSessionRenameRequest={requestSessionRename}
-                renderSlot={renderSlot}
-                workspaces={orderedWorkspaces}
-                ungroupedSessionIds={orderedUngroupedSessionIds}
-                workspaceReady={workspaceReady}
-                nestWorkspaces={groupBy === 'workspace-tree'}
-                animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
-                groupExpansion={groupExpansion}
-                setGroupExpanded={actions.setGroupExpanded}
-                setSessionOrder={saveSessionOrder}
-                rowState={rowState}
-                onLeaveArchivedOnly={leaveArchivedOnly}
-                startSession={startSession}
-                open={guardedOpen}
-                insertWorkspaceBefore={insertWorkspaceBefore}
-                revealSessionId={revealSessionId}
-                onSessionRevealed={acknowledgeSessionReveal}
-                home={home}
-                t={t}
-                onRenameRequest={(workspaceId, displayTitle) => {
-                  setRenameTarget({
-                    workspaceId,
-                    storedTitle: storedWorkspaces.find(w => w.workspaceId === workspaceId)?.title ?? displayTitle,
-                  })
-                  setRenameDraft(displayTitle)
-                  setRenameError(null)
-                }}
-                onDeleteRequest={(workspaceId, title) => {
-                  setDeleteTarget({ workspaceId, title })
-                  setDeleteError(null)
-                }}
-              />
-            ))}
+            : groupBy === 'flat'
+              ? (
+                <FlatList
+                  usePanelInfo={usePanelInfo}
+                  list={list}
+                  sessionIds={orderedFlatSessionIds}
+                  rowState={rowState}
+                  onLeaveArchivedOnly={leaveArchivedOnly}
+                  workspaceReady={workspaceReady}
+                  animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
+                  useSessionStatus={useSessionStatus}
+                  open={guardedOpen}
+                  onSessionRenameRequest={requestSessionRename}
+                  renderSlot={renderSlot}
+                  setSessionOrder={saveSessionOrder}
+                  revealSessionId={revealSessionId}
+                  onSessionRevealed={acknowledgeSessionReveal}
+                  t={t}
+                />
+              )
+              : (
+                <SessionTree
+                  usePanelInfo={usePanelInfo}
+                  list={list}
+                  shortcuts={shortcuts}
+                  useSessionStatus={useSessionStatus}
+                  onSessionRenameRequest={requestSessionRename}
+                  renderSlot={renderSlot}
+                  workspaces={orderedWorkspaces}
+                  ungroupedSessionIds={orderedUngroupedSessionIds}
+                  workspaceReady={workspaceReady}
+                  nestWorkspaces={groupBy === 'workspace-tree'}
+                  animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
+                  groupExpansion={groupExpansion}
+                  setGroupExpanded={actions.setGroupExpanded}
+                  setSessionOrder={saveSessionOrder}
+                  rowState={rowState}
+                  onLeaveArchivedOnly={leaveArchivedOnly}
+                  startSession={startSession}
+                  open={guardedOpen}
+                  insertWorkspaceBefore={insertWorkspaceBefore}
+                  revealSessionId={revealSessionId}
+                  onSessionRevealed={acknowledgeSessionReveal}
+                  home={home}
+                  t={t}
+                  onRenameRequest={(workspaceId, displayTitle) => {
+                    setRenameTarget({
+                      workspaceId,
+                      storedTitle: storedWorkspaces.find(w => w.workspaceId === workspaceId)?.title ?? displayTitle,
+                    })
+                    setRenameDraft(displayTitle)
+                    setRenameError(null)
+                  }}
+                  onDeleteRequest={(workspaceId, title) => {
+                    setDeleteTarget({ workspaceId, title })
+                    setDeleteError(null)
+                  }}
+                />
+              ))}
       </div>
 
       <Modal

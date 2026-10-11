@@ -52,6 +52,7 @@ import type { SessionActivity, WorkspaceId, WorkspaceView } from '@deepseek-ai/d
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { WorkspaceShortcutState } from '../shortcuts.ts'
+import type { SessionGrouping } from '../groupings.ts'
 import type { createWorkspaceViewStore } from '../stores.ts'
 
 /**
@@ -231,6 +232,8 @@ export type WorkspaceBrowserInjected = {
     hostInfo: HostObservable<RemoteHostFacts>
     workspaceShortcuts: HostObservable<WorkspaceShortcutState>
     shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
+    /** Registered Session groupings, offered under Group by beside the built-in Workspace views. */
+    groupings: HostObservable<readonly SessionGrouping[]>
   }
   /** Open the browser search and focus its input. */
   requestSearch: () => void

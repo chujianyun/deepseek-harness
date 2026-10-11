@@ -13,8 +13,12 @@ import { reconcileManualOrder, type ArchivedFilter, type SessionRowState } from 
 /** Browser-local order account for the hierarchy-free flat Session list. */
 export const FLAT_SESSION_ORDER_KEY = '__flat_session_order__'
 
-/** Session-list grouping mode: sibling Workspace sections, a Workspace tree, or one flat list. */
-export type SessionGroupBy = 'workspace' | 'workspace-tree' | 'flat'
+/**
+ * Session-list grouping: a built-in Workspace view (sibling Workspace sections, a Workspace tree,
+ * or one flat list) or the id of a registered grouping. A stored id no registration provides reads
+ * as 'workspace'.
+ */
+export type SessionGroupBy = string
 /** Session order: saved manual positions or current recency. */
 export type SessionOrderBy = 'manual' | 'updated'
 
@@ -28,6 +32,11 @@ type WorkspaceViewState = {
   sessionOrderByAccount: Record<string, string[]>
   /** Archived-row visibility; omitted in pre-filter v5 snapshots and read as 'default'. */
   archivedFilter?: ArchivedFilter
+  /**
+   * Folded sections of registered groupings, keyed by grouping id then section key; omitted in
+   * snapshots written before registered groupings existed.
+   */
+  groupCollapsed?: Record<string, Record<string, boolean>>
 }
 
 type SessionOrderSource = {
@@ -66,6 +75,7 @@ type WorkspaceViewActions = {
     source: SessionOrderSource,
   ) => void
   setArchivedFilter: (draft: WorkspaceViewState, filter: ArchivedFilter) => void
+  setGroupCollapsed: (draft: WorkspaceViewState, grouping: string, key: string, collapsed: boolean) => void
 }
 
 /** Copy read-only projections into the persisted mutable store representation. */
@@ -125,6 +135,11 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
         }))
       },
       setArchivedFilter: (d, filter: ArchivedFilter) => { d.archivedFilter = filter },
+      setGroupCollapsed: (d, grouping: string, key: string, collapsed: boolean) => {
+        const sections = Object.fromEntries(Object.entries(d.groupCollapsed?.[grouping] ?? {}).filter(([folded]) => folded !== key))
+        if (collapsed) sections[key] = true
+        d.groupCollapsed = { ...d.groupCollapsed, [grouping]: sections }
+      },
     },
   })
 }

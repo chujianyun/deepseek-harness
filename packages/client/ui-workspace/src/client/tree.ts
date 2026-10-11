@@ -13,6 +13,7 @@ import type {
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
+import type { SessionGrouping, SessionGroupHeading } from './groupings.ts'
 
 /** Group key for Sessions outside every Workspace. */
 export const UNGROUPED_KEY = ''
@@ -645,4 +646,70 @@ export function owningParentFolder(path: string, parents: readonly string[]): st
     }
   }
   return owner
+}
+
+/** One section of a registered grouping, with its rows. */
+export interface GroupingSection {
+  readonly key: string
+  readonly heading: SessionGroupHeading
+  readonly collapsed: boolean
+  readonly containsCurrent: boolean
+  readonly sessionCount: number
+  /** Rows, empty while collapsed: the current New Session first, then pinned, then most recent first. */
+  readonly sessions: readonly SessionNode[]
+}
+
+/**
+ * Derive the sections of a registered grouping over the visible Sessions. Sections follow their
+ * heading rank, then most recent activity; rows follow the same visibility and pinning rules as the
+ * Workspace views, ordered by recency.
+ * @param list - sessions list snapshot.
+ * @param grouping - the registered grouping.
+ * @param rowState - registry-global pin and archive sets plus the archived filter.
+ * @param statuses - unified UI status by Session.
+ * @param collapsed - stored collapse state by section key.
+ * @returns sections in render order.
+ */
+export function deriveGroupingSections(
+  list: SessionListState,
+  grouping: Pick<SessionGrouping, 'groupOf'>,
+  rowState: SessionRowState,
+  statuses: SessionStatuses,
+  collapsed: Readonly<Record<string, boolean>>,
+): GroupingSection[] {
+  const archived = new Set(rowState.archivedSessionIds)
+  const pinned = new Set(rowState.pinnedSessionIds)
+  const current = mainSessionId(list)
+  const buckets = new Map<string, { heading: SessionGroupHeading; members: SessionSummary[]; latest: number }>()
+  for (const id of list.ids) {
+    const session = list.byId[id]
+    if (session === undefined || !sessionVisible(session, current, archived, rowState.archivedFilter)) continue
+    const heading = grouping.groupOf(session)
+    const bucket = buckets.get(heading.key)
+    if (bucket === undefined) buckets.set(heading.key, { heading, members: [session], latest: session.updatedAt })
+    else {
+      bucket.members.push(session)
+      bucket.latest = Math.max(bucket.latest, session.updatedAt)
+    }
+  }
+  return [...buckets.entries()]
+    .sort(([, a], [, b]) => {
+      const rankA = a.heading.rank ?? Number.POSITIVE_INFINITY
+      const rankB = b.heading.rank ?? Number.POSITIVE_INFINITY
+      return rankA !== rankB ? rankA - rankB : b.latest - a.latest
+    })
+    .map(([key, bucket]) => {
+      const isCollapsed = collapsed[key] === true
+      const recent = [...bucket.members].sort((a, b) => b.updatedAt - a.updatedAt)
+      return {
+        key,
+        heading: bucket.heading,
+        collapsed: isCollapsed,
+        containsCurrent: current !== undefined && bucket.members.some(member => member.id === current),
+        sessionCount: bucket.members.length,
+        sessions: isCollapsed
+          ? []
+          : sectionMembers(recent, pinned, archived).map(session => sessionNode(session, list, statuses, pinned, archived)),
+      }
+    })
 }

@@ -20,6 +20,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { DraftInitializationOptions, SessionInputResolver } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { RowToast } from '../src/client/contract/slots.ts'
 import { DirectoryBrowseError, UiWorkspaceService } from '../src/client/navigation.ts'
+import { createSessionGroupingRegistry } from '../src/client/groupings.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { createWorkspaceViewStore, FLAT_SESSION_ORDER_KEY } from '../src/client/stores.ts'
 import { UNGROUPED_KEY } from '../src/client/tree.ts'
@@ -302,6 +303,7 @@ function bench(options: BenchOptions = {}) {
   options.configureSessions?.(sessions)
   const view = createWorkspaceViewStore().create()
   const notify = vi.fn<(toast: RowToast) => void>()
+  const groupings = createSessionGroupingRegistry()
   const uiWorkspace = new UiWorkspaceService(
     ctx,
     directoryPicker.remote,
@@ -309,8 +311,11 @@ function bench(options: BenchOptions = {}) {
     sessions,
     view.actions,
     notify,
+    groupings,
   )
-  return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel, view, notify, requestDraftInitialization }
+  return {
+    ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel, view, notify, groupings, requestDraftInitialization,
+  }
 }
 
 function lastOpening(open: MockInstance<UiWorkspaceService['openWorkspace']>): Promise<void> {
@@ -320,6 +325,15 @@ function lastOpening(open: MockInstance<UiWorkspaceService['openWorkspace']>): P
 }
 
 describe('UiWorkspaceService', () => {
+  it('offers a registered Session grouping until its disposer runs', () => {
+    const b = bench()
+    const grouping = { id: 'assistant', label: () => 'Assistant', order: 50, groupOf: () => ({ key: 'a', label: 'A' }) }
+    const dispose = b.uiWorkspace.registerSessionGrouping(grouping)
+    expect(b.groupings.groupings.getSnapshot()).toEqual([grouping])
+    dispose()
+    expect(b.groupings.groupings.getSnapshot()).toEqual([])
+  })
+
   it('prepares and selects the default Workspace after both startup baselines', async () => {
     const b = bench({ configureWorkspaces: (workspaces) => {
       workspaces.initializeDefault.mockImplementation(async () => {
