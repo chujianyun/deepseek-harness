@@ -1,6 +1,6 @@
 /**
- * Problem reports through the enterprise composition against a mock user center: the header button
- * (the only header entry, with no More actions menu) and an explained thumbs-down.
+ * Problem reports through the enterprise composition against a mock user center: the window's
+ * top-right button on a Session, a blank new Session, and a page without one, and an explained thumbs-down.
  */
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -81,6 +81,25 @@ it('reports a problem from the header, with no More actions menu, and an explain
     await expect.poll(() => center.feedback.length, { timeout: 15_000 }).toBe(2)
     expect(center.feedback[1]!.payload).toMatchObject({ category: 'other', session: null })
 
+    // A blank new Session keeps the button in the same corner; there is no conversation to attach.
+    await page.locator('button', { hasText: 'New Session' }).first().click()
+    await page.getByRole('button', { name: 'Report a problem', exact: true }).click()
+    await dialog.waitFor()
+    expect(await dialog.getByRole('checkbox').count()).toBe(0)
+    await dialog.getByRole('radio', { name: 'Error' }).click()
+    await dialog.getByRole('textbox', { name: 'Description' }).fill('Reported from a new Session')
+    await submit.click()
+    await expect.poll(() => center.feedback.length, { timeout: 15_000 }).toBe(3)
+    expect(center.feedback[2]!.payload).toMatchObject({ category: 'error', session: null })
+    await shot(page, 'e2e-blank-session')
+
+    // A page without a Session, such as Plugins, shows it too.
+    await page.getByRole('button', { name: 'Plugins', exact: true }).click()
+    await page.getByRole('button', { name: 'Report a problem', exact: true }).waitFor()
+    await shot(page, 'e2e-plugins-page')
+    await page.getByRole('treeitem').filter({ has: page.getByText('Multi-shop draft', { exact: true }) }).click()
+    await page.getByText('DONE', { exact: true }).waitFor({ timeout: 30_000 })
+
     // The enterprise header has no More actions menu: Report a problem is its feedback entry.
     expect(await page.getByRole('button', { name: 'More actions', exact: true }).count()).toBe(0)
 
@@ -93,8 +112,8 @@ it('reports a problem from the header, with no More actions menu, and an explain
     await rating.getByRole('button', { name: 'Task result', exact: true }).click()
     await rating.getByRole('textbox', { name: 'Feedback details' }).fill('One shop is missing')
     await rating.getByRole('button', { name: 'Submit', exact: true }).click()
-    await expect.poll(() => center.feedback.length, { timeout: 15_000 }).toBe(3)
-    expect(center.feedback[2]!.payload).toMatchObject({
+    await expect.poll(() => center.feedback.length, { timeout: 15_000 }).toBe(4)
+    expect(center.feedback[3]!.payload).toMatchObject({
       source: 'message', category: 'task-result', description: 'One shop is missing', session: { sessionId },
     })
     expect(tripwire.pageErrors).toEqual([])

@@ -243,3 +243,13 @@
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
 }
+
+/* The window's top-right corner, where the Session header's utilities end: left of the sidebar
+   toggle on Session pages, at the same spot on pages without one. Above the window drag region. */
+.corner {
+  position: fixed;
+  top: 11px;
+  right: 48px;
+  z-index: 20;
+  -webkit-app-region: no-drag;
+}

@@ -39,10 +39,10 @@
       "path": "../../core/session"
     },
     {
-      "path": "../ui-conversation/tsconfig.client.json"
+      "path": "../../feedback/feedback-report"
     },
     {
-      "path": "../../feedback/feedback-report"
+      "path": "../ui-session"
     }
   ]
 }

@@ -1,7 +1,8 @@
 /**
- * Problem report, browser half: a Report a problem button in the Session header, the dialog it
- * opens, and the notice after a report is stored, over the `feedbackReport` Remote. Everything
- * shows only while the `hubAccount` Remote reports a sign-in, and only in the Desktop window.
+ * Problem report, browser half: a Report a problem button in the window's top-right corner on every
+ * page, the dialog it opens, and the notice after a report is stored, over the `feedbackReport`
+ * Remote. Everything shows only while the `hubAccount` Remote reports a sign-in, and only in the
+ * Desktop window.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -65,11 +66,9 @@ export function apply(ctx: ClientContext): void {
     uiLanguage: () => ctx.locale.getSnapshot().active,
   }
   const noticeFace: ReportNoticeInjected = { hooks: { submitted }, dismissNotice: () => { submitted.set(0) } }
-  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
-    // Left of the schedule catalog (-5).
-    name: 'conversation.session.header.utilities', id: 'feedback-report', order: -8, locale: NS, inject: () => buttonFace,
-  }, ReportButton))
   ctx.slots.inject('shell.overlay', function* () {
+    // The window's top-right corner on every page, not the Session header, which a blank Session hides.
+    yield ctx.slots.register({ name: 'shell.overlay', id: 'feedback-report.button', locale: NS, inject: () => buttonFace }, ReportButton)
     yield ctx.slots.register({ name: 'shell.overlay', id: 'feedback-report', locale: NS, inject: () => dialogFace }, ReportDialog)
     yield ctx.slots.register({ name: 'shell.overlay', id: 'feedback-report.notice', locale: NS, inject: () => noticeFace }, ReportNotice)
   })

@@ -10,8 +10,8 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { HostObservable, InjectFace, PropsHooks, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { FeedbackReportCategory, FeedbackReportImage, FeedbackReportReceipt, FeedbackReportRequest } from '@deepseek-ai/dsh-feedback-report/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { FeedbackReportLocaleKey } from './locales.ts'
@@ -25,9 +25,12 @@ const IMAGE_MAX_BYTES = 5 * 1024 * 1024
 const DESCRIPTION_MAX_LENGTH = 2000
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 
-/** A report the button or the menu asked for: the Session it is about, if any. */
+/** A report the button asked for: the Session on screen, if any, and whether its conversation can be attached. */
 export interface ReportTarget {
+  /** The Session the main view shows; null on a page such as Assistants or without any Session. */
   readonly sessionId: SessionId | null
+  /** The Session holds a conversation: a blank new Session names its environment but has nothing to attach. */
+  readonly attachable: boolean
 }
 
 /** Header button share: whether a sign-in exists, and the request the button raises. */
@@ -80,9 +83,9 @@ export function ReportNotice({ useSubmitted, dismissNotice, t }: ReportNoticePro
   return <Toast key={submitted} text={t('submitted')} tone="success" onDone={dismissNotice} />
 }
 
-/** Props of the header button. */
+/** Props of the button. */
 export type ReportButtonProps =
-  PropsRuntime<'conversation.session.header.utilities'>
+  PropsRuntime<'shell.overlay'>
   & PropsLocale<'feedbackReport'>
   & Omit<ReportButtonInjected, 'hooks'>
   & PropsHooks<ReportButtonInjected['hooks']>
@@ -93,18 +96,26 @@ export type ReportDialogProps = PropsRuntime<'shell.overlay'> & PropsLocale<'fee
 type Translate = ReportDialogProps['t']
 
 /**
- * Header utility: ask for the report dialog about the open Session. Renders nothing without a sign-in.
- * @param props - the Session, the sign-in hook, and the request.
+ * The window's top-right Report a problem button, on every page: it asks for the dialog about the
+ * Session the main view shows, or about none on a page such as Assistants. Renders nothing without a sign-in.
+ * @param props - the sessions and panel hooks, the sign-in hook, and the request.
  * @returns the button, or null.
  */
-export function ReportButton({ sessionId, useSignedIn, requestReport, t }: ReportButtonProps) {
+export function ReportButton({ useSessions, usePanelInfo, useSignedIn, requestReport, t }: ReportButtonProps) {
   const signedIn = useSignedIn(value => value)
+  const onScreen = useSessions(list => Object.values(list.byId).find(session => (session.retainedBy.mainView ?? 0) > 0))
+  const panelOpen = usePanelInfo(info => info.activePanelId !== null)
   if (!signedIn) return null
+  const target: ReportTarget = onScreen === undefined || panelOpen
+    ? { sessionId: null, attachable: false }
+    : { sessionId: onScreen.id, attachable: !onScreen.blank }
   return (
-    <button type="button" className={css.trigger} onClick={() => { requestReport({ sessionId }) }}>
-      <IconQuestionOutlineRegular size={16} />
-      <span>{t('button')}</span>
-    </button>
+    <div className={css.corner}>
+      <button type="button" className={css.trigger} onClick={() => { requestReport(target) }}>
+        <IconQuestionOutlineRegular size={16} />
+        <span>{t('button')}</span>
+      </button>
+    </div>
   )
 }
 
@@ -192,7 +203,7 @@ function ReportForm({ target, face, t }: { target: ReportTarget; face: Omit<Repo
     setError(null)
     void submit({
       category: category as FeedbackReportCategory, description, sessionId: target.sessionId,
-      attachSession: attach && target.sessionId !== null,
+      attachSession: attach && target.attachable,
       images: shots.map(({ name, contentType, data }) => ({ name, contentType, data })), uiLanguage: uiLanguage(),
     }).then((result) => {
       if (!mounted.current) return
@@ -277,7 +288,7 @@ function ReportForm({ target, face, t }: { target: ReportTarget; face: Omit<Repo
               }}
             />
           </div>
-          {target.sessionId !== null && <Checkbox checked={attach} disabled={sending} onChange={setAttach} label={t('attach')} />}
+          {target.attachable && <Checkbox checked={attach} disabled={sending} onChange={setAttach} label={t('attach')} />}
           {sending && <div className={css.status} role="status">{t('submitting')}</div>}
           {error !== null && <div className={css.error} role="alert">{error}</div>}
         </div>

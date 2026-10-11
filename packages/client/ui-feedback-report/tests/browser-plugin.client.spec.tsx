@@ -26,7 +26,7 @@ describe('ui-feedback-report browser plugin', () => {
     Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 }, configurable: true })
   })
 
-  it('adds the button, the dialog, the notice, and the menu entry over the Remotes, follows the sign-in, and leaves with the plugin', async () => {
+  it('adds the button, the dialog, and the notice over the Remotes, follows the sign-in, and leaves with the plugin', async () => {
     const ctx = new Context()
     onTestFinished(async () => { await ctx.fiber.dispose() })
     await ctx.plugin(SlotRegistry).await()
@@ -60,20 +60,19 @@ describe('ui-feedback-report browser plugin', () => {
     const slots = ctx.get('slots') as SlotRegistry
     const removeRoot = slots.register({
       name: 'root',
-      children: { 'conversation.session.header.utilities': { kind: 'list', scope: 'root' }, 'shell.overlay': { kind: 'list', scope: 'root' } },
+      children: { 'shell.overlay': { kind: 'list', scope: 'root' } },
     } as never, () => null)
     onTestFinished(removeRoot)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
 
-    const [button] = slots.entries('conversation.session.header.utilities')
-    expect(button?.component).toBe(ReportButton)
-    expect(button!.options).toMatchObject({ id: 'feedback-report', order: -8 })
+    // The button lives in the window-wide layer, so it shows on every page, blank Sessions included.
     const overlays = slots.entries('shell.overlay')
-    expect(overlays.map(entry => entry.component)).toEqual([ReportDialog, ReportNotice])
-    const buttonFace = button!.inject!() as object as ReportButtonInjected
-    const dialogFace = overlays[0]!.inject!() as object as ReportDialogInjected
-    const noticeFace = overlays[1]!.inject!() as object as ReportNoticeInjected
+    expect(overlays.map(entry => entry.component)).toEqual([ReportButton, ReportDialog, ReportNotice])
+    expect(overlays[0]!.options).toMatchObject({ id: 'feedback-report.button' })
+    const buttonFace = overlays[0]!.inject!() as object as ReportButtonInjected
+    const dialogFace = overlays[1]!.inject!() as object as ReportDialogInjected
+    const noticeFace = overlays[2]!.inject!() as object as ReportNoticeInjected
 
     const signal = new AbortController().signal
     streamOptions.open?.(signal)
@@ -86,8 +85,8 @@ describe('ui-feedback-report browser plugin', () => {
     expect(accepted).toHaveBeenCalledOnce()
 
     const one = 'one' as SessionId
-    buttonFace.requestReport({ sessionId: one })
-    expect(dialogFace.hooks.reportRequest.getSnapshot()).toEqual({ sessionId: one })
+    buttonFace.requestReport({ sessionId: one, attachable: true })
+    expect(dialogFace.hooks.reportRequest.getSnapshot()).toEqual({ sessionId: one, attachable: true })
     dialogFace.settleReport()
     expect(dialogFace.hooks.reportRequest.getSnapshot()).toBeNull()
     const request = { category: 'error' as const, description: 'x', sessionId: one, attachSession: true, images: [] }
@@ -106,7 +105,6 @@ describe('ui-feedback-report browser plugin', () => {
     fail?.(new Error('stream broke'))
     await fiber.dispose()
     expect(dispose).toHaveBeenCalledOnce()
-    expect(slots.entries('conversation.session.header.utilities')).toEqual([])
     expect(slots.entries('shell.overlay')).toEqual([])
     applyNode()
   })
