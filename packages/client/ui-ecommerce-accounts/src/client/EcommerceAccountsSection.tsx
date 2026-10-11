@@ -95,7 +95,12 @@ export function EcommerceAccountsSection(props: EcommerceAccountsSectionProps) {
           <>
             <div className={css.header}>
               <p className={css.intro}>{t('intro')}</p>
-              {accounts.length > 0 && <Button variant="primary" size="sm" onClick={() => { setAdding(true) }}>{t('add')}</Button>}
+              {accounts.length > 0 && (
+                <span className={css.headerActions}>
+                  <CheckButton {...props} label={t('checkAll')} checking={accounts.some(item => item.status === 'checking')} />
+                  <Button variant="primary" size="sm" onClick={() => { setAdding(true) }}>{t('add')}</Button>
+                </span>
+              )}
             </div>
             {banner}
             {state !== undefined && accounts.length === 0 && (
@@ -175,7 +180,10 @@ function AccountList({ t, accounts, limit, query, setQuery, onOpen }: EcommerceA
                         {[item.account, t(item.kind === 'merchant' ? 'kindMerchant' : 'kindBuyer'), usageText(t, item, limit)].filter(Boolean).join(' · ')}
                       </span>
                     </span>
-                    <span className={css.muted}>{statusText(t, item)}</span>
+                    <span className={css.rowStatus}>
+                      <span className={css.muted}>{statusText(t, item)}</span>
+                      {item.checkedAt !== undefined && <span className={css.checkedAgo}>{t('checkedAgo', { when: ago(t, item.checkedAt) })}</span>}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -183,6 +191,34 @@ function AccountList({ t, accounts, limit, query, setQuery, onOpen }: EcommerceA
           </details>
         )
       })}
+    </>
+  )
+}
+
+/**
+ * Check accounts now: all of them, or the ones named. Disabled while they are being checked, or
+ * signed in, or in a task's use; a refusal shows beside it.
+ */
+function CheckButton({ t, onCheck, label, ids, checking }: EcommerceAccountsSectionProps & {
+  readonly label: string
+  readonly ids?: readonly string[]
+  readonly checking: boolean
+}) {
+  const [pending, setPending] = useState(false)
+  const [refusal, setRefusal] = useState<Refusal | undefined>(undefined)
+  return (
+    <>
+      <Button
+        variant="outline" size="sm" disabled={pending || checking}
+        onClick={() => {
+          setPending(true)
+          setRefusal(undefined)
+          void onCheck(ids).then((answer) => { setRefusal(answer); setPending(false) })
+        }}
+      >
+        {pending || checking ? t('statusChecking') : label}
+      </Button>
+      {refusal !== undefined && <span className={css.error} role="alert">{refusalText(t, refusal)}</span>}
     </>
   )
 }
@@ -234,6 +270,7 @@ function AccountDetail(props: EcommerceAccountsSectionProps & {
       {failure !== null && <p className={css.error} role="alert">{failure}</p>}
       <div className={css.actions}>
         <Button variant="primary" onClick={onSignIn}>{account.status === 'signed-in' ? t('relogin') : t('signIn')}</Button>
+        <CheckButton {...props} label={t('check')} ids={[account.id]} checking={account.status === 'checking' || account.status === 'signing-in' || account.inUse} />
         <Button variant="ghost" onClick={() => { setDeleting(true) }}>{t('delete')}</Button>
       </div>
       {deleting && (

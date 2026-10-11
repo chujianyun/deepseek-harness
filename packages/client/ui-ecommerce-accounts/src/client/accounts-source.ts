@@ -29,6 +29,7 @@ export interface AccountsDependencies {
   readonly confirmSignIn: (accountId: string) => Promise<RemoteResult<EcommerceAccountsState>>
   readonly rename: (accountId: string, changes: RenameEcommerceAccountInput) => Promise<RemoteResult<EcommerceAccountsState>>
   readonly refresh: () => Promise<RemoteResult<EcommerceAccountsState>>
+  readonly check: (accountIds?: readonly string[]) => Promise<RemoteResult<EcommerceAccountsState>>
   readonly setDailyPages: (pages: number) => Promise<RemoteResult<EcommerceAccountsState>>
   readonly remove: (accountId: string) => Promise<RemoteResult<EcommerceAccountsState>>
   /** Open an address in the default browser. */
@@ -45,8 +46,10 @@ export interface AccountsInjected {
   readonly onConfirmSignIn: (accountId: string) => Promise<Refusal | undefined>
   /** Change the account or store name, such as to the one the platform reports; resolves to the refusal, or undefined. */
   readonly onRename: (accountId: string, changes: RenameEcommerceAccountInput) => Promise<Refusal | undefined>
-  /** Check every account again, as the section does when it opens. */
+  /** Look for Chrome again, as the section does when it opens; the accounts keep their saved answers. */
   readonly onRefresh: () => Promise<void>
+  /** Check the sign-in of the accounts, or of all when none are named; resolves to the refusal, or undefined. */
+  readonly onCheck: (accountIds?: readonly string[]) => Promise<Refusal | undefined>
   /** Set the tenant's daily page limit for buyer accounts; resolves to the refusal, or undefined. */
   readonly onSetDailyPages: (pages: number) => Promise<Refusal | undefined>
   readonly onDelete: (accountId: string) => Promise<Refusal | undefined>
@@ -106,6 +109,7 @@ export function createAccountsSource(deps: AccountsDependencies): AccountsSource
     onConfirmSignIn: accountId => settle(deps.confirmSignIn(accountId)),
     onRename: (accountId, changes) => settle(deps.rename(accountId, changes)),
     onRefresh: async () => { await settle(deps.refresh()) },
+    onCheck: accountIds => settle(deps.check(accountIds)),
     onSetDailyPages: pages => settle(deps.setDailyPages(pages)),
     onDelete: accountId => settle(deps.remove(accountId)),
     onOpenUrl: (url) => { deps.openUrl(url) },

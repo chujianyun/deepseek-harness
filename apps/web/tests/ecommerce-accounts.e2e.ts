@@ -117,6 +117,15 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     const pddRow = section.getByRole('button', { name: '查看 拼多多小店 的详情' })
     await expect.poll(() => pddRow.textContent()).toContain('已登录')
 
+    // Each row shows when it was checked; Check all checks every account again on the user's word.
+    await expect.poll(() => pddRow.textContent()).toContain('检查于')
+    const before = (await scaffold.ctx.ecommerceAccounts.getState()).accounts.map(item => item.checkedAt)
+    await section.getByRole('button', { name: '全部检查' }).click()
+    const checkedTimes = async () => (await scaffold.ctx.ecommerceAccounts.getState()).accounts.map(item => item.checkedAt)
+    await expect.poll(checkedTimes, { timeout: 15_000 }).not.toEqual(before)
+    await section.getByRole('button', { name: '全部检查' }).waitFor({ timeout: 15_000 })
+    expect(await pddRow.textContent()).toContain('已登录')
+
     // Its sign-in ends during a task: the task's page lands on the sign-in page, and a notice leads back to Settings.
     const task = bashCall('pdd-1')
     const pddId = (await scaffold.ctx.ecommerceAccounts.getState()).accounts[1]!.id
