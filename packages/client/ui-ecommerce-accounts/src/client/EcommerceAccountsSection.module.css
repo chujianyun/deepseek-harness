@@ -34,7 +34,7 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.header > button {
+.headerActions > button {
   flex-shrink: 0;
   white-space: nowrap;
 }

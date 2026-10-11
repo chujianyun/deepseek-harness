@@ -112,6 +112,39 @@ describe('e-commerce accounts section', () => {
     }
   })
 
+  it('keeps the check time current, hides it beside a failed check, and shows a check that throws or is refused', async () => {
+    vi.useFakeTimers({ now: new Date('2026-10-12T10:00:00Z'), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    try {
+      const props = mount({ ...base, accounts: [account({ status: 'signed-in', checkedAt: '2026-10-12T09:55:00Z' }), account({ id: 'e2', storeName: '失败店', status: 'check-failed', problem: 'timeout', checkedAt: '2026-10-12T09:00:00Z' })] })
+      const row = screen.getByRole('button', { name: '查看 名流旗舰店 的详情' })
+      expect(row.textContent).toContain('检查于 5 分钟前')
+      act(() => { vi.advanceTimersByTime(3 * 60_000) })
+      expect(row.textContent).toContain('检查于 8 分钟前')
+      expect(screen.getByRole('button', { name: '查看 失败店 的详情' }).textContent).not.toContain('检查于')
+      // A check whose call throws frees the button and says why.
+      props.onCheck.mockRejectedValueOnce(new Error('连接断开'))
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: '全部检查' })) })
+      expect(screen.getByRole('alert').textContent).toContain('连接断开')
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: '全部检查' }).disabled).toBe(false)
+      // A refused check of one account shows in its details, and a later one that goes through clears it.
+      fireEvent.click(row)
+      props.onCheck.mockResolvedValueOnce({ kind: 'browser-busy' })
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^检查$/u })) })
+      expect(screen.getByRole('alert').textContent).toBeTruthy()
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^检查$/u })) })
+      expect(screen.queryByRole('alert')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('offers no check without a usable Chrome, which would read every account as signed out', () => {
+    mount({ ...base, chrome: { ...CHROME, status: 'missing' }, accounts: [account({ status: 'signed-in' })] })
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '全部检查' }).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: '查看 名流旗舰店 的详情' }))
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: /^检查$/u }).disabled).toBe(true)
+  })
+
   it('names the check buttons in English', () => {
     mount({ ...base, accounts: [account({ status: 'signed-in', checkedAt: new Date(Date.now() - 2 * 3_600_000).toISOString() })] }, en)
     expect(screen.getByRole('button', { name: 'Check all' })).toBeTruthy()

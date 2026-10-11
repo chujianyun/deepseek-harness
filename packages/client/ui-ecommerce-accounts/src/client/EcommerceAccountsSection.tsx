@@ -72,8 +72,15 @@ export function EcommerceAccountsSection(props: EcommerceAccountsSectionProps) {
   const [adding, setAdding] = useState(false)
   const [signingIn, setSigningIn] = useState<{ readonly id: string; readonly refusal?: Refusal } | null>(null)
   const [query, setQuery] = useState('')
+  const [checkRefusal, setCheckRefusal] = useState<Refusal | undefined>(undefined)
   // Opening the section looks for Chrome again; the dots show each account's saved answer.
   useEffect(() => { void onRefresh() }, [onRefresh])
+  // How long ago each account was checked keeps up with the clock while the section stays open.
+  const [, setMinute] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => { setMinute(minute => minute + 1) }, 60_000)
+    return () => { clearInterval(timer) }
+  }, [])
   const accounts = state?.accounts ?? []
   const opened = accounts.find(item => item.id === openId)
   const signIn = async (id: string): Promise<void> => {
@@ -97,12 +104,16 @@ export function EcommerceAccountsSection(props: EcommerceAccountsSectionProps) {
               <p className={css.intro}>{t('intro')}</p>
               {accounts.length > 0 && (
                 <span className={css.headerActions}>
-                  <CheckButton {...props} label={t('checkAll')} checking={accounts.some(item => item.status === 'checking')} />
+                  <CheckButton
+                    {...props} label={t('checkAll')} checking={accounts.some(item => item.status === 'checking')}
+                    disabled={chrome?.status !== 'ready'} onResult={setCheckRefusal}
+                  />
                   <Button variant="primary" size="sm" onClick={() => { setAdding(true) }}>{t('add')}</Button>
                 </span>
               )}
             </div>
             {banner}
+            {checkRefusal !== undefined && <p className={css.error} role="alert">{refusalText(t, checkRefusal)}</p>}
             {state !== undefined && accounts.length === 0 && (
               <div className={css.empty}>
                 <p>{t('empty')}</p>
@@ -122,6 +133,7 @@ export function EcommerceAccountsSection(props: EcommerceAccountsSectionProps) {
         : (
           <AccountDetail
             {...props} account={opened} limit={(state as EcommerceAccountsState).buyerDailyPages} banner={banner}
+            chromeReady={chrome?.status === 'ready'}
             onBack={() => { setOpenId(null) }}
             onSignIn={() => { void signIn(opened.id) }}
           />
@@ -182,7 +194,10 @@ function AccountList({ t, accounts, limit, query, setQuery, onOpen }: EcommerceA
                     </span>
                     <span className={css.rowStatus}>
                       <span className={css.muted}>{statusText(t, item)}</span>
-                      {item.checkedAt !== undefined && <span className={css.checkedAgo}>{t('checkedAgo', { when: ago(t, item.checkedAt) })}</span>}
+                      {/* A failed check keeps the time of the last answer, which would read as if nothing was checked just now. */}
+                      {item.checkedAt !== undefined && item.status !== 'check-failed' && (
+                        <span className={css.checkedAgo}>{t('checkedAgo', { when: ago(t, item.checkedAt) })}</span>
+                      )}
                     </span>
                   </button>
                 </li>
@@ -196,30 +211,31 @@ function AccountList({ t, accounts, limit, query, setQuery, onOpen }: EcommerceA
 }
 
 /**
- * Check accounts now: all of them, or the ones named. Disabled while they are being checked, or
- * signed in, or in a task's use; a refusal shows beside it.
+ * Check accounts now: all of them, or the ones named. It reads Checking while they are checked,
+ * waits while they are signing in or in a task's use, and stays off without a usable Chrome, which a
+ * check would read as every account signed out. Its owner shows the outcome.
  */
-function CheckButton({ t, onCheck, label, ids, checking }: EcommerceAccountsSectionProps & {
+function CheckButton({ t, onCheck, label, ids, checking, disabled, onResult }: EcommerceAccountsSectionProps & {
   readonly label: string
   readonly ids?: readonly string[]
   readonly checking: boolean
+  readonly disabled: boolean
+  readonly onResult: (refusal: Refusal | undefined) => void
 }) {
   const [pending, setPending] = useState(false)
-  const [refusal, setRefusal] = useState<Refusal | undefined>(undefined)
   return (
-    <>
-      <Button
-        variant="outline" size="sm" disabled={pending || checking}
-        onClick={() => {
-          setPending(true)
-          setRefusal(undefined)
-          void onCheck(ids).then((answer) => { setRefusal(answer); setPending(false) })
-        }}
-      >
-        {pending || checking ? t('statusChecking') : label}
-      </Button>
-      {refusal !== undefined && <span className={css.error} role="alert">{refusalText(t, refusal)}</span>}
-    </>
+    <Button
+      variant="outline" size="sm" disabled={pending || checking || disabled}
+      onClick={() => {
+        setPending(true)
+        onResult(undefined)
+        void onCheck(ids)
+          .catch((error: unknown): Refusal => ({ kind: 'other', message: String(error) }))
+          .then((answer) => { onResult(answer); setPending(false) })
+      }}
+    >
+      {pending || checking ? t('statusChecking') : label}
+    </Button>
   )
 }
 
@@ -233,6 +249,7 @@ function AccountDetail(props: EcommerceAccountsSectionProps & {
   readonly account: EcommerceAccountView
   readonly limit: number
   readonly banner: ReactNode
+  readonly chromeReady: boolean
   readonly onBack: () => void
   readonly onSignIn: () => void
 }) {
@@ -270,7 +287,12 @@ function AccountDetail(props: EcommerceAccountsSectionProps & {
       {failure !== null && <p className={css.error} role="alert">{failure}</p>}
       <div className={css.actions}>
         <Button variant="primary" onClick={onSignIn}>{account.status === 'signed-in' ? t('relogin') : t('signIn')}</Button>
-        <CheckButton {...props} label={t('check')} ids={[account.id]} checking={account.status === 'checking' || account.status === 'signing-in' || account.inUse} />
+        <CheckButton
+          {...props} label={t('check')} ids={[account.id]}
+          checking={account.status === 'checking' || account.status === 'signing-in' || account.inUse}
+          disabled={!props.chromeReady}
+          onResult={(refusal) => { setFailure(refusal === undefined ? null : refusalText(t, refusal)) }}
+        />
         <Button variant="ghost" onClick={() => { setDeleting(true) }}>{t('delete')}</Button>
       </div>
       {deleting && (
