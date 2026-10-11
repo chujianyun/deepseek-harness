@@ -2,10 +2,12 @@
 import { existsSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { expect, it } from 'vitest'
+import { chromium, type Locator } from 'playwright'
+import { expect, it, onTestFailed } from 'vitest'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { launchWebScaffold, seedSession } from './scaffold.ts'
+import { acknowledgeReloadConnectionLoss, launchWebScaffold, seedSession, watchConsole } from './scaffold.ts'
+import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url))
 
@@ -75,3 +77,62 @@ it('deletes a loaded Session from storage, the Workspace registry, the list, and
     await scaffold.close()
   }
 }, 90_000)
+
+it('deletes the open Session from its row menu after confirmation: the row leaves, a notice shows, and it stays gone after reload', async () => {
+  const scaffold = await launchWebScaffold({})
+  const browser = await chromium.launch()
+  try {
+    const { ctx } = scaffold
+    const fixture = await readFile(SEED, 'utf8')
+    const workspace = await ctx.workspaceRegistry.create(scaffold.workspaceCwd)
+    for (const [id, title] of [['session-delete-ui-gone', 'Delete me'], ['session-delete-ui-kept', 'Keep me']] as const) {
+      const sessionId = await seedSession(scaffold, fixture, id)
+      await workspace.attachSession(sessionId)
+      await ctx.sessionController.rename({ sessionId, title })
+    }
+    const page = await newEnglishPage(browser)
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-session-delete'))
+    const tripwire = watchConsole(page)
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    const row = (title: string) => page.getByRole('treeitem').filter({ has: page.getByText(title, { exact: true }) })
+    /** The row's hover actions appear on hover; open one by its accessible name. */
+    const clickHoverAction = async (target: Locator, name: string): Promise<void> => {
+      await target.hover()
+      await target.getByRole('button', { name, exact: true }).click()
+    }
+    // Open it first: the Session being deleted is the one on screen, loaded on the Host.
+    await row('Delete me').click()
+    await expect.poll(() => row('Delete me').getAttribute('aria-selected'), { timeout: 10_000 }).toBe('true')
+
+    await clickHoverAction(row('Delete me'), 'Session actions for Delete me')
+    // Delete is the last row of the menu.
+    expect((await page.getByRole('menuitem').allTextContents()).at(-1)).toBe('Delete')
+    await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Delete this session?' })
+    await expect.poll(() => dialog.textContent()).toContain('“Delete me” will be deleted permanently and cannot be restored')
+    // Cancelling keeps it.
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect.poll(() => dialog.count()).toBe(0)
+    expect(await row('Delete me').count()).toBe(1)
+
+    await clickHoverAction(row('Delete me'), 'Session actions for Delete me')
+    await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Delete', exact: true }).click()
+    await expect.poll(() => row('Delete me').count(), { timeout: 15_000 }).toBe(0)
+    await page.getByText('Session deleted', { exact: true }).waitFor({ timeout: 10_000 })
+    expect(await row('Keep me').count()).toBe(1)
+    expect((await ctx.sessionPersistence.list()).map(snapshot => String(snapshot.header.id))).not.toContain('session-delete-ui-gone')
+
+    const warningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    await expect.poll(() => row('Keep me').count(), { timeout: 15_000 }).toBe(1)
+    expect(await row('Delete me').count()).toBe(0)
+    expect(tripwire.pageErrors).toEqual([])
+  } finally {
+    await browser.close()
+    await scaffold.close()
+  }
+}, 120_000)
