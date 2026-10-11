@@ -55,6 +55,7 @@ The publishing memory keeps what the user confirmed once while publishing, for t
 | `minChromeVersion` | `120` | Oldest Chrome major version accounts run on. |
 | `signInTimeoutMs` | `600000` (10 minutes) | How long a sign-in waits for the user. |
 | `checkTimeoutMs` | `20000` | How long one check waits for the platform's response. |
+| `networkRetryMs` | `1500` | How long a check whose page could not be loaded waits before trying once more; a Chrome just started may still be bringing its network up. The reason of a page that stays unreachable is logged. |
 | `chromeTimeoutMs` | `20000` | How long DSH waits for Chrome to start or close. |
 | `signInPollMs` | `3000` | Time between looks at the sign-in tab. |
 | `signInCheckEveryMs` | `30000` | Time after which a sign-in is checked even before its tab leaves the sign-in page. |

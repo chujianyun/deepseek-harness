@@ -83,6 +83,8 @@ export interface Config {
   signInTimeoutMs?: number
   /** How long one check waits for the platform's response, in milliseconds. */
   checkTimeoutMs?: number
+  /** How long a check whose page could not be loaded waits before trying once more, in milliseconds. */
+  networkRetryMs?: number
   /** How long DSH waits for Chrome to start or close, in milliseconds. */
   chromeTimeoutMs?: number
   /** Time between looks at the sign-in tab, in milliseconds. */
@@ -106,6 +108,7 @@ export const Config: Schema<Config> = Schema.object({
   minChromeVersion: Schema.natural().min(1).default(120).description('Oldest Chrome major version accounts run on.'),
   signInTimeoutMs: Schema.natural().min(1).default(600_000).description('How long a sign-in waits for the user before giving up, in milliseconds.'),
   checkTimeoutMs: Schema.natural().min(1).default(20_000).description("How long one check waits for the platform's response, in milliseconds."),
+  networkRetryMs: Schema.natural().default(1500).description('How long a check whose page could not be loaded waits before trying once more, in milliseconds.'),
   chromeTimeoutMs: Schema.natural().min(1).default(20_000).description('How long DSH waits for Chrome to start or close, in milliseconds.'),
   signInPollMs: Schema.natural().min(1).default(3000).description('Time between looks at the sign-in tab, in milliseconds.'),
   signInCheckEveryMs: Schema.natural().min(1).default(30_000).description('Time after which a sign-in is checked even before its tab leaves the sign-in page, in milliseconds.'),
@@ -661,7 +664,12 @@ export class EcommerceAccountsService extends TypertRemoteService {
     try {
       const spec = specOf(entry.platform, entry.kind)
       let result = await probe(cdp, spec, this.options.checkTimeoutMs)
-      if (result.kind !== 'signed-in') result = await probe(cdp, spec, this.options.checkTimeoutMs)
+      if (result.kind !== 'signed-in') {
+        // A Chrome just started may still be bringing its network up, so an unreachable page waits a moment.
+        if (result.kind === 'network') await sleep(this.options.networkRetryMs, this.lifetime.signal)
+        result = await probe(cdp, spec, this.options.checkTimeoutMs)
+      }
+      if (result.kind === 'network') this.ctx.logger.warn(`ecommerce-accounts: checking ${entry.id} could not load the page: ${result.reason}`)
       return result
     } finally {
       cdp.close()

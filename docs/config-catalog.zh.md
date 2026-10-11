@@ -968,6 +968,8 @@ export interface Config {
   signInTimeoutMs?: number
   /** How long one check waits for the platform's response, in milliseconds. */
   checkTimeoutMs?: number
+  /** How long a check whose page could not be loaded waits before trying once more, in milliseconds. */
+  networkRetryMs?: number
   /** How long DSH waits for Chrome to start or close, in milliseconds. */
   chromeTimeoutMs?: number
   /** Time between looks at the sign-in tab, in milliseconds. */

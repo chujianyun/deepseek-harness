@@ -55,6 +55,7 @@ Chrome 只在需要时运行。对曾经登录过的账号进行检查或任务�
 | `minChromeVersion` | `120` | 账号可运行的最低 Chrome 主版本。 |
 | `signInTimeoutMs` | `600000`（10 分钟） | 一次登录等待用户的时长。 |
 | `checkTimeoutMs` | `20000` | 一次检查等待平台响应的时长。 |
+| `networkRetryMs` | `1500` | 页面无法加载时，检查在重试一次之前等待的时长；刚启动的 Chrome 可能还在建立网络。仍无法加载时会记录原因。 |
 | `chromeTimeoutMs` | `20000` | DSH 等待 Chrome 启动或关闭的时长。 |
 | `signInPollMs` | `3000` | 两次查看登录标签页的间隔。 |
 | `signInCheckEveryMs` | `30000` | 即使登录标签页尚未离开登录页，也要检查一次的间隔。 |

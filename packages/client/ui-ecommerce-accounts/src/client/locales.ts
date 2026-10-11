@@ -132,7 +132,7 @@ export const en = {
   signedInAs: 'Account the platform shows',
   signedInStore: 'Store the platform shows',
   checkedAt: 'Last checked',
-  checkedAgo: 'Checked {when}',
+  checkedAgo: 'Checked: {when}',
   check: 'Check',
   checkAll: 'Check all',
   relogin: 'Sign in again',

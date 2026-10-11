@@ -54,7 +54,9 @@ async function killChromes(home: string): Promise<void> {
   }
 }
 
-const TIMING = { signInPollMs: 30, signInCheckEveryMs: 300, signInTimeoutMs: 3000, checkTimeoutMs: 1500, chromeTimeoutMs: 5000 }
+const TIMING = {
+  signInPollMs: 30, signInCheckEveryMs: 300, signInTimeoutMs: 3000, checkTimeoutMs: 1500, chromeTimeoutMs: 5000, networkRetryMs: 10,
+}
 
 async function setup(options: { home?: string; tenant?: string | null; config?: Record<string, unknown> } = {}) {
   const home = options.home ?? await tempDir()
@@ -693,7 +695,9 @@ describe('e-commerce account edge cases', () => {
       expect((await env.service.checkAccounts()).accounts[0]).toMatchObject({ status: 'check-failed', problem, signedInAs: 'nick', expired: false })
     }
     process.env.FAKE_CHROME_OFFLINE = '1'
+    const warn = vi.spyOn(env.ctx.logger, 'warn')
     await failed('network')
+    expect(warn.mock.calls.some(([line]) => String(line).includes('could not load the page: net::ERR_INTERNET_DISCONNECTED'))).toBe(true)
     Reflect.deleteProperty(process.env, 'FAKE_CHROME_OFFLINE')
     process.env.FAKE_CHROME_SILENT = '1'
     await failed('timeout')

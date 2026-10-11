@@ -148,7 +148,7 @@ describe('e-commerce accounts section', () => {
   it('names the check buttons in English', () => {
     mount({ ...base, accounts: [account({ status: 'signed-in', checkedAt: new Date(Date.now() - 2 * 3_600_000).toISOString() })] }, en)
     expect(screen.getByRole('button', { name: 'Check all' })).toBeTruthy()
-    expect(screen.getByText('Checked 2 h ago')).toBeTruthy()
+    expect(screen.getByText('Checked: 2 h ago')).toBeTruthy()
   })
 
   it('shows a refused add and closes the add dialog on Cancel', async () => {
