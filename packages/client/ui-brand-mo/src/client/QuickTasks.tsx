@@ -22,6 +22,8 @@ export interface QuickTasksInjected {
 export interface BrandSettings {
   readonly quickTasks?: readonly QuickTaskId[]
   readonly quickTaskAssistant?: string
+  /** Grouping the sidebar shows until the user picks one; empty or absent keeps the sidebar's own. */
+  readonly defaultSessionGrouping?: string
 }
 
 /** Props of the `conversation.hero.dock` quick-task occupant. */

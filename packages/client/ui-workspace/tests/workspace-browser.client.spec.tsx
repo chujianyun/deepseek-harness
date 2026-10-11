@@ -110,6 +110,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
   const props: WorkspaceBrowserProps = {
     useShortcuts: select => select([]),
     useGroupings: select => select([]),
+    useDefaultGrouping: select => select('workspace'),
     useWorkspaceShortcuts: bindSnapshotSelector(controls.state),
     requestSearch: controls.search,
     requestAddWorkspace: controls.add,
@@ -2721,6 +2722,43 @@ describe('a registered grouping', () => {
     expect(fresh.getSnapshot().groupCollapsed).toEqual({ letter: {} })
     fresh.actions.retainGroupSections('date', [])
     expect(fresh.getSnapshot().groupCollapsed).toEqual({ letter: {}, date: {} })
+  })
+
+  it('starts in the default grouping until the user picks one, and then keeps the pick', () => {
+    localStorage.clear()
+    const b = mount({
+      useSessions: hook(sessions()),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['apple', 'banana', 'avocado'])])),
+      useGroupings: select => select([letter()]),
+      useDefaultGrouping: select => select('letter'),
+    })
+    expect(headings()).toEqual(['A', 'B'])
+    // The default is not written as the user's choice.
+    expect(b.store.getSnapshot()).toMatchObject({ groupBy: 'workspace' })
+    expect(b.store.getSnapshot().groupByChosen).toBeUndefined()
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['状态活跃', '分组方式按字母'])
+    fireEvent.click(viewItem('按工作区'))
+    expect(b.store.getSnapshot()).toMatchObject({ groupBy: 'workspace', groupByChosen: true })
+    expect(screen.getByText('alpha')).toBeTruthy()
+    expect(screen.getByText('工作区')).toBeTruthy()
+  })
+
+  it('keeps a grouping chosen before defaults existed', () => {
+    const key = 'dsh.workspace.view.v5'
+    localStorage.setItem(key, JSON.stringify({ groupBy: 'flat', orderBy: 'updated', groupExpansion: {}, sessionOrderByAccount: {} }))
+    try {
+      mount({
+        useSessions: hook(sessions()),
+        useGroupings: select => select([letter()]),
+        useDefaultGrouping: select => select('letter'),
+      })
+      expect(headings()).toEqual([])
+      expect(rows()).toEqual(['apple', 'banana', 'avocado'])
+    } finally {
+      cleanup()
+      localStorage.removeItem(key)
+    }
   })
 
   it('unfolds the section of a Session opened from search', () => {

@@ -263,7 +263,7 @@ export function apply(ctx: Context): void {
     dismissForkError: shortcutControls.dismissForkError,
     hooks: {
       directoryFlow: browserFlowSource, hostInfo, workspaceShortcuts: shortcutControls.state, shortcuts: ctx.shortcuts.catalog,
-      groupings: groupings.groupings,
+      groupings: groupings.groupings, defaultGrouping: groupings.defaultGrouping,
     },
   })
   const pickerInjected = (): WorkspacePickerInjected => ({

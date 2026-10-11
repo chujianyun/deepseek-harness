@@ -26,6 +26,11 @@ export type SessionOrderBy = 'manual' | 'updated'
 /** Workspace browser viewing state persisted across surface remounts and reloads. */
 type WorkspaceViewState = {
   groupBy: SessionGroupBy
+  /**
+   * The user picked `groupBy` in the menu. Until then the sidebar shows the default grouping; a
+   * snapshot written before defaults existed counts as picked when its `groupBy` is not 'workspace'.
+   */
+  groupByChosen?: boolean
   orderBy: SessionOrderBy
   /** Explicit group expansion keyed by Workspace identity, including descendants in tree mode. */
   groupExpansion: Record<string, boolean>
@@ -102,7 +107,10 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
     }),
     persist: 'dsh.workspace.view.v5',
     actions: {
-      setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
+      setGroupBy: (d, mode: SessionGroupBy) => {
+        d.groupBy = mode
+        d.groupByChosen = true
+      },
       setOrderBy: (d, mode: SessionOrderBy, initialOrders) => {
         if (mode === d.orderBy) return
         d.sessionOrderByAccount = mode === 'manual' ? copySessionOrders(initialOrders) : {}

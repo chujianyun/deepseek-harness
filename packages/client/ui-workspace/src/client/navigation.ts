@@ -117,6 +117,13 @@ export interface UiWorkspace {
    * @returns the disposer that removes it; a sidebar grouped by it then shows the Workspace view.
    */
   registerSessionGrouping(grouping: SessionGrouping): () => void
+  /**
+   * Choose the grouping the sidebar shows until its user picks one, for as long as the caller keeps it.
+   * A user's own pick is never replaced, and an id nothing provides shows the Workspace view.
+   * @param id - a built-in view ('workspace', 'workspace-tree', 'flat') or a registered grouping's id.
+   * @returns the disposer that withdraws the default.
+   */
+  setDefaultSessionGrouping(id: string): () => void
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -161,7 +168,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     private readonly sessions: ISessions,
     private readonly view: Pick<WorkspaceViewStoreActions, 'pinSessionOrder'>,
     private readonly notify: (toast: RowToast) => void,
-    private readonly groupings: Pick<SessionGroupingRegistry, 'register'>,
+    private readonly groupings: Pick<SessionGroupingRegistry, 'register' | 'setDefault'>,
   ) {
     super(ctx, 'uiWorkspace')
     ctx.effect(() => {
@@ -178,6 +185,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   registerSessionGrouping(grouping: SessionGrouping): () => void {
     return this.groupings.register(grouping)
+  }
+
+  setDefaultSessionGrouping(id: string): () => void {
+    return this.groupings.setDefault(id)
   }
 
   async connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId> {

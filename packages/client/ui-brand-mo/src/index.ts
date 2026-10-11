@@ -18,16 +18,23 @@ export interface Config {
   quickTasks: Volatile<QuickTaskId[]>
   /** Template id of the assistant a quick task picks for the new session (`ecommerce` is 电商管家); empty keeps the current pick. */
   quickTaskAssistant: Volatile<string>
+  /**
+   * Grouping the sidebar's Session list shows until the user picks one: a built-in view
+   * (`workspace`, `workspace-tree`, `flat`) or a registered grouping's id such as `assistant` or
+   * `date`; empty keeps the sidebar's own default.
+   */
+  defaultSessionGrouping: Volatile<string>
 }
 
 /** Brand configuration projected to the browser. */
 export const Config = z.object({
   quickTasks: z.array(z.union(QUICK_TASK_IDS.map(id => z.const(id)))).default([]).volatile(),
   quickTaskAssistant: z.string().default('').volatile(),
+  defaultSessionGrouping: z.string().default('').volatile(),
 })
 
 /**
- * Add the boot rows to every index render, and expose `quickTasks` to the browser through Settings,
+ * Add the boot rows to every index render, and expose the brand configuration to the browser through Settings,
  * while mounted.
  * @param ctx - Host plugin context.
  */

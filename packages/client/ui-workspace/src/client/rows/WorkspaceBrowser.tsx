@@ -983,6 +983,7 @@ export function WorkspaceBrowser({
   useShortcuts,
   useWorkspaceShortcuts,
   useGroupings,
+  useDefaultGrouping,
   requestSearch,
   requestAddWorkspace,
   closeAddWorkspace,
@@ -1017,7 +1018,10 @@ export function WorkspaceBrowser({
   // flow reads): a composition without a picking affordance can add nothing.
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
   const groupings = useGroupings(rows => rows)
-  const storedGroupBy = useStore(s => s.groupBy)
+  const defaultGrouping = useDefaultGrouping(id => id)
+  // Until the user picks a grouping the default applies; a pick, or a view saved before defaults
+  // existed that is not the Workspace view, is the user's own.
+  const storedGroupBy = useStore(s => (s.groupByChosen === true || s.groupBy !== 'workspace' ? s.groupBy : defaultGrouping))
   // A stored grouping whose plugin is gone shows the Workspace view; the choice stays stored, so
   // it returns with the plugin.
   const grouping = groupings.find(item => item.id === storedGroupBy)

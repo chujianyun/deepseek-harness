@@ -7,6 +7,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { BRAND_SETTINGS_NAMESPACE } from '../quick-tasks.ts'
 import { MoBrandMark, MoWordmark } from './Brand.tsx'
 import { en, zh, type BrandLocaleKey } from './locales.ts'
@@ -35,7 +36,8 @@ export const inject = ['theme', 'slots']
  * Apply the MO token layer and occupy both sidebar brand slots for exactly the plugin lifetime:
  * the wordmark in the expanded row, the app icon on the collapsed rail. While the locale registry
  * and the settings forms are present, offer the configured quick tasks under the blank new-session
- * composer; their absence leaves the theme and the brand row in place.
+ * composer and make the configured grouping the sidebar's default; their absence leaves the theme
+ * and the brand row in place.
  * @param ctx - Client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -55,5 +57,25 @@ export function apply(ctx: ClientContext): void {
     scope.slots.inject('conversation.hero.dock', () => scope.slots.register({
       name: 'conversation.hero.dock', id: 'mo-quick-tasks', order: 10, locale: NS, inject: () => quickTasksFace,
     }, QuickTasks))
+    // The configured grouping is the sidebar's default while both this plugin and the sidebar are mounted.
+    scope.inject(['uiWorkspace'], (sidebar: ClientContext) => {
+      sidebar.effect(() => {
+        let current = ''
+        let withdraw: (() => void) | undefined
+        const sync = (): void => {
+          const next = brandSettings.getSnapshot().value?.defaultSessionGrouping ?? ''
+          if (next === current) return
+          withdraw?.()
+          current = next
+          withdraw = next === '' ? undefined : sidebar.uiWorkspace.setDefaultSessionGrouping(next)
+        }
+        sync()
+        const stop = brandSettings.subscribe(sync)
+        return () => {
+          stop()
+          withdraw?.()
+        }
+      }, 'ui-brand-mo: default session grouping')
+    })
   })
 }

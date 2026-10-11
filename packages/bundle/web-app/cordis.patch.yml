@@ -461,6 +461,8 @@
         quickTasks: [multi-publish, business-report, product-research, asset-organize]
         # The tasks need 电商管家's Skills: a card also picks the assistant created from the `ecommerce` template.
         quickTaskAssistant: ecommerce
+        # Operators divide work by assistant, not by folder: the Session list starts grouped by assistant.
+        defaultSessionGrouping: assistant
 
     - id: ui-attachment
       name: '@deepseek-ai/dsh-client-ui-attachment'

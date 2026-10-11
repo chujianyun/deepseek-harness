@@ -55,6 +55,14 @@ export interface SessionGroupingRegistry {
    * @returns the disposer that removes it.
    */
   readonly register: (grouping: SessionGrouping) => () => void
+  /** The grouping a sidebar shows before its user picks one: 'workspace' unless a caller set another. */
+  readonly defaultGrouping: HostObservable<string>
+  /**
+   * Set the default grouping for as long as the caller keeps it; the latest setter wins.
+   * @param id - a built-in view or a registered grouping's id.
+   * @returns the disposer; the default returns to the latest remaining setter's, or to 'workspace'.
+   */
+  readonly setDefault: (id: string) => () => void
 }
 
 /**
@@ -63,8 +71,21 @@ export interface SessionGroupingRegistry {
  */
 export function createSessionGroupingRegistry(): SessionGroupingRegistry {
   const store = createSnapshotStore<readonly SessionGrouping[]>([])
+  const defaultGrouping = createSnapshotStore<string>('workspace')
+  let defaults: readonly { readonly id: string }[] = []
+  const publishDefault = (): void => { defaultGrouping.set(defaults.at(-1)?.id ?? 'workspace') }
   return {
     groupings: store,
+    defaultGrouping,
+    setDefault: (id) => {
+      const entry = { id }
+      defaults = [...defaults, entry]
+      publishDefault()
+      return () => {
+        defaults = defaults.filter(item => item !== entry)
+        publishDefault()
+      }
+    },
     register: (grouping) => {
       const taken = (WORKSPACE_GROUPINGS as readonly string[]).includes(grouping.id)
         || store.getSnapshot().some(item => item.id === grouping.id)

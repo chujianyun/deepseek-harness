@@ -234,6 +234,8 @@ export type WorkspaceBrowserInjected = {
     shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
     /** Registered Session groupings, offered under Group by beside the built-in Workspace views. */
     groupings: HostObservable<readonly SessionGrouping[]>
+    /** The grouping shown until the user picks one. */
+    defaultGrouping: HostObservable<string>
   }
   /** Open the browser search and focus its input. */
   requestSearch: () => void

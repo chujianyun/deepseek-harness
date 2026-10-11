@@ -41,6 +41,22 @@ describe('the grouping registry', () => {
   })
 })
 
+describe('the default grouping', () => {
+  it('is the Workspace view until a caller sets one, and returns when the latest setter leaves', () => {
+    const registry = createSessionGroupingRegistry()
+    expect(registry.defaultGrouping.getSnapshot()).toBe('workspace')
+    const restoreAssistant = registry.setDefault('assistant')
+    expect(registry.defaultGrouping.getSnapshot()).toBe('assistant')
+    const restoreDate = registry.setDefault('date')
+    expect(registry.defaultGrouping.getSnapshot()).toBe('date')
+    // An earlier setter leaving does not undo a later one.
+    restoreAssistant()
+    expect(registry.defaultGrouping.getSnapshot()).toBe('date')
+    restoreDate()
+    expect(registry.defaultGrouping.getSnapshot()).toBe('workspace')
+  })
+})
+
 describe('sections of a registered grouping', () => {
   it('orders ranked sections first, then by latest activity, with rows newest first and the same visibility rules', () => {
     const state = list(

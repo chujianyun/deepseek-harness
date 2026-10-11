@@ -35,6 +35,9 @@
     },
     {
       "path": "../ui-theme/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-workspace"
     }
   ],
   "exclude": [

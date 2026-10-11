@@ -334,6 +334,14 @@ describe('UiWorkspaceService', () => {
     expect(b.groupings.groupings.getSnapshot()).toEqual([])
   })
 
+  it('sets the sidebar default grouping until its disposer runs', () => {
+    const b = bench()
+    const restore = b.uiWorkspace.setDefaultSessionGrouping('assistant')
+    expect(b.groupings.defaultGrouping.getSnapshot()).toBe('assistant')
+    restore()
+    expect(b.groupings.defaultGrouping.getSnapshot()).toBe('workspace')
+  })
+
   it('prepares and selects the default Workspace after both startup baselines', async () => {
     const b = bench({ configureWorkspaces: (workspaces) => {
       workspaces.initializeDefault.mockImplementation(async () => {
