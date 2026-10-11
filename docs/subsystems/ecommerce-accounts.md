@@ -14,11 +14,11 @@ Signing in starts the system Google Chrome detached on the account's data, with 
 
 ## Checking
 
-A check opens the platform's business page in a background tab and reads the platform's own sign-in response there, retrying once: Tmall's `mtop.user.getusersimple` (which names the account), Taobao Qianniu's `mtop.taobao.jdy.resource.shop.info.get`, Pinduoduo's `janus/api/checkLogin`, or a Douyin shop's `byteshop/menu/list/v2`; Pinduoduo and Douyin shop pages also name the store, which the Settings section compares with the store name entered. A page the platform sends to sign in is signed out at once. A check that gets no answer in time, cannot load the page, or finds the account's browser data held by a Chrome DSH did not start fails with that problem — timeout, network, or busy — and keeps the last answer. Accounts are checked when they load, when the Settings section opens, and every 30 minutes; an account that was signed in and is now signed out is expired, which the Desktop announces with a notice that opens the section. Once signed in, the account's Chrome windows are minimized and Chrome keeps running. Every account is checked when the tenant's accounts load and when the Settings section opens.
+A check opens the platform's business page in a background tab and reads the platform's own sign-in response there, retrying once: Tmall's `mtop.user.getusersimple` (which names the account), Taobao Qianniu's `mtop.taobao.jdy.resource.shop.info.get`, Pinduoduo's `janus/api/checkLogin`, or a Douyin shop's `byteshop/menu/list/v2`; Pinduoduo and Douyin shop pages also name the store, which the Settings section compares with the store name entered. A page the platform sends to sign in is signed out at once. A check that gets no answer in time, cannot load the page, or finds the account's browser data held by a Chrome DSH did not start fails with that problem — timeout, network, or busy — and keeps the last answer. The last answer is saved with the account and shown from then on, also after a restart. DSH does not check on its own, on a schedule, or when the Settings section opens: it checks when the user asks, and when a task takes an account over whose last signed-in answer is older than 30 minutes. An account that was signed in and is now signed out is expired, which the Desktop announces with a notice that opens the section. Once signed in, the account's Chrome windows are minimized and Chrome keeps running.
 
 ## Across restarts
 
-Chrome outlives DSH. A later DSH reattaches to the recorded Chrome; when it is gone, as after a computer restart, an account that was ever signed in has Chrome started again, minimized, with its last session restored, and the check tells whether the platform kept the sign-in. Deleting an account closes its Chrome so it writes its cookies, then deletes its data.
+Chrome outlives DSH. A later DSH reattaches to the recorded Chrome; when it is gone, as after a computer restart, an account that was ever signed in has Chrome started again, minimized, with its last session restored, when it is next checked or taken over, and a check tells whether the platform kept the sign-in. Deleting an account closes its Chrome so it writes its cookies, then deletes its data.
 
 ## Use by the model
 
@@ -93,10 +93,18 @@ Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote name
 @Remote async confirmSignIn(accountId: string): Promise<EcommerceAccountsState>
 
 /**
- * Check every account that is not signing in, and look for Chrome again.
- * @returns the state after the checks.
+ * Look for Chrome again; the accounts keep their saved sign-in answers.
+ * @returns the state with what was found.
  */
 @Remote async refresh(): Promise<EcommerceAccountsState>
+
+/**
+ * Check the sign-in of the accounts the user asks about, leaving those signing in or in a task's use.
+ * @param accountIds - the accounts; all of the tenant's when left out. Ids no longer listed are skipped.
+ * @returns the state after the checks.
+ * @throws RemoteError `hub-account/signed-out`.
+ */
+@Remote async checkAccounts(accountIds?: readonly string[]): Promise<EcommerceAccountsState>
 
 /**
  * Set the tenant's daily page limit for buyer accounts.

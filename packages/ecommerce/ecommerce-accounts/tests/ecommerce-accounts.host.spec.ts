@@ -297,7 +297,7 @@ describe('e-commerce accounts', () => {
     // The computer restarted: Chrome is gone and starts again minimized, restoring its session.
     process.kill(record!.pid, 'SIGKILL')
     await new Promise(resolve => setTimeout(resolve, 300))
-    expect((await second.service.refresh()).accounts[0]!.status).toBe('signed-in')
+    expect((await second.service.checkAccounts()).accounts[0]!.status).toBe('signed-in')
     const again = await readRecord(first.browserDir(accountId))
     expect(again!.pid).not.toBe(record!.pid)
     const args = JSON.parse(await readFile(join(first.browserDir(accountId), 'user-data', 'fake-args.json'), 'utf8')) as string[]
@@ -307,19 +307,19 @@ describe('e-commerce accounts', () => {
     expect(tabs.map(tab => tab.url)).toEqual(['https://www.tmall.com/'])
     // A restart that lost the session shows the account signed out.
     await rm(join(first.browserDir(accountId), 'user-data', 'fake-signed-in'))
-    expect((await second.service.refresh()).accounts[0]!.status).toBe('signed-out')
+    expect((await second.service.checkAccounts()).accounts[0]!.status).toBe('signed-out')
     // A Chrome started again in the background is minimized even when the session is lost.
     process.kill(again!.pid, 'SIGKILL')
     await new Promise(resolve => setTimeout(resolve, 300))
     await rm(join(first.browserDir(accountId), 'user-data', 'fake-window.json'), { force: true })
-    expect((await second.service.refresh()).accounts[0]!.status).toBe('signed-out')
+    expect((await second.service.checkAccounts()).accounts[0]!.status).toBe('signed-out')
     expect(JSON.parse(await readFile(join(first.browserDir(accountId), 'user-data', 'fake-window.json'), 'utf8'))).toMatchObject({ windowState: 'minimized' })
   })
 
   it('shows a check that got no answer as failed, reads base64 bodies, and leaves a never-signed-in account without Chrome', async () => {
     const env = await setup()
     const { accountId } = await env.service.addAccount(merchant)
-    expect((await env.service.refresh()).accounts[0]!.status).toBe('signed-out')
+    expect((await env.service.checkAccounts()).accounts[0]!.status).toBe('signed-out')
     expect(await readRecord(env.browserDir(accountId))).toBeUndefined()
     process.env.FAKE_CHROME_BASE64 = '1'
     await env.service.startSignIn(accountId)
@@ -327,7 +327,7 @@ describe('e-commerce accounts', () => {
     expect((await env.settle(s => s.accounts[0]!.status === 'signed-in')).accounts[0]!.signedInAs).toBe('b64')
     await closeChrome(env.browserDir(accountId), 2000)
     process.env.FAKE_CHROME_SILENT = '1'
-    expect((await env.service.refresh()).accounts[0]!.status).toBe('check-failed')
+    expect((await env.service.checkAccounts()).accounts[0]!.status).toBe('check-failed')
   })
 
   it('refuses to sign in without Chrome or with an old one, and with an unknown account', async () => {
@@ -498,16 +498,16 @@ describe('e-commerce account edge cases', () => {
     await env.signIn(accountId, 'nick')
     await env.settle(s => s.accounts[0]!.status === 'signed-in')
     process.env.FAKE_CHROME_NO_CLOSE = '1'
-    expect((await env.service.refresh()).accounts[0]!.status).toBe('signed-in')
+    expect((await env.service.checkAccounts()).accounts[0]!.status).toBe('signed-in')
     process.env.FAKE_CHROME_NO_BODY = '1'
     await closeChrome(env.browserDir(accountId), 2000)
-    expect((await env.service.refresh()).accounts[0]!.status).toBe('check-failed')
+    expect((await env.service.checkAccounts()).accounts[0]!.status).toBe('check-failed')
     await closeChrome(env.browserDir(accountId), 2000)
     // Chrome can no longer start: the check fails instead of throwing.
     const silent = join(env.home, 'silent-chrome.sh')
     await writeFile(silent, '#!/bin/sh\nsleep 2\n', { mode: 0o755 })
     const broken = await setup({ home: env.home, config: { chromePath: silent, chromeTimeoutMs: 200 } })
-    await broken.settle(s => s.accounts[0]?.status === 'check-failed')
+    expect((await broken.service.checkAccounts()).accounts[0]!.status).toBe('check-failed')
     expect((await broken.service.getState()).chrome).toEqual({ status: 'ready', minVersion: 120, downloadUrl: 'https://www.google.com/chrome/' })
   }, 15_000)
 
@@ -520,7 +520,7 @@ describe('e-commerce account edge cases', () => {
     // A Chrome started again without answering keeps the check running.
     await closeChrome(env.browserDir(accountId), 2000)
     process.env.FAKE_CHROME_SILENT = '1'
-    const checking = env.service.refresh()
+    const checking = env.service.checkAccounts()
     await env.settle(s => s.accounts[0]!.status === 'checking')
     env.hub.set('t-b')
     await env.settle(s => s.tenantId === 't-b')
@@ -569,7 +569,7 @@ describe('e-commerce account edge cases', () => {
     expect(signedIn.accounts.map(account => [account.signedInAs, account.signedInStore])).toEqual([[undefined, undefined], [undefined, '小美店'], [undefined, '小美店']])
     for (const account of signedIn.accounts) await rm(join(env.browserDir(account.id), 'user-data', 'fake-signed-in'))
     // Signed out, the Taobao and Douyin shop pages go to sign in, and Pinduoduo says so.
-    const lost = await env.service.refresh()
+    const lost = await env.service.checkAccounts()
     expect(lost.accounts.map(account => [account.status, account.expired])).toEqual([['signed-out', true], ['signed-out', true], ['signed-out', true]])
   })
 
@@ -582,7 +582,7 @@ describe('e-commerce account edge cases', () => {
     await env.settle(s => s.accounts[0]!.status === 'signed-in')
     const failed = async (problem: string) => {
       await closeChrome(dir, 2000)
-      expect((await env.service.refresh()).accounts[0]).toMatchObject({ status: 'check-failed', problem, signedInAs: 'nick', expired: false })
+      expect((await env.service.checkAccounts()).accounts[0]).toMatchObject({ status: 'check-failed', problem, signedInAs: 'nick', expired: false })
     }
     process.env.FAKE_CHROME_OFFLINE = '1'
     await failed('network')
@@ -600,7 +600,7 @@ describe('e-commerce account edge cases', () => {
     for (const target of ['other-host-999999999', 'garbage']) {
       await rm(lock)
       await symlink(target, lock)
-      expect((await env.service.refresh()).accounts[0]).toMatchObject({ status: 'signed-in' })
+      expect((await env.service.checkAccounts()).accounts[0]).toMatchObject({ status: 'signed-in' })
       expect((await env.service.getState()).accounts[0]!.problem).toBeUndefined()
       await closeChrome(dir, 2000)
     }
@@ -615,7 +615,7 @@ describe('e-commerce account edge cases', () => {
     for (const flag of ['FAKE_CHROME_NO_STORE', 'FAKE_CHROME_NO_STORE_BODY']) {
       process.env[flag] = '1'
       await closeChrome(env.browserDir(accountId), 2000)
-      expect((await env.service.refresh()).accounts[0]).toMatchObject({ status: 'signed-in' })
+      expect((await env.service.checkAccounts()).accounts[0]).toMatchObject({ status: 'signed-in' })
       expect((await env.service.getState()).accounts[0]!.signedInStore).toBeUndefined()
       Reflect.deleteProperty(process.env, flag)
     }
@@ -636,13 +636,50 @@ describe('e-commerce account edge cases', () => {
     expect(ledger.accounts.map(account => [account.account, account.storeName])).toEqual([['名流:小美', '名流成人用品旗舰店'], ['other', '名流旗舰店']])
   })
 
-  it('checks every account in the background', async () => {
-    const env = await setup({ config: { checkIntervalMs: 300 } })
-    const { accountId } = await env.service.addAccount(merchant)
-    await env.service.startSignIn(accountId)
-    await env.signIn(accountId, 'nick')
-    const first = (await env.settle(s => s.accounts[0]!.status === 'signed-in')).accounts[0]!.checkedAt
-    await env.settle(s => s.accounts[0]!.checkedAt !== first && s.accounts[0]!.status === 'signed-in')
+  it('checks only when asked: not on a schedule, not when Settings looks for Chrome, and not after a restart', async () => {
+    const first = await setup()
+    const { accountId } = await first.service.addAccount(merchant)
+    await first.service.startSignIn(accountId)
+    await first.signIn(accountId, 'nick')
+    const { checkedAt } = (await first.settle(s => s.accounts[0]!.status === 'signed-in')).accounts[0]!
+    await new Promise(resolve => setTimeout(resolve, 300))
+    expect((await first.service.refresh()).accounts[0]).toMatchObject({ status: 'signed-in', checkedAt })
+    const ledger = JSON.parse(await readFile(join(first.home, 'ecommerce', 't-a', 'accounts.json'), 'utf8')) as { accounts: object[] }
+    expect(ledger.accounts[0]).toMatchObject({ signedIn: true, checkedAt })
+    // DSH starts again with Chrome gone: the saved answer shows, and no Chrome starts.
+    await first.ctx.fiber.dispose()
+    await closeChrome(first.browserDir(accountId), 2000)
+    const second = await setup({ home: first.home })
+    expect((await second.service.getState()).accounts[0]).toMatchObject({ status: 'signed-in', checkedAt })
+    await new Promise(resolve => setTimeout(resolve, 300))
+    expect(await readRecord(first.browserDir(accountId))).toBeUndefined()
+    // Asked for, the account is checked, and an unknown or other id is left alone.
+    expect((await second.service.checkAccounts(['no-such-id'])).accounts[0]!.checkedAt).toBe(checkedAt)
+    expect((await second.service.checkAccounts([accountId])).accounts[0]!.checkedAt).not.toBe(checkedAt)
+  })
+
+  it('shows a saved signed-out answer of an account that signed in before as expired, and an older ledger by whether it ever signed in', async () => {
+    const env = await setup({ tenant: null })
+    const dir = join(env.home, 'ecommerce', 't-a')
+    await mkdir(dir, { recursive: true })
+    const row = { platform: 'tmall', kind: 'merchant', storeName: 's', createdAt: '2026-10-01T00:00:00.000Z', checkedAt: '2026-10-01T00:00:00.000Z' }
+    await writeFile(join(dir, 'accounts.json'), JSON.stringify({
+      version: 1,
+      accounts: [
+        { ...row, id: 'lost', account: 'a', everSignedIn: true, signedIn: false },
+        { ...row, id: 'old', account: 'b', everSignedIn: true },
+        { ...row, id: 'never', account: 'c' },
+      ],
+    }))
+    env.hub.set('t-a')
+    const state = await env.settle(s => s.accounts.length === 3)
+    expect(state.accounts.map(account => [account.id, account.status, account.expired])).toEqual([
+      ['lost', 'signed-out', true], ['old', 'signed-in', false], ['never', 'signed-out', false],
+    ])
+    expect(await code(env.service.checkAccounts())).toBe('ok')
+    env.hub.set(null)
+    await env.settle(s => s.tenantId === null)
+    expect(await code(env.service.checkAccounts())).toBe('hub-account/signed-out')
   })
 })
 
@@ -712,7 +749,7 @@ describe('e-commerce accounts for the model', () => {
     await env.settle(s => s.accounts[0]!.status === 'signed-in')
     process.env.FAKE_CHROME_OFFLINE = '1'
     await closeChrome(env.browserDir(accountId), 2000)
-    expect((await env.service.refresh()).accounts[0]!.problem).toBe('network')
+    expect((await env.service.checkAccounts()).accounts[0]!.problem).toBe('network')
     const exec = bashCall('c-1')
     const listed = await runCommand(env, varsOf(env, exec), 'accounts')
     expect(listed.code).toBe(0)
@@ -763,7 +800,7 @@ describe('e-commerce accounts for the model', () => {
     expect(await code(env.service.deleteAccount(accountId))).toBe('ecommerce-accounts/in-use')
     // Settings checks leave the account to the task that uses it.
     const checkedAt = (await env.service.getState()).accounts[0]!.checkedAt
-    expect((await env.service.refresh()).accounts[0]!.checkedAt).toBe(checkedAt)
+    expect((await env.service.checkAccounts()).accounts[0]!.checkedAt).toBe(checkedAt)
     // Another call ending leaves the reservation.
     endCall(env, bashCall('c-3'))
     expect((await env.service.getState()).accounts[0]!.inUse).toBe(true)
@@ -773,7 +810,8 @@ describe('e-commerce accounts for the model', () => {
   })
 
   it('stops a task whose account is signed out, cannot be checked, is being signed in, or does not exist', async () => {
-    const env = await setup()
+    // Every take-over checks again.
+    const env = await setup({ config: { signInReuseMs: 0 } })
     const { accountId } = await env.service.addAccount(merchant)
     const exec = bashCall('c-1')
     expect(await runCommand(env, varsOf(env, exec), 'browser', accountId)).toMatchObject({
@@ -800,8 +838,61 @@ describe('e-commerce accounts for the model', () => {
     })
   }, 15_000)
 
-  it('answers a call whose tenant switched while its account was checked as signed out of the user center', async () => {
+  it('stands by a recent signed-in answer on take-over, starting only a gone Chrome, and checks once the answer is old', async () => {
     const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    const dir = env.browserDir(accountId)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    const { checkedAt } = (await env.settle(s => s.accounts[0]!.status === 'signed-in')).accounts[0]!
+    // The platform would not answer now, but nothing asks it.
+    process.env.FAKE_CHROME_SILENT = '1'
+    const take = async (call: string) => {
+      const exec = bashCall(call)
+      const run = await runCommand(env, varsOf(env, exec), 'browser', accountId)
+      endCall(env, exec)
+      return run
+    }
+    expect((await take('c-1')).code).toBe(0)
+    // Chrome went away: it starts again minimized, still without a check.
+    await closeChrome(dir, 2000)
+    await rm(join(dir, 'user-data', 'fake-window.json'), { force: true })
+    const run = await take('c-2')
+    expect(run.code).toBe(0)
+    expect((await readRecord(dir))!.port).toBe(Number(new URL((JSON.parse(run.stdout) as { cdpUrl: string }).cdpUrl).port))
+    expect(JSON.parse(await readFile(join(dir, 'user-data', 'fake-window.json'), 'utf8'))).toMatchObject({ windowState: 'minimized' })
+    expect((await env.service.getState()).accounts[0]).toMatchObject({ status: 'signed-in', checkedAt })
+    // Another Chrome holds the data, or Chrome cannot start: the account is checked, which says why.
+    await closeChrome(dir, 2000)
+    const lock = join(dir, 'user-data', 'SingletonLock')
+    await symlink(`other-host-${String(process.pid)}`, lock)
+    expect((await take('c-3')).stderr).toContain('its browser is in use by another program')
+    await rm(lock)
+    const silent = join(env.home, 'silent-chrome.sh')
+    await writeFile(silent, '#!/bin/sh\nsleep 2\n', { mode: 0o755 })
+    const broken = await setup({ home: env.home, config: { chromePath: silent, chromeTimeoutMs: 200 } })
+    const exec5 = bashCall('c-5')
+    expect((await runCommand(broken, varsOf(broken, exec5), 'browser', accountId)).stderr).toContain('could not be checked')
+    await broken.ctx.fiber.dispose()
+    // Without Chrome, the account is checked and reported signed out.
+    const noChrome = await setup({ home: env.home, config: { chromePath: join(tmpdir(), 'no-such-chrome') } })
+    const exec = bashCall('c-4')
+    expect((await runCommand(noChrome, varsOf(noChrome, exec), 'browser', accountId)).stderr).toContain('is signed out')
+  }, 20_000)
+
+  it('checks again on take-over once the signed-in answer is older than the reuse time', async () => {
+    const env = await setup({ config: { signInReuseMs: 1 } })
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    await env.signIn(accountId, 'nick')
+    const { checkedAt } = (await env.settle(s => s.accounts[0]!.status === 'signed-in')).accounts[0]!
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect((await runCommand(env, varsOf(env, bashCall('c-1')), 'browser', accountId)).code).toBe(0)
+    expect((await env.service.getState()).accounts[0]!.checkedAt).not.toBe(checkedAt)
+  })
+
+  it('answers a call whose tenant switched while its account was checked as signed out of the user center', async () => {
+    const env = await setup({ config: { signInReuseMs: 0 } })
     const { accountId } = await env.service.addAccount(merchant)
     await env.service.startSignIn(accountId)
     await env.signIn(accountId, 'nick')
@@ -1012,16 +1103,6 @@ describe('buyer accounts and risk protection', () => {
     expect((await runCommand(env, started, 'buyer')).stderr).toBe('DSH: DSH is signed out of the user center, so there are no e-commerce accounts.\n')
   })
 
-  it('checks only merchant accounts in the background, since each check of a buyer account opens a page', async () => {
-    const env = await setup({ config: { checkIntervalMs: 300 } })
-    await signedInBuyer(env, buyer)
-    const { accountId } = await env.service.addAccount(merchant)
-    await env.service.startSignIn(accountId)
-    await env.signIn(accountId, 'nick')
-    const before = (await env.settle(s => s.accounts.every(account => account.status === 'signed-in'))).accounts
-    const after = (await env.settle(s => s.accounts[1]!.checkedAt !== before[1]!.checkedAt && s.accounts[1]!.status === 'signed-in')).accounts
-    expect(after[0]!.checkedAt).toBe(before[0]!.checkedAt)
-  })
 })
 
 describe('publishing memory', () => {

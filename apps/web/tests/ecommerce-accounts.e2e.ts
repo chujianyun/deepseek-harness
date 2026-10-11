@@ -117,9 +117,9 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     const pddRow = section.getByRole('button', { name: '查看 拼多多小店 的详情' })
     await expect.poll(() => pddRow.textContent()).toContain('已登录')
 
-    // Its sign-in ends: the next check finds it signed out, and a notice leads back to Settings.
+    // Its sign-in ends: the next check the user asks for finds it signed out, and a notice leads back to Settings.
     await rm(join(pddDir, 'user-data', 'fake-signed-in'))
-    await scaffold.ctx.ecommerceAccounts.refresh()
+    await scaffold.ctx.ecommerceAccounts.checkAccounts()
     const notice = page.getByRole('alert').filter({ hasText: '电商账号「拼多多小店」的登录已失效' })
     await notice.waitFor({ timeout: 10_000 })
     await page.keyboard.press('Escape')

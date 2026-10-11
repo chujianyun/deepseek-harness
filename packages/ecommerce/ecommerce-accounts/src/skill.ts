@@ -18,7 +18,7 @@ The user signs e-commerce accounts in to their platforms in DSH Settings → E-c
 Run them in bash:
 
 - \`dsh-ecommerce accounts\` prints the accounts as JSON: \`id\`, \`platform\` (\`tmall\`, \`taobao\`, \`pinduoduo\`, \`doudian\`), \`store\` (merchant accounts), \`account\`, \`kind\` (\`merchant\` or \`buyer\`), and \`status\` (\`signed-in\`, \`signed-out\`, \`signing-in\`, \`checking\`, or \`check-failed\`); a buyer account also has \`pagesToday\` and \`pageLimit\`, and \`cooldownUntil\` while it rests.
-- \`dsh-ecommerce browser <id>\` checks with the platform that the account is still signed in, reserves its browser for this bash call, and prints JSON with \`cdpUrl\`, the Chrome DevTools address of its signed-in Chrome. Connect to it in the same bash call, for example with Playwright's \`chromium.connectOverCDP(cdpUrl)\`; the reservation ends when the call ends. Open a tab of your own, close it when you are done, and never close the browser.
+- \`dsh-ecommerce browser <id>\` makes sure the account is signed in, checking with the platform unless it was checked in the last half hour, reserves its browser for this bash call, and prints JSON with \`cdpUrl\`, the Chrome DevTools address of its signed-in Chrome. Connect to it in the same bash call, for example with Playwright's \`chromium.connectOverCDP(cdpUrl)\`; the reservation ends when the call ends. Open a tab of your own, close it when you are done, and never close the browser.
 - \`dsh-ecommerce buyer [tmall|taobao]\` picks a buyer account for you — signed in, not resting, with the fewest pages opened today — and takes over its browser the same way; its JSON also has \`pagesLeft\`. If none can be used, it says why for each.
 
 ## Publishing memory

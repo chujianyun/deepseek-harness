@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v1.0.1/ecommerce-sign-in-checks/guide.md
+/:
+  en: 49d878341ba5c622
+  zh: dc1cde59bda2d654
+/e-commerce-accounts-check-sign-ins-only-when-needed:
+  en: 50bf8ab97b09fb69
+  zh: ecec7d9e9a2fee75
+/e-commerce-accounts-check-sign-ins-only-when-needed/change:
+  en: 38bcdea14c3cb345
+  zh: 8af1fbd169193a60
+/e-commerce-accounts-check-sign-ins-only-when-needed/migration:
+  en: 468ef2b9cd769bdd
+  zh: dab33e8d8bf0f600
