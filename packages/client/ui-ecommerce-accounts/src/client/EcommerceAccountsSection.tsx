@@ -105,7 +105,7 @@ export function EcommerceAccountsSection(props: EcommerceAccountsSectionProps) {
               {accounts.length > 0 && (
                 <span className={css.headerActions}>
                   <CheckButton
-                    {...props} label={t('checkAll')} checking={accounts.some(item => item.status === 'checking')}
+                    {...props} small label={t('checkAll')} checking={accounts.some(item => item.status === 'checking')}
                     disabled={chrome?.status !== 'ready'} onResult={setCheckRefusal}
                   />
                   <Button variant="primary" size="sm" onClick={() => { setAdding(true) }}>{t('add')}</Button>
@@ -215,8 +215,10 @@ function AccountList({ t, accounts, limit, query, setQuery, onOpen }: EcommerceA
  * waits while they are signing in or in a task's use, and stays off without a usable Chrome, which a
  * check would read as every account signed out. Its owner shows the outcome.
  */
-function CheckButton({ t, onCheck, label, ids, checking, disabled, onResult }: EcommerceAccountsSectionProps & {
+function CheckButton({ t, onCheck, label, ids, checking, disabled, onResult, small }: EcommerceAccountsSectionProps & {
   readonly label: string
+  /** Sized for the list's header; the details use the size of their other buttons. */
+  readonly small?: boolean
   readonly ids?: readonly string[]
   readonly checking: boolean
   readonly disabled: boolean
@@ -225,7 +227,7 @@ function CheckButton({ t, onCheck, label, ids, checking, disabled, onResult }: E
   const [pending, setPending] = useState(false)
   return (
     <Button
-      variant="outline" size="sm" disabled={pending || checking || disabled}
+      variant="outline" {...small === true ? { size: 'sm' as const } : {}} disabled={pending || checking || disabled}
       onClick={() => {
         setPending(true)
         onResult(undefined)
