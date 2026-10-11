@@ -79,8 +79,11 @@
     # Session-header "Open In..." split button over the host application
     # resolution (macOS/Windows/Linux; a host with no resolved application
     # renders no button). Two halves: the host routes and the browser surface.
+    # The enterprise Desktop (desktop profile with a user center) leaves both out:
+    # opening the workspace in Finder, VS Code, or a terminal is a developer tool.
     - id: open-in-app
       name: '@deepseek-ai/dsh-host-open-in-app'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
       config:
         probeTimeoutMs: 10000
         iconTimeoutMs: 10000
@@ -88,6 +91,7 @@
 
     - id: ui-open-in-app
       name: '@deepseek-ai/dsh-client-ui-open-in-app'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'

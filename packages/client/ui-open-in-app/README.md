@@ -25,7 +25,7 @@ This package provides the browser surface of the open-in-app feature. A Session-
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin in the Web composition beside [`dsh-host-open-in-app`](../../host/open-in-app/README.md); the pair composes the whole feature in two cordis.yml rows and this row takes no config. The Session header grows an "Open In..." split button whenever the host probed at least one installed catalog application and the session has a known workspace directory. The document preview of [`ui-sidebar-documentpreview`](../ui-sidebar-documentpreview/README.md) grows its file controls whenever the Host reports a desktop through the Session Remote's `session.canOpenWorkspacePath`; removing this row removes every control at once.
+Mount this plugin in the Web composition beside [`dsh-host-open-in-app`](../../host/open-in-app/README.md); the pair composes the whole feature in two cordis.yml rows and this row takes no config. The Session header grows an "Open In..." split button whenever the host probed at least one installed catalog application and the session has a known workspace directory. The document preview of [`ui-sidebar-documentpreview`](../ui-sidebar-documentpreview/README.md) grows its file controls whenever the Host reports a desktop through the Session Remote's `session.canOpenWorkspacePath`; removing this row removes every control at once. The web-app bundle leaves both rows out of the enterprise Desktop (the `desktop` profile with a configured user center), whose users do not open workspaces in editors or terminals.
 
 ### What to expect
 
