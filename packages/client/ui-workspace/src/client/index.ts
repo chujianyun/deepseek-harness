@@ -17,6 +17,8 @@
  */
 import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
 import type { Context } from '@deepseek-ai/cordis'
+import { createElement } from 'react'
+import { IconClockOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
@@ -124,7 +126,10 @@ export function apply(ctx: Context): void {
   ctx.slots.provideRoot({ hooks: { workspaces: workspaces.list } })
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-workspace: dictionaries')
   ctx.effect(
-    () => uiWorkspace.registerSessionGrouping(dateGrouping(ctx.locale.bind(NS), onChange => ctx.locale.subscribe(onChange))),
+    () => uiWorkspace.registerSessionGrouping({
+      ...dateGrouping(ctx.locale.bind(NS), onChange => ctx.locale.subscribe(onChange)),
+      icon: createElement(IconClockOutlineRegular),
+    }),
     'ui-workspace: Date grouping',
   )
   const shortcutControls = createWorkspaceShortcutControls()
