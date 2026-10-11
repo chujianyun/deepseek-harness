@@ -182,6 +182,12 @@
       name: '@deepseek-ai/dsh-skill-market'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
+    # Session sharing for Desktop: a conversation snapshot uploaded to the user
+    # center of the Hub sign-in; mounted exactly when hub-account is.
+    - id: session-share
+      name: '@deepseek-ai/dsh-session-share'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     # Embedding models for Desktop knowledge bases: the local model downloaded at
     # startup and API embedding models over configured provider routes.
     - id: embedding

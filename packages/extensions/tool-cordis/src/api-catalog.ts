@@ -3061,6 +3061,33 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'sessionShare',
+    summary: 'Host owner of Session sharing and of the `sessionShare` Remote namespace.',
+    description: 'Host owner of Session sharing and of the `sessionShare` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote async status(request: SessionShareTarget): Promise<SessionShareStatus>',
+        description: 'Read whether sharing is possible now and the Session\'s current share.',
+        parameters: [{ name: 'request', description: 'the Session.' }],
+        returns: 'the sign-in state and the link, null when the Session is not shared.',
+        throws: ['RemoteError `session-share/refused` or `session-share/unreachable`.'],
+      },
+      {
+        signature: '@Remote async share(request: SessionShareRequest): Promise<SessionShareLink>',
+        description: 'Share the Session, or replace its existing share\'s snapshot with the conversation as it is now.',
+        parameters: [{ name: 'request', description: 'the Session and the title to show.' }],
+        returns: 'the share\'s link, unchanged for a Session shared before.',
+        throws: ['RemoteError `session-share/signed-out`, `session-share/empty`, `session-share/refused` (the user center\'s reason; status 413 for a conversation over its size limits), or `session-share/unreachable`.'],
+      },
+      {
+        signature: '@Remote async revoke(request: SessionShareTarget): Promise<void>',
+        description: 'Withdraw the Session\'s share; its link stops working. A Session that is not shared is left as is.',
+        parameters: [{ name: 'request', description: 'the Session.' }],
+        throws: ['RemoteError `session-share/signed-out`, `session-share/refused`, or `session-share/unreachable`.'],
+      },
+    ],
+  },
+  {
     key: 'sessionSkillCatalog',
     summary: 'Host service backing `ctx.remote.skills` without activating a cold Agent.',
     description: 'Host service backing `ctx.remote.skills` without activating a cold Agent.',
@@ -8241,6 +8268,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionSeqCursor',
     declaration: 'export type SessionSeqCursor = SessionSeq | -1;',
+  },
+  {
+    name: 'SessionShareLink',
+    declaration: 'export interface SessionShareLink {\n    readonly shareId: string;\n    readonly url: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'SessionShareRequest',
+    declaration: 'export interface SessionShareRequest extends SessionShareTarget {\n    readonly title: string;\n}',
+  },
+  {
+    name: 'SessionShareStatus',
+    declaration: 'export interface SessionShareStatus {\n    readonly signedIn: boolean;\n    readonly link: SessionShareLink | null;\n}',
+  },
+  {
+    name: 'SessionShareTarget',
+    declaration: 'export interface SessionShareTarget {\n    readonly sessionId: SessionId;\n}',
   },
   {
     name: 'SessionStartInput',

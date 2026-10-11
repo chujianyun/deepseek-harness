@@ -116,6 +116,7 @@ flowchart TD
     pkg_session_log_export["session-log-export"]
     pkg_session_query["session-query"]
     pkg_session_query_sqlite["session-query-sqlite"]
+    pkg_session_share["session-share"]
     pkg_tool_session_query["tool-session-query"]
   end
   subgraph group_acp["packages/acp"]
@@ -1463,6 +1464,12 @@ flowchart TD
   pkg_assistants --> pkg_skill
   pkg_assistants --> pkg_system_prompt
   pkg_assistants --> pkg_typert_protocol
+  pkg_session_share --> pkg_assistants
+  pkg_session_share --> pkg_hub_account
+  pkg_session_share --> pkg_llm
+  pkg_session_share --> pkg_session
+  pkg_session_share --> pkg_session_query
+  pkg_session_share --> pkg_typert_protocol
   pkg_automation_tasks --> pkg_api_session_controller
   pkg_automation_tasks --> pkg_assistants
   pkg_automation_tasks --> pkg_connectors
@@ -1815,5 +1822,6 @@ flowchart TD
 | [`skill-controller`](../packages/skill/skill-controller) | `skill` | [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`native-command`](../packages/util/native-command), [`scope`](../packages/core/scope), [`skill`](../packages/skill/skill), [`skill-market`](../packages/skill/skill-market), [`typert-protocol`](../packages/typert/protocol) |
 | [`knowledge-selection`](../packages/knowledge/knowledge-selection) | `knowledge` | [`agent`](../packages/core/agent), [`api-session-controller`](../packages/api/session-controller), [`knowledge-base`](../packages/knowledge/knowledge-base), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol) |
 | [`assistants`](../packages/assistant/assistants) | `assistant` | [`agent`](../packages/core/agent), [`agent-default-model`](../packages/core/agent-default-model), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`api-session-controller`](../packages/api/session-controller), [`connectors`](../packages/connector/connectors), [`hub-account`](../packages/credentials/hub-account), [`knowledge-base`](../packages/knowledge/knowledge-base), [`knowledge-selection`](../packages/knowledge/knowledge-selection), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`skill`](../packages/skill/skill), [`system-prompt`](../packages/core/system-prompt), [`typert-protocol`](../packages/typert/protocol) |
+| [`session-share`](../packages/session-query/session-share) | `session-query` | [`assistants`](../packages/assistant/assistants), [`hub-account`](../packages/credentials/hub-account), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-query`](../packages/session-query/session-query), [`typert-protocol`](../packages/typert/protocol) |
 | [`automation-tasks`](../packages/schedule/automation-tasks) | `schedule` | [`api-session-controller`](../packages/api/session-controller), [`assistants`](../packages/assistant/assistants), [`connectors`](../packages/connector/connectors), [`permission-presets`](../packages/interaction/permission-presets), [`schedule`](../packages/schedule/schedule), [`session`](../packages/core/session), [`typert-protocol`](../packages/typert/protocol), [`workspace`](../packages/workspace/workspace) |
 <!-- END GENERATED module-graph:packages -->

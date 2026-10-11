@@ -313,6 +313,7 @@
     { "path": "./packages/knowledge/knowledge-base" },
     { "path": "./packages/knowledge/knowledge-selection" },
     { "path": "./packages/schedule/automation-tasks" },
+    { "path": "./packages/session-query/session-share" },
     { "path": "./packages/connector/connectors" },
     { "path": "./packages/assistant/assistants" },
     { "path": "./packages/ecommerce/ecommerce-accounts" },

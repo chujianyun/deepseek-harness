@@ -166,6 +166,7 @@
     "@deepseek-ai/dsh-schedule": "workspace:*",
     "@deepseek-ai/dsh-session-log-export": "workspace:*",
     "@deepseek-ai/dsh-session-reference": "workspace:*",
+    "@deepseek-ai/dsh-session-share": "workspace:*",
     "@deepseek-ai/dsh-session-stats": "workspace:*",
     "@deepseek-ai/dsh-session-turn-outline": "workspace:*",
     "@deepseek-ai/dsh-skill-controller": "workspace:*",

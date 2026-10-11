@@ -114,6 +114,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   ssh: 'ssh.md',
   sessionPersistence: 'persistence.md',
   sessionQuery: 'session-query.md',
+  sessionShare: 'session-query.md',
   sessionFileReferences: 'session-reference.md',
   sessionReferenceResolver: 'session-reference.md',
   sessionProjectionCache: 'session-projection.md',
@@ -918,6 +919,10 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   AutomationTaskCreateRequest: 'the automation-task request is owned by packages/schedule/automation-tasks/README.md and src/types.ts',
   AutomationTaskCreateValue: 'the automation-task result is owned by packages/schedule/automation-tasks/README.md and src/types.ts',
+  SessionShareTarget: 'the Session-share request is owned by packages/session-query/session-share/README.md and src/types.ts',
+  SessionShareRequest: 'the Session-share request is owned by packages/session-query/session-share/README.md and src/types.ts',
+  SessionShareStatus: 'the Session-share result is owned by packages/session-query/session-share/README.md and src/types.ts',
+  SessionShareLink: 'the Session-share result is owned by packages/session-query/session-share/README.md and src/types.ts',
   ProductEvent: 'Desktop event fields are owned by packages/client/product-analytics/README.md and src/events.ts',
   ConnectionFetchHandler: 'shared Fetch dispatch is owned by packages/client/connection/src/rpc.ts',
   ConnectionRequestRejection: 'transport rejection status is owned by packages/client/connection/src/rpc.ts',

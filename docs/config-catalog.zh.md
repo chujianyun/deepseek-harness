@@ -3061,6 +3061,23 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-reference -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-session-share -->
+<a id="deepseek-aidsh-session-share"></a>
+
+## `@deepseek-ai/dsh-session-share`
+
+- `inject`: `hubAccount` · `sessionQuery`
+- `source`: [`packages/session-query/session-share/src/index.ts:33`](../packages/session-query/session-share/src/index.ts)
+
+```ts config-catalog
+/** Deployment configuration. */
+export interface Config {
+  /** Deadline of each user-center request, in milliseconds. */
+  requestTimeoutMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-share -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-session-telemetry-otel -->
 <a id="deepseek-aidsh-session-telemetry-otel"></a>
 

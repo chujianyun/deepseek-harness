@@ -506,4 +506,39 @@ async readEvent(request: SessionEventReadRequest, signal?: AbortSignal): Promise
 Types: [SessionId](core.md) · [SessionTitleSnapshot](session-title.md)
 
 Source: [`packages/session-query/session-query/src/index.ts`](../../packages/session-query/session-query/src/index.ts)
+
+<a id="ctxsessionshare--sessionshare"></a>
+
+### `ctx.sessionShare` — `SessionShare`
+
+Host owner of Session sharing and of the `sessionShare` Remote namespace.
+
+```ts cordis-catalog
+/**
+ * Read whether sharing is possible now and the Session's current share.
+ * @param request - the Session.
+ * @returns the sign-in state and the link, null when the Session is not shared.
+ * @throws RemoteError `session-share/refused` or `session-share/unreachable`.
+ */
+@Remote async status(request: SessionShareTarget): Promise<SessionShareStatus>
+
+/**
+ * Share the Session, or replace its existing share's snapshot with the conversation as it is now.
+ * @param request - the Session and the title to show.
+ * @returns the share's link, unchanged for a Session shared before.
+ * @throws RemoteError `session-share/signed-out`, `session-share/empty`, `session-share/refused`
+ *   (the user center's reason; status 413 for a conversation over its size limits), or
+ *   `session-share/unreachable`.
+ */
+@Remote async share(request: SessionShareRequest): Promise<SessionShareLink>
+
+/**
+ * Withdraw the Session's share; its link stops working. A Session that is not shared is left as is.
+ * @param request - the Session.
+ * @throws RemoteError `session-share/signed-out`, `session-share/refused`, or `session-share/unreachable`.
+ */
+@Remote async revoke(request: SessionShareTarget): Promise<void>
+```
+
+Source: [`packages/session-query/session-share/src/index.ts`](../../packages/session-query/session-share/src/index.ts)
 <!-- END GENERATED cordis-surface -->
