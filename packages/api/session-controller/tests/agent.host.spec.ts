@@ -485,3 +485,55 @@ describe('ApiSession create or adoption', () => {
       .rejects.toThrow('failed to ensure project directory')
   })
 })
+
+describe('ApiSession release', () => {
+  it('disposes the Agent it created once, after a creation in flight settles, and ignores a Session it does not hold', async () => {
+    const { ctx, agents } = await harness()
+    const cwd = mkdtempSync(join(tmpdir(), 'dsh-session-controller-release-'))
+    tempDirs.push(cwd)
+    const meta = header('released', cwd)
+    const created = unpublishedAgent(ctx, meta)
+    const dispose = vi.fn(() => Promise.resolve())
+    let open!: () => void
+    const gate = new Promise<void>((resolve) => { open = resolve })
+    vi.spyOn(ctx.agents, 'create').mockImplementation(async () => {
+      await gate
+      return { agent: created, dispose }
+    })
+
+    // Nothing is held yet.
+    await agents.release(SessionId('never-opened'))
+    const creating = agents.ensureSession(meta.id, cwd, false)
+    const releasing = agents.release(meta.id)
+    await Promise.resolve()
+    expect(dispose).not.toHaveBeenCalled()
+    open()
+    await creating
+    await releasing
+    expect(dispose).toHaveBeenCalledOnce()
+    // The capability is spent.
+    await agents.release(meta.id)
+    expect(dispose).toHaveBeenCalledOnce()
+  })
+
+  it('disposes a resumed Agent, and resolves when the open it waited for failed', async () => {
+    const { ctx, agents } = await harness()
+    const meta = header('resumed')
+    providePersistence(ctx, {
+      list: () => Promise.resolve([meta]),
+      inspect: () => Promise.resolve({ meta, events: [] }),
+    })
+    const dispose = vi.fn(() => Promise.resolve())
+    const resume = vi.spyOn(ctx.agents, 'resume')
+    resume.mockRejectedValueOnce(new Error('resume failed'))
+    const failed = agents.resolveAgent(meta.id)
+    await agents.release(meta.id)
+    await expect(failed).resolves.toMatchObject({ error: { code: 'gateway/internal' } })
+    expect(dispose).not.toHaveBeenCalled()
+
+    resume.mockResolvedValueOnce({ agent: agent(ctx, meta), dispose })
+    await agents.resolveAgent(meta.id)
+    await agents.release(meta.id)
+    expect(dispose).toHaveBeenCalledOnce()
+  })
+})

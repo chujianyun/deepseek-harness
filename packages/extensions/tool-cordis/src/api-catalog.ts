@@ -2619,6 +2619,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the accepted title and durable event sequence.',
       },
       {
+        signature: '@Remote(\'delete\') delete(request: SessionDeleteRequest): Promise<SessionDeleteValue>',
+        description: 'Delete one Session permanently, with its subagent descendants: stop its work, unload it, and remove its logs and Workspace records. Nothing can be restored afterwards.',
+        parameters: [{ name: 'request', description: 'Session identity to delete.' }],
+        returns: 'the deleted Session ids: the requested one, then its descendants.',
+      },
+      {
         signature: '@Remote(\'fork\') fork(request: SessionForkRequest): Promise<SessionForkValue>',
         description: 'Fork one cold-readable exact event prefix into a new Session. An omitted boundary selects the latest completed-turn prefix; an open cut receives synthetic fork closers.',
         parameters: [{ name: 'request', description: 'source Session and optional exact inclusive event boundary.' }],
@@ -2742,6 +2748,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List every stored session visible to this process, in no promised order.',
         parameters: [{ name: 'options', description: 'optional cancellation.' }],
         returns: 'one snapshot per stored session.',
+      },
+      {
+        signature: 'abstract delete(id: SessionId): Promise<void>',
+        description: 'Delete one stored session permanently: its log and everything the backend keeps for it. The caller closes the session\'s write handle first; read handles opened before the call keep no claim on it and their later reads may fail. Once the storage is gone the backend emits `session/deleted`, and the id may be created again.',
+        parameters: [{ name: 'id', description: 'the stored session to delete.' }],
+        returns: 'resolution once the session is no longer observable through this backend.',
+        throws: ['{SessionPersistenceNotFoundError} when the session does not exist.', '{SessionAlreadyOwnedError} while a write handle owns the session, in this process or another.'],
       },
     ],
   },
@@ -4530,6 +4543,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'resolution after durability.',
       },
       {
+        signature: 'forgetSession(sessionId: SessionId): Promise<void>',
+        description: 'Drop everything the registry keeps for a session that was deleted: its slot in a workspace\'s accounting, its pin, and its archive mark. The caller deletes the session\'s log first; an id the registry does not know resolves without writing.',
+        parameters: [{ name: 'sessionId', description: 'The deleted session.' }],
+        returns: 'resolution after durability.',
+      },
+      {
         signature: 'pinSession(sessionId: SessionId): Promise<void>',
         description: 'Pin one session durably, prepending it to the registry-global pin set. The session must exist (live or in session persistence) and must not be archived. An already pinned id resolves without writing or reordering.',
         parameters: [{ name: 'sessionId', description: 'The session to pin.' }],
@@ -5000,6 +5019,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Creation announcement during session publication.',
     description: 'Creation announcement during session publication. A synchronous throw vetoes and rolls back with a paired disposal; detach requested during dispatch is deferred. A returned-promise rejection is logged but cannot retroactively veto this synchronous boundary. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only sessions entered through that agent\'s context.',
     parameters: [{ name: 'session', description: 'the session just entered and announced.' }],
+  },
+  {
+    name: 'session/deleted',
+    mode: 'emit',
+    signature: '\'session/deleted\'(sessionId: SessionId): void',
+    summary: 'A stored Session was deleted permanently: its log no longer exists and nothing can be read back.',
+    description: 'A stored Session was deleted permanently: its log no longer exists and nothing can be read back. The Session persistence backend emits it once the storage is gone; owners of data keyed by the Session drop that data. Not scope-filtered: the Session is no longer live.',
+    parameters: [{ name: 'sessionId', description: 'the deleted Session.' }],
   },
   {
     name: 'session/disposed',
@@ -7844,6 +7871,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionCreateValue',
     declaration: 'export interface SessionCreateValue {\n    readonly sessionId: SessionId;\n    readonly agentPreset?: string;\n}',
+  },
+  {
+    name: 'SessionDeleteRequest',
+    declaration: 'export interface SessionDeleteRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'SessionDeleteValue',
+    declaration: 'export interface SessionDeleteValue {\n    readonly deletedSessionIds: readonly SessionId[];\n}',
   },
   {
     name: 'SessionEndInput',

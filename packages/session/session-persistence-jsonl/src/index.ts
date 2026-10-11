@@ -508,6 +508,46 @@ class JsonlSessionPersistence extends SessionPersistence {
     return snapshots
   }
 
+  /**
+   * Delete one stored session permanently: its directory with every generation and its lock file.
+   * The in-process write claim and the session's kernel lock are held across the removal, so no
+   * writer in this or another process can append meanwhile. A removal interrupted part-way leaves
+   * either the log (the session still exists and the delete can be retried) or no log (the session
+   * is gone; a leftover directory without a log is not a session).
+   * @param id - the stored session to delete.
+   * @returns resolution once the directory is gone and `session/deleted` was emitted.
+   */
+  async delete(id: SessionId): Promise<void> {
+    await this.ensureRootEncoding()
+    // A created-but-unmaterialized session always has a live creator handle, which holds this claim.
+    this.tracker.claimWrite(id)
+    try {
+      const resolved = await this.findLog(id)
+      if (resolved === undefined) throw new SessionPersistenceNotFoundError(id)
+      const dir = dirname(resolved.currentPath)
+      const lease = await this.acquireLease(id, undefined, dir)
+      /* v8 ignore start -- native Windows coverage exercises this platform branch; Linux covers the POSIX peer */
+      if (process.platform === 'win32') {
+        // An open lock handle keeps its file undeletable on Windows.
+        await lease.release()
+        await rm(dir, { recursive: true, force: true })
+      /* v8 ignore stop */
+      } else {
+        try {
+          await rm(dir, { recursive: true, force: true })
+          await this.syncDirPosix(dirname(dir))
+        } finally {
+          await lease.release()
+        }
+      }
+      this.coldLogMemo.delete(id)
+      this.migrationPreparations.delete(id)
+    } finally {
+      this.tracker.releaseClaim(id)
+    }
+    this.ctx.emit('session/deleted', id)
+  }
+
   // --- handle-facing storage internals (package-private via the handle class below) ---
 
   /** Resolve and read one stored log, refusing loudly when the artifact is absent. */

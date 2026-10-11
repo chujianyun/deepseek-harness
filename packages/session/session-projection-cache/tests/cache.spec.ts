@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { scheduler } from 'node:timers/promises'
 import { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import SessionStore, {
@@ -261,6 +262,33 @@ describe('SessionProjectionCache write policy', () => {
     await owner.dispose()
     await written
     expect((await storedRows(root, id))?.['cache-test/marks']?.val).toEqual({ marks: ['live'] })
+  })
+
+  it('drops a deleted session\'s checkpoint, and writes none for it afterwards', async () => {
+    const { ctx, root } = await harness()
+    const id = SessionId('deleted')
+    const created = whenWritten(ctx, id)
+    let session: Session | undefined
+    const owner = await ctx.plugin(Object.assign((inner: Context) => {
+      session = inner.sessions.create(id)
+    }, { inject: ['sessions'] }))
+    if (session === undefined) throw new Error('session was not created')
+    await created
+    expect(await storedRecord(root, id)).toBeDefined()
+    mark(session, ['live'])
+    // The detach write of a session being deleted races the deletion; neither order leaves a record.
+    const disposed = owner.dispose()
+    ctx.emit('session/deleted', id)
+    await disposed
+    await vi.waitFor(async () => { expect(await storedRecord(root, id)).toBeUndefined() })
+    await scheduler.wait(20)
+    expect(await storedRecord(root, id)).toBeUndefined()
+    // An unknown id is not an error, and the same id caches again once it is created anew.
+    ctx.emit('session/deleted', SessionId('never-cached'))
+    const recreated = whenWritten(ctx, id)
+    ctx.sessions.create(id)
+    await recreated
+    expect(await storedRecord(root, id)).toBeDefined()
   })
 
   it('flushes when the in-turn event count reaches the configured threshold', async () => {

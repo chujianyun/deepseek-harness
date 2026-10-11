@@ -60,6 +60,10 @@ The backend owns the live write path: it installs the session listeners once and
 
 Persistence returns the physically valid log; semantic repair belongs to the reader. A session that crashed mid-turn keeps its open final turn — a single turn can be large, and those events were durably appended before the crash; only the incomplete fragment of a never-acknowledged torn tail is discarded — complete records recovered from it are durably rewritten by the write path before the handle's first new append. Resume (agent-loop) reads the stored log through its write handle, computes `interruptedTurnClosers` — synthetic `tool/result` errors, any open `step/end`, and `turn/end {interrupted}` — and appends them through the same handle as an ordinary batch. Read-only observers (session-query) balance an interrupted cold log with the same closers in memory only.
 
+### Deleting a session
+
+`delete(id)` removes one stored session permanently: its log and everything the backend keeps for it. The caller closes the session's write handle first, so an owned session rejects with `SessionAlreadyOwnedError`; an absent one rejects with `SessionPersistenceNotFoundError`. Read handles opened earlier keep no claim on the session and their later reads may fail. Once the storage is gone the backend emits `session/deleted`, on which owners of data keyed by the session drop it, and the id may be created again. Deletion is not transactional across those owners: each cleans up on the event.
+
 ### Failures and recovery
 
 A stored log the current build cannot faithfully interpret is refused with a direction-aware error, never misread. `SessionHandle` exposes only current logical records identified by `SESSION_FORMAT_VERSION`; a provider must convert any supported historical storage before returning a handle, and the shipped JSONL provider migrates supported historical generations through its static catalog. A newer format instructs the operator to upgrade the harness. An event type unknown to this build refuses unless its envelope marks it `ignorable`, and committed-prefix corruption rejects as `SessionPersistenceCorruptionError`.

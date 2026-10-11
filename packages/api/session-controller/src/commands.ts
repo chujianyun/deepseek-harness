@@ -11,6 +11,7 @@ import type {
 } from '@deepseek-ai/dsh-attachment'
 import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
+import type {} from '@deepseek-ai/dsh-session-persistence'
 import {
   ReasoningEffortId, assistantStreamChunks, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
@@ -41,6 +42,8 @@ import type {
   SessionCancelValue,
   SessionCreateRequest,
   SessionCreateValue,
+  SessionDeleteRequest,
+  SessionDeleteValue,
   SessionForkRequest,
   SessionForkValue,
   SessionPromptRequest,
@@ -54,6 +57,11 @@ import type {
   SessionUpdateQueueValue,
   SessionRequestId,
 } from './types.ts'
+
+/** Pause between attempts to delete a log whose unloading Session is still closing its writer. */
+const DELETE_RETRY_MS = 50
+/** Attempts before a held writer is reported: three seconds. */
+const DELETE_ATTEMPTS = 60
 
 interface SessionReadState {
   readonly id: SessionId
@@ -231,6 +239,84 @@ export class SessionCommandController {
         `failed to rename session "${request.sessionId}": ${String(error)}`,
         {},
       )
+    }
+  }
+
+  /**
+   * Delete one ordinary Session permanently, with its subagent descendants: running work is
+   * stopped through the Workspace registry's archive admission, the live Agents are unloaded, the
+   * logs are deleted children first, and the registry forgets the ids. A fork is its own Session
+   * and stays. A failure before the first log is gone leaves the Session as it was, back in the
+   * list it was shown in; later failures can be retried.
+   * @param request - Session identity to delete.
+   * @returns the deleted Session ids: the requested one, then its descendants.
+   */
+  async delete(request: SessionDeleteRequest): Promise<SessionDeleteValue> {
+    const { sessionId } = request
+    const persistence = this.ctx.get('sessionPersistence')
+    if (persistence === undefined) {
+      throw new RemoteError('gateway/internal', 'deleting is unavailable: this deployment mounts no session persistence', {})
+    }
+    const headers = new Map<SessionId, SessionHeader>()
+    for (const record of await this.ctx.sessionQuery.listSessions()) headers.set(record.header.id, record.header)
+    // A Session created in this process may not have reached storage yet.
+    for (const live of this.ctx.sessions.list()) headers.set(live.id, live.header)
+    const root = headers.get(sessionId)
+    if (root === undefined) {
+      throw new RemoteError('session/not-found', `session "${sessionId}" not found`, { sessionId })
+    }
+    if (root.origin === 'subagent') {
+      throw new RemoteError('gateway/bad-request', `session "${sessionId}" is a subagent Session: delete its parent Session`, {})
+    }
+    const ids = [sessionId]
+    for (const parentId of ids) {
+      for (const header of headers.values()) {
+        if (header.origin === 'subagent' && header.parentSession === parentId && !ids.includes(header.id)) ids.push(header.id)
+      }
+    }
+    const registry = this.ctx.workspaceRegistry
+    // Archiving with a stop is the one path that halts the turn, subagents, jobs, and schedules,
+    // and it gates further model steps while the Agents unload.
+    const wasArchived = registry.archivedSessionIds.includes(sessionId)
+    if (!wasArchived) await registry.archiveSession(sessionId, { stopActivity: true })
+    const childrenFirst = ids.toReversed()
+    let deletedAny = false
+    try {
+      for (const id of childrenFirst) await this.agents.release(id)
+      for (const id of childrenFirst) {
+        await this.deleteLog(persistence, id)
+        deletedAny = true
+      }
+    } catch (error) {
+      // Nothing is gone yet: the Session returns to the list it was shown in.
+      if (!deletedAny && !wasArchived) await registry.unarchiveSession(sessionId)
+      throw error
+    }
+    for (const id of ids) await registry.forgetSession(id)
+    for (const id of ids) this.ctx.emit('api-session/removed', id)
+    return { deletedSessionIds: ids }
+  }
+
+  /**
+   * Delete one stored log, waiting out the writer an unloading Session is still closing. A Session
+   * that never reached storage has no log: unloading already erased it.
+   */
+  private async deleteLog(persistence: Context['sessionPersistence'], sessionId: SessionId): Promise<void> {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await persistence.delete(sessionId)
+        return
+      } catch (error) {
+        const name = error instanceof Error ? error.name : ''
+        if (name === 'SessionPersistenceNotFoundError') return
+        if (name !== 'SessionAlreadyOwnedError') throw error
+        if (attempt === DELETE_ATTEMPTS) {
+          throw new RemoteError(
+            'session/writer-held', `session "${sessionId}" is still being written and was not deleted`, { sessionId }, { cause: error },
+          )
+        }
+        await new Promise<void>((resolve) => { setTimeout(resolve, DELETE_RETRY_MS) })
+      }
     }
   }
 

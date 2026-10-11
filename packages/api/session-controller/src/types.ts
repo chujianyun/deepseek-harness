@@ -318,6 +318,16 @@ export interface SessionRenameValue {
   readonly seq: number
 }
 
+/** Session permanent-deletion request. */
+export interface SessionDeleteRequest {
+  readonly sessionId: SessionId
+}
+
+/** The Sessions a deletion removed: the requested one first, then its subagent descendants. */
+export interface SessionDeleteValue {
+  readonly deletedSessionIds: readonly SessionId[]
+}
+
 /** Session fork request. */
 export interface SessionForkRequest {
   readonly sessionId: SessionId

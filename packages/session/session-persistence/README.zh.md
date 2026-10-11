@@ -60,6 +60,10 @@ await ctx.sessionPersistence.flush()                           // backend-wide d
 
 持久化返回物理上有效的日志；语义修复属于读方。中途崩溃的会话保留其未闭合的最终轮次——单个轮次可能很大，而这些事件在崩溃前已持久追加；只有从未确认的撕裂尾部中不完整的碎片会被丢弃——从中恢复的完整记录由写路径在句柄的第一次新 append 之前持久重写。恢复（agent-loop）通过其写句柄读取已存储日志，计算 `interruptedTurnClosers`——合成 `tool/result` 错误、任何未闭合的 `step/end`，以及 `turn/end {interrupted}`——并把它们作为普通批次通过同一句柄追加。只读观察方（session-query）仅在内存中用同样的 closer 配平被中断的冷日志。
 
+### 删除会话
+
+`delete(id)` 永久删除一个已存储的会话：它的日志以及后端为它保存的全部内容。调用方需先关闭该会话的写句柄，因此仍被持有的会话以 `SessionAlreadyOwnedError` 拒绝；不存在的会话以 `SessionPersistenceNotFoundError` 拒绝。此前打开的读句柄不占有该会话，之后的读取可能失败。存储移除后后端发出 `session/deleted`，按会话保存数据的各方据此清理，该 id 可以重新创建。删除在这些拥有者之间不是事务性的：各自在事件上清理。
+
 ### 失败与恢复
 
 当前构建无法忠实解读的存储日志会被拒绝，并返回指明拒绝方向的错误，绝不会被误读。`SessionHandle` 只暴露由 `SESSION_FORMAT_VERSION` 标识的当前逻辑记录；提供方必须在返回句柄前转换任何受支持的历史存储，随产品交付的 JSONL 提供方会通过静态 catalog 迁移受支持的历史代际。更新的格式会要求操作者升级 harness。本构建不认识的事件类型会被拒绝，除非其信封标记为 `ignorable`；已提交前缀中的损坏以 `SessionPersistenceCorruptionError` 拒绝。

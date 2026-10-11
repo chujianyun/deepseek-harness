@@ -58,6 +58,8 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 
 Fork 复制 `atSeq` 所选的精确事件前缀，包含切点事件，允许在开放轮次内截取。子会话在合成的 fork 结果和结束事件之前记录继承标记。省略 `atSeq` 时选择最近已结束轮次及其独立尾部，在下一轮次或排队输入之前停止；不存在的事件会被拒绝。聊天操作选择已结束轮次。
 
+`session.delete` 永久删除一个普通会话及其子智能体后代；分叉是独立的会话，会保留。控制器通过 Workspace 注册表的归档准入停止该会话正在运行的工作，卸载它为这些 id 创建或恢复的 Agent 并等待其循环退出，通过 `sessionPersistence.delete` 按子会话优先的顺序删除日志（最多等待三秒让正在卸载的会话关闭写入方），然后让注册表遗忘这些 id。它返回已删除的 id，并为每个 id 发出 `api-session/removed`。子智能体会话以 `gateway/bad-request` 拒绝，未知 id 以 `session/not-found` 拒绝，始终不释放的写入方以 `session/writer-held` 拒绝。在第一个日志被删除之前失败时，会话回到原来显示的列表；日志删除之后可以重试删除。Client 的 `sessions.delete(sessionId)` 在返回之前把已删除的 id 从列表中移除。附件对象按内容存储并可能被共享，因此删除会话不会移除它们。
+
 恢复会话时若已有写句柄占用，返回 `session/writer-held`，并携带会话 id；其他恢复失败仍返回 `gateway/internal`。
 
 `loadThrough(seq)` 在共享目标被覆盖或加载结束前私下保留较早页面，随后把成功取得的页面按顺序作为一次前插发布。历史加载期间实时事件仍然可见。后续页面失败时保留已成功取得的部分；历史窗口被替换时丢弃被替换窗口的暂存页面。普通 `loadOlder()` 直接发布 Host 选取的一页结果。

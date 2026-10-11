@@ -5,6 +5,7 @@ import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { SESSION_SEARCH_RESULT_LIMIT } from '../../types.ts'
+import type { SessionDeleteValue } from '../../types.ts'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import {
   createSnapshotStore, notifySubscribers, type ObservableSnapshot, type SnapshotStore,
@@ -433,6 +434,17 @@ export class ClientSessions implements ISessions {
     if (!result.ok) throw new SessionCreateError(result.error, opts.sessionId)
     this.projectList()
     return result.value.sessionId
+  }
+
+  /**
+   * Delete a Session on the Host permanently, with its subagent descendants.
+   * @param sessionId - Session to delete.
+   * @returns the deleted ids, or the Host's refusal with the list unchanged.
+   */
+  async delete(sessionId: SessionId): Promise<RemoteResult<SessionDeleteValue>> {
+    const result = await this.manager.delete(sessionId)
+    if (result.ok) this.projectList()
+    return result
   }
 
   /**

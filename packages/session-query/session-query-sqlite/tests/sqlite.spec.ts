@@ -129,6 +129,8 @@ class TestHandle implements SessionHandle {
 }
 
 class TestPersistence extends SessionPersistence {
+  delete(): Promise<void> { return Promise.reject(new Error('not used')) }
+
   static entries = new Map<SessionIdType, { meta: SessionHeader; events: SessionEvent[] }>()
   static revisions = new Map<SessionIdType, number>()
   static nextRevision = 0

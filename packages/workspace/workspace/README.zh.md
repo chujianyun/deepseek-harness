@@ -78,6 +78,10 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 
 Workspace 注册不意味着拥有其目录。未来的破坏性文件系统操作必须单独命名、获得明确确认，并执行所有权与安全检查。
 
+### 遗忘已删除的会话
+
+`forgetSession(sessionId)` 丢弃注册表为日志已被删除的会话保存的全部内容：它在工作区记账中的位置、置顶和归档标记，在一次排队的持久化操作中完成。调用方先删除日志。注册表不认识的 id 不写入任何内容。
+
 -----
 
 <a id="understand-the-implementation"></a>

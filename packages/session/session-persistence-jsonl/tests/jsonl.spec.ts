@@ -311,17 +311,19 @@ afterEach(async () => {
 
 runPersistenceContract('jsonl-none', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-jsonl-'))
-  const instance = async (): Promise<{ persistence: SessionPersistence; dispose: () => Promise<void> }> => {
+  const instance = async (): Promise<{ persistence: SessionPersistence; ctx: Context; dispose: () => Promise<void> }> => {
     const ctx = new Context()
     const fiber = await ctx.plugin(JsonlSessionPersistence, { root: dir, compression: 'none' })
     return {
       persistence: ctx.sessionPersistence,
+      ctx,
       dispose: async () => { await fiber.dispose() },
     }
   }
   const primary = await instance()
   return {
     persistence: primary.persistence,
+    ctx: primary.ctx,
     dispose: async () => {
       await primary.dispose()
       await rm(dir, { recursive: true, force: true })

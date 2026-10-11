@@ -62,6 +62,14 @@ declare module '@deepseek-ai/cordis' {
      */
     'session/disposed'(this: Scoped<Session>, session: Session): void
     /**
+     * A stored Session was deleted permanently: its log no longer exists and nothing can be read
+     * back. The Session persistence backend emits it once the storage is gone; owners of data
+     * keyed by the Session drop that data. Not scope-filtered: the Session is no longer live.
+     * @param sessionId - the deleted Session.
+     * @mode emit
+     */
+    'session/deleted'(sessionId: SessionId): void
+    /**
      * Post-commit, fire-and-forget append feed. The listener snapshot resolves
      * before the log push, but callbacks run after it; observer failures are
      * logged and contained without making the committed append fail.

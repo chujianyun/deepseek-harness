@@ -50,6 +50,8 @@ import type {
   SessionPageRequest,
   SessionPromptRequest,
   SessionPromptValue,
+  SessionDeleteRequest,
+  SessionDeleteValue,
   SessionRenameRequest,
   SessionRenameValue,
   SessionSearchRequest,
@@ -421,6 +423,17 @@ export class SessionController extends TypertRemoteService {
   @Remote('rename')
   rename(request: SessionRenameRequest): Promise<SessionRenameValue> {
     return this.commands.rename(request)
+  }
+
+  /**
+   * Delete one Session permanently, with its subagent descendants: stop its work, unload it, and
+   * remove its logs and Workspace records. Nothing can be restored afterwards.
+   * @param request - Session identity to delete.
+   * @returns the deleted Session ids: the requested one, then its descendants.
+   */
+  @Remote('delete')
+  delete(request: SessionDeleteRequest): Promise<SessionDeleteValue> {
+    return this.commands.delete(request)
   }
 
   /**

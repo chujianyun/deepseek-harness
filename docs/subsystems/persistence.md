@@ -408,6 +408,18 @@ abstract stat(id: SessionId, options?: SessionPersistenceStatOptions): Promise<S
  * @returns one snapshot per stored session.
  */
 abstract list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]>
+
+/**
+ * Delete one stored session permanently: its log and everything the backend keeps for it.
+ * The caller closes the session's write handle first; read handles opened before the call keep
+ * no claim on it and their later reads may fail. Once the storage is gone the backend emits
+ * `session/deleted`, and the id may be created again.
+ * @param id - the stored session to delete.
+ * @returns resolution once the session is no longer observable through this backend.
+ * @throws {SessionPersistenceNotFoundError} when the session does not exist.
+ * @throws {SessionAlreadyOwnedError} while a write handle owns the session, in this process or another.
+ */
+abstract delete(id: SessionId): Promise<void>
 ```
 
 Types: [SessionId](core.md)

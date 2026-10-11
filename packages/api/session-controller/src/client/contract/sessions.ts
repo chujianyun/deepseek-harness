@@ -9,6 +9,7 @@ import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { SessionDeleteValue } from '../../types.ts'
 import type { AgentContext } from '../scope.ts'
 import type { SessionSearchResultItem } from '../sessions/manager.ts'
 import type { SessionBinding, SessionListState } from '../sessions/service.ts'
@@ -118,6 +119,13 @@ export interface ISessions {
     query: string,
     signal: AbortSignal,
   ): Promise<RemoteResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>>
+  /**
+   * Delete a Session on the Host permanently, with its subagent descendants; nothing can be
+   * restored. On success the deleted ids leave the list before this resolves.
+   * @param sessionId - Session to delete.
+   * @returns the deleted ids, or the Host's refusal with the list unchanged.
+   */
+  delete(sessionId: SessionId): Promise<RemoteResult<SessionDeleteValue>>
   /**
    * Fork a session from an exact inclusive prefix of the source; on
    * resolution the child is catalogued and can be explicitly retained.
