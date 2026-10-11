@@ -8,6 +8,7 @@
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceGrouping } from './groupings.ts'
 import { reconcileManualOrder, type ArchivedFilter, type SessionRowState } from './tree.ts'
 
 /** Browser-local order account for the hierarchy-free flat Session list. */
@@ -18,7 +19,7 @@ export const FLAT_SESSION_ORDER_KEY = '__flat_session_order__'
  * or one flat list) or the id of a registered grouping. A stored id no registration provides reads
  * as 'workspace'.
  */
-export type SessionGroupBy = string
+export type SessionGroupBy = WorkspaceGrouping | (string & Record<never, never>)
 /** Session order: saved manual positions or current recency. */
 export type SessionOrderBy = 'manual' | 'updated'
 
@@ -76,6 +77,7 @@ type WorkspaceViewActions = {
   ) => void
   setArchivedFilter: (draft: WorkspaceViewState, filter: ArchivedFilter) => void
   setGroupCollapsed: (draft: WorkspaceViewState, grouping: string, key: string, collapsed: boolean) => void
+  retainGroupSections: (draft: WorkspaceViewState, grouping: string, keys: readonly string[]) => void
 }
 
 /** Copy read-only projections into the persisted mutable store representation. */
@@ -138,6 +140,11 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
       setGroupCollapsed: (d, grouping: string, key: string, collapsed: boolean) => {
         const sections = Object.fromEntries(Object.entries(d.groupCollapsed?.[grouping] ?? {}).filter(([folded]) => folded !== key))
         if (collapsed) sections[key] = true
+        d.groupCollapsed = { ...d.groupCollapsed, [grouping]: sections }
+      },
+      retainGroupSections: (d, grouping: string, keys: readonly string[]) => {
+        const retained = new Set(keys)
+        const sections = Object.fromEntries(Object.entries(d.groupCollapsed?.[grouping] ?? {}).filter(([key]) => retained.has(key)))
         d.groupCollapsed = { ...d.groupCollapsed, [grouping]: sections }
       },
     },

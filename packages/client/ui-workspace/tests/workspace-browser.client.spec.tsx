@@ -537,7 +537,7 @@ describe('WorkspaceBrowser', () => {
       fireEvent.click(viewItem(name))
     }
 
-    // 仅显示已归档 hides the live rows and shows the archived one.
+    // 已归档 hides the live rows and shows the archived one.
     pick('已归档')
     expect(b.store.getSnapshot().archivedFilter).toBe('only')
     expect(screen.queryByText('kept')).toBeNull()
@@ -555,14 +555,14 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByText('kept')).toBeTruthy()
     expect(screen.getByText('stored')).toBeTruthy()
 
-    // 隐藏已归档 is the explicit way back to the default hidden view.
+    // 活跃 is the explicit way back to the default hidden view.
     pick('活跃')
     expect(b.store.getSnapshot().archivedFilter).toBe('default')
     expect(screen.getByText('kept')).toBeTruthy()
     expect(screen.queryByText('stored')).toBeNull()
   })
 
-  it('仅显示已归档 hides Workspaces without archived Sessions', () => {
+  it('已归档 hides Workspaces without archived Sessions', () => {
     mount({
       useSessions: hook(sessionState([summary('kept', 2), summary('stored', 1)])),
       useWorkspaces: hook(workspaceState(
@@ -583,7 +583,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByText('beta')).toBeTruthy()
   })
 
-  it('the empty 仅显示已归档 view names its filter and offers the way back', () => {
+  it('the empty 已归档 view names its filter and offers the way back', () => {
     const b = mount({
       useSessions: hook(sessionState([summary('kept', 2)])),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['kept'])])),
@@ -600,7 +600,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('暂无已归档会话')).toBeNull()
   })
 
-  it('仅显示已归档 nests tree children of hidden Workspaces under the nearest shown ancestor', () => {
+  it('已归档 nests tree children of hidden Workspaces under the nearest shown ancestor', () => {
     mount({
       useSessions: hook(sessionState([summary('live', 2), summary('stored', 1)])),
       useWorkspaces: hook(workspaceState(
@@ -2699,6 +2699,28 @@ describe('a registered grouping', () => {
     expect(store.getSnapshot().groupBy).toBe('letter')
     act(() => { registry.register(letter()) })
     expect(headings()).toEqual(['A', 'B'])
+  })
+
+  it('drops the folds of sections that no longer exist once the lists are loaded', () => {
+    const store = createWorkspaceViewStore().create()
+    store.actions.setGroupBy('letter')
+    store.actions.setGroupCollapsed('letter', 'b', true)
+    store.actions.setGroupCollapsed('letter', 'gone', true)
+    const b = mount({
+      useSessions: hook(sessionState([summary('apple', 30), summary('banana', 20)], { phase: 'pending' })),
+      useGroupings: select => select([letter()]),
+      useStore: bindSnapshotSelector(store),
+      actions: store.actions,
+    })
+    expect(store.getSnapshot().groupCollapsed).toEqual({ letter: { b: true, gone: true } })
+    rerender(b, { useSessions: hook(sessionState([summary('apple', 30), summary('banana', 20)])) })
+    expect(store.getSnapshot().groupCollapsed).toEqual({ letter: { b: true } })
+    expect(rows()).toEqual(['apple'])    // A view state without folds keeps none.
+    const fresh = createWorkspaceViewStore().create()
+    fresh.actions.retainGroupSections('letter', ['a'])
+    expect(fresh.getSnapshot().groupCollapsed).toEqual({ letter: {} })
+    fresh.actions.retainGroupSections('date', [])
+    expect(fresh.getSnapshot().groupCollapsed).toEqual({ letter: {}, date: {} })
   })
 
   it('unfolds the section of a Session opened from search', () => {

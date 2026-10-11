@@ -33,7 +33,7 @@ import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkspaceBrowserProps } from '../contract/slots.ts'
 import type { ArchivedFilter, GroupNode, SessionNode, SessionOrderBy, SessionRowState } from '../tree.ts'
 import {
-  deriveFlat, deriveGroupingSections, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey, owningParentFolder,
+  deriveFlat, deriveGroupingSections, deriveGroups, deriveSearchResults, mainSessionId, orderByRecency, owningGroupKey, owningParentFolder,
   pinCurrentBlank, reconcileManualOrder, sessionMemberIds, UNGROUPED_KEY,
 } from '../tree.ts'
 import { GroupingSectionRow, ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
@@ -658,7 +658,7 @@ function SessionTree({
   )
 }
 
-/** The flat "In one list" body: every session is one draggable top-level row. */
+/** The flat "No grouping" body: every session is one draggable top-level row. */
 function FlatList({
   list, sessionIds, rowState, onLeaveArchivedOnly, useSessionStatus, open, onSessionRenameRequest,
   usePanelInfo, setSessionOrder, workspaceReady, animationResetKey,
@@ -764,9 +764,10 @@ function FlatList({
 /**
  * The body of a registered grouping: each section's heading folds it, and its rows list newest
  * first after the current New Session and pinned rows. Rows do not drag: order follows activity.
+ * Once the lists are loaded, folds of sections that no longer exist are dropped.
  */
 function GroupedList({
-  list, grouping, rowState, collapsed, setCollapsed, onLeaveArchivedOnly, useSessionStatus, open, onSessionRenameRequest,
+  list, grouping, rowState, collapsed, setCollapsed, retainSections, onLeaveArchivedOnly, useSessionStatus, open, onSessionRenameRequest,
   usePanelInfo, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, renderSlot, t,
 }: Pick<
   SessionTreeProps,
@@ -787,6 +788,7 @@ function GroupedList({
   grouping: SessionGrouping
   collapsed: Readonly<Record<string, boolean>>
   setCollapsed: (key: string, collapsed: boolean) => void
+  retainSections: (keys: readonly string[]) => void
 }) {
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
   const statuses = useSessionStatus(s => s)
@@ -798,14 +800,19 @@ function GroupedList({
     [list, grouping, rowState, statuses, collapsed, revision],
   )
   // A search result opened into a folded section unfolds it so the row can scroll into view.
-  const revealSummary = revealSessionId === undefined ? undefined : list.byId[revealSessionId]
-  const revealKey = revealSummary === undefined ? undefined : grouping.groupOf(revealSummary).key
-  useEffect(() => {
-    if (revealKey !== undefined && collapsed[revealKey] === true) setCollapsed(revealKey, false)
-  }, [collapsed, revealKey, setCollapsed])
-  const currentId = panelActive
+  const revealSection = revealSessionId === undefined
     ? undefined
-    : Object.values(list.byId).find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
+    : sections.find(section => section.sessionIds.includes(revealSessionId))
+  useEffect(() => {
+    if (revealSection?.collapsed === true) setCollapsed(revealSection.key, false)
+  }, [revealSection, setCollapsed])
+  const ready = list.phase === 'ready' && workspaceReady
+  useEffect(() => {
+    if (!ready) return
+    const keys = sections.map(section => section.key)
+    if (Object.keys(collapsed).some(key => !keys.includes(key))) retainSections(keys)
+  }, [collapsed, ready, retainSections, sections])
+  const currentId = panelActive ? undefined : mainSessionId(list)
   const rowKeys = sections.length === 0
     ? ['empty']
     : sections.flatMap(section => [`group:${section.key}`, ...section.sessions.map(row => `session:${row.id}`)])
@@ -816,7 +823,7 @@ function GroupedList({
         className={clsx(css.list)}
         label={t('section.sessions')}
         rowKeys={rowKeys}
-        ready={list.phase === 'ready' && workspaceReady}
+        ready={ready}
         resetKey={animationResetKey}
       >
         {sections.length === 0 && (
@@ -1495,6 +1502,7 @@ export function WorkspaceBrowser({
                 rowState={rowState}
                 collapsed={groupCollapsed?.[grouping.id] ?? EMPTY_COLLAPSED}
                 setCollapsed={(key, collapsed) => { actions.setGroupCollapsed(grouping.id, key, collapsed) }}
+                retainSections={(keys) => { actions.retainGroupSections(grouping.id, keys) }}
                 onLeaveArchivedOnly={leaveArchivedOnly}
                 workspaceReady={workspaceReady}
                 animationResetKey={`${groupBy}/${archivedFilter}`}

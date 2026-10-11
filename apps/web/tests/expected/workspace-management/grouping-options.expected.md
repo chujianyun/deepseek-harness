@@ -1,14 +1,9 @@
 - menu:
-  - text: Group by
-  - menuitem "WorkSpace"
-  - menuitem "Workspace Tree"
-  - menuitem "In one list"
-  - separator
-  - text: Order by
-  - menuitem "Manual"
-  - menuitem "Last updated"
-  - separator
-  - text: Filter sessions
-  - menuitem "Hide archived"
-  - menuitem "All conversations (show archived)"
-  - menuitem "Archived only"
+  - menuitem "Status Active"
+  - menuitem "Group by WorkSpace" [expanded]
+  - menu:
+    - menuitem "WorkSpace"
+    - menuitem "Workspace Tree"
+    - menuitem "Date"
+    - menuitem "No grouping"
+  - menuitem "Order by Last updated"

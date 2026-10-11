@@ -66,8 +66,9 @@ describe('web e2e: session grouping', () => {
     expect(await page.getByRole('menu').last().getByRole('menuitem').allTextContents())
       .toEqual(['WorkSpace', 'Workspace Tree', 'Date', 'No grouping'])
     await page.getByRole('menuitem', { name: 'Date', exact: true }).click()
+    // The current blank New Session leads the section of its own activity.
     await expect.poll(sections, { timeout: 10_000 }).toEqual([
-      ['Today', ['Today conversation']],
+      ['Today', ['New Session', 'Today conversation']],
       ['Yesterday', ['Yesterday conversation']],
       [threeDaysLabel, ['Three days conversation']],
       ['Earlier', ['Old conversation']],
@@ -80,7 +81,7 @@ describe('web e2e: session grouping', () => {
 
     await page.getByRole('treeitem', { name: 'Earlier' }).click()
     await expect.poll(sections).toEqual([
-      ['Today', ['Today conversation']],
+      ['Today', ['New Session', 'Today conversation']],
       ['Yesterday', ['Yesterday conversation']],
       [threeDaysLabel, ['Three days conversation']],
       ['Earlier', []],
@@ -90,7 +91,7 @@ describe('web e2e: session grouping', () => {
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     await expect.poll(sections, { timeout: 15_000 }).toEqual([
-      ['Today', ['Today conversation']],
+      ['Today', ['New Session', 'Today conversation']],
       ['Yesterday', ['Yesterday conversation']],
       [threeDaysLabel, ['Three days conversation']],
       ['Earlier', []],

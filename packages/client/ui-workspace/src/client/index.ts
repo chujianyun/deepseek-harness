@@ -124,10 +124,7 @@ export function apply(ctx: Context): void {
   ctx.slots.provideRoot({ hooks: { workspaces: workspaces.list } })
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-workspace: dictionaries')
   ctx.effect(
-    // Its section labels are localized, so a language switch regroups.
-    () => uiWorkspace.registerSessionGrouping({
-      ...dateGrouping(ctx.locale.bind(NS)), subscribe: onChange => ctx.locale.subscribe(onChange),
-    }),
+    () => uiWorkspace.registerSessionGrouping(dateGrouping(ctx.locale.bind(NS), onChange => ctx.locale.subscribe(onChange))),
     'ui-workspace: Date grouping',
   )
   const shortcutControls = createWorkspaceShortcutControls()

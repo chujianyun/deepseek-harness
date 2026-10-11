@@ -36,7 +36,12 @@ export function owningGroupKey(
 export type SessionPendingInteractionStatus = 'approval' | 'plan-review' | 'question'
 type SessionStatuses = SessionStatusSnapshot
 
-function mainSessionId(list: SessionListState): SessionId | undefined {
+/**
+ * The Session the main view shows.
+ * @param list - sessions list snapshot.
+ * @returns the Session the main view retains, if any.
+ */
+export function mainSessionId(list: SessionListState): SessionId | undefined {
   return Object.values(list.byId)
     .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
 }
@@ -654,7 +659,8 @@ export interface GroupingSection {
   readonly heading: SessionGroupHeading
   readonly collapsed: boolean
   readonly containsCurrent: boolean
-  readonly sessionCount: number
+  /** Every visible member, newest first, including while collapsed. */
+  readonly sessionIds: readonly SessionId[]
   /** Rows, empty while collapsed: the current New Session first, then pinned, then most recent first. */
   readonly sessions: readonly SessionNode[]
 }
@@ -706,7 +712,7 @@ export function deriveGroupingSections(
         heading: bucket.heading,
         collapsed: isCollapsed,
         containsCurrent: current !== undefined && bucket.members.some(member => member.id === current),
-        sessionCount: bucket.members.length,
+        sessionIds: recent.map(session => session.id),
         sessions: isCollapsed
           ? []
           : sectionMembers(recent, pinned, archived).map(session => sessionNode(session, list, statuses, pinned, archived)),
