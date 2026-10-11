@@ -134,6 +134,16 @@ describe('feedbackReport', () => {
     expect(center.feedback[0]!.payload).not.toHaveProperty('environment.tenant')
   })
 
+  it('names the model a request was sent to when the Session never chose one, and the latest choice otherwise', async () => {
+    const { report, center, logs } = await boot()
+    logs[S1] = [user(1, 'q'), event('request/context', 2, { provider: 'deepseek', model: 'v4-pro' }), assistant(3, 'a')]
+    await report.submit(REPORT)
+    expect(center.feedback[0]!.payload).toMatchObject({ environment: { model: 'deepseek/v4-pro' } })
+    logs[S1] = [event('request/context', 1, { provider: 'deepseek', model: 'v4-pro' }), event('model/selection', 2, { provider: 'deepseek', model: 'v4-flash' }), user(3, 'q')]
+    await report.submit(REPORT)
+    expect(center.feedback[1]!.payload).toMatchObject({ environment: { model: 'deepseek/v4-flash' } })
+  })
+
   it('names an assistant only when the tenant still has it', async () => {
     const { report, center, logs } = await boot()
     logs[S1] = [event('assistant/selected', 1, { assistantId: 'a-gone' }), user(2, 'hi')]

@@ -231,7 +231,11 @@ export class FeedbackReport extends TypertRemoteService {
 
   /** The model and assistant the Session last recorded. */
   private async sessionEnvironment(events: readonly SessionEvent[]): Promise<Record<string, string>> {
-    const model = lastOf(events, event => event.type === 'model/selection' ? event.data : undefined)
+    // An explicit selection, or the model a request was sent to when the Session kept the default; the latest wins.
+    const model = lastOf(events, (event): { provider: string; model: string; reasoningEffort?: string } | undefined => {
+      if (event.type === 'model/selection') return event.data
+      return event.type === 'request/context' ? { provider: event.data.provider, model: event.data.model } : undefined
+    })
     const assistantId = lastOf(events, event => event.type === 'assistant/selected' ? event.data.assistantId : undefined)
     const assistants = this.ctx.get('assistants')
     const assistant = assistantId === undefined || assistantId === '' || assistants === undefined
