@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-change-stream",
   "description": "Zero-dependency stream of a service's state for its watch method: the current state, then again after each change",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "publishConfig": {
     "access": "public"
   },
