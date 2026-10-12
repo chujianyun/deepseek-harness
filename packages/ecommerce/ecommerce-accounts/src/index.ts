@@ -139,6 +139,34 @@ type CheckResult = AccountAnswer | { readonly kind: 'gone' }
 /** The problem each failed check shows. */
 const PROBLEMS = { 'no-response': 'timeout', 'network': 'network', 'busy': 'busy' } as const satisfies Record<Exclude<AccountAnswer['kind'], 'signed-in' | 'signed-out'>, EcommerceCheckProblem>
 
+/** How long deleting an account's browser data keeps trying while another process holds its files. */
+const HELD_RETRY_MS = 10_000
+
+/**
+ * Delete a directory, trying again until `deadlineMs` passes while another process holds its files:
+ * Windows reports a file a process just let go of, or one a virus scanner reads, as `EBUSY`, `EPERM`, or
+ * `EACCES` for a moment. Node's own `rm` retries are not used: they repeat at every directory level, so a
+ * file deep in a Chrome profile kept a deletion waiting for minutes.
+ * @param dir - the directory.
+ * @param deadlineMs - how long to keep trying.
+ */
+async function removeHeld(dir: string, deadlineMs: number): Promise<void> {
+  const deadline = Date.now() + deadlineMs
+  for (let delay = 100; ; delay = Math.min(delay * 2, 800)) {
+    try {
+      await rm(dir, { recursive: true, force: true })
+      return
+    } catch (error) {
+      /* v8 ignore start -- only Windows reports a held file; POSIX coverage sees the refusal, Windows coverage the retries. */
+      const code = (error as NodeJS.ErrnoException).code
+      const held = code === 'EBUSY' || (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES'))
+      if (!held || Date.now() >= deadline) throw error
+      await new Promise(resolve => setTimeout(resolve, Math.min(delay, deadline - Date.now())))
+      /* v8 ignore stop */
+    }
+  }
+}
+
 /** The variable that gives a bash call the address of the e-commerce accounts. */
 const URL_KEY = 'DSH_ECOMMERCE_URL'
 /** The queue of tenant-wide writes; a symbol, so no account id read from the ledger can name it. */
@@ -523,10 +551,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     return this.queued(entry.id, async () => {
       await closeChrome(dir, this.options.chromeTimeoutMs)
       try {
-        // Windows reports a file a process just let go of as busy for a moment; rm retries EBUSY and EPERM. It
-        // retries at every directory level, so a file that stays held fails the deletion after about 3 s here,
-        // where ten retries 200 ms apart kept the user waiting over two minutes.
-        await rm(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+        await removeHeld(dir, HELD_RETRY_MS)
       } catch (error) {
         // Its Chrome is closed and part of its data may be gone, so its sign-in is no longer known; the error
         // names only the cause, not the path. The saved answer goes too, so no take-over stands by it.

@@ -66,11 +66,13 @@ async function holdDeletes(dir: string, files: readonly string[]): Promise<() =>
     await chmod(dir, 0o500)
     return () => chmod(dir, 0o700)
   }
-  const opens = files.map(file => `[IO.File]::Open('${file}', 'OpenOrCreate', 'ReadWrite', 'Read') | Out-Null`)
+  // A single-quoted PowerShell string doubles each quote it holds.
+  const opens = files.map(file => `[IO.File]::Open('${file.replaceAll("'", "''")}', 'OpenOrCreate', 'ReadWrite', 'Read') | Out-Null`)
   const holder = spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', [...opens, "'held'", '[Console]::In.ReadLine() | Out-Null'].join('; ')])
   const exited = new Promise<void>((resolve) => { holder.once('exit', () => { resolve() }) })
   await new Promise<void>((resolve, reject) => {
     holder.stdout.once('data', () => { resolve() })
+    holder.once('error', reject)
     holder.once('exit', (code) => { reject(new Error(`the holder exited with ${String(code)}`)) })
   })
   return async () => {
@@ -558,7 +560,7 @@ describe('e-commerce accounts', () => {
   })
 
   // Root deletes in a directory without write permission, so there the removal does not fail. On Windows rm
-  // retries the held file for a few seconds before it gives up.
+  // retries the held file for 10 seconds before it gives up.
   it.skipIf(process.getuid?.() === 0)('keeps the account, signed out, and says its browser data could not be removed when the deletion fails', async () => {
     const env = await setup()
     const { accountId } = await env.service.addAccount(merchant)

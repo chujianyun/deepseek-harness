@@ -654,8 +654,14 @@ export class AssistantsService extends TypertRemoteService {
     }
   }
 
+  /** The session's assistant state, or the empty one once this service has unregistered the unit. */
+  private assistantState(agent: Agent): z.infer<typeof projectionStateSchema> {
+    /* v8 ignore next -- this service registers the 'assistant' unit for its lifetime, so the empty state is never read in tests. */
+    return this.ctx.sessionProjections.stateOf(agent.session, 'assistant') ?? { assistantId: null, instructions: null }
+  }
+
   private boundId(agent: Agent): string | null {
-    return this.ctx.sessionProjections.stateOf(agent.session, 'assistant')?.assistantId ?? null
+    return this.assistantState(agent).assistantId
   }
 
   private isBlank(agent: Agent): boolean {
@@ -703,14 +709,12 @@ export class AssistantsService extends TypertRemoteService {
       scope.systemPrompt.section({
         name: ASSISTANT_SECTION,
         order: scope.systemPrompt.getSectionOrder('ASSISTANT_CORE_FILES'),
-        text: () => this.ctx.sessionProjections.stateOf(agent.session, 'assistant')?.instructions ?? '',
+        text: () => this.assistantState(agent).instructions ?? '',
         interpolate: false,
       })
       scope.on('system-prompt/assemble', async (assembly, context, next) => {
         if (context.signal === undefined) return next()
-        const state = this.ctx.sessionProjections.stateOf(agent.session, 'assistant')
-        /* v8 ignore next -- this service registers the 'assistant' unit, so every session has its state. */
-        if (state === undefined) return next()
+        const state = this.assistantState(agent)
         if (state.assistantId === null) return next()
         const rendered = await this.instructionsFor(state.assistantId)
         // Core files that earlier turns carried stay in the conversation; say they no longer apply.

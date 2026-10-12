@@ -30,7 +30,7 @@ const HELD_RETRY_MS = 3000
  */
 function transient(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException).code
-  /* v8 ignore next -- each platform's coverage takes only its own codes; Windows coverage takes the Windows ones. */
+  /* v8 ignore next -- the Windows codes run only on Windows, where the connector specs skip (vitest.config.ts). */
   return code === 'EBUSY' || (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES'))
 }
 
