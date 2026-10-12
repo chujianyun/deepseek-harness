@@ -2,7 +2,7 @@
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, vi } from 'vitest'
+import { afterEach, expect, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
@@ -146,4 +146,14 @@ export async function setup(options: {
   /** The always-allowed list the profile holds. */
   const saved = () => Promise.resolve((live.entry.options.config as { alwaysAllowed?: readonly string[] }).alwaysAllowed ?? [])
   return { ctx, service, fiber: live.fiber, hub, until, root, control, tenantDir, exists, calls, answer, status, saved }
+}
+
+/**
+ * Wait until the CLI script DSH puts on the model shell's PATH runs the CLI. DSH writes it as not
+ * connected first and rewrites it once the connector connects, so the file can exist a moment
+ * before it runs anything.
+ * @param script - the script's path.
+ */
+export async function untilRunnable(script: string): Promise<void> {
+  await vi.waitFor(async () => { expect(await readFile(script, 'utf8')).not.toContain('is not connected') })
 }

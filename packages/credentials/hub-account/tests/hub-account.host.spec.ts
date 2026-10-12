@@ -37,11 +37,15 @@ async function boot(options: Partial<Config> = {}, mock?: MockUserCenter) {
   const states = new AbortController()
   cleanups.push(async () => { states.abort() })
   const stream = hub.watch(states.signal)[Symbol.asyncIterator]()
-  /** Wait for the first state that satisfies the predicate. */
+  /** The state the stream yielded last, which an earlier wait may have taken without needing it. */
+  let latest: HubAccountView | undefined
+  /** Wait for the first state, from the last one yielded on, that satisfies the predicate. */
   const until = async (predicate: (view: HubAccountView) => boolean): Promise<HubAccountView> => {
+    if (latest !== undefined && predicate(latest)) return latest
     for (;;) {
       const next = await stream.next()
       if (next.done === true) throw new Error('state stream ended')
+      latest = next.value
       if (predicate(next.value)) return next.value
     }
   }

@@ -4,7 +4,7 @@
  * `--yes`.
  */
 import { execFile } from 'node:child_process'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -13,7 +13,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { PreToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { connectorGrantsProjection } from '../src/index.ts'
-import { cleanups, setup } from './support.ts'
+import { cleanups, setup, untilRunnable } from './support.ts'
 
 const runs = it.skipIf(process.platform === 'win32')
 
@@ -88,7 +88,7 @@ describe('confirming connector writes', () => {
     expect(confirmed).toBe('lark-cli drive +delete')
     // The approved call's script adds --yes once, to the approved command only; an unapproved call's adds none.
     const [dir] = t.ctx.shellEnv.collectPath(exec)
-    await vi.waitFor(async () => { await stat(join(dir!, 'lark-cli')) })
+    await untilRunnable(join(dir!, 'lark-cli'))
     const run = (args: string[], env: NodeJS.ProcessEnv) => new Promise<number>((resolve) => {
       execFile(join(dir!, 'lark-cli'), args, { env: { ...process.env, ...env } }, (error) => { resolve(error === null ? 0 : Number(error.code)) })
     })

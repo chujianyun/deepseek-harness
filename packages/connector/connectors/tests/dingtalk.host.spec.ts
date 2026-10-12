@@ -12,7 +12,7 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { PreToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { seatbeltProfileArgs } from '../../../sandbox/sandbox-local/src/profiles.ts'
 import { checkHealth, listSkills, qrCode, readSkill, removeTenant } from '../src/dingtalk.ts'
-import { setup, VERSION } from './support.ts'
+import { setup, untilRunnable, VERSION } from './support.ts'
 
 const runs = it.skipIf(process.platform === 'win32')
 
@@ -31,7 +31,7 @@ async function connected(options: { homeParent?: string } = {}) {
   await t.answer('user', 'ok')
   await t.until(view => view.status === 'connected')
   const dir = join(t.root, 'bin', 't-a')
-  await vi.waitFor(async () => { await stat(join(dir, 'dws')) })
+  await untilRunnable(join(dir, 'dws'))
   type Shell = { code: number; stderr: string; stdout: string }
   const shell = (args: string[], env: NodeJS.ProcessEnv = {}) => new Promise<Shell>((resolve) => {
     execFile(join(dir, 'dws'), args, { env: { ...process.env, ...env }, encoding: 'utf8' }, (error, stdout, stderr) => {
