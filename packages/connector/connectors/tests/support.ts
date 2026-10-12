@@ -123,10 +123,12 @@ export async function setup(options: {
   cleanups.push(() => rm(home, { recursive: true, force: true }))
   const root = join(home, 'connectors', id)
   const control = join(root, 'control')
-  const name = id === 'feishu' ? 'lark-cli' : 'dws'
+  // The connector looks for the CLI under its Windows name there; its contents only run elsewhere.
+  const binary = `${id === 'feishu' ? 'lark-cli' : 'dws'}${process.platform === 'win32' ? '.exe' : ''}`
   if (options.installed !== false) {
     await mkdir(join(root, VERSION), { recursive: true })
-    await standInCli(join(root, VERSION), name, id === 'feishu' ? FAKE : FAKE_DWS)
+    await writeFile(join(root, VERSION, binary), id === 'feishu' ? FAKE : FAKE_DWS)
+    await chmod(join(root, VERSION, binary), 0o755)
     if (id === 'dingtalk') {
       for (const [name, markdown] of Object.entries(DWS_SKILLS)) {
         await mkdir(join(root, VERSION, 'skills', name), { recursive: true })
