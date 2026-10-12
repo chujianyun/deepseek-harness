@@ -144,9 +144,13 @@ async function boot(options: {
 
 const fixture = (name: string) => join(FIXTURES, name)
 
-/** Make a file unreadable: by its mode, or on Windows, which ignores that, by denying everyone reading it. */
+/**
+ * Make a file unreadable: by its mode, or on Windows, which ignores that, by denying everyone reading its
+ * data. Only the data: Node removes a file after reading its attributes, so a wider deny keeps the
+ * test from cleaning up.
+ */
 async function unreadable(path: string): Promise<void> {
-  if (process.platform === 'win32') await promisify(execFile)('icacls', [path, '/deny', '*S-1-1-0:(R)'])
+  if (process.platform === 'win32') await promisify(execFile)('icacls', [path, '/deny', '*S-1-1-0:(RD)'])
   else await chmod(path, 0o000)
 }
 const settled = (state: KnowledgeState) => state.bases.every(base => base.items.every(item => item.status === 'completed' || item.status === 'failed'))
@@ -198,6 +202,7 @@ describe('knowledge bases', () => {
     const { service, until } = await boot()
     const { id } = (await service.createBase('商品库', LOCAL)).bases[0]!
     const dir = await mkdtemp(join(tmpdir(), 'dsh-knowledge-xlsx-'))
+    cleanups.push(() => rm(dir, { recursive: true, force: true }))
     const book = new ExcelJS.Workbook()
     const sheet = book.addWorksheet('规格')
     sheet.addRow(['型号', '容量', '单价'])

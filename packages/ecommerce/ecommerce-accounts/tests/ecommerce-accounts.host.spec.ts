@@ -1250,11 +1250,21 @@ describe('buyer accounts and risk protection', () => {
     // A refusal that was no sign-out: the check finds the account signed in.
     expect(JSON.parse((await runCommand(env, varsOf(env, exec), 'signed-out', accountId)).stdout)).toEqual({ id: accountId, status: 'signed-in' })
     await rm(join(env.browserDir(accountId), 'user-data', 'fake-signed-in'))
-    // Reported twice at once, the account is checked once and shows expired.
-    const checks = vi.spyOn(env.service as never, 'check')
-    const [first, second] = await Promise.all([
+    // Reported twice while the first check runs, the account is checked once and shows expired. The check
+    // waits for both reports, so a slow machine starting the two commands far apart changes nothing.
+    const check = (Reflect.get(env.service, 'check') as (entry: unknown) => Promise<unknown>).bind(env.service)
+    const rechecks = vi.spyOn(env.service as never, 'recheck')
+    const bothReported = Promise.withResolvers<undefined>()
+    const checks = vi.spyOn(env.service as never, 'check').mockImplementation((async (entry: unknown) => {
+      await bothReported.promise
+      return check(entry)
+    }) as never)
+    const reports = Promise.all([
       runCommand(env, varsOf(env, exec), 'signed-out', accountId), runCommand(env, varsOf(env, exec), 'signed-out', accountId),
     ])
+    await vi.waitFor(() => { expect(rechecks).toHaveBeenCalledTimes(2) }, { timeout: 10_000 })
+    bothReported.resolve(undefined)
+    const [first, second] = await reports
     expect([JSON.parse(first.stdout), JSON.parse(second.stdout)]).toEqual([{ id: accountId, status: 'signed-out' }, { id: accountId, status: 'signed-out' }])
     expect(checks).toHaveBeenCalledTimes(1)
     expect((await env.service.getState()).accounts[0]).toMatchObject({ status: 'signed-out', expired: true })
