@@ -148,6 +148,6 @@ export async function guardBrowser(port: number, timeoutMs: number, rules: Guard
     tabs.set(attached.sessionId, targetId)
     watches.set(targetId, watch(attached.sessionId, targetId))
   }
-  await Promise.all(open.map(id => watches.get(id)))
+  await Promise.all(open.flatMap(id => watches.get(id) ?? []))
   return () => { cdp.close() }
 }
