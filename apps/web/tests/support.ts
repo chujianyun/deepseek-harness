@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { createRequire } from 'node:module'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Locator, Page } from 'playwright'
@@ -350,4 +351,19 @@ export async function signInToSkillHub(page: Page, button = 'Sign in to Skill Hu
   await opened.close()
   await section.getByText(/^Tenant：/u).waitFor()
   await settings.getByRole('button', { name: 'Close' }).last().click()
+}
+
+/**
+ * Stop the Chrome a test's e-commerce account recorded, if it still runs. A turn's end closes Chrome
+ * itself, and its record goes only after the process has exited, so a recorded process may be gone.
+ * @param accountDir - the account's browser directory.
+ */
+export async function killRecordedChrome(accountDir: string): Promise<void> {
+  const record = await readFile(join(accountDir, 'chrome.json'), 'utf8').catch(() => undefined)
+  if (record === undefined) return
+  try {
+    process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
+  } catch {
+    // Already exited.
+  }
 }
