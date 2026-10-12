@@ -76,10 +76,12 @@ describe('the Windows lark-cli script', () => {
     expect(await t.args()).toEqual(['drive +delete --file-token b --yes', 'drive +delete --yes', 'drive +deleted', 'drive +delete'])
   })
 
-  it('refuses lark-cli update, and runs a command that only mentions it', async () => {
+  it('refuses lark-cli update, also after leading flags, and runs a command that only mentions it', async () => {
     const t = await written('run')
     const result = await t.run(['update'])
     expect(result).toEqual({ code: 2, stderr: 'DSH: lark-cli update is not available here; DSH installs and updates lark-cli itself.\n' })
+    expect((await t.run(['--profile', 'x', 'update'])).code).toBe(2)
+    expect((await t.run(['--debug', 'update'])).code).toBe(2)
     expect((await t.run(['calendar', 'update'])).code).toBe(0)
     expect(await t.args()).toEqual(['calendar update'])
   })

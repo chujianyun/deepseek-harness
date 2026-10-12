@@ -61,6 +61,7 @@ describe('the model shell\'s lark-cli', () => {
     const result = await shell(dir!, ['update'])
     expect(result.code).toBe(2)
     expect(result.stderr).toContain('DSH: lark-cli update is not available here; DSH installs and updates lark-cli itself.')
+    expect((await shell(dir!, ['--profile', 'x', 'update'])).code).toBe(2)
     // A word named update elsewhere in a command is not the update command.
     expect((await shell(dir!, ['calendar', '+agenda', 'update'])).code).toBe(0)
     expect(await t.calls()).not.toContain('update')

@@ -43,8 +43,14 @@ const PWSH_OPAQUE = new RegExp([
   String.raw`\b(?:Invoke-Expression|Invoke-Command|Start-Process|Start-Job|ForEach-Object)\b`,
   String.raw`(?:^|[;|&(]\s*)(?:iex|icm|saps|start|foreach|%)(?=\s|$)`,
   String.raw`(?<![\w.-])(?:cmd|pwsh|powershell)(?:\.exe)?\s`,
-  String.raw`\.Invoke\(|[{}]|@\(`,
+  String.raw`\.Invoke\(|[{}]|@\(|\]::`,
+  String.raw`(?<![\w$.-])[&.]\s*\$`,
 ].join('|'), 'iu')
+
+/** A PowerShell command with its quoted strings emptied: text in quotes runs nothing. */
+function unquoted(command: string): string {
+  return command.replace(/'[^']*'|"[^"]*"/gu, "''")
+}
 
 /** The shell a model command is written for: the bash tool's, or PowerShell's on Windows. */
 export type ShellDialect = 'bash' | 'pwsh'
@@ -60,6 +66,9 @@ const HELP_TIMEOUT_MS = 10_000
 
 /** Words that run the command after them, so the command position moves on past them. */
 const PREFIXES = new Set(['sudo', 'env', 'time', 'nohup', 'nice', 'command', 'exec'])
+
+/** PowerShell words after which a command follows: dot-sourcing, an assignment's `=`, `return`, and `throw`. */
+const PWSH_PREFIXES = new Set(['.', '=', 'return', 'throw'])
 
 /**
  * A word, a separator, or a redirection; `expanded` marks a word with an unquoted `$`, and
@@ -112,7 +121,7 @@ export function tokenize(command: string, dialect: ShellDialect = 'bash'): Token
     if (char === '"') {
       let at = index + 1
       while (at < command.length && command.charAt(at) !== '"') {
-        if (command.charAt(at) === '\\' && at + 1 < command.length) at += 1
+        if (command.charAt(at) === '\\' && dialect === 'bash' && at + 1 < command.length) at += 1
         else if (command.charAt(at) === '$') expanded = true
         word += command.charAt(at)
         at += 1
@@ -123,9 +132,9 @@ export function tokenize(command: string, dialect: ShellDialect = 'bash'): Token
     }
     if (char === ' ' || char === '\t') { end(); continue }
     const pair = command.slice(index, index + 2)
-    // A redirection: `>`, `>>`, `<`, `2>`, `&>`, `>&2`, `2>&1`; a file descriptor before it is no word.
+    // A redirection: `>`, `>>`, `<`, `2>`, `&>`, `>&2`, `2>&1`, and PowerShell's `*>`; a stream before it is no word.
     if (char === '>' || char === '<' || pair === '&>') {
-      if (/^\d+$/u.test(word)) { word = ''; inWord = false } else end()
+      if (/^\d+$/u.test(word) || (dialect === 'pwsh' && word === '*')) { word = ''; inWord = false } else end()
       let op = pair === '&>' ? '&>' : char
       index += op.length - 1
       const next = command.charAt(index + 1)
@@ -150,7 +159,8 @@ export function tokenize(command: string, dialect: ShellDialect = 'bash'): Token
  * name or by path, with the words after it up to the next separator. Command position is the first
  * word of a command, after any variable assignments and prefixes such as `sudo` or `env`; the CLI's
  * name elsewhere, as in `which dws`, is an argument. Redirections are not arguments. In PowerShell the
- * name matches in any case and with a `.cmd`, `.bat`, or `.exe` extension, after `/` or `\\`.
+ * name matches in any case and with a `.cmd`, `.bat`, or `.exe` extension, after `/` or `\\`, and command
+ * position also follows an assignment's `=`, dot-sourcing `.`, `return`, and `throw`.
  * @param command - the command.
  * @param cli - the CLI's name, such as `lark-cli`.
  * @param dialect - the shell the command is written for.
@@ -165,16 +175,19 @@ export function invocations(command: string, cli: string, dialect: ShellDialect 
   // The name as a whole word: `dws` inside `kdws.txt` or `lark-cli` inside `lark-cli-free` is another word.
   const whole = pwsh ? `(?:^|[^\\w.-])${escaped}(?:\\.(?:cmd|bat|exe))?(?![\\w.-])` : `(?:^|[^\\w.-])${escaped}(?![\\w.-])`
   if (!new RegExp(whole, pwsh ? 'iu' : 'u').test(command)) return []
-  if (OPAQUE.test(command) || (pwsh && PWSH_OPAQUE.test(command))) return 'opaque'
+  if (OPAQUE.test(command) || (pwsh && PWSH_OPAQUE.test(unquoted(command)))) return 'opaque'
   const tokens = tokenize(command, dialect)
   const found: Token[][] = []
   let args: Token[] | undefined
   let start = true
   for (const token of tokens) {
+    // A PowerShell assignment, `$r=lark-cli …`, runs the command after its `=`.
+    const text: string = pwsh && start && args === undefined ? token.text.replace(/^\$[\w:]+=/u, '') : token.text
     if (token.separator) { args = undefined; start = true } else if (token.redirect) continue
     else if (args !== undefined) args.push(token)
-    else if (start && named(token.text)) found.push(args = [])
-    else if (start) start = PREFIXES.has(token.text) || /^[A-Za-z_]\w*=/u.test(token.text)
+    else if (start && named(text)) found.push(args = [])
+    else if (start && pwsh) start = text === '' || PWSH_PREFIXES.has(text.toLowerCase()) || /^\$[\w:]*$/u.test(text)
+    else if (start) start = PREFIXES.has(text) || /^[A-Za-z_]\w*=/u.test(text)
   }
   return found
 }

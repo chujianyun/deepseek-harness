@@ -86,9 +86,29 @@ describe('PowerShell commands', () => {
     for (const command of [
       'iex "lark-cli im +messages-send"', 'Invoke-Expression "lark-cli im +messages-send"', 'Start-Process lark-cli im',
       'start lark-cli im +messages-send', 'cmd /c lark-cli im +messages-send', 'pwsh -c "lark-cli im +messages-send"',
-      'lark-cli im +messages-send --data \'{"text":"hi"}\'', '& { lark-cli im +messages-send }', 'Get-Item x | % { lark-cli im }',
+      '& { lark-cli im +messages-send }', 'Get-Item x | % { lark-cli im }',
       'lark-cli im +messages-send --text `"hi`"', '@(lark-cli im +messages-send)',
     ]) {
+      expect(args(command), command).toBe('opaque')
+    }
+  })
+
+  it('finds a call after an assignment, dot-sourcing, return, or throw, and drops PowerShell redirections', () => {
+    for (const command of ['$r = lark-cli drive +delete', '$r=lark-cli drive +delete', '$r= lark-cli drive +delete', '$global:r = lark-cli drive +delete',
+      '. lark-cli drive +delete', 'return lark-cli drive +delete', 'throw lark-cli drive +delete', 'lark-cli drive +delete *> out.txt', 'lark-cli drive +delete 2>&1']) {
+      expect(args(command), command).toEqual([['drive', '+delete']])
+    }
+    expect(args('Write-Output lark-cli drive +delete')).toEqual([])
+  })
+
+  it('keeps a backslash before a closing double quote, which PowerShell does not escape', () => {
+    expect(args('lark-cli im +messages-send --text "C:\\" ; lark-cli drive +delete')).toEqual([['im', '+messages-send', '--text', 'C:\\'], ['drive', '+delete']])
+  })
+
+  it('reads braces in a quoted argument as text, and a .NET call or a call through a variable as opaque', () => {
+    expect(args('lark-cli api GET /open-apis/x --params \'{"page_size":10}\'')).toEqual([['api', 'GET', '/open-apis/x', '--params', '{"page_size":10}']])
+    expect(args('lark-cli api GET /x --params "{}"')).toEqual([['api', 'GET', '/x', '--params', '{}']])
+    for (const command of ["[Diagnostics.Process]::Start('lark-cli', 'drive +delete')", "$exe = 'lark-cli'; & $exe drive +delete", '. $script lark-cli']) {
       expect(args(command), command).toBe('opaque')
     }
   })

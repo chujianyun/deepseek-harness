@@ -31,7 +31,7 @@ const FOREIGN_SOURCE = `^(?:${FOREIGN_PREFIXES.join('|')})`
 const FOREIGN = new RegExp(FOREIGN_SOURCE, 'iu')
 
 /** Commands the model may not run: `update` installs a global npm package and replaces the pinned CLI. */
-const REFUSED = [{ words: ['update'], message: 'DSH: lark-cli update is not available here; DSH installs and updates lark-cli itself.' }] as const
+const REFUSED = [{ command: 'update', message: 'DSH: lark-cli update is not available here; DSH installs and updates lark-cli itself.' }] as const
 
 /** The refusal of a script whose tenant is not connected. */
 const NOT_CONNECTED = 'DSH: the Feishu connector is not connected for this company. Ask the user to connect Feishu on the DSH Connectors page (连接器), then try again.'
@@ -290,7 +290,16 @@ export function wrapperScript(cli: TenantCli, mode: WrapperMode, logs: string): 
     return `${lines.join('\n')}\n`
   }
   lines.push(
-    ...REFUSED.map(item => `case " $* " in " ${item.words.join(' ')} "*) echo ${quote(item.message)} >&2; exit 2 ;; esac`),
+    // A refused command counts after leading flags and their values, as in `lark-cli --profile x update`.
+    'prev=',
+    'for arg in "$@"; do',
+    '  case "$arg" in',
+    ...REFUSED.map(item => `    ${item.command}) echo ${quote(item.message)} >&2; exit 2 ;;`),
+    '    -*) ;;',
+    '    *) case "$prev" in -*) ;; *) break ;; esac ;;',
+    '  esac',
+    '  prev=$arg',
+    'done',
     `for name in $(env | sed -nE 's/^((${FOREIGN_PREFIXES.join('|')})[A-Za-z0-9_]*)=.*/\\1/p'); do unset "$name"; done`,
     ...Object.entries(tenantVariables(cli, logs)).map(([name, value]) => `export ${name}=${quote(value)}`),
     ...confirmLines('lark-cli', ['--yes']),

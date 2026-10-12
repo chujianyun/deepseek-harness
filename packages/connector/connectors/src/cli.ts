@@ -172,8 +172,11 @@ export interface WindowsWrapper {
   readonly foreign: string
   /** The CLI's confirm flags; the first is added to a command the user approved for this call. */
   readonly yes: readonly [string, ...string[]]
-  /** Commands the model may not run, by their leading words, each with what to say instead. */
-  readonly refuse: readonly { readonly words: readonly string[]; readonly message: string }[]
+  /**
+   * Commands the model may not run, each with what to say instead; a command counts as the first
+   * argument or after leading flags and their values.
+   */
+  readonly refuse: readonly { readonly command: string; readonly message: string }[]
   /** What to say after the CLI fails, with `{status}` for its exit status. */
   readonly failureHint: string
 }
@@ -195,7 +198,14 @@ if (wrapper.mode !== 'run') {
   process.stderr.write(\`\${wrapper.message}\\n\`)
   process.exit(1)
 }
-const refused = wrapper.refuse.find(item => item.words.every((word, index) => args[index] === word))
+const leads = (command) => {
+  for (const [index, arg] of args.entries()) {
+    if (arg === command) return true
+    if (!arg.startsWith('-') && !(args[index - 1] ?? '').startsWith('-')) return false
+  }
+  return false
+}
+const refused = wrapper.refuse.find(item => leads(item.command))
 if (refused !== undefined) {
   process.stderr.write(\`\${refused.message}\\n\`)
   process.exit(2)
