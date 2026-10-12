@@ -1,8 +1,9 @@
 /** Shared by the connector specs: a Hub sign-in stand-in and a service booted over a stand-in lark-cli or dws. */
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, vi } from 'vitest'
+import { afterEach, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
@@ -141,26 +142,21 @@ export async function setup(options: {
   const tenantDir = (tenant: string) => join(root, 'tenants', tenant)
   const exists = (path: string) => stat(path).then(() => true, () => false)
   const calls = async () => (await readFile(join(control, 'calls'), 'utf8').catch(() => '')).trim().split('\n').filter(line => line !== '')
-  // Written aside and renamed into place: the fake CLI reads the answer as soon as the file exists.
-  const answer = async (step: 'app' | 'user', result: string) => {
-    await writeFile(join(control, `${step}.tmp`), result)
-    await rename(join(control, `${step}.tmp`), join(control, step))
-  }
-  const status = async (value: object | string) => {
-    await writeFile(join(control, 'status.json.tmp'), typeof value === 'string' ? value : JSON.stringify(value))
-    await rename(join(control, 'status.json.tmp'), join(control, 'status.json'))
-  }
+  const answer = (step: 'app' | 'user', result: string) => writeWhole(join(control, step), result)
+  const status = (value: object | string) => writeWhole(join(control, 'status.json'), typeof value === 'string' ? value : JSON.stringify(value))
   /** The always-allowed list the profile holds. */
   const saved = () => Promise.resolve((live.entry.options.config as { alwaysAllowed?: readonly string[] }).alwaysAllowed ?? [])
   return { ctx, service, fiber: live.fiber, hub, until, root, control, tenantDir, exists, calls, answer, status, saved }
 }
 
 /**
- * Wait until the CLI script DSH puts on the model shell's PATH runs the CLI. DSH writes it as not
- * connected first and rewrites it once the connector connects, so the file can exist a moment
- * before it runs anything.
- * @param script - the script's path.
+ * Write a file the fake CLI reads as soon as it exists: aside under a unique name, then renamed into
+ * place, so the CLI never reads it half written and two writes never share a staging file.
+ * @param path - the file.
+ * @param content - its text.
  */
-export async function untilRunnable(script: string): Promise<void> {
-  await vi.waitFor(async () => { expect(await readFile(script, 'utf8')).not.toContain('is not connected') })
+async function writeWhole(path: string, content: string): Promise<void> {
+  const staging = `${path}.${randomUUID()}.tmp`
+  await writeFile(staging, content)
+  await rename(staging, path)
 }

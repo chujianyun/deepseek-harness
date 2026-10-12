@@ -37,17 +37,21 @@ async function boot(options: Partial<Config> = {}, mock?: MockUserCenter) {
   const states = new AbortController()
   cleanups.push(async () => { states.abort() })
   const stream = hub.watch(states.signal)[Symbol.asyncIterator]()
-  /** The state the stream yielded last, which an earlier wait may have taken without needing it. */
-  let latest: HubAccountView | undefined
-  /** Wait for the first state, from the last one yielded on, that satisfies the predicate. */
+  /** Wait for the first state that satisfies the predicate. */
   const until = async (predicate: (view: HubAccountView) => boolean): Promise<HubAccountView> => {
-    if (latest !== undefined && predicate(latest)) return latest
     for (;;) {
       const next = await stream.next()
       if (next.done === true) throw new Error('state stream ended')
-      latest = next.value
       if (predicate(next.value)) return next.value
     }
+  }
+  /**
+   * Wait for a state that satisfies the predicate, starting from the current one: what follows sign-in,
+   * such as its branding, may already be in the state sign-in's own wait took from the stream.
+   */
+  const untilNow = async (predicate: (view: HubAccountView) => boolean): Promise<HubAccountView> => {
+    const now = await hub.getState()
+    return predicate(now) ? now : until(predicate)
   }
   /** Start sign-in and play the browser through it. */
   const signIn = async () => {
@@ -57,7 +61,7 @@ async function boot(options: Partial<Config> = {}, mock?: MockUserCenter) {
     const settled = await until(view => view.attempt?.phase !== 'waiting-browser' && view.attempt?.phase !== 'exchanging')
     return { waiting, page, settled }
   }
-  return { ctx, hub, center, home, fiber, until, signIn }
+  return { ctx, hub, center, home, fiber, until, untilNow, signIn }
 }
 
 describe('hubAccount', () => {
@@ -390,10 +394,10 @@ describe('hubAccount branding', () => {
     const center = await startMockUserCenter()
     cleanups.push(() => center.close())
     center.brandings['t-a'] = { title: '欢迎使用 甲公司 AI 助手', logo: { contentType: 'image/png', data: PNG } }
-    const { hub, home, signIn, until } = await boot({}, center)
+    const { hub, home, signIn, untilNow } = await boot({}, center)
     expect(await hub.getBranding()).toBeNull()
     await signIn()
-    const view = await until(state => state.branding !== null)
+    const view = await untilNow(state => state.branding !== null)
     expect(view.branding).toEqual({ tenantId: 't-a', title: '欢迎使用 甲公司 AI 助手', slogan: null, logoSha256: sha(PNG) })
     expect(await hub.getBranding()).toEqual({ tenantId: 't-a', title: '欢迎使用 甲公司 AI 助手', slogan: null, logo: `data:image/png;base64,${PNG.toString('base64')}` })
     expect(await readFile(join(cacheDir(home), `logo-${sha(PNG)}`))).toEqual(PNG)
@@ -454,9 +458,9 @@ describe('hubAccount branding', () => {
     const center = await startMockUserCenter()
     cleanups.push(() => center.close())
     center.brandings['t-a'] = { title: '甲公司', logo: { contentType: 'image/png', data: PNG } }
-    const { hub, home, signIn, until } = await boot({}, center)
+    const { hub, home, signIn, untilNow } = await boot({}, center)
     await signIn()
-    await until(state => state.branding !== null)
+    await untilNow(state => state.branding !== null)
     await hub.signOut()
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
     // The logo changed, but its download fails: the cached logo stays.
@@ -541,9 +545,9 @@ describe('hubAccount branding', () => {
     await mkdir(join(home, 'cache'))
     await writeFile(cacheDir(home), 'not a directory')
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
-    const { signIn, until } = await boot({ dshHome: home }, center)
+    const { signIn, untilNow } = await boot({ dshHome: home }, center)
     await signIn()
-    expect((await until(state => state.branding !== null)).branding).toMatchObject({ title: '甲公司' })
+    expect((await untilNow(state => state.branding !== null)).branding).toMatchObject({ title: '甲公司' })
     expect(info.mock.calls.some(call => String(call[0]).includes('branding cache not written'))).toBe(true)
     info.mockRestore()
   }, 20_000)
@@ -584,10 +588,10 @@ describe('hubAccount branding', () => {
     const center = await startMockUserCenter()
     cleanups.push(() => center.close())
     center.brandings['t-a'] = { title: null, slogan: '让每位员工都有自己的 AI 助手', logo: null }
-    const { hub, home, signIn, until } = await boot({}, center)
+    const { hub, home, signIn, until, untilNow } = await boot({}, center)
     await signIn()
     // A slogan alone is branding to show.
-    expect((await until(state => state.branding !== null)).branding).toEqual({ tenantId: 't-a', title: null, slogan: '让每位员工都有自己的 AI 助手', logoSha256: null })
+    expect((await untilNow(state => state.branding !== null)).branding).toEqual({ tenantId: 't-a', title: null, slogan: '让每位员工都有自己的 AI 助手', logoSha256: null })
     expect(await hub.getBranding()).toEqual({ tenantId: 't-a', title: null, slogan: '让每位员工都有自己的 AI 助手', logo: null })
     expect(JSON.parse(await readFile(join(cacheDir(home), 'branding.json'), 'utf8'))).toMatchObject({ slogan: '让每位员工都有自己的 AI 助手' })
     await hub.signOut()
