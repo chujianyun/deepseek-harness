@@ -1429,6 +1429,7 @@ flowchart TD
   pkg_connectors --> pkg_tools
   pkg_connectors --> pkg_typert_protocol
   pkg_ecommerce_accounts --> pkg_hub_account
+  pkg_ecommerce_accounts --> pkg_session
   pkg_ecommerce_accounts --> pkg_shell_env
   pkg_ecommerce_accounts --> pkg_skill
   pkg_ecommerce_accounts --> pkg_tools
@@ -1831,7 +1832,7 @@ flowchart TD
 | [`skill-market`](../packages/skill/skill-market) | `skill` | [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`home-paths`](../packages/util/home-paths), [`hub-account`](../packages/credentials/hub-account), [`scope`](../packages/core/scope), [`settings`](../packages/settings/settings), [`skill`](../packages/skill/skill), [`skill-filesystem`](../packages/skill/skill-filesystem), [`typert-protocol`](../packages/typert/protocol) |
 | [`subagent-dsh-sdk`](../packages/subagent/subagent-dsh-sdk) | `subagent` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`sdk-client`](../packages/sdk/client), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess) |
 | [`connectors`](../packages/connector/connectors) | `connector` | [`hub-account`](../packages/credentials/hub-account), [`llm`](../packages/llm/llm), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session-projection`](../packages/session/session-projection), [`settings`](../packages/settings/settings), [`shell-env`](../packages/shell/shell-env), [`skill`](../packages/skill/skill), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol) |
-| [`ecommerce-accounts`](../packages/ecommerce/ecommerce-accounts) | `ecommerce` | [`hub-account`](../packages/credentials/hub-account), [`shell-env`](../packages/shell/shell-env), [`skill`](../packages/skill/skill), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol) |
+| [`ecommerce-accounts`](../packages/ecommerce/ecommerce-accounts) | `ecommerce` | [`hub-account`](../packages/credentials/hub-account), [`session`](../packages/core/session), [`shell-env`](../packages/shell/shell-env), [`skill`](../packages/skill/skill), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol) |
 | [`knowledge-base`](../packages/knowledge/knowledge-base) | `knowledge` | [`embedding`](../packages/llm/embedding), [`hub-account`](../packages/credentials/hub-account), [`typert-protocol`](../packages/typert/protocol), [`web`](../packages/web/web) |
 | [`tool-schedule`](../packages/schedule/tool-schedule) | `schedule` | [`llm`](../packages/llm/llm), [`schedule`](../packages/schedule/schedule), [`subagent`](../packages/subagent/subagent), [`tools`](../packages/core/tools) |
 | [`skill-controller`](../packages/skill/skill-controller) | `skill` | [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`native-command`](../packages/util/native-command), [`scope`](../packages/core/scope), [`skill`](../packages/skill/skill), [`skill-market`](../packages/skill/skill-market), [`typert-protocol`](../packages/typert/protocol) |
