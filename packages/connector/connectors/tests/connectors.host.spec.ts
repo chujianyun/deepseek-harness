@@ -136,6 +136,7 @@ async function boot(home: string, feishu?: CliSpec, options: BootOptions = {}) {
 
 const feishu = (state: ConnectorsState) => state.connectors.find(connector => connector.id === 'feishu')!
 const dingtalkView = (state: ConnectorsState) => state.connectors.find(connector => connector.id === 'dingtalk')!
+// The stand-in CLI is a POSIX shell script; on Windows windows-wrapper.spec.ts covers the script.
 const runs = it.skipIf(process.platform === 'win32')
 
 describe('connectors', () => {

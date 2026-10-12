@@ -3,7 +3,6 @@
  * connected connector waits for the user's approval, and an approved high-risk command runs with
  * `--yes`.
  */
-import { execFile } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -13,8 +12,9 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { PreToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { connectorGrantsProjection } from '../src/index.ts'
-import { cleanups, setup } from './support.ts'
+import { cleanups, setup, shell } from './support.ts'
 
+// The stand-in CLI is a POSIX shell script; on Windows windows-wrapper.spec.ts covers the script.
 const runs = it.skipIf(process.platform === 'win32')
 
 function bash(command: string, id = 'call-1', agent?: ToolExecution['agent']): ToolExecution {
@@ -88,9 +88,7 @@ describe('confirming connector writes', () => {
     expect(confirmed).toBe('lark-cli drive +delete')
     // The approved call's script adds --yes once, to the approved command only; an unapproved call's adds none.
     const [dir] = t.ctx.shellEnv.collectPath(exec)
-    const run = (args: string[], env: NodeJS.ProcessEnv) => new Promise<number>((resolve) => {
-      execFile(join(dir!, 'lark-cli'), args, { env: { ...process.env, ...env } }, (error) => { resolve(error === null ? 0 : Number(error.code)) })
-    })
+    const run = async (args: string[], env: NodeJS.ProcessEnv) => (await shell(dir!, args, env)).code
     expect(await run(['calendar', '+agenda'], { DSH_CONNECTOR_CONFIRMED: confirmed })).toBe(0)
     expect(await run(['drive', '+delete', '--file-token', 'box_1'], { DSH_CONNECTOR_CONFIRMED: confirmed })).toBe(0)
     expect(await run(['drive', '+delete', '--file-token', 'box_1', '--yes'], { DSH_CONNECTOR_CONFIRMED: confirmed })).toBe(0)
@@ -102,6 +100,16 @@ describe('confirming connector writes', () => {
     // The call's result ends the approval.
     t.ctx.emit('tools/result', exec, { isError: true, content: [] } as object as ToolExecutionResult)
     expect(t.ctx.shellEnv.collect(exec)).not.toHaveProperty('DSH_CONNECTOR_CONFIRMED')
+  })
+
+  runs('reads a PowerShell call of lark-cli.cmd as the same command', async () => {
+    const t = await connected()
+    const pwsh = (command: string): ToolExecution => ({ ...bash(command, 'call-pwsh'), name: 'pwsh' })
+    expect(await t.gate(pwsh("& 'C:\\Users\\a\\lark-cli.cmd' drive +delete --file-token box_1"))).toMatchObject({
+      kind: 'ask', reason: 'Feishu connector high-risk-write command: lark-cli drive +delete',
+    })
+    expect(t.ctx.shellEnv.collect(pwsh('lark-cli.cmd drive +delete --file-token box_1'))).toHaveProperty('DSH_CONNECTOR_CONFIRMED', 'lark-cli drive +delete')
+    expect(await t.gate(pwsh('iex "lark-cli drive +delete"'))).toMatchObject({ kind: 'ask' })
   })
 
   runs('asks nothing while the connector is not connected or switched off', async () => {

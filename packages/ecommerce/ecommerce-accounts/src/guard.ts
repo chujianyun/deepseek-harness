@@ -52,12 +52,26 @@ function minimizeWindowOf(cdp: Cdp, targetId: string): Promise<void> {
   }).catch(ignore)
 }
 
+/** Settle with `promise`, or reject once `ms` pass without it. */
+async function within<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  try {
+    return await Promise.race([promise, new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => { reject(new Error(`no answer in ${String(ms)} ms`)) }, ms)
+    })])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /**
  * Watch every tab of a browser until the returned function is called.
  * @param port - the browser's remote-debugging port.
  * @param timeoutMs - how long to wait for the connection.
  * @param rules - what may open, and what to do on risk control.
- * @returns a function that ends the watch.
+ * @returns a function that ends the watch, once the loads of every tab already open are intercepted; a tab
+ *   opened later loads nothing until its loads are intercepted too. A tab whose loads Chrome does not
+ *   intercept within `timeoutMs` is closed.
  */
 export async function guardBrowser(port: number, timeoutMs: number, rules: GuardRules): Promise<() => void> {
   const cdp = await Cdp.connect(port, timeoutMs)
@@ -66,19 +80,37 @@ export async function guardBrowser(port: number, timeoutMs: number, rules: Guard
   /** Page loads already decided, by their network request, which redirects keep. */
   const decided = new Map<string, boolean>()
   let stopped = false
+  /** Each page tab's watch, by tab id: settled once the tab's loads are intercepted, or the tab is closed. */
+  const watches = new Map<string, Promise<void>>()
+  /** Close a tab that cannot be watched: it would load pages nobody counts. */
+  const refuse = (targetId: string): Promise<void> => cdp.send('Target.closeTarget', { targetId }).then(() => undefined, ignore)
+  const watch = async (sessionId: string, targetId: string): Promise<void> => {
+    try {
+      // The network domain gives each paused load the network request id that its redirects keep. A tab
+      // loads nothing before Chrome intercepts its loads: Fetch.enable answers once it does.
+      await within(Promise.all([
+        cdp.send('Network.enable', {}, sessionId),
+        cdp.send('Page.enable', {}, sessionId),
+        cdp.send('Fetch.enable', { patterns: [{ resourceType: 'Document', requestStage: 'Request' }] }, sessionId),
+      ]), timeoutMs)
+    } catch {
+      // Chrome refused or did not answer in time, so the tab's loads may go unseen.
+      await refuse(targetId)
+      return
+    }
+    // A tab waits for this before it loads anything, so the watch is in place first.
+    await cdp.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch(ignore)
+  }
   cdp.on('Target.attachedToTarget', (params) => {
     const sessionId = params.sessionId as string
     const target = params.targetInfo as { targetId: string; type: string }
-    if (target.type === 'page') {
-      tabs.set(sessionId, target.targetId)
-      void minimizeWindowOf(cdp, target.targetId)
-      // The network domain gives each paused load the network request id that its redirects keep.
-      void cdp.send('Network.enable', {}, sessionId).catch(ignore)
-      void cdp.send('Page.enable', {}, sessionId).catch(ignore)
-      void cdp.send('Fetch.enable', { patterns: [{ resourceType: 'Document', requestStage: 'Request' }] }, sessionId).catch(ignore)
+    if (target.type !== 'page') {
+      void cdp.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch(ignore)
+      return
     }
-    // A tab waits for this before it loads anything, so the watch is in place first.
-    void cdp.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch(ignore)
+    tabs.set(sessionId, target.targetId)
+    void minimizeWindowOf(cdp, target.targetId)
+    watches.set(target.targetId, watch(sessionId, target.targetId))
   })
   // A navigation commits once its redirects are done, so only the page a tab lands on counts.
   cdp.on('Page.frameNavigated', (params, sessionId) => {
@@ -105,5 +137,17 @@ export async function guardBrowser(port: number, timeoutMs: number, rules: Guard
     void cdp.send(allow ? 'Fetch.continueRequest' : 'Fetch.failRequest', allow ? { requestId } : { requestId, errorReason: 'BlockedByClient' }, sessionId).catch(ignore)
   })
   await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true })
+  // Tabs open before the watch do not wait for it: answer only once each of them is watched too. A tab the
+  // auto-attach has not reported is attached here; one Chrome no longer has (it lists a tab closed a moment
+  // ago) is gone.
+  const { targetInfos } = await cdp.send<{ targetInfos: { targetId: string; type: string }[] }>('Target.getTargets')
+  const open = targetInfos.filter(target => target.type === 'page').map(target => target.targetId)
+  for (const targetId of open.filter(id => !watches.has(id))) {
+    const attached = await cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId, flatten: true }).catch(ignore)
+    if (attached === undefined || watches.has(targetId)) continue
+    tabs.set(attached.sessionId, targetId)
+    watches.set(targetId, watch(attached.sessionId, targetId))
+  }
+  await Promise.all(open.flatMap(id => watches.get(id) ?? []))
   return () => { cdp.close() }
 }
