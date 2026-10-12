@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { assess as assessDws } from '../src/dingtalk.ts'
 import { assess } from '../src/lark.ts'
-import { classify, helpRiskReader, invocations, tokenize, type Risk } from '../src/risk.ts'
+import { classify, helpRiskReader, invocations, tokenize, type Risk, type RiskReader } from '../src/risk.ts'
 import { standInCli } from './support.ts'
 
 const stated: Record<string, Risk> = { 'calendar +agenda': 'read', 'im +messages-send': 'write', 'drive +delete': 'high-risk-write' }
@@ -94,7 +94,7 @@ describe('PowerShell commands', () => {
   })
 
   it('classifies a PowerShell call as bash classifies the same words', async () => {
-    const reader = vi.fn(async (command: readonly string[]) => (command[0] === 'im' ? { risk: 'write', confirm: false } : { risk: 'read', confirm: false }) as const)
+    const reader = vi.fn<RiskReader>(async command => (command[0] === 'im' ? { risk: 'write', confirm: false } : { risk: 'read', confirm: false }))
     expect(await classify('.\\lark-cli.cmd im +messages-send --text hi', 'lark-cli', reader, [], 'pwsh'))
       .toEqual({ risk: 'write', invocations: [{ command: 'im +messages-send', risk: 'write', confirm: false }] })
   })
