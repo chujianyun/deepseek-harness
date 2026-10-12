@@ -10,7 +10,7 @@
 // and a page whose address has risk=1 also loads a risk-control frame.
 // FAKE_CHROME_VERSION sets the reported version (empty prints none); FAKE_CHROME_SILENT never sends
 // the check response; FAKE_CHROME_BASE64 encodes bodies; FAKE_CHROME_STUBBORN ignores Browser.close and FAKE_CHROME_DEAF also SIGTERM; FAKE_CHROME_LINGER_MS keeps running that long after its port closes;
-// FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs; FAKE_CHROME_LATE_COMMIT lists a new tab as about:blank for a moment. For the Tmall
+// FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs; FAKE_CHROME_LATE_COMMIT lists a new tab as about:blank for a moment; FAKE_CHROME_SLOW_INTERCEPT_MS delays Fetch.enable's effect and answer by that long; FAKE_CHROME_QUIET_ATTACH leaves the tabs already open out of Target.setAutoAttach. For the Tmall
 // data skills, Alimama's report page sends its scene query, and `Runtime.evaluate` answers the page
 // APIs those skills call — Alimama's report query and Business Advisor's self-service export, whose
 // .xlsx this server hands out — with one day's figures for scenes 371 and 436. An item page renders its
@@ -64,7 +64,10 @@ const attachWatcher = (socket, target, waiting) => {
 }
 const addTarget = (url) => {
   const id = `t${String(next++)}`
-  targets.set(id, { id, url })
+  // A tab opened while a watcher auto-attaches waits for it before it loads anything, as Chrome's does.
+  let resume
+  const held = watchers.size === 0 ? undefined : new Promise((resolve) => { resume = resolve })
+  targets.set(id, { id, url, held, resume })
   saveTabs()
   for (const socket of watchers) attachWatcher(socket, targets.get(id), true)
   return id
@@ -76,13 +79,13 @@ const pause = (target, url, frameId, networkId) => {
   const requestId = `p${String(++pausedId)}`
   return new Promise((resolve) => {
     paused.set(requestId, resolve)
-    socket.send(JSON.stringify({ method: 'Fetch.requestPaused', params: { requestId, request: { url }, frameId, networkId, resourceType: 'Document' }, sessionId: `g-${target.id}` }))
+    socket.send(JSON.stringify({ method: 'Fetch.requestPaused', params: { requestId, request: { url }, frameId, networkId, resourceType: 'Document' }, sessionId: target.watchSession }))
   })
 }
 /** Tell the tab's watcher a navigation committed in one of its frames. */
 const committed = (target, frameId, url) => {
   const socket = target.watcher
-  if (socket !== undefined && watchers.has(socket)) socket.send(JSON.stringify({ method: 'Page.frameNavigated', params: { frame: { id: frameId, url } }, sessionId: `g-${target.id}` }))
+  if (socket !== undefined && watchers.has(socket)) socket.send(JSON.stringify({ method: 'Page.frameNavigated', params: { frame: { id: frameId, url } }, sessionId: target.watchSession }))
 }
 if (args.includes('--restore-last-session') && existsSync(tabsFile)) for (const url of JSON.parse(readFileSync(tabsFile, 'utf8'))) addTarget(url)
 addTarget(args.at(-1)?.startsWith('-') ? 'about:blank' : args.at(-1))
@@ -361,7 +364,11 @@ const wss = new WebSocketServer({ server })
 const bodies = new Map()
 wss.on('connection', (socket) => {
   const emit = (method, params, sessionId) => { socket.send(JSON.stringify({ method, params, sessionId })) }
-  socket.on('close', () => { watchers.delete(socket) })
+  socket.on('close', () => {
+    watchers.delete(socket)
+    // Chrome lets a held tab run once no watcher is left to release it.
+    if (watchers.size === 0) for (const target of targets.values()) target.resume?.()
+  })
   socket.on('message', async (data) => {
     const { id, method, params = {}, sessionId } = JSON.parse(String(data))
     const reply = result => { socket.send(JSON.stringify({ id, result })) }
@@ -379,26 +386,36 @@ wss.on('connection', (socket) => {
         setTimeout(() => { const target = targets.get(targetId); if (target !== undefined) { target.url = params.url; saveTabs() } }, 300)
         return reply({ targetId })
       }
-      case 'Target.attachToTarget': return reply({ sessionId: `s-${params.targetId}` })
+      case 'Target.attachToTarget':
+        if (!targets.has(params.targetId)) return socket.send(JSON.stringify({ id, error: { message: 'No target with given id found' } }))
+        return reply({ sessionId: `s-${params.targetId}` })
       case 'Target.closeTarget':
         if (process.env.FAKE_CHROME_NO_CLOSE !== undefined) return socket.send(JSON.stringify({ id, error: { message: 'No target with given id found' } }))
         if (targets.has(params.targetId)) closing.push(targets.get(params.targetId))
+        // A held tab that closes never loads what it was asked to.
+        targets.get(params.targetId)?.resume?.()
         targets.delete(params.targetId)
         saveTabs()
         return reply({ success: true })
       case 'Target.activateTarget': return reply({})
       case 'Target.setAutoAttach':
         watchers.add(socket)
-        for (const existing of targets.values()) attachWatcher(socket, existing, false)
+        if (process.env.FAKE_CHROME_QUIET_ATTACH === undefined) for (const existing of targets.values()) attachWatcher(socket, existing, false)
         // An extension's worker is attached too, though the watch leaves it alone.
         emit('Target.attachedToTarget', { sessionId: 'w-worker', targetInfo: { targetId: 'worker', type: 'service_worker', url: 'chrome-extension://x/sw.js' }, waitingForDebugger: false })
         return reply({})
       case 'Runtime.runIfWaitingForDebugger':
         if (sessionId === 'w-worker') return socket.send(JSON.stringify({ id, error: { message: 'Not waiting for the debugger' } }))
+        // Only a watcher's release counts: another connection cannot start a held tab early.
+        if (watchers.has(socket)) target?.resume?.()
         return reply({})
-      case 'Fetch.enable':
+      case 'Fetch.enable': {
+        const delay = Number(process.env.FAKE_CHROME_SLOW_INTERCEPT_MS ?? 0)
+        if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay))
         target.watcher = socket
+        target.watchSession = sessionId
         return reply({})
+      }
       case 'Fetch.continueRequest':
       case 'Fetch.failRequest':
         paused.get(params.requestId)?.(method === 'Fetch.continueRequest')
@@ -413,6 +430,8 @@ wss.on('connection', (socket) => {
       case 'Page.enable': return reply({})
       case 'Runtime.evaluate': return reply({ result: { value: evaluateIn(target, params.expression) } })
       case 'Page.navigate': {
+        await target.held
+        if (!targets.has(target.id)) return reply({ frameId: 'f', errorText: 'net::ERR_ABORTED' })
         const networkId = `n${String(++pausedId)}`
         if (!await pause(target, params.url, target.id, networkId)) return reply({ frameId: 'f', errorText: 'net::ERR_BLOCKED_BY_CLIENT' })
         if (params.url.startsWith('https://item.taobao.com/') && !await pause(target, params.url.replace('https://item.taobao.com/', 'https://detail.tmall.com/'), target.id, networkId)) {
