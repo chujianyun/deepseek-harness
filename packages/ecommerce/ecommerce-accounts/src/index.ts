@@ -288,7 +288,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     await installCommand(join(this.root, 'bin'), process.platform)
     await followTenant(
       this.ctx.hubAccount, this.lifetime.signal, () => this.tenantId, tenantId => this.serialized(() => this.switchTenant(tenantId)),
-      (tenantId, error) => { this.ctx.logger.warn(`ecommerce-accounts: switching to tenant ${String(tenantId)} failed: ${String(error)}`) },
+      this.ctx.logger, 'ecommerce-accounts',
     )
   }
 
@@ -523,14 +523,17 @@ export class EcommerceAccountsService extends TypertRemoteService {
     return this.queued(entry.id, async () => {
       await closeChrome(dir, this.options.chromeTimeoutMs)
       try {
-        // Windows reports a file a process just let go of as busy for a moment; rm retries EBUSY and EPERM.
-        await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+        // Windows reports a file a process just let go of as busy for a moment; rm retries EBUSY and EPERM. It
+        // retries at every directory level, so a file that stays held fails the deletion after about 3 s here,
+        // where ten retries 200 ms apart kept the user waiting over two minutes.
+        await rm(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
       } catch (error) {
         // Its Chrome is closed and part of its data may be gone, so its sign-in is no longer known; the error
         // names only the cause, not the path. The saved answer goes too, so no take-over stands by it.
         this.setStatus(entry.id, 'signed-out')
         this.entries = this.entries.map(item => item.id === entry.id ? { ...item, signedIn: false } : item)
         await this.serialized(() => this.saveLedger(this.requireTenant()))
+        /* v8 ignore next -- rm fails with a system error, which carries a code. */
         const reason = (error as NodeJS.ErrnoException).code ?? 'unknown'
         throw new RemoteError('ecommerce-accounts/delete-failed', 'The account\'s browser data could not be removed', { accountId: entry.id, reason })
       }
