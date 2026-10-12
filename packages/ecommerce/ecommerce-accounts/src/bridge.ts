@@ -1,11 +1,13 @@
 /**
  * The way from a model shell call to the e-commerce accounts: a loopback HTTP endpoint and the
- * `dsh-ecommerce` script that calls it. Each bash call gets its own address with a random token,
+ * `dsh-ecommerce` command that calls it. Each bash call gets its own address with a random token,
  * valid until that call ends, so only commands of a live call reach the accounts.
  */
 
 import { randomBytes } from 'node:crypto'
+import { chmod, mkdir, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
+import { join } from 'node:path'
 
 /** The bash call a token was given to. */
 export interface Grant {
@@ -164,3 +166,79 @@ fi
 printf '%s\\n' "$body" >&2
 exit 1
 `
+
+/**
+ * The `dsh-ecommerce` command for Windows, whose model shell is PowerShell, without sh or a curl
+ * that is sure to have the needed options: a Node script that behaves as {@link SCRIPT} does.
+ */
+export const NODE_SCRIPT = `// dsh-ecommerce: the e-commerce accounts DSH keeps signed in, for this DSH shell call.
+import { readFileSync, statSync } from 'node:fs'
+const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id> | dsh-ecommerce signed-out <account-id> | dsh-ecommerce memory | dsh-ecommerce remember <json-file>'
+const base = process.env.DSH_ECOMMERCE_URL
+const [command, argument] = process.argv.slice(2)
+const isFile = (path) => { try { return statSync(path).isFile() } catch { return false } }
+function request() {
+  if (!base) return 'dsh-ecommerce: e-commerce accounts are only available in a DSH shell call while DSH is signed in to the user center.'
+  switch (command) {
+    case 'accounts': case 'memory': return { url: base + '/' + command }
+    case 'browser': case 'risk': case 'signed-out':
+      return argument ? { url: base + '/' + command + '?id=' + encodeURIComponent(argument) } : usage
+    case 'buyer': return { url: base + '/buyer?platform=' + encodeURIComponent(argument ?? '') }
+    case 'remember':
+      return argument && isFile(argument)
+        ? { url: base + '/remember', init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: readFileSync(argument) } }
+        : usage
+    default: return usage
+  }
+}
+const asked = request()
+if (typeof asked === 'string') {
+  process.stderr.write(asked + '\\n')
+  process.exitCode = 2
+} else {
+  try {
+    const response = await fetch(asked.url, asked.init)
+    const body = (await response.text()).replace(/\\n+$/, '') + '\\n'
+    if (response.status === 200) process.stdout.write(body)
+    else { process.stderr.write(body); process.exitCode = 1 }
+  } catch (error) {
+    process.stderr.write('dsh-ecommerce: ' + error.message + '\\n')
+    process.exitCode = 1
+  }
+}
+`
+
+/**
+ * The Windows `dsh-ecommerce.cmd`. ELECTRON_RUN_AS_NODE lets DSH's Electron run the script as Node.
+ */
+export const WINDOWS_COMMAND = [
+  '@echo off',
+  'setlocal',
+  'if not defined DSH_ECOMMERCE_NODE (',
+  '  1>&2 echo dsh-ecommerce: e-commerce accounts are only available in a DSH shell call while DSH is signed in to the user center.',
+  '  exit /b 2',
+  ')',
+  'set ELECTRON_RUN_AS_NODE=1',
+  '"%DSH_ECOMMERCE_NODE%" "%~dp0dsh-ecommerce.mjs" %*',
+  'exit /b %ERRORLEVEL%',
+  '',
+].join('\r\n')
+
+/**
+ * Write the `dsh-ecommerce` command into the directory the model shell has on PATH: {@link SCRIPT}, or
+ * on Windows a `.cmd` that runs {@link NODE_SCRIPT} with the Node each shell call names in
+ * DSH_ECOMMERCE_NODE. The path lives in the variable, not the file, because cmd.exe reads a batch file
+ * in the console's code page and would garble a non-ASCII install path.
+ * @param bin - the directory.
+ * @param platform - the platform the command runs on.
+ */
+export async function installCommand(bin: string, platform: NodeJS.Platform): Promise<void> {
+  await mkdir(bin, { recursive: true })
+  if (platform === 'win32') {
+    await writeFile(join(bin, 'dsh-ecommerce.mjs'), NODE_SCRIPT)
+    await writeFile(join(bin, 'dsh-ecommerce.cmd'), WINDOWS_COMMAND)
+    return
+  }
+  await writeFile(join(bin, 'dsh-ecommerce'), SCRIPT)
+  await chmod(join(bin, 'dsh-ecommerce'), 0o755)
+}

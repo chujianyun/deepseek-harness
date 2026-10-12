@@ -89,6 +89,7 @@ async function bench(options: {
   let savedDefault = ROSTER.value.presets.find(row => row.isDefault)?.id ?? 'standard'
   let presetRevision = 0
   let developerToolsEnabled = options.developerToolsEnabled ?? true
+  let showPicker = options.showPicker
   let settingsSaved = false
   const settingsRosterStarted = Promise.withResolvers<undefined>()
   // The row reads `describe` to learn whether this browser may write at all,
@@ -111,7 +112,7 @@ async function bench(options: {
         }, {
           ns: 'agent-preset-registry',
           schema: { type: 'object', dict: { selectedDefault: { type: 'string', meta: {} }, showPicker: { type: 'boolean', meta: {} } } },
-          value: { selectedDefault: savedDefault, ...options.showPicker === undefined ? {} : { showPicker: options.showPicker } },
+          value: { selectedDefault: savedDefault, ...showPicker === undefined ? {} : { showPicker } },
           autoGenerate: false,
           applies: 'live',
           secrets: [],
@@ -185,9 +186,16 @@ async function bench(options: {
     remote.emit('settings/document-updated', ['ui-settings', 1])
     await vi.waitFor(() => { expect(ctx.configForms.developerTools.enabled.getSnapshot()).toBe(enabled) })
   }
+  /** Publish a new picker choice the way the settings mirror does. */
+  const setShowPicker = async (next: boolean): Promise<void> => {
+    showPicker = next
+    presetRevision += 1
+    remote.emit('settings/document-updated', ['agent-preset-registry', presetRevision])
+    await vi.waitFor(() => { expect(ctx.configForms.get<{ showPicker?: boolean }>('agent-preset-registry').getSnapshot().value?.showPicker).toBe(next) })
+  }
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault, remote,
-    settingsRosterStarted: settingsRosterStarted.promise, setDeveloperTools,
+    settingsRosterStarted: settingsRosterStarted.promise, setDeveloperTools, setShowPicker,
   }
 }
 
@@ -528,6 +536,27 @@ describe('ui-agent-preset apply', () => {
     expect(slots.entries('conversation.session.header.actions')).toHaveLength(0)
     // The settings section stays, so the roster and Creator mode remain reachable.
     expect(slots.entries('settings.section')).toHaveLength(1)
+    await fiber.dispose()
+    conversation()
+  })
+
+  it('takes the chip and the header label away when the deployment hides the picker later, and brings them back', async () => {
+    const { ctx, slots, setShowPicker } = await bench()
+    declareRoot(slots)
+    const conversation = declareConversation(slots)
+    ctx.provide('conversation', {} as never)
+    ctx.provide('sessions', sessionsDouble(ctx, { byId: {} }) as never)
+    ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
+    const fiber = ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply })
+    await fiber.await()
+    await vi.waitFor(() => { expect(ctx.configForms.get('agent-preset-registry').getSnapshot().status).toBe('ready') })
+    expect(slots.entries('conversation.hero.agentPreset')).toHaveLength(1)
+    await setShowPicker(false)
+    expect(slots.entries('conversation.hero.agentPreset')).toHaveLength(0)
+    expect(slots.entries('conversation.session.header.actions')).toHaveLength(0)
+    await setShowPicker(true)
+    expect(slots.entries('conversation.hero.agentPreset')).toHaveLength(1)
+    expect(slots.entries('conversation.session.header.actions')).toHaveLength(1)
     await fiber.dispose()
     conversation()
   })

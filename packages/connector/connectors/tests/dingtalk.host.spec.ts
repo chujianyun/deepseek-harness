@@ -31,7 +31,6 @@ async function connected(options: { homeParent?: string } = {}) {
   await t.answer('user', 'ok')
   await t.until(view => view.status === 'connected')
   const dir = join(t.root, 'bin', 't-a')
-  await vi.waitFor(async () => { await stat(join(dir, 'dws')) })
   type Shell = { code: number; stderr: string; stdout: string }
   const shell = (args: string[], env: NodeJS.ProcessEnv = {}) => new Promise<Shell>((resolve) => {
     execFile(join(dir, 'dws'), args, { env: { ...process.env, ...env }, encoding: 'utf8' }, (error, stdout, stderr) => {

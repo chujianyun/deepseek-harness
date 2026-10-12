@@ -2,10 +2,9 @@
 
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { parseArgs } from 'node:util'
 import { readPublishMemory, reportSignedOut, takeOverMerchant, type MerchantBrowser, type PublishMemory } from './account.ts'
 import { beijingDate, pastDate } from './dates.ts'
-import { EXIT, SkillError } from './errors.ts'
+import { EXIT, parseCommandLine, SkillError, stopped } from './errors.ts'
 import { openPage, type Page } from './page.ts'
 
 /** What a script reaches outside itself; tests replace it. */
@@ -55,12 +54,7 @@ const USAGE = '用法：--account <电商账号 id> [--date YYYY-MM-DD，默认�
  * @throws SkillError with the usage exit status for a wrong command line.
  */
 export function parseOptions(argv: readonly string[], now: Date): Options {
-  let values: { account?: string; date?: string; out?: string }
-  try {
-    ({ values } = parseArgs({ args: [...argv], options: { account: { type: 'string' }, date: { type: 'string' }, out: { type: 'string' } } }))
-  } catch (error) {
-    throw new SkillError(`${(error as Error).message}\n${USAGE}`, EXIT.usage)
-  }
+  const { values } = parseCommandLine(argv, { account: { type: 'string' }, date: { type: 'string' }, out: { type: 'string' } }, USAGE, false)
   if (values.account === undefined || values.account === '') throw new SkillError(`缺少 --account。\n${USAGE}`, EXIT.usage)
   return { account: values.account, date: pastDate(values.date ?? beijingDate(now, 1), now), out: values.out ?? '天猫报表' }
 }
@@ -73,19 +67,25 @@ export function parseOptions(argv: readonly string[], now: Date): Options {
  * @param report - makes the report and returns the text to print.
  * @returns the exit status.
  */
-export async function runReport(
+export function runReport(
   argv: readonly string[], deps: Deps, report: (options: Options, deps: Deps) => Promise<string>,
 ): Promise<number> {
+  return runCli(deps, () => report(parseOptions(argv, deps.now()), deps))
+}
+
+/**
+ * Run a script's command: print what it returns on stdout and exit 0, or print why it stopped on stderr
+ * and exit with that reason's status (a SkillError's own, any other failure's `failed`).
+ * @param deps - where the script prints.
+ * @param command - does the work and returns the text to print.
+ * @returns the exit status.
+ */
+export async function runCli(deps: Pick<Deps, 'stdout' | 'stderr'>, command: () => Promise<string>): Promise<number> {
   try {
-    deps.stdout(`${await report(parseOptions(argv, deps.now()), deps)}\n`)
+    deps.stdout(`${await command()}\n`)
     return 0
   } catch (error) {
-    if (error instanceof SkillError) {
-      deps.stderr(`${error.message}\n`)
-      return error.exitCode
-    }
-    deps.stderr(`失败：${error instanceof Error ? error.message : String(error)}\n`)
-    return EXIT.failed
+    return stopped(deps.stderr, error)
   }
 }
 

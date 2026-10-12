@@ -12,7 +12,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-assistants'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type {} from '@deepseek-ai/dsh-hub-account'
+import { userCenterRefusal } from '@deepseek-ai/dsh-hub-account'
 import type { MessageFeedbackItem } from '@deepseek-ai/dsh-message-feedback'
 import type {} from '@deepseek-ai/dsh-session-title'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -55,12 +55,10 @@ const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif
 
 const receiptSchema = z.object({ id: z.string().min(1), createdAt: z.iso.datetime({ offset: true }) })
 
-/** The user center's own words for a refusal, or its status when the body carries none. */
+/** The user center's refusal, as this service's error. */
 async function refusal(res: Response): Promise<RemoteError> {
-  const body: unknown = await res.json().catch(() => undefined)
-  const message = typeof body === 'object' && body !== null && 'message' in body ? body.message : undefined
-  const reason = Array.isArray(message) ? message.join('；') : typeof message === 'string' ? message : `the user center answered ${String(res.status)}`
-  return new RemoteError('feedback-report/refused', reason, { status: res.status })
+  const { reason, status } = await userCenterRefusal(res)
+  return new RemoteError('feedback-report/refused', reason, { status })
 }
 
 /** A thumbs-down with a category or note. */

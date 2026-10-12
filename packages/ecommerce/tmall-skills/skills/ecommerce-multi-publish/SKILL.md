@@ -9,7 +9,9 @@ description: 多店铺发品：把同一个新品素材文件夹发到多个平�
 
 ## 步骤
 
-1. 选店铺：运行 `dsh-ecommerce accounts`，把用户说的每个目标店铺对到一个商家账号 id（按 `ecommerce-accounts` 技能的规则；对不上或有歧义就问用户）。淘宝店暂不支持，告诉用户。调用 `load_workspace_dependencies` 取 `node` 路径；下面的脚本都相对本技能目录，每条命令一次 bash 调用。
+Windows 上命令行是 PowerShell：以带引号的路径开头的命令前要加调用符 `& `，例如 `& "<node>" "<本技能目录>/scripts/…" …`，否则 PowerShell 不会执行它。
+
+1. 选店铺：运行 `dsh-ecommerce accounts`，把用户说的每个目标店铺对到一个商家账号 id（按 `ecommerce-accounts` 技能的规则；对不上或有歧义就问用户）。淘宝店暂不支持，告诉用户。调用 `load_workspace_dependencies` 取 `node` 路径；下面的脚本都相对本技能目录，每条命令一次命令行调用。
 2. 建计划：`"<node>" "<本技能目录>/scripts/multi-publish.mjs" plan --folder <素材文件夹> --account <账号 id> --account <账号 id> …`（按用户给的顺序）。已有计划时脚本会拒绝：继续上次的就直接走第 4 步；只有用户明确要重新开始一次多店发品时才加 `--replace`。
 3. 清点素材一次：用 `ecommerce-product-draft` 技能的 `inventory`，判清图片和表格列，写好共用的答案文件（如 `发品草稿/答案.json`，标题、卖点、导购标题由你生成，来源 `模型生成`）。各店共用这一份；某个平台要不同的值（比如标题长度限制不同）时，另写这家店的答案文件。
 4. 取下一家：`... multi-publish.mjs next`。它说出第几家、哪个平台哪家店、用哪个技能，以及这家店的字段规则和草稿该写到哪里。说「每家店都处理过了」就去第 7 步。

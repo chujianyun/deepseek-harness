@@ -56,6 +56,7 @@ import { ConnectorSkillProvider, type ConnectorSkill, type SkillSource } from '.
 import type {
   ConnectorId, ConnectorInstallError, ConnectorLoginError, ConnectorLoginView, ConnectorsState, ConnectorStatus, ConnectorView,
 } from './types.ts'
+import { changeStream } from '@deepseek-ai/dsh-change-stream'
 
 export type * from './types.ts'
 
@@ -326,7 +327,8 @@ export class ConnectorsService extends TypertRemoteService {
   /** Reads a command's stated risk from the installed CLI, per CLI. */
   private readonly riskReaders = new Map<string, RiskReader>()
   /** What the skill provider was last told about, so it is invalidated only on a change. */
-  private skillKey = ''
+  /** The CLI directories the model's Skills were last listed from; undefined before the first sync. */
+  private skillDirs: readonly string[] | undefined
   private writes: Promise<void> = Promise.resolve()
   /** Profile writes of the `disabled` and `alwaysAllowed` lists, one at a time. */
   private settingsWrites: Promise<void> = Promise.resolve()
@@ -485,21 +487,8 @@ export class ConnectorsService extends TypertRemoteService {
    * @returns the current state, then every change; download progress at most four times a second.
    */
   @Remote({ mode: 'stream' })
-  async *watch(signal: AbortSignal): AsyncIterable<ConnectorsState> {
-    let dirty = true
-    let wake: (() => void) | undefined
-    const changed = (): void => { dirty = true; wake?.() }
-    this.listeners.add(changed)
-    signal.addEventListener('abort', changed, { once: true })
-    try {
-      while (!this.lifetime.signal.aborted && !signal.aborted) {
-        if (dirty) { dirty = false; yield await this.getState(); continue }
-        await new Promise<void>((resolve) => { wake = resolve })
-      }
-    } finally {
-      this.listeners.delete(changed)
-      signal.removeEventListener('abort', changed)
-    }
+  watch(signal: AbortSignal): AsyncIterable<ConnectorsState> {
+    return changeStream(this.listeners, () => this.getState(), signal, this.lifetime.signal)
   }
 
   /**
@@ -616,7 +605,7 @@ export class ConnectorsService extends TypertRemoteService {
    * connector stays signed in, but the model gets neither its Skills nor its CLI.
    * @param id - the connector.
    * @param enabled - whether the model may use it.
-   * @returns the state once the setting is saved.
+   * @returns the state once the setting is saved and the model's script and Skills follow it.
    * @throws RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`;
    *   Error when mounted without Settings or a profile entry.
    */
@@ -625,6 +614,8 @@ export class ConnectorsService extends TypertRemoteService {
     this.installable(id)
     const key = `${this.requireTenant()}/${id}`
     await this.updateList('disabled', current => enabled ? current.filter(item => item !== key) : [...current, key])
+    // Switched on, its Skills reach the model once its CLI script is in place.
+    await this.writes
     return this.getState()
   }
 
@@ -830,14 +821,16 @@ export class ConnectorsService extends TypertRemoteService {
 
   /**
    * Bring the model shell's script and the Skill catalog in line with the connections. Runs after
-   * every change; only an actual change writes or invalidates.
+   * every change; only an actual change writes or invalidates, and the catalog only after the scripts.
    */
   private sync(): void {
-    const skillKey = JSON.stringify(this.skillSources().map(source => source.location.cli.dir))
-    if (skillKey !== this.skillKey) {
-      this.skillKey = skillKey
-      this.provider?.invalidate()
-    }
+    const dirs = this.skillSources().map(source => source.location.cli.dir)
+    const previous = this.skillDirs
+    const skillsChanged = previous === undefined || JSON.stringify(dirs) !== JSON.stringify(previous)
+    // Skills that leave go at once; Skills that arrive wait for the scripts they run (below).
+    const arriving = dirs.some(dir => previous?.includes(dir) !== true)
+    this.skillDirs = dirs
+    if (skillsChanged && !arriving) this.provider?.invalidate()
     for (const entry of this.installables.values()) {
       const exposure = this.exposure(entry)
       const wrapper = exposure === undefined ? undefined : `${exposure.tenant}:${exposure.mode}`
@@ -849,6 +842,8 @@ export class ConnectorsService extends TypertRemoteService {
       this.writes = this.writes.then(() => writeWrapper(join(entry.root, 'bin', exposure.tenant), entry.spec.binary, script))
         .catch((error: unknown) => { console.info('[connectors] could not write the CLI script', { connector: entry.id, error: String(error) }) })
     }
+    // The model's Skills name the CLI; they change once the scripts that run it are in place.
+    if (skillsChanged && arriving) this.writes = this.writes.then(() => { this.provider?.invalidate() })
   }
 
   /** The stated-risk reader of a connector's installed CLI, created once per CLI version. */
@@ -879,8 +874,10 @@ export class ConnectorsService extends TypertRemoteService {
   }
 
   private changed(): void {
-    for (const listener of this.listeners) listener()
     if (!this.lifetime.signal.aborted) this.sync()
+    // Listeners hear of a change once the CLI scripts it calls for are written, so a connector shown as
+    // connected never runs the script that still refuses (publish at the commit point).
+    void this.writes.then(() => { for (const listener of this.listeners) listener() })
   }
 
   private setInstall(entry: Installable, install: Installable['install'], error: ConnectorInstallError | null): void {

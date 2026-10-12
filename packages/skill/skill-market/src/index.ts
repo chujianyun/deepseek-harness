@@ -15,7 +15,7 @@ import { Context, Service, type Volatile } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
-import type {} from '@deepseek-ai/dsh-hub-account'
+import { followTenant } from '@deepseek-ai/dsh-hub-account'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import {
@@ -320,16 +320,12 @@ export class SkillMarket extends TypertRemoteService {
   }
 
   async [Service.init](): Promise<void> {
-    this.tenantId = (await this.ctx.hubAccount.getState()).profile?.tenantId ?? undefined
     // Follow sign-in changes: a tenant switch swaps the discovered directory.
-    void (async () => {
-      for await (const state of this.ctx.hubAccount.watch(this.lifetime.signal)) {
-        const tenantId = state.profile?.tenantId ?? undefined
-        if (tenantId === this.tenantId) continue
-        this.tenantId = tenantId
-        this.provider?.invalidate()
-      }
-    })()
+    await followTenant(this.ctx.hubAccount, this.lifetime.signal, () => this.tenantId ?? null, (tenantId) => {
+      this.tenantId = tenantId ?? undefined
+      this.provider?.invalidate()
+      return Promise.resolve()
+    }, this.ctx.logger, 'skill-market')
   }
 
   /**

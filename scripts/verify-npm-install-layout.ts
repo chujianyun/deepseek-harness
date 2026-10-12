@@ -41,12 +41,14 @@ const SECONDS_PER_WORK_UNIT = 2.6e-4
 /**
  * Wall-clock guard for the npm child process. This is a hang guard, not the
  * gate's growth criterion: {@link MAX_RESOLUTION_WORK_UNITS} decides whether the
- * graph is too large to verify, and a runner up to four times slower than the
- * measured host cannot decide this gate's outcome. Derived from the budget so a
- * raised budget cannot silently shrink the guard's headroom.
+ * graph is too large to verify, and a runner up to ten times slower than the
+ * measured host cannot decide this gate's outcome. GitHub's hosted ubuntu-24.04
+ * runner resolved the 839,360-unit graph in anywhere from 673 s to more than
+ * 1,365 s across runs, against the reference host's 218 s. Derived from the
+ * budget so a raised budget cannot silently shrink the guard's headroom.
  */
 const NPM_HANG_GUARD_MS = Math.round(
-  4 * MAX_RESOLUTION_WORK_UNITS * SECONDS_PER_WORK_UNIT * 1000,
+  10 * MAX_RESOLUTION_WORK_UNITS * SECONDS_PER_WORK_UNIT * 1000,
 )
 
 /** Synthetic incompatible versions used to expose cross-release placement errors. */

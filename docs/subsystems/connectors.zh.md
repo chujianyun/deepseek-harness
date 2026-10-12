@@ -42,7 +42,7 @@ Host owner of the connectors and of the `connectors` Remote namespace.
  * @param signal - stream lifetime.
  * @returns the current state, then every change; download progress at most four times a second.
  */
-@Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<ConnectorsState>
+@Remote({ mode: 'stream' }) watch(signal: AbortSignal): AsyncIterable<ConnectorsState>
 
 /**
  * Install a connector's CLI in the background; installing an installed, installing, or uninstalling connector changes nothing.
@@ -98,7 +98,7 @@ Host owner of the connectors and of the `connectors` Remote namespace.
  * connector stays signed in, but the model gets neither its Skills nor its CLI.
  * @param id - the connector.
  * @param enabled - whether the model may use it.
- * @returns the state once the setting is saved.
+ * @returns the state once the setting is saved and the model's script and Skills follow it.
  * @throws RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`;
  *   Error when mounted without Settings or a profile entry.
  */

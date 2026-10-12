@@ -12,11 +12,10 @@
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { parseArgs } from 'node:util'
-import { realDeps, type Deps } from './cli.ts'
+import { realDeps, type Deps, runCli } from './cli.ts'
 import { beijingTime } from './dates.ts'
 import { buildDraft, checkDraft, generatedLabels, parseAnswers, withMemory, type Answers, type Confirmed, type Draft, type FieldCheck, type FieldStatus } from './draft.ts'
-import { EXIT, SkillError } from './errors.ts'
+import { EXIT, parseCommandLine, SkillError } from './errors.ts'
 import { KIND_LABEL, SKU_FIELD_LABEL, takeInventory, type ImageKind, type Inventory } from './materials.ts'
 import { parsePlan, withShared, type PublishPlan } from './multi-publish.ts'
 import type { PublishRules } from './publish-rules.ts'
@@ -47,20 +46,10 @@ export interface ProductDraftOptions {
  * @throws SkillError usage for a wrong command line.
  */
 export function parseProductDraftOptions(argv: readonly string[]): ProductDraftOptions {
-  let parsed: ReturnType<typeof parse>
-  const parse = (args: string[]) => parseArgs({
-    args, allowPositionals: true,
-    options: {
-      folder: { type: 'string' }, out: { type: 'string' }, answers: { type: 'string' }, rules: { type: 'string' }, store: { type: 'string' },
-      plan: { type: 'string' },
-    },
-  })
-  try {
-    parsed = parse([...argv])
-  } catch (error) {
-    throw new SkillError(`${(error as Error).message}\n${USAGE}`, EXIT.usage)
-  }
-  const { values, positionals } = parsed
+  const { values, positionals } = parseCommandLine(argv, {
+    folder: { type: 'string' }, out: { type: 'string' }, answers: { type: 'string' }, rules: { type: 'string' }, store: { type: 'string' },
+    plan: { type: 'string' },
+  }, USAGE)
   const command = positionals[0]
   if (command !== 'inventory' && command !== 'draft') throw new SkillError(`缺少或认不出子命令：${command ?? '（无）'}\n${USAGE}`, EXIT.usage)
   if (values.folder === undefined || values.folder === '') throw new SkillError(`缺少 --folder。\n${USAGE}`, EXIT.usage)
@@ -178,7 +167,7 @@ export function parseRulesFile(text: string): PublishRules {
  * @returns the exit status.
  */
 export async function main(argv: readonly string[], deps: Pick<Deps, 'stdout' | 'stderr' | 'now' | 'memory'> = realDeps): Promise<number> {
-  try {
+  return runCli(deps, async () => {
     const options = parseProductDraftOptions(argv)
     const folder = resolve(options.folder)
     const inventory = await takeInventory(folder).catch((error: unknown) => {
@@ -190,8 +179,7 @@ export async function main(argv: readonly string[], deps: Pick<Deps, 'stdout' | 
     if (options.command === 'inventory') {
       const path = resolve(out, '素材清点.json')
       await writeFile(path, `${JSON.stringify(inventory, null, 2)}\n`)
-      deps.stdout(`${at}\n${inventoryText(inventory)}\n\n已保存：${path}\n`)
-      return 0
+      return `${at}\n${inventoryText(inventory)}\n\n已保存：${path}`
     }
     let answers: Answers = {}
     if (options.answers !== undefined) {
@@ -240,14 +228,6 @@ export async function main(argv: readonly string[], deps: Pick<Deps, 'stdout' | 
     const list = resolve(out, '待确认清单.md')
     await writeFile(json, `${JSON.stringify({ createdAt: deps.now().toISOString(), ...draft, ...rules === undefined ? {} : { catId: rules.catId, categoryPath: rules.categoryPath, checks } }, null, 2)}\n`)
     await writeFile(list, `# 待确认清单\n\n${text}\n`)
-    deps.stdout(`${at}\n${text}\n\n已保存：${json}\n已保存：${list}\n`)
-    return 0
-  } catch (error) {
-    if (error instanceof SkillError) {
-      deps.stderr(`${error.message}\n`)
-      return error.exitCode
-    }
-    deps.stderr(`失败：${error instanceof Error ? error.message : String(error)}\n`)
-    return EXIT.failed
-  }
+    return `${at}\n${text}\n\n已保存：${json}\n已保存：${list}`
+  })
 }

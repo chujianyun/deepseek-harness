@@ -18,7 +18,7 @@ import type {} from '@deepseek-ai/dsh-hub-account'
 import { Cdp } from '../../../packages/ecommerce/ecommerce-accounts/src/cdp.ts'
 import { browse, startMockUserCenter } from '../../../packages/credentials/hub-account/tests/mock-user-center.ts'
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
-import { openSettings, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
+import { killRecordedChrome, openSettings, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
 
 const OVERLAYS = ['./hub-account.overlay.yml', './ecommerce-accounts.overlay.yml'].map(path => fileURLToPath(new URL(path, import.meta.url)))
 const FAKE_CHROME = fileURLToPath(new URL('../../../packages/ecommerce/ecommerce-accounts/tests/fake-chrome.mjs', import.meta.url))
@@ -160,8 +160,7 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     // A failed run may leave the stand-in Chrome running; deleting the account would have closed it.
     for (const dir of [accountDir, pddDir]) {
       if (dir === undefined) continue
-      const record = await readFile(join(dir, 'chrome.json'), 'utf8').catch(() => undefined)
-      if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
+      await killRecordedChrome(dir)
     }
     await scaffold.close()
     await center.close()
@@ -282,8 +281,7 @@ it.skipIf(process.platform === 'win32')('adds a Tmall buyer account, shows its p
   } finally {
     await browser.close()
     if (accountDir !== undefined) {
-      const record = await readFile(join(accountDir, 'chrome.json'), 'utf8').catch(() => undefined)
-      if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
+      await killRecordedChrome(accountDir)
     }
     await scaffold.close()
     await center.close()
