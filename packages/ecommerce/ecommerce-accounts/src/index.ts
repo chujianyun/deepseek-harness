@@ -659,10 +659,12 @@ export class EcommerceAccountsService extends TypertRemoteService {
             }
             : {},
         }
+        // The answer and its status change together: a change published while the ledger is written, such as
+        // a page counted, never shows the new check time beside the old checking status.
         this.entries = this.entries.map(item => item.id === entry.id ? next : item)
+        this.statuses.set(entry.id, result.kind)
         await this.saveLedger(this.requireTenant())
         // The check time changed even when the status did not.
-        this.statuses.set(entry.id, result.kind)
         this.changed()
         return result
       })
