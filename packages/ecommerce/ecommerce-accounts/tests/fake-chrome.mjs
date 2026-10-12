@@ -10,7 +10,7 @@
 // and a page whose address has risk=1 also loads a risk-control frame.
 // FAKE_CHROME_VERSION sets the reported version (empty prints none); FAKE_CHROME_SILENT never sends
 // the check response; FAKE_CHROME_BASE64 encodes bodies; FAKE_CHROME_STUBBORN ignores Browser.close; FAKE_CHROME_LINGER_MS keeps running that long after its port closes;
-// FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs; FAKE_CHROME_LATE_COMMIT lists a new tab as about:blank for a moment. For the Tmall
+// FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs; FAKE_CHROME_LATE_COMMIT lists a new tab as about:blank for a moment; FAKE_CHROME_SLOW_INTERCEPT_MS delays Fetch.enable's effect and answer by that long. For the Tmall
 // data skills, Alimama's report page sends its scene query, and `Runtime.evaluate` answers the page
 // APIs those skills call — Alimama's report query and Business Advisor's self-service export, whose
 // .xlsx this server hands out — with one day's figures for scenes 371 and 436. An item page renders its
@@ -60,7 +60,10 @@ const attachWatcher = (socket, target, waiting) => {
 }
 const addTarget = (url) => {
   const id = `t${String(next++)}`
-  targets.set(id, { id, url })
+  // A tab opened while a watcher auto-attaches waits for it before it loads anything, as Chrome's does.
+  let resume
+  const held = watchers.size === 0 ? undefined : new Promise((resolve) => { resume = resolve })
+  targets.set(id, { id, url, held, resume })
   saveTabs()
   for (const socket of watchers) attachWatcher(socket, targets.get(id), true)
   return id
@@ -391,10 +394,14 @@ wss.on('connection', (socket) => {
         return reply({})
       case 'Runtime.runIfWaitingForDebugger':
         if (sessionId === 'w-worker') return socket.send(JSON.stringify({ id, error: { message: 'Not waiting for the debugger' } }))
+        target?.resume?.()
         return reply({})
-      case 'Fetch.enable':
+      case 'Fetch.enable': {
+        const delay = Number(process.env.FAKE_CHROME_SLOW_INTERCEPT_MS ?? 0)
+        if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay))
         target.watcher = socket
         return reply({})
+      }
       case 'Fetch.continueRequest':
       case 'Fetch.failRequest':
         paused.get(params.requestId)?.(method === 'Fetch.continueRequest')
@@ -409,6 +416,7 @@ wss.on('connection', (socket) => {
       case 'Page.enable': return reply({})
       case 'Runtime.evaluate': return reply({ result: { value: evaluateIn(target, params.expression) } })
       case 'Page.navigate': {
+        await target.held
         const networkId = `n${String(++pausedId)}`
         if (!await pause(target, params.url, target.id, networkId)) return reply({ frameId: 'f', errorText: 'net::ERR_BLOCKED_BY_CLIENT' })
         if (params.url.startsWith('https://item.taobao.com/') && !await pause(target, params.url.replace('https://item.taobao.com/', 'https://detail.tmall.com/'), target.id, networkId)) {

@@ -26,7 +26,7 @@ const FAKE = fileURLToPath(new URL('./fake-chrome.mjs', import.meta.url))
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
-  for (const key of ['FAKE_CHROME_VERSION', 'FAKE_CHROME_SILENT', 'FAKE_CHROME_BASE64', 'FAKE_CHROME_STUBBORN', 'FAKE_CHROME_NO_BODY', 'FAKE_CHROME_NO_CLOSE', 'FAKE_CHROME_LATE_COMMIT', 'FAKE_CHROME_LINGER_MS', 'FAKE_CHROME_OFFLINE', 'FAKE_CHROME_NO_STORE', 'FAKE_CHROME_NO_STORE_BODY']) {
+  for (const key of ['FAKE_CHROME_VERSION', 'FAKE_CHROME_SILENT', 'FAKE_CHROME_BASE64', 'FAKE_CHROME_STUBBORN', 'FAKE_CHROME_NO_BODY', 'FAKE_CHROME_NO_CLOSE', 'FAKE_CHROME_LATE_COMMIT', 'FAKE_CHROME_SLOW_INTERCEPT_MS', 'FAKE_CHROME_LINGER_MS', 'FAKE_CHROME_OFFLINE', 'FAKE_CHROME_NO_STORE', 'FAKE_CHROME_NO_STORE_BODY']) {
     Reflect.deleteProperty(process.env, key)
   }
 })
@@ -1222,6 +1222,28 @@ describe('buyer accounts and risk protection', () => {
     const reported = runCommand(other, varsOf(other, call), 'signed-out', id)
     expect((await reported).stderr).toBe('DSH: DSH is signed out of the user center, so there are no e-commerce accounts.\n')
   }, 20_000)
+
+  it('counts every page of a buyer account when Chrome takes a while to start intercepting a tab', async () => {
+    process.env.FAKE_CHROME_SLOW_INTERCEPT_MS = '300'
+    const env = await setup()
+    await signedInBuyer(env, buyer)
+    expect((await env.service.setBuyerDailyPages(2)).buyerDailyPages).toBe(2)
+    const picked = JSON.parse((await runCommand(env, varsOf(env, bashCall('c-1')), 'buyer', 'tmall')).stdout) as { cdpUrl: string }
+    // A tab DSH found open navigates at once: it is already watched when the command answers.
+    const cdp = await Cdp.connect(Number(new URL(picked.cdpUrl).port), 2000)
+    try {
+      const { targetInfos } = await cdp.send<{ targetInfos: { targetId: string; type: string }[] }>('Target.getTargets')
+      const existing = targetInfos.find(target => target.type === 'page')!
+      const { sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId: existing.targetId, flatten: true })
+      expect((await cdp.send<{ errorText?: string }>('Page.navigate', { url: 'https://www.tmall.com/' }, sessionId)).errorText).toBeUndefined()
+    } finally {
+      cdp.close()
+    }
+    // New tabs load only once their loads are intercepted: the second page is the last.
+    expect(await openPages(picked.cdpUrl, 'https://detail.tmall.com/item.htm?id=1', 'https://detail.tmall.com/item.htm?id=2'))
+      .toEqual(['ok', 'net::ERR_BLOCKED_BY_CLIENT'])
+    expect((await env.service.getState()).accounts[0]!.pagesToday).toBe(2)
+  })
 
   it('counts a buyer account\'s pages, stops at the daily limit, refuses it for the rest of the day, and lets it again the next day', async () => {
     const env = await setup()

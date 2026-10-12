@@ -57,7 +57,8 @@ function minimizeWindowOf(cdp: Cdp, targetId: string): Promise<void> {
  * @param port - the browser's remote-debugging port.
  * @param timeoutMs - how long to wait for the connection.
  * @param rules - what may open, and what to do on risk control.
- * @returns a function that ends the watch.
+ * @returns a function that ends the watch, once the loads of every tab already open are intercepted; a tab
+ *   opened later loads nothing until its loads are intercepted too.
  */
 export async function guardBrowser(port: number, timeoutMs: number, rules: GuardRules): Promise<() => void> {
   const cdp = await Cdp.connect(port, timeoutMs)
@@ -66,19 +67,28 @@ export async function guardBrowser(port: number, timeoutMs: number, rules: Guard
   /** Page loads already decided, by their network request, which redirects keep. */
   const decided = new Map<string, boolean>()
   let stopped = false
+  /** Tabs whose watch is still being put in place. */
+  const watching = new Set<Promise<void>>()
   cdp.on('Target.attachedToTarget', (params) => {
     const sessionId = params.sessionId as string
     const target = params.targetInfo as { targetId: string; type: string }
-    if (target.type === 'page') {
-      tabs.set(sessionId, target.targetId)
-      void minimizeWindowOf(cdp, target.targetId)
-      // The network domain gives each paused load the network request id that its redirects keep.
-      void cdp.send('Network.enable', {}, sessionId).catch(ignore)
-      void cdp.send('Page.enable', {}, sessionId).catch(ignore)
-      void cdp.send('Fetch.enable', { patterns: [{ resourceType: 'Document', requestStage: 'Request' }] }, sessionId).catch(ignore)
-    }
-    // A tab waits for this before it loads anything, so the watch is in place first.
-    void cdp.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch(ignore)
+    const watched = (async () => {
+      if (target.type === 'page') {
+        tabs.set(sessionId, target.targetId)
+        void minimizeWindowOf(cdp, target.targetId)
+        // The network domain gives each paused load the network request id that its redirects keep. A
+        // tab may load nothing before Chrome intercepts its loads: Fetch.enable answers once it does.
+        await Promise.all([
+          cdp.send('Network.enable', {}, sessionId).catch(ignore),
+          cdp.send('Page.enable', {}, sessionId).catch(ignore),
+          cdp.send('Fetch.enable', { patterns: [{ resourceType: 'Document', requestStage: 'Request' }] }, sessionId).catch(ignore),
+        ])
+      }
+      // A tab waits for this before it loads anything, so the watch is in place first.
+      await cdp.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch(ignore)
+    })()
+    watching.add(watched)
+    void watched.finally(() => { watching.delete(watched) })
   })
   // A navigation commits once its redirects are done, so only the page a tab lands on counts.
   cdp.on('Page.frameNavigated', (params, sessionId) => {
@@ -105,5 +115,7 @@ export async function guardBrowser(port: number, timeoutMs: number, rules: Guard
     void cdp.send(allow ? 'Fetch.continueRequest' : 'Fetch.failRequest', allow ? { requestId } : { requestId, errorReason: 'BlockedByClient' }, sessionId).catch(ignore)
   })
   await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true })
+  // Tabs open before the watch do not wait for it: answer only once their loads are intercepted too.
+  await Promise.all(watching)
   return () => { cdp.close() }
 }
