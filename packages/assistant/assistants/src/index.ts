@@ -754,13 +754,19 @@ export class AssistantsService extends TypertRemoteService {
   }
 
   private async switchTenant(tenantId: string | null): Promise<void> {
-    this.tenantId = tenantId
-    this.tenant = { version: 1, defaultId: null, seeded: false }
-    this.list = []
+    // The new tenant's files are read before any of it is shown, so a read meanwhile sees the previous
+    // tenant whole, never the new tenant without its assistants.
+    let tenant: TenantFile = { version: 1, defaultId: null, seeded: false }
+    let list: AssistantView[] = []
     if (tenantId !== null) {
       await mkdir(join(this.root, tenantId), { recursive: true })
-      this.tenant = await this.readTenant(tenantId)
-      this.list = await this.readAssistants(tenantId)
+      tenant = await this.readTenant(tenantId)
+      list = await this.readAssistants(tenantId)
+    }
+    this.tenantId = tenantId
+    this.tenant = tenant
+    this.list = list
+    if (tenantId !== null) {
       try {
         await this.seed(tenantId)
       } catch (error) {

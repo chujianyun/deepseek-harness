@@ -128,6 +128,22 @@ describe('assistants storage', () => {
     expect((await again.settle(s => s.tenantId === 't-a')).assistants).toEqual([])
   })
 
+  it('shows a tenant only once its assistants are read', async () => {
+    const env = await setup()
+    const a = await env.settle(s => s.assistants.length === 1)
+    env.hub.set(null)
+    await env.settle(s => s.tenantId === null)
+    env.hub.set('t-a')
+    for (;;) {
+      const state = await env.service.getState()
+      if (state.tenantId === 't-a') {
+        expect(state.assistants.map(x => x.id)).toEqual([a.assistants[0]!.id])
+        break
+      }
+      await new Promise(resolve => setImmediate(resolve))
+    }
+  })
+
   it('keeps each tenant\'s assistants apart and shows none while signed out', async () => {
     const env = await setup()
     const a = await env.settle(s => s.assistants.length === 1)

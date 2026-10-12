@@ -83,13 +83,21 @@ function cosine(a: ArrayLike<number>, b: ArrayLike<number>): number {
 export class BaseStore {
   private readonly db: DatabaseSync
 
-  /** @param path - SQLite file, created when missing. */
+  /**
+   * @param path - SQLite file, created when missing.
+   * @throws when the file is not a usable index; the file is closed again, so it can be deleted on Windows.
+   */
   constructor(path: string) {
     this.db = new DatabaseSync(path)
-    this.db.exec(SCHEMA)
-    const present = new Set(this.db.prepare('pragma table_info(items)').all().map(row => text(row, 'name')))
-    for (const [column, definition] of ADDED_COLUMNS) {
-      if (!present.has(column)) this.db.exec(`alter table items add column ${column} ${definition}`)
+    try {
+      this.db.exec(SCHEMA)
+      const present = new Set(this.db.prepare('pragma table_info(items)').all().map(row => text(row, 'name')))
+      for (const [column, definition] of ADDED_COLUMNS) {
+        if (!present.has(column)) this.db.exec(`alter table items add column ${column} ${definition}`)
+      }
+    } catch (error) {
+      this.db.close()
+      throw error
     }
   }
 

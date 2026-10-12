@@ -96,7 +96,8 @@ export async function setup(options: {
   cleanups.push(() => rm(home, { recursive: true, force: true }))
   const root = join(home, 'connectors', id)
   const control = join(root, 'control')
-  const binary = id === 'feishu' ? 'lark-cli' : 'dws'
+  // The connector looks for the CLI under its Windows name there; its contents only run elsewhere.
+  const binary = `${id === 'feishu' ? 'lark-cli' : 'dws'}${process.platform === 'win32' ? '.exe' : ''}`
   if (options.installed !== false) {
     await mkdir(join(root, VERSION), { recursive: true })
     await writeFile(join(root, VERSION, binary), id === 'feishu' ? FAKE : FAKE_DWS)

@@ -1,7 +1,9 @@
 /** Knowledge bases over controllable stand-ins for the embedding models and the Hub sign-in. */
+import { execFile } from 'node:child_process'
 import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { extname, join } from 'node:path'
+import { basename, extname, join } from 'node:path'
+import { promisify } from 'node:util'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const opened = vi.hoisted(() => ({ paths: [] as string[], canOpen: true }))
@@ -141,6 +143,12 @@ async function boot(options: {
 }
 
 const fixture = (name: string) => join(FIXTURES, name)
+
+/** Make a file unreadable: by its mode, or on Windows, which ignores that, by denying everyone reading it. */
+async function unreadable(path: string): Promise<void> {
+  if (process.platform === 'win32') await promisify(execFile)('icacls', [path, '/deny', '*S-1-1-0:(R)'])
+  else await chmod(path, 0o000)
+}
 const settled = (state: KnowledgeState) => state.bases.every(base => base.items.every(item => item.status === 'completed' || item.status === 'failed'))
 
 describe('knowledge bases', () => {
@@ -380,7 +388,7 @@ describe('knowledge bases', () => {
     ])
     expect(result).toEqual({
       added: 3,
-      rejected: [{ name: 'expense-policy.pdf', reason: 'too-large' }, { name: 'logo.png', reason: 'unsupported' }, { name: 'missing.md', reason: 'unreadable' }, { name: `${dir.split('/').at(-1)!}.txt`, reason: 'unreadable' }],
+      rejected: [{ name: 'expense-policy.pdf', reason: 'too-large' }, { name: 'logo.png', reason: 'unsupported' }, { name: 'missing.md', reason: 'unreadable' }, { name: `${basename(dir)}.txt`, reason: 'unreadable' }],
     })
     const state = await until(next => next.bases[0]!.items.length === 3 && settled(next))
     expect(state.bases[0]!.items.map(item => [item.name, item.status, item.chunkCount > 0])).toEqual([
@@ -587,6 +595,8 @@ describe('knowledge bases', () => {
     const state = await service.getState()
     expect(state.bases.map(base => base.name)).toEqual(['完好'])
     expect(warn).toHaveBeenCalledWith('[knowledge-base] skipped a base whose index cannot be opened', expect.objectContaining({ dir: join(home, 'knowledge', 't-a', broken) }))
+    // The damaged index was closed again, so its base can be deleted (Windows refuses an open file).
+    await rm(join(home, 'knowledge', 't-a', broken), { recursive: true })
     const gate = Promise.withResolvers<undefined>()
     const entered = Promise.withResolvers<undefined>()
     embedding.gate = gate.promise
@@ -621,7 +631,8 @@ describe('knowledge bases', () => {
     const { id } = (await service.createBase('接口', API)).bases[0]!
     const dir = await mkdtemp(join(tmpdir(), 'dsh-knowledge-src-'))
     cleanups.push(() => rm(dir, { recursive: true, force: true }))
-    await writeFile(join(dir, 'secret.txt'), 'x', { mode: 0o000 })
+    await writeFile(join(dir, 'secret.txt'), 'x')
+    await unreadable(join(dir, 'secret.txt'))
     expect(await service.addFiles(id, [join(dir, 'secret.txt')])).toEqual({ added: 0, rejected: [{ name: 'secret.txt', reason: 'unreadable' }] })
     embeddingWatched.set({ ...embeddingState(), apiModels: [] })
     expect((await until(state => state.bases[0]!.embeddingModelName === API)).bases[0]!.status).toBe('ready')
@@ -658,7 +669,7 @@ describe('knowledge bases', () => {
     await writeFile(join(dir, '.git', 'HEAD'), 'ref')
     let state = await service.addFolder(id, dir)
     const folder = state.bases[0]!.items[0]!
-    expect(folder).toMatchObject({ kind: 'folder', name: dir.split('/').at(-1), source: dir, parentId: null })
+    expect(folder).toMatchObject({ kind: 'folder', name: basename(dir), source: dir, parentId: null })
     expect(folder.skipped).toEqual([{ path: 'logo.png', reason: 'unsupported' }, { path: '人事/假期/z-expense.pdf', reason: 'limit' }])
     expect(folder.skippedCount).toBe(2)
     state = await until(next => next.bases[0]!.items.length === 4 && settled(next))
@@ -703,9 +714,9 @@ describe('knowledge bases', () => {
     expect((await service.recall(id, '乙的内容')).hits.some(hit => hit.itemName === 'b.md')).toBe(false)
     // A file that cannot be copied fails as unreadable, and is copied again on the next sync.
     await writeFile(join(dir, 'c.md'), '# 丙\n\n丙改过的内容')
-    await chmod(join(dir, 'c.md'), 0o000)
+    await unreadable(join(dir, 'c.md'))
     await writeFile(join(dir, 'e.md'), '戊')
-    await chmod(join(dir, 'e.md'), 0o000)
+    await unreadable(join(dir, 'e.md'))
     state = await service.reprocessItem(id, folderId)
     expect(state.bases[0]!.items.filter(item => item.error === 'unreadable').map(item => item.source).sort()).toEqual(['c.md', 'e.md'])
     // Gone (the unreadable files go with it): the folder fails and keeps its files.
@@ -838,7 +849,7 @@ describe('knowledge bases', () => {
     embedding.gate = undefined
     again.resolve(undefined)
     const state = await until(next => settled(next) && next.bases[0]!.items[2]!.status === 'completed')
-    expect(state.bases[0]!.items.map(item => item.name)).toEqual(['定稿', dir.split('/').at(-1), 'a.md'])
+    expect(state.bases[0]!.items.map(item => item.name)).toEqual(['定稿', basename(dir), 'a.md'])
     expect((await service.recall(id, '第三版')).hits[0]!.text).toBe('甲的第三版内容')
   })
 
@@ -865,7 +876,7 @@ describe('knowledge bases', () => {
     for (const name of ['product-manual.md', 'meeting-notes.txt', '年假', '报销提醒']) await service.openItem(id, items.get(name)!.id)
     expect(opened.paths.map(path => extname(path))).toEqual(['.md', '.txt', '.md', '.md'])
     const refused = async (itemId: string) => remoteErrorOf(await service.openItem(id, itemId).catch((error: unknown) => error))?.code
-    expect(await refused(items.get(dir.split('/').at(-1)!)!.id)).toBe('knowledge/cannot-open')
+    expect(await refused(items.get(basename(dir))!.id)).toBe('knowledge/cannot-open')
     expect(await refused(items.get('https://never.example.com/')!.id)).toBe('knowledge/cannot-open')
     expect(await refused('nope')).toBe('knowledge/not-found')
     opened.canOpen = false
