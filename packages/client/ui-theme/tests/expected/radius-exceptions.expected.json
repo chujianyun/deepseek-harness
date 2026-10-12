@@ -1,9 +1,19 @@
 {
+  "ui-automation-tasks/src/client/TaskForm.module.css": [
+    ".noticeClose: border-radius: 6px"
+  ],
+  "ui-brand-mo/src/client/QuickTasks.module.css": [
+    ".glyph: border-radius: 9px"
+  ],
   "ui-deliverables/src/client/ChangedFiles.module.css": [
     ".tile: border-radius: 10px"
   ],
   "ui-deliverables/src/client/Deliverables.module.css": [
     ".fileIcon: border-radius: 10px"
+  ],
+  "ui-feedback-report/src/client/ReportDialog.module.css": [
+    ".thumb: border-radius: 10px",
+    ".add: border-radius: 10px"
   ],
   "ui-schedule/src/client/ClockPicker.module.css": [
     ".option: border-radius: 10px"
@@ -63,5 +73,8 @@
     ".keyBadge: border-radius: 10px",
     ".unbound: border-radius: 10px",
     ".recorder: border-radius: 10px"
+  ],
+  "ui-skills/src/client/SkillsPage.module.css": [
+    ".installed: border-radius: 6px"
   ]
 }

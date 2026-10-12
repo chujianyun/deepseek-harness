@@ -26,6 +26,9 @@ export const getSupportedThinkingLevels = notImplementedFail(MODULE, 'getSupport
 /** Context-overflow predicate (unavailable). */
 export const isContextOverflow = notImplementedFail(MODULE, 'isContextOverflow')
 
+/** Collection of every builtin provider (unavailable). */
+export const builtinModels = notImplementedFail(MODULE, 'builtinModels')
+
 /** Builtin provider ids of pi-ai 0.84.2, in catalog order. */
 const BUILTIN_PROVIDER_IDS: readonly string[] = [
   'amazon-bedrock', 'ant-ling', 'anthropic', 'azure-openai-responses', 'baseten', 'cerebras',
@@ -86,7 +89,7 @@ export const __esModule = true
 
 /** CommonJS default export: the members `require()` hands a caller of this module. */
 export default {
-  createProvider, createModels, getSupportedThinkingLevels, isContextOverflow, builtinProviders,
+  createProvider, createModels, getSupportedThinkingLevels, isContextOverflow, builtinModels, builtinProviders,
   getBuiltinModels, getBuiltinProviders, anthropicMessagesApi, openAICompletionsApi,
   openAIResponsesApi,
 }

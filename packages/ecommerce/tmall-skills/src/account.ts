@@ -4,6 +4,8 @@
  */
 
 import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import type { CategoryMemory, PublishMemory } from '@deepseek-ai/dsh-ecommerce-accounts/src/memory.ts'
 import type { EcommercePlatform } from '@deepseek-ai/dsh-ecommerce-accounts/src/types.ts'
 import { EXIT, SkillError } from './errors.ts'
@@ -26,18 +28,32 @@ export interface EcommerceCommandResult {
 }
 
 /**
- * Run `dsh-ecommerce` with arguments.
+ * Run `dsh-ecommerce` with arguments. On Windows the command is a `.cmd` running a Node script,
+ * which a program cannot start without a shell, so the script on PATH is run with this Node.
  * @param args - its arguments.
+ * @param platform - the platform the skill runs on.
+ * @param env - the variables that hold PATH.
  * @returns how it ended and what it printed.
  */
-export function runDshEcommerce(args: readonly string[]): Promise<EcommerceCommandResult> {
+export function runDshEcommerce(
+  args: readonly string[], platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env,
+): Promise<EcommerceCommandResult> {
+  const script = platform === 'win32' ? windowsScript(env) : undefined
+  const [file, argv] = script === undefined ? ['dsh-ecommerce', args] : [process.execPath, [script, ...args]]
   return new Promise((resolve) => {
-    execFile('dsh-ecommerce', args, { encoding: 'utf8' }, (error, stdout, stderr) => {
+    execFile(file, argv, { encoding: 'utf8', env }, (error, stdout, stderr) => {
       if (error === null) resolve({ code: 0, stdout, stderr })
       else if (typeof error.code === 'number') resolve({ code: error.code, stdout, stderr })
       else resolve({ code: 127, stdout, stderr: `${stderr}${error.message}` })
     })
   })
+}
+
+/** The Windows `dsh-ecommerce` Node script on PATH, if any. */
+function windowsScript(env: NodeJS.ProcessEnv): string | undefined {
+  // Windows names the variable in any case (Path, PATH); a plain object keeps the caller's spelling.
+  const path = Object.entries(env).find(([key]) => key.toUpperCase() === 'PATH')?.[1] ?? ''
+  return path.split(';').filter(dir => dir !== '').map(dir => join(dir, 'dsh-ecommerce.mjs')).find(file => existsSync(file))
 }
 
 /** The platforms a merchant skill works with, and their names for the user. */

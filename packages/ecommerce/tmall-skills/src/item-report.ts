@@ -7,10 +7,9 @@
  */
 
 import { join, resolve } from 'node:path'
-import { parseArgs } from 'node:util'
 import { reportRisk, takeOverBuyer, type BuyerBrowser } from './account.ts'
 import { fileSafe, writeFiles } from './cli.ts'
-import { EXIT, SkillError } from './errors.ts'
+import { EXIT, parseCommandLine, SkillError, stopped } from './errors.ts'
 import { factsReport, isNegative, itemFacts } from './item-facts.ts'
 import { itemIdOf, itemUrl, openItem, readQuestions, readReviews, RiskStop, type Collected, type ItemPage, type Limits, type Pace } from './item.ts'
 import { openPage, sleep, type Page } from './page.ts'
@@ -56,15 +55,9 @@ const USAGE = '用法：<商品链接或 id>… [--questions 100] [--reviews 200
  * @throws SkillError usage for a wrong command line.
  */
 export function parseItemOptions(argv: readonly string[]): ItemOptions {
-  let parsed: { values: Record<string, string | undefined>; positionals: string[] }
-  try {
-    parsed = parseArgs({
-      args: [...argv], allowPositionals: true,
-      options: { questions: { type: 'string' }, reviews: { type: 'string' }, appends: { type: 'string' }, 'per-tag': { type: 'string' }, out: { type: 'string' } },
-    })
-  } catch (error) {
-    throw new SkillError(`${(error as Error).message}\n${USAGE}`, EXIT.usage)
-  }
+  const parsed: { values: Record<string, string | undefined>; positionals: string[] } = parseCommandLine(argv, {
+    questions: { type: 'string' }, reviews: { type: 'string' }, appends: { type: 'string' }, 'per-tag': { type: 'string' }, out: { type: 'string' },
+  }, USAGE)
   if (parsed.positionals.length === 0) throw new SkillError(`缺少商品链接或 id。\n${USAGE}`, EXIT.usage)
   const count = (name: string, fallback: number): number => {
     const value = parsed.values[name]
@@ -106,7 +99,8 @@ export async function main(argv: readonly string[], deps: ItemDeps = realItemDep
     buyer = await deps.takeOver()
     page = await deps.openPage(buyer.cdpUrl)
   } catch (error) {
-    return fail(deps, error)
+    // Failures before the run are the Errors of parsing, DSH, and the DevTools connection.
+    return stopped(deps.stderr, error)
   }
   const outcomes: ItemOutcome[] = []
   let stop: SkillError | undefined
@@ -252,14 +246,4 @@ function pad(index: number): string {
 
 function extension(url: string): string {
   return /\.(jpe?g|png|webp|gif)(?:_|$|\?)/iu.exec(url)?.[1]?.toLowerCase() ?? 'jpg'
-}
-
-function fail(deps: ItemDeps, error: unknown): number {
-  if (error instanceof SkillError) {
-    deps.stderr(`${error.message}\n`)
-    return error.exitCode
-  }
-  // Failures before the run are the Errors of parsing, DSH, and the DevTools connection.
-  deps.stderr(`失败：${(error as Error).message}\n`)
-  return EXIT.failed
 }

@@ -550,10 +550,12 @@ describe('JsonlSessionPersistence: deleting a session', () => {
     const gone = await stored('gone')
     const kept = await stored('kept')
     const goneDir = sessionDir(dir, gone.cwd, gone.id)
-    expect((await readdir(goneDir)).sort()).toEqual(['session.lock', generationLogFilename(SESSION_FORMAT_VERSION, 'none')].sort())
+    // POSIX locks a session.lock file; Windows locks a named mutex and leaves no file.
+    const lockFile = process.platform === 'win32' ? [] : ['session.lock']
+    expect((await readdir(goneDir)).sort()).toEqual([...lockFile, generationLogFilename(SESSION_FORMAT_VERSION, 'none')].sort())
     await ctx.sessionPersistence.delete(gone.id)
     await expect(stat(goneDir)).rejects.toMatchObject({ code: 'ENOENT' })
-    expect((await readdir(sessionDir(dir, kept.cwd, kept.id))).length).toBe(2)
+    expect((await readdir(sessionDir(dir, kept.cwd, kept.id))).length).toBe(lockFile.length + 1)
   })
 
   it('keeps the session and frees its lock when the removal itself fails, so the delete can be retried', async () => {
@@ -569,7 +571,8 @@ describe('JsonlSessionPersistence: deleting a session', () => {
     expect(deleted).toEqual([header.id])
   })
 
-  it('still announces the deletion when finishing the removal fails after the directory is gone', async () => {
+  // Finishing syncs the parent directory, which Windows has no way to do, so the sync failure cannot be injected there.
+  it.skipIf(process.platform === 'win32')('still announces the deletion when finishing the removal fails after the directory is gone', async () => {
     const header = await stored('finish')
     const deleted: string[] = []
     ctx.on('session/deleted', (id) => { deleted.push(id) })
@@ -579,6 +582,26 @@ describe('JsonlSessionPersistence: deleting a session', () => {
     expect(deleted).toEqual([header.id])
     expect(await ctx.sessionPersistence.stat(header.id)).toBeUndefined()
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('was deleted, but finishing the removal failed: Error: injected sync failure'))
+  })
+
+  it('still announces the deletion when releasing its write lock fails after the directory is gone', async () => {
+    const header = await stored('release')
+    const deleted: string[] = []
+    ctx.on('session/deleted', (id) => { deleted.push(id) })
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    type Leasing = { acquireLease: (...args: unknown[]) => Promise<{ release: () => Promise<void> }> }
+    const persistence = ctx.sessionPersistence as never as Leasing
+    const acquire = persistence.acquireLease.bind(persistence)
+    vi.spyOn(persistence, 'acquireLease').mockImplementationOnce(async (...args) => {
+      const lease = await acquire(...args)
+      const release = lease.release.bind(lease)
+      lease.release = async () => { await release(); throw new Error('injected release failure') }
+      return lease
+    })
+    await ctx.sessionPersistence.delete(header.id)
+    expect(deleted).toEqual([header.id])
+    expect(await ctx.sessionPersistence.stat(header.id)).toBeUndefined()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('was deleted, but finishing the removal failed: Error: injected release failure'))
   })
 })
 

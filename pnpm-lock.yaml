@@ -1512,6 +1512,9 @@ importers:
       '@deepseek-ai/dsh-brand':
         specifier: workspace:*
         version: link:../../util/brand
+      '@deepseek-ai/dsh-change-stream':
+        specifier: workspace:*
+        version: link:../../util/change-stream
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -1711,6 +1714,9 @@ importers:
 
   packages/assistant/assistants:
     dependencies:
+      '@deepseek-ai/dsh-change-stream':
+        specifier: workspace:*
+        version: link:../../util/change-stream
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:*
         version: link:../../util/home-paths
@@ -7404,6 +7410,9 @@ importers:
 
   packages/connector/connectors:
     dependencies:
+      '@deepseek-ai/dsh-change-stream':
+        specifier: workspace:*
+        version: link:../../util/change-stream
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:*
         version: link:../../util/home-paths
@@ -8055,6 +8064,9 @@ importers:
 
   packages/credentials/hub-account:
     dependencies:
+      '@deepseek-ai/dsh-change-stream':
+        specifier: workspace:*
+        version: link:../../util/change-stream
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:*
         version: link:../../util/home-paths
@@ -8206,6 +8218,9 @@ importers:
 
   packages/ecommerce/ecommerce-accounts:
     dependencies:
+      '@deepseek-ai/dsh-change-stream':
+        specifier: workspace:*
+        version: link:../../util/change-stream
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:*
         version: link:../../util/home-paths
@@ -10814,6 +10829,9 @@ importers:
 
   packages/knowledge/knowledge-base:
     dependencies:
+      '@deepseek-ai/dsh-change-stream':
+        specifier: workspace:*
+        version: link:../../util/change-stream
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:*
         version: link:../../util/home-paths
@@ -10921,6 +10939,9 @@ importers:
 
   packages/llm/embedding:
     dependencies:
+      '@deepseek-ai/dsh-change-stream':
+        specifier: workspace:*
+        version: link:../../util/change-stream
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:*
         version: link:../../util/home-paths
@@ -15064,6 +15085,12 @@ importers:
         version: link:../../../vendor/cordis
 
   packages/util/brand:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+
+  packages/util/change-stream:
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:~

@@ -96,13 +96,14 @@ async function deepseekDefaultsServer(
       requests.push(JSON.parse(body) as JsonObject)
       paths.push(request.url ?? '')
       response.writeHead(200, { 'content-type': 'text/event-stream' })
-      let keepAlives = 3
+      // Six comments 100 ms apart outlast the profile's 400 ms idle timeout only because each one pulses it.
+      let keepAlives = 6
       const write = (): void => {
         // One-shot teardown may cancel background title work after the main response.
         if (keepAlives-- > 0
           || (options.waitForTitleRequest === true && !requests.some(request => request.max_tokens === 64))) {
           response.write(': keep-alive\n\n')
-          timer = setTimeout(write, 60)
+          timer = setTimeout(write, 100)
           return
         }
         if (options.piAiCompatibility !== true) {
@@ -123,7 +124,7 @@ async function deepseekDefaultsServer(
           '',
         ].join('\n\n'))
       }
-      let timer = setTimeout(write, 60)
+      let timer = setTimeout(write, 100)
       response.once('close', () => { clearTimeout(timer) })
     })
   })
@@ -607,7 +608,12 @@ describe('headless stream-json snapshots', () => {
       })
 
       expect(result.stderr).toBe('')
-      expect(server.requests).toHaveLength(2)
+      // On a mismatch, name each request by its token budget and its last message, which tells a retry from another turn.
+      const sent = server.requests.map((request) => {
+        const messages = request.messages as JsonObject[] | undefined
+        return `${String(request.max_tokens)}: ${JSON.stringify(messages?.at(-1)).slice(0, 400)}`
+      })
+      expect(server.requests, sent.join('\n')).toHaveLength(2)
       expect(server.paths).toEqual(['/v1/messages', '/v1/messages'])
       const agentRequest = server.requests.find(request => request.max_tokens === 256_000)
       const titleRequest = server.requests.find(request => request.max_tokens === 64)

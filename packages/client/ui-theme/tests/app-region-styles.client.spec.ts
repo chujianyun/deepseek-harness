@@ -113,6 +113,37 @@ const CHROME_ROWS: readonly ChromeRow[] = [
     markup: 'client/ui-settings-account/src/client/PlatformOverlay.tsx',
     height: ['height', '48px'],
   },
+  // The enterprise panels' page headers (assistants, automation task form, connectors, knowledge, Skills).
+  {
+    file: 'client/ui-assistants/src/client/AssistantsPage.module.css',
+    selector: '.header',
+    markup: 'client/ui-assistants/src/client/AssistantsPage.tsx',
+  },
+  {
+    file: 'client/ui-automation-tasks/src/client/TaskForm.module.css',
+    selector: '.header',
+    markup: 'client/ui-automation-tasks/src/client/TaskForm.tsx',
+  },
+  {
+    file: 'client/ui-connectors/src/client/ConnectorsPage.module.css',
+    selector: '.header',
+    markup: 'client/ui-connectors/src/client/ConnectorsPage.tsx',
+  },
+  {
+    file: 'client/ui-knowledge/src/client/KnowledgePage.module.css',
+    selector: '.header',
+    markup: 'client/ui-knowledge/src/client/KnowledgePage.tsx',
+  },
+  {
+    file: 'client/ui-skills/src/client/SkillsPage.module.css',
+    selector: '.header',
+    markup: 'client/ui-skills/src/client/SkillsPage.tsx',
+  },
+  {
+    file: 'client/ui-skills/src/client/SkillsPage.module.css',
+    selector: '.header',
+    markup: 'client/ui-skills/src/client/MarketView.tsx',
+  },
 ]
 
 /**

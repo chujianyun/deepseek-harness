@@ -20,7 +20,7 @@ import type {} from '@deepseek-ai/dsh-ecommerce-accounts'
 import type {} from '@deepseek-ai/dsh-hub-account'
 import { browse, startMockUserCenter } from '../../../packages/credentials/hub-account/tests/mock-user-center.ts'
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
-import { connectFreshWorkspaceZh, saveFailureShot, writeComposerDraft, ZH_BROWSER_LOCALE } from './support.ts'
+import { killRecordedChrome, connectFreshWorkspaceZh, saveFailureShot, writeComposerDraft, ZH_BROWSER_LOCALE } from './support.ts'
 
 const OVERLAYS = ['./hub-account.overlay.yml', './ecommerce-accounts.overlay.yml', './connectors-chat.overlay.yml']
   .map(path => fileURLToPath(new URL(path, import.meta.url)))
@@ -166,8 +166,7 @@ it.skipIf(process.platform === 'win32')('lets the model list the accounts, take 
   } finally {
     await browser.close()
     if (accountDir !== undefined) {
-      const record = await readFile(join(accountDir, 'chrome.json'), 'utf8').catch(() => undefined)
-      if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
+      await killRecordedChrome(accountDir)
     }
     await scaffold.close()
     await chat.close()

@@ -33,11 +33,19 @@ export const Config = z.object({
  * @param config Live locale preference.
  */
 export function apply(ctx: Context, config: Config): void {
-  ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
   ctx.on('webserver/index-inject', (table) => {
-    const preference = config.preference.get()
-    if (preference === undefined) return
-    const language = JSON.stringify(documentLanguage(preference))
-    table.push({ kind: 'script', placement: 'head', text: `document.documentElement.lang = ${language}; document.documentElement.dataset.dshLocaleExplicit = ''` })
+    const script = explicitLanguageScript(config.preference.get())
+    if (script !== undefined) table.push({ kind: 'script', placement: 'head', text: script })
   })
+  ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
+}
+
+/**
+ * The boot script that marks an explicit language preference on `<html>`.
+ * @param preference - the user's language preference, if any.
+ * @returns the script, or undefined without a preference.
+ */
+function explicitLanguageScript(preference: string | undefined): string | undefined {
+  if (preference === undefined) return undefined
+  return `document.documentElement.lang = ${JSON.stringify(documentLanguage(preference))}; document.documentElement.dataset.dshLocaleExplicit = ''`
 }

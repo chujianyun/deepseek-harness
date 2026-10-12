@@ -1,5 +1,6 @@
 /** Shared by the connector specs: a Hub sign-in stand-in and a service booted over a stand-in lark-cli or dws. */
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, vi } from 'vitest'
@@ -96,7 +97,8 @@ export async function setup(options: {
   cleanups.push(() => rm(home, { recursive: true, force: true }))
   const root = join(home, 'connectors', id)
   const control = join(root, 'control')
-  const binary = id === 'feishu' ? 'lark-cli' : 'dws'
+  // The connector looks for the CLI under its Windows name there; its contents only run elsewhere.
+  const binary = `${id === 'feishu' ? 'lark-cli' : 'dws'}${process.platform === 'win32' ? '.exe' : ''}`
   if (options.installed !== false) {
     await mkdir(join(root, VERSION), { recursive: true })
     await writeFile(join(root, VERSION, binary), id === 'feishu' ? FAKE : FAKE_DWS)
@@ -122,8 +124,12 @@ export async function setup(options: {
   // The other connector stays uninstallable, so no test reaches its real mirrors.
   const specs = id === 'feishu' ? { feishu: SPEC, dingtalk: NOWHERE('dws') } : { feishu: NOWHERE('lark-cli'), dingtalk: DWS_SPEC }
   const live = await liveConfig(ctx, ConnectorsService, { dshHome: home, ...specs, ...interval })
+  let refuseSettings = false
   if (options.settings !== false) {
-    ctx.provide('settings', { update: async (_entry: string, patch: Record<string, unknown>) => { await live.update(patch) } } as never)
+    ctx.provide('settings', { update: async (_entry: string, patch: Record<string, unknown>) => {
+      if (refuseSettings) throw new Error('settings file is read-only')
+      await live.update(patch)
+    } } as never)
   }
   const service = ctx.get('connectors')!
   const stream = new AbortController()
@@ -140,9 +146,23 @@ export async function setup(options: {
   const tenantDir = (tenant: string) => join(root, 'tenants', tenant)
   const exists = (path: string) => stat(path).then(() => true, () => false)
   const calls = async () => (await readFile(join(control, 'calls'), 'utf8').catch(() => '')).trim().split('\n').filter(line => line !== '')
-  const answer = (step: 'app' | 'user', result: string) => writeFile(join(control, step), result)
-  const status = (value: object | string) => writeFile(join(control, 'status.json'), typeof value === 'string' ? value : JSON.stringify(value))
+  const answer = (step: 'app' | 'user', result: string) => writeWhole(join(control, step), result)
+  const status = (value: object | string) => writeWhole(join(control, 'status.json'), typeof value === 'string' ? value : JSON.stringify(value))
   /** The always-allowed list the profile holds. */
   const saved = () => Promise.resolve((live.entry.options.config as { alwaysAllowed?: readonly string[] }).alwaysAllowed ?? [])
-  return { ctx, service, fiber: live.fiber, hub, until, root, control, tenantDir, exists, calls, answer, status, saved }
+  /** Make every later settings write fail, or succeed again. */
+  const failSettings = (fail: boolean) => { refuseSettings = fail }
+  return { ctx, service, fiber: live.fiber, hub, until, root, control, tenantDir, exists, calls, answer, status, saved, failSettings }
+}
+
+/**
+ * Write a file the fake CLI reads as soon as it exists: aside under a unique name, then renamed into
+ * place, so the CLI never reads it half written and two writes never share a staging file.
+ * @param path - the file.
+ * @param content - its text.
+ */
+async function writeWhole(path: string, content: string): Promise<void> {
+  const staging = `${path}.${randomUUID()}.tmp`
+  await writeFile(staging, content)
+  await rename(staging, path)
 }

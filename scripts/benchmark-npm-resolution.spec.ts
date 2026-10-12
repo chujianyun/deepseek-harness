@@ -42,7 +42,10 @@ function processCanExecute(pid: number): boolean {
   }
 }
 
-describe('npm resolution benchmark', () => {
+/** A real npm run; its cold start alone has taken more than 10 s on a loaded Windows runner. */
+const NPM_TIMEOUT_MS = 60_000
+
+describe('npm resolution benchmark', { timeout: NPM_TIMEOUT_MS + 30_000 }, () => {
   it('parses repeat, timeout, threshold, and ref options', () => {
     expect(parseBenchmarkOptions([])).toEqual({ runs: 1, timeoutMs: 300_000 })
     expect(parseBenchmarkOptions([
@@ -94,7 +97,7 @@ describe('npm resolution benchmark', () => {
       '@deepseek-ai/dsh',
       new Map([['0.1.0', { name: '@deepseek-ai/dsh', version: '0.1.0' }]]),
     ]])
-    const result = await benchmarkNpmResolution(index, '0.1.0', 10_000)
+    const result = await benchmarkNpmResolution(index, '0.1.0', NPM_TIMEOUT_MS)
 
     expect(result.durationMs).toBeGreaterThan(0)
     expect(result.registryRequests).toBeGreaterThan(0)
@@ -114,7 +117,7 @@ describe('npm resolution benchmark', () => {
     const result = await resolveNpmPackageLock(index, {
       '@deepseek-ai/dsh': '0.2.0',
       'dsh-previous': 'npm:@deepseek-ai/dsh@0.1.0',
-    }, 10_000)
+    }, NPM_TIMEOUT_MS)
 
     expect(result.archiveRequests).toBe(0)
     expect(result.packageLock.packages['node_modules/@deepseek-ai/dsh']?.version).toBe('0.2.0')
@@ -150,7 +153,7 @@ describe('npm resolution benchmark', () => {
         }]])],
       ])
 
-      const result = await resolveNpmPackageLock(index, { '@deepseek-ai/dsh': '0.1.0' }, 10_000)
+      const result = await resolveNpmPackageLock(index, { '@deepseek-ai/dsh': '0.1.0' }, NPM_TIMEOUT_MS)
 
       expect(result.archiveRequests).toBe(0)
       expect(result.packageLock.packages['node_modules/@deepseek-ai/dsh-peer']?.version).toBe('1.0.0')

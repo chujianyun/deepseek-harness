@@ -4,7 +4,7 @@
  */
 import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
-import type { Cell, CellValue, Workbook } from 'exceljs'
+import type { Cell, CellFormulaValue, CellSharedFormulaValue, CellValue, Workbook } from 'exceljs'
 
 /** File extensions a knowledge base accepts, lowercase. */
 export const SUPPORTED_EXTENSIONS: ReadonlySet<string> = new Set(['.docx', '.pdf', '.xlsx', '.md', '.markdown', '.txt'])
@@ -142,7 +142,7 @@ function numberText(value: number, format: string | undefined): string {
 }
 
 /** A cell value as text: dates as `YYYY-MM-DD` (with the time when it has one), a time of day alone as `HH:mm`. */
-function valueText(value: CellValue): string {
+function valueText(value: Exclude<CellValue, CellFormulaValue | CellSharedFormulaValue>): string {
   if (value === null || value === undefined) return ''
   if (value instanceof Date) {
     const iso = value.toISOString()
@@ -152,8 +152,9 @@ function valueText(value: CellValue): string {
   }
   if (typeof value !== 'object') return String(value)
   if ('richText' in value) return value.richText.map(run => run.text).join('')
-  if ('formula' in value || 'sharedFormula' in value) return valueText(value.result)
   if ('hyperlink' in value) return valueText(value.text)
+  /* v8 ignore start -- a workbook may hold a cell value exceljs does not type; it reads as nothing. */
   if ('error' in value) return value.error
   return ''
+  /* v8 ignore stop */
 }

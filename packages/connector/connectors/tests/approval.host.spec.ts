@@ -4,7 +4,7 @@
  * `--yes`.
  */
 import { execFile } from 'node:child_process'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -88,7 +88,6 @@ describe('confirming connector writes', () => {
     expect(confirmed).toBe('lark-cli drive +delete')
     // The approved call's script adds --yes once, to the approved command only; an unapproved call's adds none.
     const [dir] = t.ctx.shellEnv.collectPath(exec)
-    await vi.waitFor(async () => { await stat(join(dir!, 'lark-cli')) })
     const run = (args: string[], env: NodeJS.ProcessEnv) => new Promise<number>((resolve) => {
       execFile(join(dir!, 'lark-cli'), args, { env: { ...process.env, ...env } }, (error) => { resolve(error === null ? 0 : Number(error.code)) })
     })
@@ -133,6 +132,23 @@ describe('always allowing connector writes', () => {
     expect(await t.gate(bash('lark-cli im +messages-send; lark-cli im +messages-reply', 'call-4', agent))).toMatchObject({ kind: 'ask' })
     // Without a session to record it in, the call asks as before.
     expect(await t.gate(bash('lark-cli im +messages-send', 'call-5'))).toMatchObject({ kind: 'ask' })
+  })
+
+  runs('keeps asking when a grant cannot be saved, and keeps a grant whose clearing on sign-out cannot be saved', async () => {
+    const t = await connected()
+    const warn = vi.spyOn(t.ctx.logger, 'warn').mockImplementation(() => {})
+    t.failSettings(true)
+    remember(await t.gate(bash('lark-cli im +messages-send')))
+    await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith('connectors: could not save always-allowed commands: Error: settings file is read-only') })
+    expect(await t.saved()).toEqual([])
+    expect(await t.gate(bash('lark-cli im +messages-send', 'call-2'))).toMatchObject({ kind: 'ask' })
+    t.failSettings(false)
+    remember(await t.gate(bash('lark-cli im +messages-send', 'call-3')))
+    await t.until(item => item.alwaysAllowed.length === 1)
+    t.failSettings(true)
+    t.hub.set(null)
+    await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith('connectors: could not clear always-allowed commands: Error: settings file is read-only') })
+    expect(await t.saved()).toEqual(['t-a/feishu/im +messages-send'])
   })
 
   runs('never offers to remember a high-risk command, one of unknown risk, or a call that holds one', async () => {

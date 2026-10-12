@@ -197,7 +197,7 @@ Host service backing the generated `ctx.remote.authorization` namespace. It star
  * @param signal - stream lifetime.
  * @returns the views, re-read after every change.
  */
-@Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<AuthorizationFlowView[]>
+@Remote({ mode: 'stream' }) watch(signal: AbortSignal): AsyncIterable<AuthorizationFlowView[]>
 ```
 
 Source: [`packages/api/settings-controller/src/authorization.ts`](../../packages/api/settings-controller/src/authorization.ts)
@@ -491,7 +491,7 @@ Host owner of Hub sign-in and of the `hubAccount` Remote namespace.
  * @param signal - stream lifetime.
  * @returns the current state, then every change.
  */
-@Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<HubAccountView>
+@Remote({ mode: 'stream' }) watch(signal: AbortSignal): AsyncIterable<HubAccountView>
 
 /**
  * The current access token for user-center client APIs, refreshed first when it is due. Host only.

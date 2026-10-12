@@ -149,6 +149,9 @@ it.skipIf(process.platform === 'win32')('gives the model the connected connector
     await connectors.installConnector('feishu')
     await expect.poll(async () => (await feishuView()).status, { timeout: 15_000 }).toBe('disconnected')
     const control = join(harnessHome, 'connectors', 'feishu', 'control')
+    // The stand-in CLI records its calls beside its version directory; a real CLI writes only the tenant's
+    // directory, which the connector already grants. The Linux sandbox lets a command write nowhere else.
+    scaffold.ctx.sandboxPolicy.registerWritableRoot({ name: 'e2e-stand-in-cli-control', resolve: () => control })
     await connectors.connect('feishu')
     await expect.poll(async () => (await feishuView()).login?.url).toContain('open.feishu.cn')
     await writeFile(join(control, 'app'), 'ok')

@@ -62,7 +62,7 @@ Host owner of the e-commerce accounts and of the `ecommerceAccounts` Remote name
  * @param signal - stream lifetime.
  * @returns the current state, then every change.
  */
-@Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<EcommerceAccountsState>
+@Remote({ mode: 'stream' }) watch(signal: AbortSignal): AsyncIterable<EcommerceAccountsState>
 
 /**
  * Add an account for the signed-in tenant; it starts signed out.

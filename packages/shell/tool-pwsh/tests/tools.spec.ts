@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve as resolvePath } from 'node:path'
+import { delimiter, join, resolve as resolvePath } from 'node:path'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
@@ -441,6 +441,16 @@ describe('execution through the bash seam', () => {
       DSH_SESSION_ID: 'session-1',
     })
     expect(bash.specs[0]?.workdir).toBe('/sessions/s1')
+  })
+
+  it('puts plugin executables ahead of the Host PATH, and leaves PATH alone without any', async () => {
+    const { ctx, bash } = await setup()
+    bash.handler = () => runResult('ok\n')
+    await call(ctx, 'pwsh', { command: 'Write-Output ok', description: 'ok' })
+    expect(bash.requests[0]).not.toHaveProperty('env')
+    ctx.shellEnv.registerPath({ name: 'test-plugin', resolve: () => resolvePath('/plugin/bin') })
+    await call(ctx, 'pwsh', { command: 'Write-Output ok', description: 'ok' })
+    expect(bash.requests[1]?.env).toEqual({ PATH: [resolvePath('/plugin/bin'), process.env.PATH ?? ''].join(delimiter) })
   })
 
   it('resolves a relative workdir against the session cwd, absolute ones verbatim', async () => {
