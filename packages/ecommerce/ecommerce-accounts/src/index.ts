@@ -574,11 +574,10 @@ export class EcommerceAccountsService extends TypertRemoteService {
         const left = await this.queued(entry.id, () => this.leftSignInPage(entry, spec, tab))
         if (!left && Date.now() - lastCheck < this.options.signInCheckEveryMs) continue
         lastCheck = Date.now()
-        if ((await this.check(entry)).kind === 'signed-in') {
+        if ((await this.check(entry, true)).kind === 'signed-in') {
           done = true
           break
         }
-        this.setStatus(entry.id, 'signing-in')
       }
       if (!done && !signal.aborted) this.setStatus(entry.id, 'signed-out')
     } finally {
@@ -609,10 +608,11 @@ export class EcommerceAccountsService extends TypertRemoteService {
    * check that gets no answer, cannot reach the page, or finds the browser data held by another
    * Chrome fails with that problem and keeps the last answer. The check works on the account as it is
    * once its turn comes: one deleted, or of another tenant, while it waited is `gone`, asks nothing,
-   * and starts no Chrome.
+   * and starts no Chrome. A sign-in's own check leaves the account showing `signing-in` and records
+   * only a signed-in answer, so the status does not flicker while the user signs in.
    */
-  private check(entry: Entry): Promise<CheckResult> {
-    this.setStatus(entry.id, 'checking')
+  private check(entry: Entry, forSignIn = false): Promise<CheckResult> {
+    if (!forSignIn) this.setStatus(entry.id, 'checking')
     return this.queued(entry.id, async () => {
       const now = this.entries.find(item => item.id === entry.id)
       if (now === undefined) return { kind: 'gone' }
@@ -627,6 +627,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
         const current = this.entries.find(item => item.id === entry.id)
         // The account was deleted, or the tenant switched, while the platform was asked.
         if (current === undefined) return result
+        if (forSignIn && result.kind !== 'signed-in') return result
         if (result.kind !== 'signed-in' && result.kind !== 'signed-out') {
           this.problems.set(entry.id, PROBLEMS[result.kind])
           this.statuses.set(entry.id, 'check-failed')

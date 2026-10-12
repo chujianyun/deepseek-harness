@@ -627,7 +627,16 @@ describe('e-commerce account edge cases', () => {
     await env.service.startSignIn(accountId)
     const record = await readRecord(env.browserDir(accountId))
     process.kill(record!.pid, 'SIGKILL')
-    await new Promise(resolve => setTimeout(resolve, 400))
+    // The sign-in checks the account again and again meanwhile, and it shows signing in throughout.
+    const seen = new Set<string>()
+    const watching = new AbortController()
+    const watched = (async () => {
+      for await (const state of env.service.watch(watching.signal)) seen.add(state.accounts[0]!.status)
+    })().catch(() => undefined)
+    await new Promise(resolve => setTimeout(resolve, 600))
+    watching.abort()
+    await watched
+    expect([...seen]).toEqual(['signing-in'])
     expect((await env.service.getState()).accounts.map(item => item.status)).toEqual(['signing-in', 'signed-out'])
     await env.service.deleteAccount(accountId)
     expect((await env.service.getState()).accounts.map(item => item.id)).toEqual([other.accountId])
