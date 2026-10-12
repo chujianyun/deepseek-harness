@@ -169,12 +169,15 @@ const draftDir = (target: PlanTarget) => join('发品草稿', `${PLATFORM_SKILLS
 const rulesDir = (target: PlanTarget) => join(PLATFORM_SKILLS[target.platform].dir, fileSafe(target.store))
 
 /**
- * A word for a bash command line, quoted when it holds anything but plain characters.
+ * A word for the model's command line, quoted when it holds anything but plain characters: for bash,
+ * or for PowerShell on Windows, which doubles a quote inside quotes.
  * @param word - the word.
+ * @param platform - the platform whose shell the model uses.
  * @returns the word, safe to paste.
  */
-export function shellWord(word: string): string {
-  return /^[\p{L}\p{N}_./:@%+=-]+$/u.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`
+export function shellWord(word: string, platform: NodeJS.Platform = process.platform): string {
+  if (/^[\p{L}\p{N}_./:@%+=-]+$/u.test(word)) return word
+  return platform === 'win32' ? `'${word.replaceAll("'", "''")}'` : `'${word.replaceAll("'", "'\\''")}'`
 }
 
 async function plan(options: Extract<MultiPublishOptions, { command: 'plan' }>, deps: MultiPublishDeps): Promise<string> {

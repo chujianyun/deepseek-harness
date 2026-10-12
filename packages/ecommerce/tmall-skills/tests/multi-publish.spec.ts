@@ -74,9 +74,12 @@ describe('multi-publish command line', () => {
   })
 
   it('quotes a word for bash only when it needs it', () => {
-    expect(shellWord('发品草稿/天猫-名流旗舰店')).toBe('发品草稿/天猫-名流旗舰店')
-    expect(shellWord('ML Store')).toBe("'ML Store'")
-    expect(shellWord("it's")).toBe("'it'\\''s'")
+    expect(shellWord('发品草稿/天猫-名流旗舰店', 'linux')).toBe('发品草稿/天猫-名流旗舰店')
+    expect(shellWord('ML Store', 'linux')).toBe("'ML Store'")
+    expect(shellWord("it's", 'linux')).toBe("'it'\\''s'")
+    // PowerShell on Windows doubles a quote, and backslashes need quotes.
+    expect(shellWord('发品草稿\\天猫-名流旗舰店', 'win32')).toBe("'发品草稿\\天猫-名流旗舰店'")
+    expect(shellWord("it's", 'win32')).toBe("'it''s'")
   })
 
   it('lists the accounts through dsh-ecommerce', async () => {
@@ -254,8 +257,8 @@ describe('multi-publish script', () => {
     const first = await run(d, ['next', '--plan', plan])
     expect(first.out).toBe([
       '下一家：第 1/3 家，天猫「名流旗舰店」（账号 tm），用 tmall-publish 技能。',
-      `- 字段规则写到 ${join('天猫发品', '名流旗舰店')}（tmall-publish-category 的 rules 加 --out ${join('天猫发品', '名流旗舰店')}）。`,
-      `- 商品草稿写到 ${join('发品草稿', '天猫-名流旗舰店')}（product-draft draft 加 --out ${join('发品草稿', '天猫-名流旗舰店')} --store 名流旗舰店 --plan ${plan}）。`,
+      `- 字段规则写到 ${join('天猫发品', '名流旗舰店')}（tmall-publish-category 的 rules 加 --out ${shellWord(join('天猫发品', '名流旗舰店'))}）。`,
+      `- 商品草稿写到 ${join('发品草稿', '天猫-名流旗舰店')}（product-draft draft 加 --out ${shellWord(join('发品草稿', '天猫-名流旗舰店'))} --store 名流旗舰店 --plan ${shellWord(plan)}）。`,
       '- 保存时不加 --out，保存记录留在 天猫发品/发品记录.json，汇总从那里读结果。',
       '- 这是第一张确认卡片：用户一键认可后、保存前，运行 confirm 记下用户认可的内容，后面的店自动带上。', '',
     ].join('\n'))
@@ -278,7 +281,7 @@ describe('multi-publish script', () => {
 
     const second = await run(d, ['next', '--plan', plan])
     expect(second.out).toContain('下一家：第 2/3 家，拼多多「名流保健用品官方旗舰店」（账号 pdd），用 pdd-publish 技能。')
-    expect(second.out).toContain(`（pdd-publish 的 rules 加 --out ${join('拼多多发品', '名流保健用品官方旗舰店')}）`)
+    expect(second.out).toContain(`（pdd-publish 的 rules 加 --out ${shellWord(join('拼多多发品', '名流保健用品官方旗舰店'))}）`)
     expect(second.out).toContain('- 共用内容已在前面的卡片确认（商品标题：名流旗舰店），草稿里标「已确认」；这家店的卡片仍要用户一键认可才保存，认可后同样运行 confirm。')
 
     // Pinduoduo stops before a save: it is marked and never handed out again; the Douyin shop is next.

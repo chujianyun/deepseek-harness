@@ -6,9 +6,9 @@
  */
 
 import { execFile, spawn } from 'node:child_process'
-import { access, mkdir, readFile, readlink, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, readdir, readFile, readlink, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { Browser, ChromeReleaseChannel, computeSystemExecutablePath } from '@puppeteer/browsers'
 import { Cdp } from './cdp.ts'
@@ -27,9 +27,12 @@ export interface ChromeInfo {
 /**
  * Find Google Chrome and read its version.
  * @param override - a Chrome executable to use instead of the platform's standard install.
+ * @param platform - the platform whose way of reading the version applies.
  * @returns the Chrome, or undefined when it is not installed.
  */
-export async function findChrome(override: string | undefined): Promise<ChromeInfo | undefined> {
+export async function findChrome(
+  override: string | undefined, platform: NodeJS.Platform = process.platform,
+): Promise<ChromeInfo | undefined> {
   let path: string
   try {
     path = override ?? computeSystemExecutablePath({ browser: Browser.CHROME, channel: ChromeReleaseChannel.STABLE })
@@ -38,14 +41,39 @@ export async function findChrome(override: string | undefined): Promise<ChromeIn
     // No standard install for this platform, or nothing at that path.
     return undefined
   }
-  let version: string | undefined
+  const version = platform === 'win32' ? await installedVersion(path) : await reportedVersion(path)
+  return { path, version, major: version === undefined ? undefined : Number(version.split('.')[0]) }
+}
+
+/** The version `chrome --version` prints; undefined when it prints none. */
+async function reportedVersion(path: string): Promise<string | undefined> {
   try {
     const { stdout } = await run(path, ['--version'], { timeout: 10_000 })
-    version = /(\d+(?:\.\d+)+)/u.exec(stdout)?.[1]
+    return /(\d+(?:\.\d+)+)/u.exec(stdout)?.[1]
   } catch {
-    // Some builds, such as Chrome on Windows, print no version; the version stays unknown.
+    // Chrome printed no version, or did not answer in time.
+    return undefined
   }
-  return { path, version, major: version === undefined ? undefined : Number(version.split('.')[0]) }
+}
+
+/**
+ * The version of a Windows Chrome: the highest version-named directory beside chrome.exe. Chrome on
+ * Windows does not print its version for `--version` but starts, opening a window.
+ */
+async function installedVersion(path: string): Promise<string | undefined> {
+  const entries = await readdir(dirname(path)).catch(() => [] as string[])
+  const versions = entries.filter(name => /^\d+(?:\.\d+){3}$/u.test(name)).map(name => ({ name, parts: name.split('.').map(Number) }))
+  versions.sort((a, b) => compareParts(a.parts, b.parts))
+  return versions.at(-1)?.name
+}
+
+/** Compare two four-part version numbers part by part. */
+function compareParts(a: readonly number[], b: readonly number[]): number {
+  for (const [i, part] of a.entries()) {
+    const other = b[i] ?? 0
+    if (part !== other) return part - other
+  }
+  return 0
 }
 
 /** The recorded Chrome of one account. */

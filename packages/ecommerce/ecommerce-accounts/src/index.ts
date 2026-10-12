@@ -28,7 +28,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-hub-account'
@@ -41,7 +41,7 @@ import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
-import { Bridge, SCRIPT, type BridgeReply, type Grant } from './bridge.ts'
+import { Bridge, installCommand, type BridgeReply, type Grant } from './bridge.ts'
 import { writeJsonAtomic } from './files.ts'
 import { applyUpdate, DamagedMemory, MemoryUpdate, readMemory } from './memory.ts'
 import { Cdp, closeBlankTabs, hideWindows, pageTabs, probe, showSignIn, type ProbeResult } from './cdp.ts'
@@ -277,9 +277,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     this.chrome = await findChrome(this.options.chromePath)
     const stopBridge = await this.bridge.start()
     this.ctx.effect(() => () => { void stopBridge() }, 'ecommerce-accounts: command endpoint')
-    await mkdir(join(this.root, 'bin'), { recursive: true })
-    await writeFile(join(this.root, 'bin', 'dsh-ecommerce'), SCRIPT)
-    await chmod(join(this.root, 'bin', 'dsh-ecommerce'), 0o755)
+    await installCommand(join(this.root, 'bin'), process.platform, process.execPath)
     await this.serialized(async () => this.switchTenant((await this.ctx.hubAccount.getState()).profile?.tenantId ?? null))
     void (async () => {
       for await (const state of this.ctx.hubAccount.watch(this.lifetime.signal)) {

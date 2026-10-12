@@ -20,7 +20,7 @@
  * @module @deepseek-ai/dsh-tool-pwsh
  */
 
-import { isAbsolute, resolve as resolvePath } from 'node:path'
+import { delimiter, isAbsolute, resolve as resolvePath } from 'node:path'
 import { FiberState } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -507,10 +507,13 @@ export function apply(ctx: Context, config: Config = {}): void {
           ? standingPolicy
           : { ...(standingPolicy as SandboxExecutionPolicy), mode: approvedMode }
         const workdir = resolveWorkdir(args.workdir, exec)
+        // Plugin executables come first on PATH, ahead of the Host's own search path.
+        const pathDirs = ctx.shellEnv.collectPath(exec)
         const request: ShellExecRequest = {
           command: args.command,
           ...workdir !== undefined ? { workdir } : {},
           ...args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {},
+          ...pathDirs.length > 0 ? { env: { PATH: [...pathDirs, process.env.PATH ?? ''].join(delimiter) } } : {},
           dshEnv: ctx.shellEnv.collect(exec),
           ...policy !== undefined ? { sandboxPolicy: policy } : {},
         }

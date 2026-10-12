@@ -38,6 +38,9 @@ if (args.includes('--version')) {
   process.exit(0)
 }
 const option = name => args.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3)
+// On Windows tests start this script through an .exe (script-executable.ts): that .exe is the process
+// DSH started, so it is the browser process this Chrome names.
+const browserPid = process.env.NODE_SHIM_PARENT === '1' ? process.ppid : process.pid
 const port = Number(option('remote-debugging-port'))
 const dataDir = option('user-data-dir')
 mkdirSync(dataDir, { recursive: true })
@@ -475,7 +478,7 @@ wss.on('connection', (socket) => {
         writeFileSync(path, JSON.stringify({ ...bounds, ...params.bounds }))
         return reply({})
       }
-      case 'SystemInfo.getProcessInfo': return reply({ processInfo: [{ type: 'renderer', id: 1, cpuTime: 0 }, ...process.env.FAKE_CHROME_NO_BROWSER_PID === undefined ? [{ type: 'browser', id: process.pid, cpuTime: 0 }] : []] })
+      case 'SystemInfo.getProcessInfo': return reply({ processInfo: [{ type: 'renderer', id: 1, cpuTime: 0 }, ...process.env.FAKE_CHROME_NO_BROWSER_PID === undefined ? [{ type: 'browser', id: browserPid, cpuTime: 0 }] : []] })
       case 'Browser.getWindowBounds': {
         const path = join(dataDir, 'fake-window.json')
         return reply({ bounds: { windowState: 'normal', ...existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {} } })
