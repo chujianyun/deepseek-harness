@@ -13,6 +13,7 @@ import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { act, cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
+import { evaluate, isJsExpr } from '@deepseek-ai/cordis-plugin-loader'
 import { bootInjections, orderByModuleGraph } from '@deepseek-ai/dsh-client-modules'
 import type { ClientModuleLoaderTarget, WebBootEntry, WebBootGraph } from '@deepseek-ai/dsh-client-modules/client'
 import type { RemoteMock } from '@deepseek-ai/dsh-remote-mock'
@@ -90,6 +91,17 @@ function resolveClientExport(packagePath: string, pkg: ClientPackageManifest): s
 const comboReference = (ids: readonly string[], rev: string): string =>
   `plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
 
+/** The `web` profile context a bundle entry's `!!js` condition reads, as `dsh web` supplies it. */
+const WEB_PROFILE_SCOPE = { get: (name: string) => name === 'profileContext' ? { name: 'web' } : undefined }
+
+/**
+ * Whether `dsh web` leaves an entry out: a literal `disabled: true`, or a `!!js` condition, which reads
+ * only `ctx.get('profileContext')` and `process` in the shipped bundles, true for the `web` profile.
+ */
+function disabledInWeb(disabled: unknown): boolean {
+  return isJsExpr(disabled) ? Boolean(evaluate({ ctx: WEB_PROFILE_SCOPE, process }, disabled.__jsExpr)) : disabled === true
+}
+
 /** Derive the assembled browser graph from the same bundle patches and package declarations as `dsh web`. */
 function loadAssembledPlugins(): readonly AssembledPlugin[] {
   const entries = appBoot.composeEntries(BUNDLE_LAYERS.map((layer) => {
@@ -98,7 +110,7 @@ function loadAssembledPlugins(): readonly AssembledPlugin[] {
   }))
   const plugins = new Map<string, AssembledPlugin>()
   for (const entry of entries) {
-    if (entry.disabled === true || typeof entry.name !== 'string') continue
+    if (disabledInWeb(entry.disabled) || typeof entry.name !== 'string') continue
     const packagePath = resolvePackageManifest(entry.name)
     if (packagePath === undefined) continue
     const pkg = JSON.parse(readFileSync(packagePath, 'utf8')) as ClientPackageManifest
