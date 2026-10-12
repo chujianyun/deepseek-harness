@@ -607,7 +607,12 @@ describe('headless stream-json snapshots', () => {
       })
 
       expect(result.stderr).toBe('')
-      expect(server.requests).toHaveLength(2)
+      // On a mismatch, name each request by its token budget and its last message, which tells a retry from another turn.
+      const sent = server.requests.map((request) => {
+        const messages = request.messages as JsonObject[] | undefined
+        return `${String(request.max_tokens)}: ${JSON.stringify(messages?.at(-1)).slice(0, 400)}`
+      })
+      expect(server.requests, sent.join('\n')).toHaveLength(2)
       expect(server.paths).toEqual(['/v1/messages', '/v1/messages'])
       const agentRequest = server.requests.find(request => request.max_tokens === 256_000)
       const titleRequest = server.requests.find(request => request.max_tokens === 64)

@@ -271,11 +271,17 @@ async function requestImage(
  * @returns the tool definition to register.
  */
 export function generateImageTool(ctx: Context, options: ImageToolOptions): ToolDefinition {
-  // Built once: a call only needs the Codex provider's sign-in, not the whole catalog.
-  const models = createModels(options.auth)
-  const provider = catalogProvider(IMAGE_PROVIDER)
-  /* v8 ignore next -- the installed catalog ships openai-codex; the guard keeps one without it from crashing */
-  if (provider !== undefined) models.setProvider(provider)
+  // Built at the first call and kept: a call only needs the Codex provider's sign-in, and a host without
+  // pi-ai's catalog, such as the Web preview's worker, still mounts the tool.
+  let models: ReturnType<typeof createModels> | undefined
+  const codexModels = (): ReturnType<typeof createModels> => {
+    if (models !== undefined) return models
+    models = createModels(options.auth)
+    const provider = catalogProvider(IMAGE_PROVIDER)
+    /* v8 ignore next -- the installed catalog ships openai-codex; the guard keeps one without it from crashing */
+    if (provider !== undefined) models.setProvider(provider)
+    return models
+  }
   return defineTool({
     name: 'generate_image',
     description: 'Generate an image from a text description with GPT Image, using the ChatGPT account the user signed in to. '
@@ -312,7 +318,7 @@ export function generateImageTool(ctx: Context, options: ImageToolOptions): Tool
       if (attachments === undefined) throw new Error('image generation needs the attachment service')
       let token: string | undefined
       try {
-        token = (await models.getAuth(IMAGE_PROVIDER))?.auth.apiKey
+        token = (await codexModels().getAuth(IMAGE_PROVIDER))?.auth.apiKey
       } catch (error) {
         // A refresh the service refused leaves no usable sign-in.
         throw new Error(NOT_SIGNED_IN, { cause: error })

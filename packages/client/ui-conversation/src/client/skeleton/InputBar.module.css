@@ -19,7 +19,9 @@
   padding-top: 4px;
 }
 
-.hero .dock:empty {
+/* Empty, or holding only the hero dock's slot wrapper with no occupant (no quick tasks). */
+.hero .dock:empty,
+.hero .dock:has(> [data-slot]:only-child:empty) {
   display: none;
 }
 
