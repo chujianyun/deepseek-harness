@@ -5,7 +5,7 @@
  * production confined execution walks.
  */
 
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,6 +24,24 @@ const runnerEntry = fileURLToPath(new URL('../src/runner.ts', import.meta.url))
 function pwshAvailable(): boolean {
   return spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { encoding: 'utf8' }).status === 0
 }
+
+/**
+ * Whether this process runs with an elevated token (High or System integrity), as GitHub's hosted
+ * Windows runners do. An elevated administrator keeps rights through ownership and privileges that
+ * these cases take away from an ordinary user, so the faults they build do not occur; they pass when
+ * run unelevated.
+ */
+function elevated(): boolean {
+  try {
+    return /S-1-16-(?:12288|16384)\b/u.test(execFileSync('whoami', ['/groups'], { encoding: 'utf8' }))
+  } catch {
+    // Not Windows, or whoami is unavailable: the cases run.
+    return false
+  }
+}
+
+/** A case that needs an unelevated user. */
+const unelevated = it.skipIf(elevated())
 
 function runRunner(args: string[], timeoutMs = 30_000) {
   return spawnSync(process.execPath, ['--import', 'tsx/esm', runnerEntry, ...args], {
@@ -527,7 +545,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
     }
   }, 30_000)
 
-  it('a FullControl open inside a granted root still works for files (the deny inherits to containers only)', () => {
+  unelevated('a FullControl open inside a granted root still works for files (the deny inherits to containers only)', () => {
     // The ambient-delete deny is 0x40, a member of FILE_ALL_ACCESS: inheriting
     // it onto files would deny every GENERIC_ALL/FullControl open by the user,
     // Administrators, SYSTEM, or the DSH host. Directories inside a granted

@@ -123,6 +123,24 @@ function integrityLines(path: string): string[] {
   return aclLines(path).filter(line => /Mandatory|S-1-16-/u.test(line))
 }
 
+/**
+ * Whether this process runs with an elevated token (High or System integrity), as GitHub's hosted
+ * Windows runners do. An elevated administrator keeps rights through ownership and privileges that
+ * these cases take away from an ordinary user, so the faults they build do not occur; they pass when
+ * run unelevated.
+ */
+function elevated(): boolean {
+  try {
+    return /S-1-16-(?:12288|16384)\b/u.test(execFileSync('whoami', ['/groups'], { encoding: 'utf8' }))
+  } catch {
+    // Not Windows, or whoami is unavailable: the cases run.
+    return false
+  }
+}
+
+/** A case that needs an unelevated user. */
+const unelevated = it.skipIf(elevated())
+
 function normalized(path: string, lines: readonly string[]): string[] {
   return lines.map((line) => {
     const trimmed = line.trim()
@@ -241,7 +259,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     }
   }, timeout)
 
-  it('grants full control to a directory that lacks WRITE_DAC and WRITE_OWNER, preserving owner and label', () => {
+  unelevated('grants full control to a directory that lacks WRITE_DAC and WRITE_OWNER, preserving owner and label', () => {
     const scratch = newScratch()
     try {
       const target = makeDir(scratch, 'missing-write-owner')
@@ -268,7 +286,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     }
   }, timeout)
 
-  it('repairs a missing grant and a package ACE in the same invocation', () => {
+  unelevated('repairs a missing grant and a package ACE in the same invocation', () => {
     const scratch = newScratch()
     try {
       const target = makeDir(scratch, 'both')
@@ -335,7 +353,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     }
   }, timeout)
 
-  it('repairs the whole subtree in one run when only the workspace root is named', () => {
+  unelevated('repairs the whole subtree in one run when only the workspace root is named', () => {
     const scratch = newScratch()
     try {
       // The sandbox reports its provisioning failure on the workspace root while the
@@ -374,7 +392,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     }
   }, timeout)
 
-  it('keeps an inherit-only ACE when it grants the missing right', () => {
+  unelevated('keeps an inherit-only ACE when it grants the missing right', () => {
     const scratch = newScratch()
     try {
       const target = makeDir(scratch, 'inherit-only')
@@ -533,7 +551,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     }
   }, timeout)
 
-  it('stops and restores the attempted grant when a deny ACE blocks WRITE_OWNER', () => {
+  unelevated('stops and restores the attempted grant when a deny ACE blocks WRITE_OWNER', () => {
     const scratch = newScratch()
     try {
       const target = makeDir(scratch, 'denied-write-owner')
@@ -561,7 +579,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     }
   }, timeout)
 
-  it('restores every attempted change in reverse order when a later path fails', () => {
+  unelevated('restores every attempted change in reverse order when a later path fails', () => {
     const scratch = newScratch()
     try {
       const out = join(scratch, 'out')
@@ -583,7 +601,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
     }
   }, timeout)
 
-  it('prints the pending recovery command and reports restore_pending_then_stop when rollback fails', () => {
+  unelevated('prints the pending recovery command and reports restore_pending_then_stop when rollback fails', () => {
     const scratch = newScratch()
     try {
       const out = join(scratch, 'out')
@@ -801,7 +819,7 @@ function icacls { throw [System.IO.IOException]::new('icacls unavailable') }
     }
   }, timeout)
 
-  it('repairs its own workspace root when -AllowRoot is the object itself', () => {
+  unelevated('repairs its own workspace root when -AllowRoot is the object itself', () => {
     const scratch = newScratch()
     try {
       const out = join(scratch, 'out')
@@ -823,7 +841,7 @@ function icacls { throw [System.IO.IOException]::new('icacls unavailable') }
     }
   }, timeout)
 
-  it('is idempotent: a second repair run changes nothing', () => {
+  unelevated('is idempotent: a second repair run changes nothing', () => {
     const scratch = newScratch()
     try {
       const target = makeDir(scratch, 'idempotent')

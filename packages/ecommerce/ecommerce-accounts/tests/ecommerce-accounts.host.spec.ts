@@ -886,6 +886,9 @@ describe('e-commerce accounts for the model', () => {
       // The .cmd itself, as PowerShell runs it, with this test's Node in place of DSH's.
       await installCommand(windows, 'win32', process.execPath)
       expect(await execRun('cmd.exe', ['/d', '/s', '/c', join(windows, 'dsh-ecommerce.cmd'), 'accounts'], windows, vars)).toEqual(await runCommand(env, vars, 'accounts'))
+      // As the model's PowerShell calls it: by name, found on PATH.
+      expect(await execRun('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'dsh-ecommerce accounts; exit $LASTEXITCODE'], windows, vars))
+        .toEqual(await runCommand(env, vars, 'accounts'))
     }
     endCall(env, exec)
     expect((await node(vars, 'accounts')).code).toBe(1)
