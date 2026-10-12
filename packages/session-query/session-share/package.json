@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-session-share",
   "description": "Share a Session with the user's company: a conversation snapshot uploaded to the user center, its link, and its withdrawal",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "publishConfig": {
     "access": "public"
   },
