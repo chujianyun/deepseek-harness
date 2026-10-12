@@ -11,8 +11,8 @@
  * - `save --account <id> --draft <商品草稿 json> --rules <字段规则 json> [--confirmed] [--stock <n>] [--unknown-checked]` saves the draft.
  */
 
-import { readFile, mkdir, writeFile } from 'node:fs/promises'
-import { basename, join, resolve } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 import { takeOverMerchant } from './account.ts'
 import { realDeps, type Deps } from './cli.ts'
 import { beijingTime } from './dates.ts'
@@ -27,10 +27,10 @@ import {
   buildGoods, extraPrices, listDrafts, listGoods, readSession, saveDraft, specIdFor, uploadPddImage, type DraftRow,
 } from './pdd-publish.ts'
 import { openPdd, PDD_GOODS_URL, PddRefusal } from './pdd.ts'
-import { readStoreRules, rulesText, runDraftStore, type CategoryFinder, type DraftStore } from './draft-store-cli.ts'
+import { readStoreRules, runDraftStore, type CategoryFinder, type DraftStore } from './draft-store-cli.ts'
 import {
-  parseCategoryOptions as parseDraftCategoryOptions, saveBlockers, saveContext, unready, unsettled, writeRecord,
-  type CategoryOptions, type DraftCategorySource, type DraftFile, type PublishRecord,
+  saveBlockers, saveContext, unready, unsettled, writeRecord,
+  type DraftCategorySource, type DraftFile, type PublishRecord,
 } from './publish-common.ts'
 
 /** The directory the rules and the record file go to by default. */
@@ -41,14 +41,6 @@ export const pddDeps: Deps = { ...realDeps, takeOver: accountId => takeOverMerch
 
 /** Where a `resolve` looks. */
 export type PddSource = DraftCategorySource
-
-/**
- * Read a `resolve`, `children`, or `rules` command line.
- * @param argv - the arguments after the script.
- * @returns the options.
- * @throws SkillError usage for a wrong command line.
- */
-export const parseCategoryOptions = (argv: readonly string[]): CategoryOptions => parseDraftCategoryOptions(argv, OUT)
 
 /** Pinduoduo's category lookups. */
 const FINDER: CategoryFinder = {
@@ -62,14 +54,9 @@ const FINDER: CategoryFinder = {
 }
 
 /** `rules`: the category's field rules, written to a file. */
-const readRules: DraftStore['rules'] = async (page, options, deps, account) => {
-  const category = await categoryById(page, options.catId)
-  const rules = pddRules(options.catId, category.path, await readTemplate(page, options.catId), await readLimits(page, options.catId))
-  const out = resolve(options.out)
-  await mkdir(out, { recursive: true })
-  const path = join(out, `字段规则_${options.catId}.json`)
-  await writeFile(path, `${JSON.stringify({ platform: 'pinduoduo', store: account.store, readAt: deps.now().toISOString(), ...rules }, null, 2)}\n`)
-  return rulesText(rules, path)
+const readRules: DraftStore['rules'] = async (page, catId) => {
+  const category = await categoryById(page, catId)
+  return { rules: pddRules(catId, category.path, await readTemplate(page, catId), await readLimits(page, catId)) }
 }
 
 /** Links to the 草稿箱. */
@@ -185,9 +172,9 @@ async function uploadAll(page: Page, draft: DraftFile, progress: (step: string) 
 
 /** The 拼多多 side of the 草稿箱 publish script. */
 const STORE: DraftStore = {
-  name: '拼多多', platform: 'pinduoduo', out: OUT, idLabel: 'ID', draftLink: DRAFT_LINK,
-  open: async (page) => { await (page => openPdd(page))(page) },
-  alreadySaved, finder: FINDER, rules: readRules, save, parseCategoryOptions,
+  out: OUT, idLabel: 'ID', draftLink: DRAFT_LINK,
+  open: async (page) => { await openPdd(page) },
+  alreadySaved, finder: FINDER, rules: readRules, save,
 }
 
 /**

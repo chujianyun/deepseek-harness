@@ -2,7 +2,7 @@
  * What the 草稿箱 publish scripts (Pinduoduo, Douyin shop) share around their platform's own pages: the
  * command line, the duplicate check's report, and reading the field rules a save needs.
  */
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import type { EcommercePlatform, MerchantBrowser } from './account.ts'
 import { runCli, withMerchantPage, type Deps } from './cli.ts'
@@ -11,8 +11,8 @@ import { EXIT, SkillError } from './errors.ts'
 import type { Page } from './page.ts'
 import { parseRulesFile } from './product-draft-cli.ts'
 import {
-  categoriesText, DRAFT_USAGE, parsePublishOptions, readRecords, rememberedCategory, sameProduct, titleOf, unsettled,
-  type CandidateCategory, type CategoryOptions, type DraftCategorySource, type DraftFile, type PublishOptions, type PublishRecord,
+  categoriesText, DRAFT_USAGE, parseCategoryOptions, parsePublishOptions, readRecords, rememberedCategory, sameProduct, titleOf, unsettled,
+  type CandidateCategory, type DraftCategorySource, type DraftFile, type PublishOptions, type PublishRecord,
 } from './publish-common.ts'
 import type { PublishRules } from './publish-rules.ts'
 
@@ -23,12 +23,17 @@ export interface FoundProduct {
   readonly how: string
 }
 
+/** A category's field rules as a platform reads them for `rules`. */
+export interface ReadRules {
+  readonly rules: PublishRules
+  /** More the platform keeps in the rules file beside the rules. */
+  readonly extra?: object
+  /** How many choices to list per field; all when absent. */
+  readonly shownOptions?: number
+}
+
 /** One platform's side of a 草稿箱 publish script. */
 export interface DraftStore {
-  /** The platform's name for the user, such as 抖店. */
-  readonly name: string
-  /** The platform key the field rules carry. */
-  readonly platform: string
   /** The directory the rules and the record file go to by default. */
   readonly out: string
   /** What the store's ids are called in a report, such as 商品 ID. */
@@ -39,12 +44,11 @@ export interface DraftStore {
   readonly open: (page: Page) => Promise<void>
   /** The same product already in the store, if any. */
   readonly alreadySaved: (page: Page, records: readonly PublishRecord[], title: string) => Promise<FoundProduct | undefined>
-  /** The platform's category lookups, for `resolve` and `children`. */
+  /** The platform's name, key and category lookups, for `resolve` and `children`. */
   readonly finder: CategoryFinder
-  /** `rules`: reads a category's field rules into a file. */
-  readonly rules: (page: Page, options: Extract<CategoryOptions, { command: 'rules' }>, deps: Deps, account: MerchantBrowser) => Promise<string>
+  /** `rules`: reads a category's field rules. */
+  readonly rules: (page: Page, catId: string) => Promise<ReadRules>
   readonly save: (page: Page, account: MerchantBrowser, draft: DraftFile, options: PublishOptions, deps: Pick<Deps, 'now' | 'stderr'>) => Promise<string>
-  readonly parseCategoryOptions: (argv: readonly string[]) => CategoryOptions
 }
 
 /**
@@ -68,18 +72,30 @@ export function runDraftStore(argv: readonly string[], deps: Deps, store: DraftS
       })).result
     }
     if (command === 'resolve' || command === 'children' || command === 'rules') {
-      const options = store.parseCategoryOptions(argv)
+      const options = parseCategoryOptions(argv, store.out)
       return (await withMerchantPage(options, deps, async (page, account) => {
         await store.open(page)
         switch (options.command) {
           case 'resolve': return resolveDraftCategory(page, options.source, deps, store.finder)
           case 'children': return childrenText(await store.finder.children(page, options.parent), store.finder.noChildren(options.parent))
-          case 'rules': return store.rules(page, options, deps, account)
+          case 'rules': return writeRules(await store.rules(page, options.catId), options, deps, account, store)
         }
       })).result
     }
     throw new SkillError(`缺少或认不出子命令：${command ?? '（无）'}\n${DRAFT_USAGE}`, EXIT.usage)
   })
+}
+
+/** `rules`: saves the rules read, beside the platform key and store a save checks, and lists them. */
+async function writeRules(
+  read: ReadRules, options: { catId: string; out: string }, deps: Pick<Deps, 'now'>, account: MerchantBrowser, store: DraftStore,
+): Promise<string> {
+  const out = resolve(options.out)
+  await mkdir(out, { recursive: true })
+  const path = join(out, `字段规则_${options.catId}.json`)
+  const file = { platform: store.finder.platform, store: account.store, readAt: deps.now().toISOString(), ...read.rules, ...read.extra }
+  await writeFile(path, `${JSON.stringify(file, null, 2)}\n`)
+  return rulesText(read.rules, path, read.shownOptions)
 }
 
 /** `check`: whether the store has the draft's product, changing nothing. */
@@ -94,7 +110,7 @@ async function checkStore(
   const open = unsettled(records)
   return [
     `店铺 ${account.store} 的草稿箱和商品列表里都没有「${title}」，DSH 也没有存过它。`,
-    ...open === undefined ? [] : [`注意：${beijingTime(new Date(open.at))}（北京时间）那次保存结果不明，店里暂时查不到；再存前要请用户到${store.name}后台确认没有这件商品。`],
+    ...open === undefined ? [] : [`注意：${beijingTime(new Date(open.at))}（北京时间）那次保存结果不明，店里暂时查不到；再存前要请用户到${store.finder.name}后台确认没有这件商品。`],
   ].join('\n')
 }
 
@@ -105,10 +121,10 @@ async function checkStore(
  * @returns the rules.
  * @throws SkillError usage for another platform's rules.
  */
-export async function readStoreRules(path: string, store: Pick<DraftStore, 'name' | 'platform'>): Promise<PublishRules> {
+export async function readStoreRules(path: string, store: DraftStore): Promise<PublishRules> {
   const text = await readFile(path, 'utf8')
-  if ((JSON.parse(text) as { platform?: string }).platform !== store.platform) {
-    throw new SkillError(`${path} 不是${store.name}的字段规则，请用本技能的 rules 命令重新读取。`, EXIT.usage)
+  if ((JSON.parse(text) as { platform?: string }).platform !== store.finder.platform) {
+    throw new SkillError(`${path} 不是${store.finder.name}的字段规则，请用本技能的 rules 命令重新读取。`, EXIT.usage)
   }
   return parseRulesFile(text)
 }

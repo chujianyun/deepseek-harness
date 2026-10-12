@@ -141,8 +141,8 @@ const PROBLEMS = { 'no-response': 'timeout', 'network': 'network', 'busy': 'busy
 
 /** The variable that gives a bash call the address of the e-commerce accounts. */
 const URL_KEY = 'DSH_ECOMMERCE_URL'
-/** The queue of tenant-wide writes; account ids are UUIDs, so it never meets an account's queue. */
-const TENANT_QUEUE = 'tenant'
+/** The queue of tenant-wide writes; a symbol, so no account id read from the ledger can name it. */
+const TENANT_QUEUE = Symbol('tenant')
 const NODE_KEY = 'DSH_ECOMMERCE_NODE'
 
 /** Each platform's name in what the model reads. */
@@ -215,7 +215,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
   /** Sign-ins waiting for the user, by account. */
   private readonly signIns = new Map<string, AbortController>()
   /** One operation at a time per account, so two never drive its Chrome together, and per tenant under TENANT_QUEUE. */
-  private readonly queues = new Map<string, Promise<unknown>>()
+  private readonly queues = new Map<string | typeof TENANT_QUEUE, Promise<unknown>>()
   private chrome: ChromeInfo | undefined
   private revision = Date.now()
   private readonly listeners = new Set<() => void>()
@@ -288,6 +288,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     await installCommand(join(this.root, 'bin'), process.platform)
     await followTenant(
       this.ctx.hubAccount, this.lifetime.signal, () => this.tenantId, tenantId => this.serialized(() => this.switchTenant(tenantId)),
+      (tenantId, error) => { this.ctx.logger.warn(`ecommerce-accounts: switching to tenant ${String(tenantId)} failed: ${String(error)}`) },
     )
   }
 
@@ -1136,7 +1137,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     return this.tenantId
   }
 
-  private queued<T>(accountId: string, operation: () => Promise<T>): Promise<T> {
+  private queued<T>(accountId: string | typeof TENANT_QUEUE, operation: () => Promise<T>): Promise<T> {
     const result = (this.queues.get(accountId) ?? Promise.resolve()).then(operation)
     this.queues.set(accountId, result.catch(() => undefined))
     return result

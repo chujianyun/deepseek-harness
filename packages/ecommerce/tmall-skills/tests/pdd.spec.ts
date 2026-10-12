@@ -5,7 +5,7 @@ import { takeOverMerchant, type EcommerceCommandResult } from '../src/account.ts
 import type { FieldCheck } from '../src/draft.ts'
 import { generatedLabels } from '../src/draft.ts'
 import { EXIT, SkillError } from '../src/errors.ts'
-import { main, parseCategoryOptions, pddDeps } from '../src/pdd-cli.ts'
+import { main, pddDeps } from '../src/pdd-cli.ts'
 import {
   categoryById, categoryOfLine, childCategories, createSession, pddRules, predictCategories, readLimits, readTemplate, searchCategories,
   setCategory,
@@ -16,10 +16,12 @@ import {
   shelfDays, specIdFor, uploadPddImage,
 } from '../src/pdd-publish.ts'
 import { INSTALL, isPddSignIn, openPdd, PDD_GOODS_URL, pddCall, PddRefusal } from '../src/pdd.ts'
-import { commonPrefix, type DraftFile, type PublishRecord } from '../src/publish-common.ts'
+import { commonPrefix, parseCategoryOptions as parseDraftCategoryOptions, type DraftFile, type PublishRecord } from '../src/publish-common.ts'
 import type { PublishRules } from '../src/publish-rules.ts'
 import { jpeg, png } from './images.ts'
 import { fakeDeps, FakePage, on, tempDir, type Route } from './support.ts'
+
+const parseCategoryOptions = (argv: readonly string[]) => parseDraftCategoryOptions(argv, '拼多多发品')
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {

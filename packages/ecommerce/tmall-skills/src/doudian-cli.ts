@@ -13,8 +13,8 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { basename, join, resolve } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 import { takeOverMerchant } from './account.ts'
 import { realDeps, type Deps } from './cli.ts'
 import { beijingTime } from './dates.ts'
@@ -30,10 +30,10 @@ import {
 import { EXIT, SkillError } from './errors.ts'
 import { readImage } from './images.ts'
 import type { Page } from './page.ts'
-import { readStoreRules, rulesText, runDraftStore, type CategoryFinder, type DraftStore } from './draft-store-cli.ts'
+import { readStoreRules, runDraftStore, type CategoryFinder, type DraftStore } from './draft-store-cli.ts'
 import {
-  parseCategoryOptions as parseDraftCategoryOptions, saveBlockers, saveContext, unready, unsettled, writeRecord,
-  type CategoryOptions, type DraftCategorySource, type DraftFile, type PublishRecord,
+  saveBlockers, saveContext, unready, unsettled, writeRecord,
+  type DraftCategorySource, type DraftFile, type PublishRecord,
 } from './publish-common.ts'
 
 /** The directory the rules and the record file go to by default. */
@@ -44,14 +44,6 @@ export const doudianDeps: Deps = { ...realDeps, takeOver: accountId => takeOverM
 
 /** Where a `resolve` looks. */
 export type DoudianSource = DraftCategorySource
-
-/**
- * Read a `resolve`, `children`, or `rules` command line.
- * @param argv - the arguments after the script.
- * @returns the options.
- * @throws SkillError usage for a wrong command line.
- */
-export const parseCategoryOptions = (argv: readonly string[]): CategoryOptions => parseDraftCategoryOptions(argv, OUT)
 
 /** The Douyin shop's category lookups. */
 const FINDER: CategoryFinder = {
@@ -64,21 +56,16 @@ const FINDER: CategoryFinder = {
 }
 
 /** `rules`: the category's field rules, written to a file. */
-const readRules: DraftStore['rules'] = async (page, options, deps, account) => {
-  const category = await categoryById(page, options.catId)
-  if (!category.usable) throw new SkillError(`这家店没有开通类目 ${options.catId}（${category.path.join(' > ')}）。`, EXIT.usage)
-  await openDoudian(page, createUrl(options.catId), FIND_STORE)
+const readRules: DraftStore['rules'] = async (page, catId) => {
+  const category = await categoryById(page, catId)
+  if (!category.usable) throw new SkillError(`这家店没有开通类目 ${catId}（${category.path.join(' > ')}）。`, EXIT.usage)
+  await openDoudian(page, createUrl(catId), FIND_STORE)
   const form = await readForm(page)
-  const rules = doudianRules(options.catId, category.path, form)
   // The library's entries are named by upload time; their images tell them apart.
   const images = Object.fromEntries(form.qualifications.flatMap(
     item => item.options.map(option => [libraryText(item, option), option.urls]),
   ))
-  const out = resolve(options.out)
-  await mkdir(out, { recursive: true })
-  const path = join(out, `字段规则_${options.catId}.json`)
-  await writeFile(path, `${JSON.stringify({ platform: 'doudian', store: account.store, readAt: deps.now().toISOString(), ...rules, qualificationImages: images }, null, 2)}\n`)
-  return rulesText(rules, path, 6)
+  return { rules: doudianRules(catId, category.path, form), extra: { qualificationImages: images }, shownOptions: 6 }
 }
 
 /** Links to the 草稿箱. */
@@ -202,9 +189,9 @@ async function uploadAll(
 
 /** The 抖店 side of the 草稿箱 publish script. */
 const STORE: DraftStore = {
-  name: '抖店', platform: 'doudian', out: OUT, idLabel: '商品 ID', draftLink: DRAFT_LINK,
-  open: async (page) => { await (page => openDoudian(page, DOUDIAN_DRAFTS_URL))(page) },
-  alreadySaved, finder: FINDER, rules: readRules, save, parseCategoryOptions,
+  out: OUT, idLabel: '商品 ID', draftLink: DRAFT_LINK,
+  open: async (page) => { await openDoudian(page, DOUDIAN_DRAFTS_URL) },
+  alreadySaved, finder: FINDER, rules: readRules, save,
 }
 
 /**

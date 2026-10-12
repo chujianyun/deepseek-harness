@@ -310,6 +310,7 @@ export class AssistantsService extends TypertRemoteService {
   async [Service.init](): Promise<void> {
     await followTenant(
       this.ctx.hubAccount, this.lifetime.signal, () => this.tenantId, tenantId => this.serialized(() => this.switchTenant(tenantId)),
+      (tenantId, error) => { this.ctx.logger.warn(`assistants: switching to tenant ${String(tenantId)} failed: ${String(error)}`) },
     )
   }
 
