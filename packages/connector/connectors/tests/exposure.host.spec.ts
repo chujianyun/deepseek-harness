@@ -2,7 +2,6 @@
  * What a connected connector gives the model: the `lark-cli` script ahead of the model shell's
  * PATH and the Skills the CLI embeds, both following the connection and the enable switch.
  */
-import { execFile } from 'node:child_process'
 import { readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,22 +13,14 @@ import type { SkillCandidate, SkillProvider } from '@deepseek-ai/dsh-skill'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { readSkill } from '../src/lark.ts'
 import { ConnectorSkillProvider } from '../src/skills.ts'
-import { feishu, setup, VERSION } from './support.ts'
+import { feishu, setup, shell, VERSION } from './support.ts'
 
+// The stand-in CLI is a POSIX shell script; on Windows windows-wrapper.spec.ts covers the script.
 const runs = it.skipIf(process.platform === 'win32')
 
 const execution: ToolExecution = {
   signal: new AbortController().signal, token: Symbol('connectors-test') as ToolExecution['token'],
   callId: ToolCallId('call'), rootCallId: ToolCallId('call'), name: 'bash', arguments: { command: 'lark-cli' },
-}
-
-/** Run the model shell's `lark-cli` as bash would find it: through the contributed PATH directory. */
-function shell(dir: string, args: string[], env: NodeJS.ProcessEnv = {}): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
-    execFile(join(dir, 'lark-cli'), args, { env: { ...process.env, ...env }, encoding: 'utf8' }, (error, stdout, stderr) => {
-      resolve({ code: error === null ? 0 : Number(error.code), stdout, stderr })
-    })
-  })
 }
 
 async function connected(options: Parameters<typeof setup>[0] = {}) {
@@ -50,7 +41,10 @@ describe('the model shell\'s lark-cli', () => {
     const t = await connected()
     const dir = t.ctx.shellEnv.collectPath(execution)
     expect(dir).toEqual([join(t.root, 'bin', 't-a')])
-    const result = await shell(dir[0]!, ['calendar', '+agenda'], { LARKSUITE_CLI_CONFIG_DIR: '/Users/someone/.lark-cli', LARKSUITE_CLI_APP_ID: 'mine', HERMES_HOME: '/h' })
+    const result = await shell(dir[0]!, ['calendar', '+agenda'], {
+      LARKSUITE_CLI_CONFIG_DIR: '/Users/someone/.lark-cli', LARKSUITE_CLI_APP_ID: 'mine', HERMES_HOME: '/h',
+      LARK_CLI_PROFILE: 'mine', LARK_CHANNEL_ID: 'c', OPENCLAW_TOKEN: 't',
+    })
     expect(result).toMatchObject({ code: 0, stdout: expect.stringContaining('产品周会') as string })
     expect((await readFile(join(t.control, 'run-env'), 'utf8')).trim().split('\n')).toEqual([
       `LARKSUITE_CLI_CONFIG_DIR=${join(t.tenantDir('t-a'), 'config')}`,
@@ -59,6 +53,18 @@ describe('the model shell\'s lark-cli', () => {
       'LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1',
       'LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1',
     ])
+  })
+
+  runs('refuses lark-cli update, which DSH owns', async () => {
+    const t = await connected()
+    const [dir] = t.ctx.shellEnv.collectPath(execution)
+    const result = await shell(dir!, ['update'])
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain('DSH: lark-cli update is not available here; DSH installs and updates lark-cli itself.')
+    expect((await shell(dir!, ['--profile', 'x', 'update'])).code).toBe(2)
+    // A word named update elsewhere in a command is not the update command.
+    expect((await shell(dir!, ['calendar', '+agenda', 'update'])).code).toBe(0)
+    expect(await t.calls()).not.toContain('update')
   })
 
   runs('points a failing command to the Connectors page', async () => {

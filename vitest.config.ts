@@ -75,9 +75,9 @@ const windowsUnsupportedCoveragePackages = process.platform === 'win32'
   ? [
       ...windowsUnsupportedPackages,
       'packages/subprocess/*',
-      // The connectors give the model POSIX shell scripts only, and their specs drive stand-in CLIs that
-      // are POSIX shell scripts (README Known Limitations: Bash only, POSIX only); the specs skip on
-      // Windows, so the Linux and macOS lanes hold the package's per-file 100%.
+      // The connectors' host specs drive stand-in CLIs that are POSIX shell scripts and skip on Windows;
+      // the Windows lane runs the PowerShell reading and the Windows script (risk and windows-wrapper
+      // specs), and the Linux and macOS lanes hold the package's per-file 100%.
       'packages/connector/connectors',
     ]
   : []

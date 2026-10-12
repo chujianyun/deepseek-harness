@@ -1,15 +1,17 @@
 /** Shared by the connector specs: a Hub sign-in stand-in and a service booted over a stand-in lark-cli or dws. */
+import { execFile } from 'node:child_process'
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, vi } from 'vitest'
+import { afterAll, afterEach, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import { liveConfig } from '../../../settings/settings/tests/live-config.ts'
+import { removeCompiledShim, scriptExecutable } from '../../../ecommerce/ecommerce-accounts/tests/script-executable.ts'
 import ConnectorsService, { type CliSpec, type ConnectorsState } from '../src/index.ts'
 import { FAKE_DWS } from './fake-dws-cli.ts'
 import { FAKE_LARK_CLI as FAKE } from './fake-lark-cli.ts'
@@ -44,6 +46,30 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
   vi.unstubAllEnvs()
 })
+
+afterAll(removeCompiledShim)
+
+/** Git for Windows' bash, which runs the stand-in CLIs' shell scripts there. */
+const GIT_BASH = join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Git', 'bin', 'bash.exe')
+
+/**
+ * Put a stand-in CLI where the connector runs it: the shell script itself elsewhere, and on Windows,
+ * which starts only executables, `<name>.exe` running `<name>.sh` with Git's bash.
+ * @param dir - the CLI's version directory.
+ * @param name - the CLI's name.
+ * @param script - the stand-in's shell script.
+ * @returns the program the connector runs.
+ */
+export async function standInCli(dir: string, name: string, script: string): Promise<string> {
+  if (process.platform !== 'win32') {
+    await writeFile(join(dir, name), script)
+    await chmod(join(dir, name), 0o755)
+    return join(dir, name)
+  }
+  await writeFile(join(dir, `${name}.sh`), script)
+  // bash reads its own path with forward slashes, so `dirname "$0"` finds the control directory.
+  return scriptExecutable(join(dir, `${name}.sh`).replaceAll('\\', '/'), dir, 'win32', GIT_BASH)
+}
 
 /** A Hub sign-in stand-in whose tenant the spec switches. */
 export function hubStub(tenantId: string | null) {
@@ -165,4 +191,13 @@ async function writeWhole(path: string, content: string): Promise<void> {
   const staging = `${path}.${randomUUID()}.tmp`
   await writeFile(staging, content)
   await rename(staging, path)
+}
+
+/** Run the model shell's POSIX `lark-cli` script as its shell would find it, through the contributed PATH directory. */
+export function shell(dir: string, args: string[], env: NodeJS.ProcessEnv = {}): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile(join(dir, 'lark-cli'), args, { env: { ...process.env, ...env }, encoding: 'utf8' }, (error, stdout, stderr) => {
+      resolve({ code: error === null ? 0 : Number(error.code), stdout, stderr })
+    })
+  })
 }
