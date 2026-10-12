@@ -325,7 +325,7 @@ export class SkillMarket extends TypertRemoteService {
       this.tenantId = tenantId ?? undefined
       this.provider?.invalidate()
       return Promise.resolve()
-    }, (tenantId, error) => { this.ctx.logger.warn(`skill-market: switching to tenant ${String(tenantId)} failed: ${String(error)}`) })
+    }, this.ctx.logger, 'skill-market')
   }
 
   /**

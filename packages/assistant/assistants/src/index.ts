@@ -310,7 +310,7 @@ export class AssistantsService extends TypertRemoteService {
   async [Service.init](): Promise<void> {
     await followTenant(
       this.ctx.hubAccount, this.lifetime.signal, () => this.tenantId, tenantId => this.serialized(() => this.switchTenant(tenantId)),
-      (tenantId, error) => { this.ctx.logger.warn(`assistants: switching to tenant ${String(tenantId)} failed: ${String(error)}`) },
+      this.ctx.logger, 'assistants',
     )
   }
 
@@ -709,12 +709,13 @@ export class AssistantsService extends TypertRemoteService {
       scope.on('system-prompt/assemble', async (assembly, context, next) => {
         if (context.signal === undefined) return next()
         const state = this.ctx.sessionProjections.stateOf(agent.session, 'assistant')
-        const assistantId = state?.assistantId ?? null
-        if (assistantId === null) return next()
-        const rendered = await this.instructionsFor(assistantId)
+        /* v8 ignore next -- this service registers the 'assistant' unit, so every session has its state. */
+        if (state === undefined) return next()
+        if (state.assistantId === null) return next()
+        const rendered = await this.instructionsFor(state.assistantId)
         // Core files that earlier turns carried stay in the conversation; say they no longer apply.
-        const text = rendered === '' && (state?.instructions ?? '') !== '' ? CORE_FILES_WITHDRAWN : rendered
-        if (text !== (state?.instructions ?? null)) agent.session.append('assistant/instructions', { text })
+        const text = rendered === '' && (state.instructions ?? '') !== '' ? CORE_FILES_WITHDRAWN : rendered
+        if (text !== (state.instructions ?? null)) agent.session.append('assistant/instructions', { text })
         assembly.sections = assembly.sections.map(section => section.name === ASSISTANT_SECTION ? { ...section, text } : section)
         return next()
       })
@@ -783,7 +784,7 @@ export class AssistantsService extends TypertRemoteService {
     const start = Date.now()
     for (const [index, id] of missing.entries()) {
       const template = TEMPLATES.get(id)
-      // Config admits only template ids, so every seed id names a template.
+      /* v8 ignore next -- Config admits only template ids, so every seed id names a template. */
       if (template === undefined) continue
       const created = await this.createFrom(tenantId, template, new Date(start + index))
       this.list = [...this.list, created]

@@ -130,10 +130,11 @@ describe('the Add automation task form', () => {
     // Once.
     fireEvent.click(screen.getByRole('tab', { name: zh['mode.once'] }))
     fill(zh['date.label'], '2026-10-20')
-    fill(zh['time.label'], '10:00')
+    // Not on the hour, so it never equals the suggested time and always changes the field.
+    fill(zh['time.label'], '10:15')
     fill(zh['window.start'], '2026-10-01')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['action.save'] })) })
-    expect(h.onCreate.mock.calls[2]![0]).toMatchObject({ timing: { kind: 'at', at: { date: '2026-10-20', time: '10:00:00' } }, window: { start: '2026-10-01' } })
+    expect(h.onCreate.mock.calls[2]![0]).toMatchObject({ timing: { kind: 'at', at: { date: '2026-10-20', time: '10:15:00' } }, window: { start: '2026-10-01' } })
   })
 
   it('keeps what was entered and explains a refused save, then a failed one', async () => {

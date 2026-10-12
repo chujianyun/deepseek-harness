@@ -40,6 +40,15 @@ it.each([zh, en])('shows the employee without the company, opens Settings, and s
   expect(props.onSignOut).toHaveBeenCalledOnce()
 })
 
+it('closes the menu on Escape without choosing anything', () => {
+  const props = mount({ status: 'signed-in', profile, reason: null, attempt: null, branding: null })
+  fireEvent.click(screen.getByRole('button', { name: zh.menu }))
+  fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(props.openSettings).not.toHaveBeenCalled()
+  expect(props.onSignOut).not.toHaveBeenCalled()
+})
+
 it('shows an account without a company the same way and keeps only the initial in the collapsed rail', () => {
   mount({ status: 'signed-in', profile: { ...profile, tenantName: null }, reason: null, attempt: null, branding: null })
   expect(screen.getByRole('button', { name: zh.menu }).textContent).toBe('韩韩梅梅')

@@ -30,6 +30,7 @@ const HELD_RETRY_MS = 3000
  */
 function transient(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException).code
+  /* v8 ignore next -- each platform's coverage takes only its own codes; Windows coverage takes the Windows ones. */
   return code === 'EBUSY' || (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES'))
 }
 
@@ -64,6 +65,7 @@ async function blockedBy(root: string, error: unknown): Promise<'busy' | 'storag
     return 'busy'
   } catch {
     // The connector's directory takes no file: a permission or disk problem.
+    /* v8 ignore next -- needs a held file in a directory that also refuses a new one, a disk fault no test can stage. */
     return 'storage'
   }
 }
@@ -172,6 +174,7 @@ export async function installCli(
     await unpack(archivePath, archive.file, name, staging)
     if (skillsPath !== undefined) await unpackSkills(skillsPath, join(staging, SKILLS_DIR))
   } catch (error) {
+    /* v8 ignore next -- a forced rm fails only on a disk fault; the next install clears it first. */
     await rm(staging, { recursive: true, force: true }).catch(() => undefined)
     throw new InstallError('storage', `${archive.file}: ${String(error)}`)
   }
@@ -183,6 +186,7 @@ export async function installCli(
     await retrying(() => rename(staging, target), deadline, signal)
   } catch (error) {
     // Cleanup is best effort: the next install clears the staging directory first.
+    /* v8 ignore next -- a forced rm fails only on a disk fault; the next install clears it first. */
     await rm(staging, { recursive: true, force: true }).catch(() => undefined)
     signal.throwIfAborted()
     throw new InstallError(await blockedBy(root, error), `${target}: ${String(error)}`)
@@ -191,6 +195,7 @@ export async function installCli(
     const { stdout } = await runNativeCommand(join(target, name), ['--version'], AbortSignal.any([signal, AbortSignal.timeout(LAUNCH_TIMEOUT_MS)]), 'hidden')
     if (!stdout.includes(spec.version)) throw new Error(`reported ${JSON.stringify(stdout.trim())}`)
   } catch (error) {
+    /* v8 ignore next -- a forced rm fails only on a disk fault; the next install clears it first. */
     await rm(target, { recursive: true, force: true }).catch(() => undefined)
     signal.throwIfAborted()
     throw new InstallError('launch', `${name} --version: ${String(error)}`)

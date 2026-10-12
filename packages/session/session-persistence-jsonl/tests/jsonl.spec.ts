@@ -571,7 +571,7 @@ describe('JsonlSessionPersistence: deleting a session', () => {
     expect(deleted).toEqual([header.id])
   })
 
-  // Finishing syncs the parent directory, which Windows has no way to do, so nothing there can fail.
+  // Finishing syncs the parent directory, which Windows has no way to do, so the sync failure cannot be injected there.
   it.skipIf(process.platform === 'win32')('still announces the deletion when finishing the removal fails after the directory is gone', async () => {
     const header = await stored('finish')
     const deleted: string[] = []
@@ -582,6 +582,26 @@ describe('JsonlSessionPersistence: deleting a session', () => {
     expect(deleted).toEqual([header.id])
     expect(await ctx.sessionPersistence.stat(header.id)).toBeUndefined()
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('was deleted, but finishing the removal failed: Error: injected sync failure'))
+  })
+
+  it('still announces the deletion when releasing its write lock fails after the directory is gone', async () => {
+    const header = await stored('release')
+    const deleted: string[] = []
+    ctx.on('session/deleted', (id) => { deleted.push(id) })
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    type Leasing = { acquireLease: (...args: unknown[]) => Promise<{ release: () => Promise<void> }> }
+    const persistence = ctx.sessionPersistence as never as Leasing
+    const acquire = persistence.acquireLease.bind(persistence)
+    vi.spyOn(persistence, 'acquireLease').mockImplementationOnce(async (...args) => {
+      const lease = await acquire(...args)
+      const release = lease.release.bind(lease)
+      lease.release = async () => { await release(); throw new Error('injected release failure') }
+      return lease
+    })
+    await ctx.sessionPersistence.delete(header.id)
+    expect(deleted).toEqual([header.id])
+    expect(await ctx.sessionPersistence.stat(header.id)).toBeUndefined()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('was deleted, but finishing the removal failed: Error: injected release failure'))
   })
 })
 

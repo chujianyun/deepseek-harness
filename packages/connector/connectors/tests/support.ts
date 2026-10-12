@@ -124,8 +124,12 @@ export async function setup(options: {
   // The other connector stays uninstallable, so no test reaches its real mirrors.
   const specs = id === 'feishu' ? { feishu: SPEC, dingtalk: NOWHERE('dws') } : { feishu: NOWHERE('lark-cli'), dingtalk: DWS_SPEC }
   const live = await liveConfig(ctx, ConnectorsService, { dshHome: home, ...specs, ...interval })
+  let refuseSettings = false
   if (options.settings !== false) {
-    ctx.provide('settings', { update: async (_entry: string, patch: Record<string, unknown>) => { await live.update(patch) } } as never)
+    ctx.provide('settings', { update: async (_entry: string, patch: Record<string, unknown>) => {
+      if (refuseSettings) throw new Error('settings file is read-only')
+      await live.update(patch)
+    } } as never)
   }
   const service = ctx.get('connectors')!
   const stream = new AbortController()
@@ -146,7 +150,9 @@ export async function setup(options: {
   const status = (value: object | string) => writeWhole(join(control, 'status.json'), typeof value === 'string' ? value : JSON.stringify(value))
   /** The always-allowed list the profile holds. */
   const saved = () => Promise.resolve((live.entry.options.config as { alwaysAllowed?: readonly string[] }).alwaysAllowed ?? [])
-  return { ctx, service, fiber: live.fiber, hub, until, root, control, tenantDir, exists, calls, answer, status, saved }
+  /** Make every later settings write fail, or succeed again. */
+  const failSettings = (fail: boolean) => { refuseSettings = fail }
+  return { ctx, service, fiber: live.fiber, hub, until, root, control, tenantDir, exists, calls, answer, status, saved, failSettings }
 }
 
 /**

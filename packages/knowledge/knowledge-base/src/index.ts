@@ -174,7 +174,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
     this.embedding = await this.ctx.embedding.getState()
     await followTenant(
       this.ctx.hubAccount, this.lifetime.signal, () => this.tenantId, tenantId => this.serialized(() => this.switchTenant(tenantId)),
-      (tenantId, error) => { this.ctx.logger.warn(`knowledge-base: switching to tenant ${String(tenantId)} failed: ${String(error)}`) },
+      this.ctx.logger, 'knowledge-base',
     )
     void (async () => {
       for await (const state of this.ctx.embedding.watch(this.lifetime.signal)) {

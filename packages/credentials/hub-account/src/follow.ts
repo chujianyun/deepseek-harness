@@ -13,19 +13,22 @@ export interface TenantSource {
  * @param signal - the following service's lifetime.
  * @param current - the tenant the service holds.
  * @param switchTo - switches the service; the caller serializes it with its other writes.
- * @param failed - told of a background switch that failed; following goes on with the next change.
+ * @param logger - warned, under `owner`, of a background switch that failed; following goes on with the next change.
+ * @param owner - the following service's name for the warning.
  * @returns once the first switch is done; later switches run in the background.
  * @throws whatever the first switch throws.
  */
 export async function followTenant(
   hub: TenantSource, signal: AbortSignal, current: () => string | null,
-  switchTo: (tenantId: string | null) => Promise<void>, failed: (tenantId: string | null, error: unknown) => void,
+  switchTo: (tenantId: string | null) => Promise<void>, logger: { warn(message: string): void }, owner: string,
 ): Promise<void> {
   await switchTo((await hub.getState()).profile?.tenantId ?? null)
   void (async () => {
     for await (const state of hub.watch(signal)) {
       const tenantId = state.profile?.tenantId ?? null
-      if (tenantId !== current()) await switchTo(tenantId).catch((error: unknown) => { failed(tenantId, error) })
+      if (tenantId !== current()) await switchTo(tenantId).catch((error: unknown) => {
+        logger.warn(`${owner}: switching to tenant ${String(tenantId)} failed: ${String(error)}`)
+      })
     }
   })()
 }

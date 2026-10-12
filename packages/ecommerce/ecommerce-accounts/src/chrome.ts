@@ -323,6 +323,7 @@ export async function closeChrome(dir: string, timeoutMs: number): Promise<void>
     if (!await exited(record.pid, timeoutMs)) {
       for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
         await signalChrome(record.pid, signal)
+        /* v8 ignore next -- Windows ends a process at SIGTERM, so only POSIX coverage sees one outlive it. */
         if (await exited(record.pid, SIGNAL_WAIT_MS)) break
       }
     }
@@ -333,6 +334,7 @@ export async function closeChrome(dir: string, timeoutMs: number): Promise<void>
 /** Signal Chrome; on Windows `SIGKILL` ends the whole process tree, since its child processes keep the profile's files open. */
 async function signalChrome(pid: number, signal: 'SIGTERM' | 'SIGKILL'): Promise<void> {
   try {
+    /* v8 ignore next -- each platform's coverage takes only its own way to end Chrome; Windows coverage takes taskkill. */
     if (signal === 'SIGKILL' && process.platform === 'win32') await run('taskkill', ['/PID', String(pid), '/T', '/F'])
     else process.kill(pid, signal)
   } catch {
@@ -347,6 +349,7 @@ async function exited(pid: number, timeoutMs: number): Promise<boolean> {
       process.kill(pid, 0)
     } catch (error) {
       // EPERM: the process exists but may not be signalled; only ESRCH means it is gone.
+      /* v8 ignore next -- needs a live process of another user, which no test may signal. */
       if ((error as NodeJS.ErrnoException).code !== 'EPERM') return true
     }
     if (Date.now() >= deadline) return false

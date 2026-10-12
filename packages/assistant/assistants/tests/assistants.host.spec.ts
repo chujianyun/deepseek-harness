@@ -156,6 +156,22 @@ describe('assistants storage', () => {
     expect((await env.settle(s => s.tenantId === 't-a')).assistants).toHaveLength(1)
   })
 
+  it('shows a tenant whose seeding failed, and seeds it again at the next sign-in', async () => {
+    const env = await setup()
+    await env.settle(s => s.assistants.length === 1)
+    const warn = vi.spyOn(env.ctx.logger, 'warn').mockImplementation(() => {})
+    // The service's private template copy; failing it once fails that tenant's seeding.
+    const seeding: { createFrom: () => Promise<unknown> } = env.service as never
+    vi.spyOn(seeding, 'createFrom').mockRejectedValueOnce(new Error('disk full'))
+    env.hub.set('t-b')
+    expect(await env.settle(s => s.tenantId === 't-b')).toMatchObject({ assistants: [] })
+    expect(warn).toHaveBeenCalledWith('assistants: seeding t-b failed: Error: disk full')
+    env.hub.set('t-a')
+    await env.settle(s => s.tenantId === 't-a')
+    env.hub.set('t-b')
+    expect((await env.settle(s => s.tenantId === 't-b' && s.assistants.length === 1)).assistants).toHaveLength(1)
+  })
+
   it('keeps each tenant\'s assistants apart and shows none while signed out', async () => {
     const env = await setup()
     const a = await env.settle(s => s.assistants.length === 1)
@@ -272,6 +288,15 @@ describe('session binding', () => {
     expect(recorded).toHaveLength(2)
     expect(recorded[0]).toMatchObject({ text: expect.stringContaining('<core_file') as string })
     expect(recorded[1]).toEqual({ text: CORE_FILES_WITHDRAWN })
+  })
+
+  it('sends no core files and no withdrawal for an assistant whose core files were empty from the start', async () => {
+    const env = await setup()
+    const id = (await env.settle(s => s.assistants.length === 1)).assistants[0]!.id
+    await env.service.updateAssistant(id, { files: { 'IDENTITY.md': '', 'SOUL.md': '', 'USER.md': '', 'AGENTS.md': '' } })
+    const agent = await env.boundAgent('s1')
+    expect(await env.turnPrompt(agent)).toBe('')
+    expect(env.events(agent, 'assistant/instructions')).toEqual([{ text: '' }])
   })
 
   it('says the earlier core files no longer apply once the user empties every one of them', async () => {

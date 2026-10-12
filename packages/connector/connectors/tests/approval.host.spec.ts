@@ -134,6 +134,23 @@ describe('always allowing connector writes', () => {
     expect(await t.gate(bash('lark-cli im +messages-send', 'call-5'))).toMatchObject({ kind: 'ask' })
   })
 
+  runs('keeps asking when a grant cannot be saved, and keeps a grant whose clearing on sign-out cannot be saved', async () => {
+    const t = await connected()
+    const warn = vi.spyOn(t.ctx.logger, 'warn').mockImplementation(() => {})
+    t.failSettings(true)
+    remember(await t.gate(bash('lark-cli im +messages-send')))
+    await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith('connectors: could not save always-allowed commands: Error: settings file is read-only') })
+    expect(await t.saved()).toEqual([])
+    expect(await t.gate(bash('lark-cli im +messages-send', 'call-2'))).toMatchObject({ kind: 'ask' })
+    t.failSettings(false)
+    remember(await t.gate(bash('lark-cli im +messages-send', 'call-3')))
+    await t.until(item => item.alwaysAllowed.length === 1)
+    t.failSettings(true)
+    t.hub.set(null)
+    await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith('connectors: could not clear always-allowed commands: Error: settings file is read-only') })
+    expect(await t.saved()).toEqual(['t-a/feishu/im +messages-send'])
+  })
+
   runs('never offers to remember a high-risk command, one of unknown risk, or a call that holds one', async () => {
     const t = await connected()
     for (const command of ['lark-cli drive +delete --file-token box_1', 'lark-cli calendar list', 'lark-cli im +messages-send && lark-cli drive +delete']) {
