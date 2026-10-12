@@ -358,7 +358,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-assistants`
 
 - `inject`: `hubAccount` · `sessionProjections` · `agents`
-- `source`: [`packages/assistant/assistants/src/index.ts:60`](../packages/assistant/assistants/src/index.ts)
+- `source`: [`packages/assistant/assistants/src/index.ts:61`](../packages/assistant/assistants/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -808,7 +808,7 @@ export interface ToolResultPruneConfig {
 
 - `inject`: `hubAccount` · `skills` · `shellEnv` · `sessionProjections`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/connector/connectors/src/index.ts:106`](../packages/connector/connectors/src/index.ts)
+- `source`: [`packages/connector/connectors/src/index.ts:107`](../packages/connector/connectors/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -953,7 +953,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-ecommerce-accounts`
 
 - `inject`: `hubAccount` · `skills` · `shellEnv`
-- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:75`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
+- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:76`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -995,7 +995,7 @@ export interface Config {
 
 - `inject`: `llm`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/llm/embedding/src/index.ts:102`](../packages/llm/embedding/src/index.ts)
+- `source`: [`packages/llm/embedding/src/index.ts:103`](../packages/llm/embedding/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -1819,7 +1819,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-hub-account`
 
 - `inject`: `credentials` · `authorization`
-- `source`: [`packages/credentials/hub-account/src/index.ts:39`](../packages/credentials/hub-account/src/index.ts)
+- `source`: [`packages/credentials/hub-account/src/index.ts:42`](../packages/credentials/hub-account/src/index.ts)
 
 ```ts config-catalog
 /** Deployment configuration: which user center, as which registered client. */
@@ -1881,7 +1881,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-knowledge-base`
 
 - `inject`: `embedding` · `hubAccount`
-- `source`: [`packages/knowledge/knowledge-base/src/index.ts:48`](../packages/knowledge/knowledge-base/src/index.ts)
+- `source`: [`packages/knowledge/knowledge-base/src/index.ts:49`](../packages/knowledge/knowledge-base/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -4931,6 +4931,7 @@ export interface Config {
 | `@deepseek-ai/dsh-atomic-write` | — | [`packages/util/atomic-write/src/index.ts`](../packages/util/atomic-write/src/index.ts) |
 | `@deepseek-ai/dsh-base` | — | [`packages/bundle/base/src/index.ts`](../packages/bundle/base/src/index.ts) |
 | `@deepseek-ai/dsh-brand` | — | [`packages/util/brand/src/index.ts`](../packages/util/brand/src/index.ts) |
+| `@deepseek-ai/dsh-change-stream` | — | [`packages/util/change-stream/src/index.ts`](../packages/util/change-stream/src/index.ts) |
 | `@deepseek-ai/dsh-chunked-list` | — | [`packages/util/chunked-list/src/index.ts`](../packages/util/chunked-list/src/index.ts) |
 | `@deepseek-ai/dsh-client-store` | — | [`packages/client/store/src/index.ts`](../packages/client/store/src/index.ts) |
 | `@deepseek-ai/dsh-client-test-runtime` | — | [`packages/test-support/client-runtime/src/index.ts`](../packages/test-support/client-runtime/src/index.ts) |

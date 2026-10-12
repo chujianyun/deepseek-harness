@@ -42,7 +42,7 @@ Host owner of the connectors and of the `connectors` Remote namespace.
  * @param signal - stream lifetime.
  * @returns the current state, then every change; download progress at most four times a second.
  */
-@Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<ConnectorsState>
+@Remote({ mode: 'stream' }) watch(signal: AbortSignal): AsyncIterable<ConnectorsState>
 
 /**
  * Install a connector's CLI in the background; installing an installed, installing, or uninstalling connector changes nothing.

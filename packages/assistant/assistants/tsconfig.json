@@ -55,6 +55,9 @@
     },
     {
       "path": "../../knowledge/knowledge-selection"
+    },
+    {
+      "path": "../../util/change-stream"
     }
   ]
 }

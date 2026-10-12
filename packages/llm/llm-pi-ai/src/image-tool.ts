@@ -92,6 +92,8 @@ export interface GeneratedImageValue {
   image: GeneratedImageRecord
 }
 
+/* jscpd:ignore-start -- the image's record mirrors the attachment fields of dsh-tool-fs's read_image value,
+   so the Web image card renders both; neither package depends on the other. */
 const IMAGE_VALUE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -104,6 +106,7 @@ const IMAGE_VALUE_SCHEMA = {
     height: { type: 'integer', required: true },
   },
 } as const
+/* jscpd:ignore-end */
 
 /**
  * Read the ChatGPT account id from an access token's claims.

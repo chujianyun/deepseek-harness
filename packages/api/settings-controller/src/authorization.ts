@@ -23,6 +23,8 @@ import type {
   AuthorizationAttemptId, AuthorizationAttemptPhase, AuthorizationFlowView,
   AuthorizationPromptId, AuthorizationPromptView,
 } from './types.ts'
+import { changeStream } from '@deepseek-ai/dsh-change-stream'
+import { parseRequest } from './credentials.ts'
 
 /**
  * Notices kept per attempt. A flow reports a handful (the page to open, a code,
@@ -63,15 +65,6 @@ const promptRequestSchema = z.object({ attemptId: z.string().min(1), promptId: z
 const answerRequestSchema = promptRequestSchema.extend({ answer: z.string() })
 const attemptRequestSchema = z.object({ attemptId: z.string().min(1) })
 const keyRequestSchema = z.object({ key: z.string().min(1) })
-
-/** Parse the wire arguments the generated codecs cannot constrain. */
-function parseRequest<T>(method: string, schema: z.ZodType<T>, value: unknown): T {
-  const parsed = schema.safeParse(value)
-  if (!parsed.success) {
-    throw new RemoteError('gateway/bad-request', `invalid payload for ${method}`, { issues: parsed.error.issues })
-  }
-  return parsed.data
-}
 
 /**
  * The part of a flow error that is safe for the Host log: everything before
@@ -280,21 +273,8 @@ export class AuthorizationController extends TypertRemoteService {
    * @returns the views, re-read after every change.
    */
   @Remote({ mode: 'stream' })
-  async *watch(signal: AbortSignal): AsyncIterable<AuthorizationFlowView[]> {
-    let dirty = true
-    let wake: (() => void) | undefined
-    const changed = (): void => { dirty = true; wake?.() }
-    this.listeners.add(changed)
-    signal.addEventListener('abort', changed, { once: true })
-    try {
-      while (!this.lifetime.signal.aborted && !signal.aborted) {
-        if (dirty) { dirty = false; yield await this.list(); continue }
-        await new Promise<void>((resolve) => { wake = resolve })
-      }
-    } finally {
-      this.listeners.delete(changed)
-      signal.removeEventListener('abort', changed)
-    }
+  watch(signal: AbortSignal): AsyncIterable<AuthorizationFlowView[]> {
+    return changeStream(this.listeners, () => this.list(), signal, this.lifetime.signal)
   }
 
   private changed(): void { for (const listener of this.listeners) listener() }

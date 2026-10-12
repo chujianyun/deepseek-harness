@@ -9,7 +9,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-assistants'
-import type {} from '@deepseek-ai/dsh-hub-account'
+import { userCenterRefusal } from '@deepseek-ai/dsh-hub-account'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-session-query'
@@ -54,12 +54,10 @@ const linkSchema = z.object({
   updatedAt: z.iso.datetime({ offset: true }),
 })
 
-/** The user center's own words for a refusal, or its status when the body carries none. */
+/** The user center's refusal, as this service's error. */
 async function refusal(res: Response): Promise<RemoteError> {
-  const body: unknown = await res.json().catch(() => undefined)
-  const message = typeof body === 'object' && body !== null && 'message' in body ? body.message : undefined
-  const reason = Array.isArray(message) ? message.join('；') : typeof message === 'string' ? message : `the user center answered ${String(res.status)}`
-  return new RemoteError('session-share/refused', reason, { status: res.status })
+  const { reason, status } = await userCenterRefusal(res)
+  return new RemoteError('session-share/refused', reason, { status })
 }
 
 /**

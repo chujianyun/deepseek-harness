@@ -427,7 +427,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the state the Assistants page and the new-session picker show.',
       },
       {
-        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<AssistantsState>',
+        signature: '@Remote({ mode: \'stream\' }) watch(signal: AbortSignal): AsyncIterable<AssistantsState>',
         description: 'Stream the state.',
         parameters: [{ name: 'signal', description: 'stream lifetime.' }],
         returns: 'the current state, then every change.',
@@ -666,7 +666,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RemoteError `authorization/rejected` when no flow claims the key.'],
       },
       {
-        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<AuthorizationFlowView[]>',
+        signature: '@Remote({ mode: \'stream\' }) watch(signal: AbortSignal): AsyncIterable<AuthorizationFlowView[]>',
         description: 'Stream every flow\'s view: the current views, then again after each change. A flow registered while watching appears with the next change.',
         parameters: [{ name: 'signal', description: 'stream lifetime.' }],
         returns: 'the views, re-read after every change.',
@@ -940,7 +940,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the connectors in display order.',
       },
       {
-        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<ConnectorsState>',
+        signature: '@Remote({ mode: \'stream\' }) watch(signal: AbortSignal): AsyncIterable<ConnectorsState>',
         description: 'Stream the state.',
         parameters: [{ name: 'signal', description: 'stream lifetime.' }],
         returns: 'the current state, then every change; download progress at most four times a second.',
@@ -1251,7 +1251,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the state the settings page shows.',
       },
       {
-        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<EcommerceAccountsState>',
+        signature: '@Remote({ mode: \'stream\' }) watch(signal: AbortSignal): AsyncIterable<EcommerceAccountsState>',
         description: 'Stream the state.',
         parameters: [{ name: 'signal', description: 'stream lifetime.' }],
         returns: 'the current state, then every change.',
@@ -1325,7 +1325,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the state Settings → Embedding models shows.',
       },
       {
-        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<EmbeddingState>',
+        signature: '@Remote({ mode: \'stream\' }) watch(signal: AbortSignal): AsyncIterable<EmbeddingState>',
         description: 'Stream the state.',
         parameters: [{ name: 'signal', description: 'stream lifetime.' }],
         returns: 'the current state, then every change; download progress at most four times a second.',
@@ -1697,7 +1697,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the state with the new attempt.',
       },
       {
-        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<HubAccountView>',
+        signature: '@Remote({ mode: \'stream\' }) watch(signal: AbortSignal): AsyncIterable<HubAccountView>',
         description: 'Stream the sign-in state.',
         parameters: [{ name: 'signal', description: 'stream lifetime.' }],
         returns: 'the current state, then every change.',
@@ -1836,7 +1836,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the state the Knowledge page shows.',
       },
       {
-        signature: '@Remote({ mode: \'stream\' }) async *watch(signal: AbortSignal): AsyncIterable<KnowledgeState>',
+        signature: '@Remote({ mode: \'stream\' }) watch(signal: AbortSignal): AsyncIterable<KnowledgeState>',
         description: 'Stream the state.',
         parameters: [{ name: 'signal', description: 'stream lifetime.' }],
         returns: 'the current state, then every change.',

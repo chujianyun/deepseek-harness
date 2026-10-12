@@ -29,7 +29,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import type {} from '@deepseek-ai/dsh-hub-account'
+import { followTenant } from '@deepseek-ai/dsh-hub-account'
 import type {} from '@deepseek-ai/dsh-connectors'
 import type {} from '@deepseek-ai/dsh-knowledge-base'
 import type {} from '@deepseek-ai/dsh-knowledge-selection'
@@ -45,6 +45,7 @@ import type {
   AssistantAvatar, AssistantCapabilityOptions, AssistantDetail, AssistantProjectionState, AssistantsState, AssistantSubsets,
   AssistantTemplateView, AssistantUserInfo, AssistantView, CreateAssistantInput, CreateAssistantResult, UpdateAssistantInput,
 } from './types.ts'
+import { changeStream } from '@deepseek-ai/dsh-change-stream'
 
 export type * from './types.ts'
 export { BLANK_FILES, CORE_FILE_NAMES, DAILY_ASSISTANT, ECOMMERCE_MANAGER, ECOMMERCE_SKILLS, OFFICE_SKILLS, TEMPLATES, type AssistantTemplate, type CoreFiles } from './templates.ts'
@@ -307,13 +308,9 @@ export class AssistantsService extends TypertRemoteService {
   }
 
   async [Service.init](): Promise<void> {
-    await this.serialized(async () => this.switchTenant((await this.ctx.hubAccount.getState()).profile?.tenantId ?? null))
-    void (async () => {
-      for await (const state of this.ctx.hubAccount.watch(this.lifetime.signal)) {
-        const tenantId = state.profile?.tenantId ?? null
-        if (tenantId !== this.tenantId) await this.serialized(() => this.switchTenant(tenantId))
-      }
-    })()
+    await followTenant(
+      this.ctx.hubAccount, this.lifetime.signal, () => this.tenantId, tenantId => this.serialized(() => this.switchTenant(tenantId)),
+    )
   }
 
   /**
@@ -333,21 +330,8 @@ export class AssistantsService extends TypertRemoteService {
    * @returns the current state, then every change.
    */
   @Remote({ mode: 'stream' })
-  async *watch(signal: AbortSignal): AsyncIterable<AssistantsState> {
-    let dirty = true
-    let wake: (() => void) | undefined
-    const changed = (): void => { dirty = true; wake?.() }
-    this.listeners.add(changed)
-    signal.addEventListener('abort', changed, { once: true })
-    try {
-      while (!this.lifetime.signal.aborted && !signal.aborted) {
-        if (dirty) { dirty = false; yield await this.getState(); continue }
-        await new Promise<void>((resolve) => { wake = resolve })
-      }
-    } finally {
-      this.listeners.delete(changed)
-      signal.removeEventListener('abort', changed)
-    }
+  watch(signal: AbortSignal): AsyncIterable<AssistantsState> {
+    return changeStream(this.listeners, () => this.getState(), signal, this.lifetime.signal)
   }
 
   /**

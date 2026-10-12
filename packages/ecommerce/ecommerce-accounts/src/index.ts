@@ -31,7 +31,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-hub-account'
+import { followTenant } from '@deepseek-ai/dsh-hub-account'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-shell-env'
 import type {} from '@deepseek-ai/dsh-skill'
@@ -59,6 +59,7 @@ export {
   DOUDIAN, mtopUserNick, matchesCheckApi, parseJsonOrJsonp, PINDUODUO, PLATFORMS, PUBLIC_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL,
   type CheckAnswer, type PlatformSpec,
 } from './platforms.ts'
+import { changeStream } from '@deepseek-ai/dsh-change-stream'
 export { RISK_PAGE } from './guard.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -140,6 +141,8 @@ const PROBLEMS = { 'no-response': 'timeout', 'network': 'network', 'busy': 'busy
 
 /** The variable that gives a bash call the address of the e-commerce accounts. */
 const URL_KEY = 'DSH_ECOMMERCE_URL'
+/** The queue of tenant-wide writes; account ids are UUIDs, so it never meets an account's queue. */
+const TENANT_QUEUE = 'tenant'
 const NODE_KEY = 'DSH_ECOMMERCE_NODE'
 
 /** Each platform's name in what the model reads. */
@@ -211,9 +214,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
   private readonly problems = new Map<string, EcommerceCheckProblem>()
   /** Sign-ins waiting for the user, by account. */
   private readonly signIns = new Map<string, AbortController>()
-  /** One operation at a time per account, so two never drive its Chrome together. */
+  /** One operation at a time per account, so two never drive its Chrome together, and per tenant under TENANT_QUEUE. */
   private readonly queues = new Map<string, Promise<unknown>>()
-  private writes: Promise<unknown> = Promise.resolve()
   private chrome: ChromeInfo | undefined
   private revision = Date.now()
   private readonly listeners = new Set<() => void>()
@@ -284,13 +286,9 @@ export class EcommerceAccountsService extends TypertRemoteService {
     const stopBridge = await this.bridge.start()
     this.ctx.effect(() => () => { void stopBridge() }, 'ecommerce-accounts: command endpoint')
     await installCommand(join(this.root, 'bin'), process.platform)
-    await this.serialized(async () => this.switchTenant((await this.ctx.hubAccount.getState()).profile?.tenantId ?? null))
-    void (async () => {
-      for await (const state of this.ctx.hubAccount.watch(this.lifetime.signal)) {
-        const tenantId = state.profile?.tenantId ?? null
-        if (tenantId !== this.tenantId) await this.serialized(() => this.switchTenant(tenantId))
-      }
-    })()
+    await followTenant(
+      this.ctx.hubAccount, this.lifetime.signal, () => this.tenantId, tenantId => this.serialized(() => this.switchTenant(tenantId)),
+    )
   }
 
   /**
@@ -311,21 +309,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
    * @returns the current state, then every change.
    */
   @Remote({ mode: 'stream' })
-  async *watch(signal: AbortSignal): AsyncIterable<EcommerceAccountsState> {
-    let dirty = true
-    let wake: (() => void) | undefined
-    const changed = (): void => { dirty = true; wake?.() }
-    this.listeners.add(changed)
-    signal.addEventListener('abort', changed, { once: true })
-    try {
-      while (!this.lifetime.signal.aborted && !signal.aborted) {
-        if (dirty) { dirty = false; yield await this.getState(); continue }
-        await new Promise<void>((resolve) => { wake = resolve })
-      }
-    } finally {
-      this.listeners.delete(changed)
-      signal.removeEventListener('abort', changed)
-    }
+  watch(signal: AbortSignal): AsyncIterable<EcommerceAccountsState> {
+    return changeStream(this.listeners, () => this.getState(), signal, this.lifetime.signal)
   }
 
   /**
@@ -1157,10 +1142,9 @@ export class EcommerceAccountsService extends TypertRemoteService {
     return result
   }
 
+  /** Run a write of the tenant's data after the ones before it: the tenant's own queue beside the accounts'. */
   private serialized<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.writes.then(operation)
-    this.writes = result.catch(() => undefined)
-    return result
+    return this.queued(TENANT_QUEUE, operation)
   }
 
   private changed(): void {
