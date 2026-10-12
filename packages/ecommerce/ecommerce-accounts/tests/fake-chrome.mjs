@@ -9,7 +9,7 @@
 // page loads pause until it continues or fails them; an item.taobao.com page redirects to Tmall,
 // and a page whose address has risk=1 also loads a risk-control frame.
 // FAKE_CHROME_VERSION sets the reported version (empty prints none); FAKE_CHROME_SILENT never sends
-// the check response; FAKE_CHROME_BASE64 encodes bodies; FAKE_CHROME_STUBBORN ignores Browser.close; FAKE_CHROME_LINGER_MS keeps running that long after its port closes;
+// the check response; FAKE_CHROME_BASE64 encodes bodies; FAKE_CHROME_STUBBORN ignores Browser.close and FAKE_CHROME_DEAF also SIGTERM; FAKE_CHROME_LINGER_MS keeps running that long after its port closes;
 // FAKE_CHROME_NO_BODY loses the check body; FAKE_CHROME_NO_CLOSE refuses to close tabs; FAKE_CHROME_LATE_COMMIT lists a new tab as about:blank for a moment. For the Tmall
 // data skills, Alimama's report page sends its scene query, and `Runtime.evaluate` answers the page
 // APIs those skills call — Alimama's report query and Business Advisor's self-service export, whose
@@ -37,7 +37,11 @@ if (args.includes('--version')) {
   if (version !== '') process.stdout.write(`Google Chrome ${version}\n`)
   process.exit(0)
 }
+if (process.env.FAKE_CHROME_DEAF !== undefined) process.on('SIGTERM', () => {})
 const option = name => args.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3)
+// On Windows tests start this script through an .exe (script-executable.ts): that .exe is the process
+// DSH started, so it is the browser process this Chrome names.
+const browserPid = process.env.NODE_SHIM_PARENT === '1' ? process.ppid : process.pid
 const port = Number(option('remote-debugging-port'))
 const dataDir = option('user-data-dir')
 mkdirSync(dataDir, { recursive: true })
@@ -475,7 +479,7 @@ wss.on('connection', (socket) => {
         writeFileSync(path, JSON.stringify({ ...bounds, ...params.bounds }))
         return reply({})
       }
-      case 'SystemInfo.getProcessInfo': return reply({ processInfo: [{ type: 'renderer', id: 1, cpuTime: 0 }, ...process.env.FAKE_CHROME_NO_BROWSER_PID === undefined ? [{ type: 'browser', id: process.pid, cpuTime: 0 }] : []] })
+      case 'SystemInfo.getProcessInfo': return reply({ processInfo: [{ type: 'renderer', id: 1, cpuTime: 0 }, ...process.env.FAKE_CHROME_NO_BROWSER_PID === undefined ? [{ type: 'browser', id: browserPid, cpuTime: 0 }] : []] })
       case 'Browser.getWindowBounds': {
         const path = join(dataDir, 'fake-window.json')
         return reply({ bounds: { windowState: 'normal', ...existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {} } })

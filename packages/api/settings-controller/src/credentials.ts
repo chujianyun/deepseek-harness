@@ -26,8 +26,14 @@ const describeRequestSchema = z.object({
 const setRequestSchema = z.object({ ref: credentialRefSchema, value: z.string().min(1) })
 const unsetRequestSchema = z.object({ ref: credentialRefSchema })
 
-/** Parse the domain constraints that are more specific than generated TypeScript codecs. */
-function parseRequest<T>(method: string, schema: z.ZodType<T>, value: unknown): T {
+/**
+ * Parse the domain constraints that are more specific than generated TypeScript codecs.
+ * @param method - the Remote method, named in the refusal.
+ * @param schema - the arguments' constraints.
+ * @param value - the arguments as they arrived.
+ * @returns the parsed arguments.
+ */
+export function parseRequest<T>(method: string, schema: z.ZodType<T>, value: unknown): T {
   const parsed = schema.safeParse(value)
   if (!parsed.success) {
     throw new RemoteError('gateway/bad-request', `invalid payload for ${method}`, { issues: parsed.error.issues })

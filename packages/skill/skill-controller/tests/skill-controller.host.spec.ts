@@ -204,7 +204,8 @@ describe('installedSkills market group', () => {
    * for the market's per-tenant switches.
    */
   async function bootMarket(withMarket = true) {
-    const fixture = await boot()
+    // The macOS trash is a folder this test can read; Windows' recycle bin is tested apart.
+    const fixture = await boot({ platform: 'darwin' })
     const marketDir = await temp()
     await writeSkill(marketDir, 'hub-pdf', 'From the market')
     await fixture.ctx.plugin(SkillFileSystem, {

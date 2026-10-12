@@ -6,9 +6,9 @@
  */
 
 import { execFile, spawn } from 'node:child_process'
-import { access, mkdir, readFile, readlink, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, readdir, readFile, readlink, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { Browser, ChromeReleaseChannel, computeSystemExecutablePath } from '@puppeteer/browsers'
 import { Cdp } from './cdp.ts'
@@ -27,9 +27,12 @@ export interface ChromeInfo {
 /**
  * Find Google Chrome and read its version.
  * @param override - a Chrome executable to use instead of the platform's standard install.
+ * @param platform - the platform whose way of reading the version applies.
  * @returns the Chrome, or undefined when it is not installed.
  */
-export async function findChrome(override: string | undefined): Promise<ChromeInfo | undefined> {
+export async function findChrome(
+  override: string | undefined, platform: NodeJS.Platform = process.platform,
+): Promise<ChromeInfo | undefined> {
   let path: string
   try {
     path = override ?? computeSystemExecutablePath({ browser: Browser.CHROME, channel: ChromeReleaseChannel.STABLE })
@@ -38,14 +41,29 @@ export async function findChrome(override: string | undefined): Promise<ChromeIn
     // No standard install for this platform, or nothing at that path.
     return undefined
   }
-  let version: string | undefined
+  const version = platform === 'win32' ? await installedVersion(path) : await reportedVersion(path)
+  return { path, version, major: version === undefined ? undefined : Number(version.split('.')[0]) }
+}
+
+/** The version `chrome --version` prints; undefined when it prints none. */
+async function reportedVersion(path: string): Promise<string | undefined> {
   try {
     const { stdout } = await run(path, ['--version'], { timeout: 10_000 })
-    version = /(\d+(?:\.\d+)+)/u.exec(stdout)?.[1]
+    return /(\d+(?:\.\d+)+)/u.exec(stdout)?.[1]
   } catch {
-    // Some builds, such as Chrome on Windows, print no version; the version stays unknown.
+    // Chrome printed no version, or did not answer in time.
+    return undefined
   }
-  return { path, version, major: version === undefined ? undefined : Number(version.split('.')[0]) }
+}
+
+/**
+ * The version of a Windows Chrome: the highest version-named directory beside chrome.exe. Chrome on
+ * Windows does not print its version for `--version` but starts, opening a window.
+ */
+async function installedVersion(path: string): Promise<string | undefined> {
+  const versions = (await readdir(dirname(path))).filter(name => /^\d+(?:\.\d+){3}$/u.test(name))
+  // Numeric collation compares each run of digits as a number, so 141.0.7390.122 follows 141.0.7390.65.
+  return versions.sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).at(-1)
 }
 
 /** The recorded Chrome of one account. */
@@ -305,6 +323,7 @@ export async function closeChrome(dir: string, timeoutMs: number): Promise<void>
     if (!await exited(record.pid, timeoutMs)) {
       for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
         await signalChrome(record.pid, signal)
+        /* v8 ignore next -- Windows ends a process at SIGTERM, so only POSIX coverage sees one outlive it. */
         if (await exited(record.pid, SIGNAL_WAIT_MS)) break
       }
     }
@@ -315,6 +334,7 @@ export async function closeChrome(dir: string, timeoutMs: number): Promise<void>
 /** Signal Chrome; on Windows `SIGKILL` ends the whole process tree, since its child processes keep the profile's files open. */
 async function signalChrome(pid: number, signal: 'SIGTERM' | 'SIGKILL'): Promise<void> {
   try {
+    /* v8 ignore next -- each platform's coverage takes only its own way to end Chrome; Windows coverage takes taskkill. */
     if (signal === 'SIGKILL' && process.platform === 'win32') await run('taskkill', ['/PID', String(pid), '/T', '/F'])
     else process.kill(pid, signal)
   } catch {
@@ -329,6 +349,7 @@ async function exited(pid: number, timeoutMs: number): Promise<boolean> {
       process.kill(pid, 0)
     } catch (error) {
       // EPERM: the process exists but may not be signalled; only ESRCH means it is gone.
+      /* v8 ignore next -- needs a live process of another user, which no test may signal. */
       if ((error as NodeJS.ErrnoException).code !== 'EPERM') return true
     }
     if (Date.now() >= deadline) return false

@@ -50,7 +50,6 @@ describe('the model shell\'s lark-cli', () => {
     const t = await connected()
     const dir = t.ctx.shellEnv.collectPath(execution)
     expect(dir).toEqual([join(t.root, 'bin', 't-a')])
-    await vi.waitFor(async () => { await stat(join(dir[0]!, 'lark-cli')) })
     const result = await shell(dir[0]!, ['calendar', '+agenda'], { LARKSUITE_CLI_CONFIG_DIR: '/Users/someone/.lark-cli', LARKSUITE_CLI_APP_ID: 'mine', HERMES_HOME: '/h' })
     expect(result).toMatchObject({ code: 0, stdout: expect.stringContaining('产品周会') as string })
     expect((await readFile(join(t.control, 'run-env'), 'utf8')).trim().split('\n')).toEqual([
@@ -65,7 +64,6 @@ describe('the model shell\'s lark-cli', () => {
   runs('points a failing command to the Connectors page', async () => {
     const t = await connected()
     const [dir] = t.ctx.shellEnv.collectPath(execution)
-    await vi.waitFor(async () => { await stat(join(dir!, 'lark-cli')) })
     const result = await shell(dir!, ['calendar', '+fail'])
     expect(result.code).toBe(4)
     expect(result.stderr).toContain('ask the user to check the Feishu connector on the DSH Connectors page (连接器)')

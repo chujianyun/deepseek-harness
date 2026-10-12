@@ -19,7 +19,7 @@ import { basename, extname, join } from 'node:path'
 import type { WebError } from '@deepseek-ai/dsh-web'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { EmbeddingState } from '@deepseek-ai/dsh-embedding'
-import type {} from '@deepseek-ai/dsh-hub-account'
+import { followTenant } from '@deepseek-ai/dsh-hub-account'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { canOpenNativePath, openNativeAssociatedPath } from '@deepseek-ai/dsh-native-command'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -34,6 +34,7 @@ import type {
   KnowledgeAddResult, KnowledgeBaseSettings, KnowledgeBaseView, KnowledgeItemError, KnowledgeRecallResult, KnowledgeRejectReason,
   KnowledgeItemView, KnowledgeNote, KnowledgeSearchHit, KnowledgeSettingsPatch, KnowledgeState,
 } from './types.ts'
+import { changeStream } from '@deepseek-ai/dsh-change-stream'
 
 export type * from './types.ts'
 
@@ -171,13 +172,10 @@ export class KnowledgeBaseService extends TypertRemoteService {
 
   async [Service.init](): Promise<void> {
     this.embedding = await this.ctx.embedding.getState()
-    await this.switchTenant((await this.ctx.hubAccount.getState()).profile?.tenantId ?? null)
-    void (async () => {
-      for await (const state of this.ctx.hubAccount.watch(this.lifetime.signal)) {
-        const tenantId = state.profile?.tenantId ?? null
-        if (tenantId !== this.tenantId) await this.serialized(() => this.switchTenant(tenantId))
-      }
-    })()
+    await followTenant(
+      this.ctx.hubAccount, this.lifetime.signal, () => this.tenantId, tenantId => this.serialized(() => this.switchTenant(tenantId)),
+      this.ctx.logger, 'knowledge-base',
+    )
     void (async () => {
       for await (const state of this.ctx.embedding.watch(this.lifetime.signal)) {
         this.embedding = state
@@ -203,21 +201,8 @@ export class KnowledgeBaseService extends TypertRemoteService {
    * @returns the current state, then every change.
    */
   @Remote({ mode: 'stream' })
-  async *watch(signal: AbortSignal): AsyncIterable<KnowledgeState> {
-    let dirty = true
-    let wake: (() => void) | undefined
-    const changed = (): void => { dirty = true; wake?.() }
-    this.listeners.add(changed)
-    signal.addEventListener('abort', changed, { once: true })
-    try {
-      while (!this.lifetime.signal.aborted && !signal.aborted) {
-        if (dirty) { dirty = false; yield await this.getState(); continue }
-        await new Promise<void>((resolve) => { wake = resolve })
-      }
-    } finally {
-      this.listeners.delete(changed)
-      signal.removeEventListener('abort', changed)
-    }
+  watch(signal: AbortSignal): AsyncIterable<KnowledgeState> {
+    return changeStream(this.listeners, () => this.getState(), signal, this.lifetime.signal)
   }
 
   /**

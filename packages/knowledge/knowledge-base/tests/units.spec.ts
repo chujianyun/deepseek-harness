@@ -131,6 +131,31 @@ describe('readers', () => {
       '# 工作表: 只有表头',
       '列: 日期、渠道',
     ].join('\n'))
+    // Every other kind of cell reads as the text it shows.
+    const kinds = new ExcelJS.Workbook()
+    const sheet = kinds.addWorksheet('种类')
+    sheet.addRow(['链接', '错误', '时刻', '时间', '是否', '公式', '共享', '比例', '编号'])
+    const row = sheet.getRow(2)
+    row.getCell(1).value = { text: '名流官网', hyperlink: 'https://example.com' }
+    row.getCell(2).value = { error: '#DIV/0!' }
+    row.getCell(3).value = new Date(Date.UTC(2026, 9, 1, 9, 30))
+    row.getCell(4).value = new Date(Date.UTC(1899, 11, 30, 14, 5))
+    row.getCell(5).value = true
+    row.getCell(6).value = { formula: 'H2*2', shareType: 'shared', ref: 'F2:F3' } as ExcelJS.CellValue
+    sheet.getCell('F3').value = { sharedFormula: 'F2' }
+    row.getCell(8).value = 0.15
+    row.getCell(8).numFmt = '0%'
+    row.getCell(9).value = 42
+    row.getCell(9).numFmt = '00000'
+    row.commit()
+    // An empty merged block reads as nothing in the rows it spans.
+    sheet.mergeCells('J2:J3')
+    await kinds.xlsx.writeFile(join(dir, 'kinds.xlsx'))
+    // The shared formula below its master has no calculated value, so its row reads as nothing.
+    expect(await readDocument(join(dir, 'kinds.xlsx'), LIMITS)).toBe([
+      '# 工作表: 种类',
+      '种类 第 2 行: 链接=名流官网; 错误=#DIV/0!; 时刻=2026-10-01 09:30; 时间=14:05; 是否=true; 公式==H2*2; 比例=15%; 编号=00042',
+    ].join('\n'))
     // A workbook without any cell reads as no text; a file that is no workbook does not read.
     const empty = new ExcelJS.Workbook()
     empty.addWorksheet('Sheet1')

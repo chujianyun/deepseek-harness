@@ -9,6 +9,8 @@ description: 天猫发品存仓库：把用户给的新品素材文件夹发到�
 
 ## 步骤
 
+Windows 上命令行是 PowerShell：以带引号的路径开头的命令前要加调用符 `& `，例如 `& "<node>" "<本技能目录>/scripts/…" …`，否则 PowerShell 不会执行它。
+
 1. 选账号：按 `ecommerce-accounts` 技能的规则选目标天猫店铺的商家账号；`<店铺名>` 用 `dsh-ecommerce accounts` 里该账号的 `store`。运行 `dsh-ecommerce memory` 看公司记住了什么。
 2. 定类目、读字段规则：用 `tmall-publish-category` 技能（记住过产品线就先用 `--line`），得到 `字段规则_<类目 id>.json`。
 3. 整理素材：用 `ecommerce-product-draft` 技能（`draft` 加 `--rules` 和 `--store <店铺名>`），得到 `商品草稿.json` 和待确认清单。缺的店铺资料、声明，按那个技能的说明问用户、记下后重跑。
@@ -20,7 +22,7 @@ description: 天猫发品存仓库：把用户给的新品素材文件夹发到�
    - **一键认可，保存到仓库**
    这张卡片和之后任何会导致保存或重试保存的卡片都**不要给任何选项标「推荐」/(Recommended)**，第一项必须是不保存的选项：卡片会预先选中带推荐的第一项，误点提交就会执行它。
    清单里还有「缺失」「不符合」「待店铺确认」时先补齐，不要提交保存。声明类必填项第一次必须由用户在卡片里确认原文，确认后用 `dsh-ecommerce remember` 记下。
-5. 用户选「一键认可」后保存：`"<node>" "<本技能目录>/scripts/publish.mjs" save --account <账号 id> --draft <商品草稿.json> --rules <字段规则.json> --confirmed [--stock <每个 SKU 的库存>]`。`--confirmed` 只能在用户这一轮选了「一键认可」之后加。bash 超时设为 600000 毫秒。脚本保存前会先查店里（仓库中和出售中）有没有同一商品（同标题，或 DSH 存过的同一组 SKU 编码），有就不保存，输出它的 ID 和链接。
+5. 用户选「一键认可」后保存：`"<node>" "<本技能目录>/scripts/publish.mjs" save --account <账号 id> --draft <商品草稿.json> --rules <字段规则.json> --confirmed [--stock <每个 SKU 的库存>]`。`--confirmed` 只能在用户这一轮选了「一键认可」之后加。命令超时设为 600000 毫秒。脚本保存前会先查店里（仓库中和出售中）有没有同一商品（同标题，或 DSH 存过的同一组 SKU 编码），有就不保存，输出它的 ID 和链接。
 6. 回复：商品 ID、标题、编辑链接和仓库链接，并提醒用户到千牛仓库确认后再上架。
 
 用户只想知道店里有没有这件商品时，运行 `"<node>" "<本技能目录>/scripts/publish.mjs" check --account <账号 id> --draft <商品草稿.json>`，它只查不改。

@@ -1,6 +1,6 @@
 /** The Knowledge page: knowledge bases on the left, the selected one's sources, settings, and recall test on the right. */
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { KnowledgeBaseView } from '@deepseek-ai/dsh-knowledge-base/types'
 import {
   Button, IconDatabaseOutlineRegular, IconUserOutlineRegular, Input, Modal, SegmentedTabs,
@@ -149,6 +149,35 @@ function Rebuilding({ t, base }: { t: T; base: KnowledgeBaseView }) {
   )
 }
 
+/** Props of {@link FormDialog}. */
+interface FormDialogProps {
+  t: T
+  open: boolean
+  title: string
+  onClose: () => void
+  action: string
+  disabled: boolean
+  onAction: () => Promise<void>
+  children: ReactNode
+}
+
+/**
+ * A dialog with a form and a footer of Cancel and one action.
+ * @param props - the dialog's title, action label and state, and its form as children.
+ */
+function FormDialog({ t, open, title, onClose, action, disabled, onAction, children }: FormDialogProps) {
+  return (
+    <Modal open={open} title={title} closeLabel={t('close')} onClose={onClose} footer={(
+      <>
+        <Button variant="outline" onClick={onClose}>{t('cancel')}</Button>
+        <Button variant="primary" disabled={disabled} onClick={() => { void onAction() }}>{action}</Button>
+      </>
+    )}>
+      {children}
+    </Modal>
+  )
+}
+
 function CreateDialog({ t, useKnowledge, onCreate, open, onClose }: KnowledgePageProps & { open: boolean; onClose: () => void }) {
   const embedding = useKnowledge(snapshot => snapshot.embedding)
   const failure = useKnowledge(snapshot => snapshot.failure)
@@ -161,12 +190,8 @@ function CreateDialog({ t, useKnowledge, onCreate, open, onClose }: KnowledgePag
   const close = (): void => { setName(''); setModel(''); onClose() }
   const submit = async (): Promise<void> => { if (await onCreate(name.trim(), chosen)) close() }
   return (
-    <Modal open={open} title={t('createTitle')} closeLabel={t('close')} onClose={close} footer={(
-      <>
-        <Button variant="outline" onClick={close}>{t('cancel')}</Button>
-        <Button variant="primary" disabled={busy || name.trim() === '' || chosen === ''} onClick={() => { void submit() }}>{t('confirmCreate')}</Button>
-      </>
-    )}>
+    <FormDialog t={t} open={open} title={t('createTitle')} onClose={close} action={t('confirmCreate')}
+      disabled={busy || name.trim() === '' || chosen === ''} onAction={submit}>
       <div className={css.form}>
         <label className={css.field}>
           <span className={css.label}>{t('name')}</span>
@@ -185,7 +210,7 @@ function CreateDialog({ t, useKnowledge, onCreate, open, onClose }: KnowledgePag
         {api && <p className={css.muted}>{t('privacy')}</p>}
         {open && failure !== null && <p className={css.fieldError} role="alert">{failureText(t, failure)}</p>}
       </div>
-    </Modal>
+    </FormDialog>
   )
 }
 
@@ -200,12 +225,7 @@ function RenameDialog({ t, base, useKnowledge, onRename, open, onClose }: BaseDi
   const close = (): void => { setName(null); onClose() }
   const submit = async (): Promise<void> => { if (await onRename(base.id, value.trim())) close() }
   return (
-    <Modal open={open} title={t('renameTitle')} closeLabel={t('close')} onClose={close} footer={(
-      <>
-        <Button variant="outline" onClick={close}>{t('cancel')}</Button>
-        <Button variant="primary" disabled={busy || value.trim() === ''} onClick={() => { void submit() }}>{t('save')}</Button>
-      </>
-    )}>
+    <FormDialog t={t} open={open} title={t('renameTitle')} onClose={close} action={t('save')} disabled={busy || value.trim() === ''} onAction={submit}>
       <div className={css.form}>
         <label className={css.field}>
           <span className={css.label}>{t('name')}</span>
@@ -213,7 +233,7 @@ function RenameDialog({ t, base, useKnowledge, onRename, open, onClose }: BaseDi
         </label>
         {open && failure !== null && <p className={css.fieldError} role="alert">{failureText(t, failure)}</p>}
       </div>
-    </Modal>
+    </FormDialog>
   )
 }
 

@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import { resolveLinuxNodePtyAddon, resolveWindowsNodePtyAddons } from './build-exe-for-python-sdk-native-pty.ts'
+import { DESKTOP_BUNDLE, DESKTOP_ONLY_PACKAGES, pruneDesktopOnly } from './build-exe-for-python-sdk-desktop-only.ts'
 import { copyOfficeSidecar, OFFICE_ASSET_IGNORES } from './build-exe-for-python-sdk-office.ts'
 import { preparePrimaryRuntime, smokePrimaryRuntime, type PrimaryRuntimeTarget } from './primary-runtime/prepare.ts'
 
@@ -306,6 +307,12 @@ class SingleExeBuild {
     ])
     await this.restoreLegacyHoists()
     await this.materializeStagedLinks()
+    if (this.cli.dryRun) {
+      console.log(`build-exe-for-python-sdk: [dry-run] remove packages reachable only through ${DESKTOP_BUNDLE}'s Desktop-only plugins`)
+    } else {
+      const removed = await pruneDesktopOnly(this.staging, DESKTOP_BUNDLE, DESKTOP_ONLY_PACKAGES)
+      console.log(`build-exe-for-python-sdk: removed ${removed.length} packages only the Desktop-only plugins need`)
+    }
     if (this.cli.dryRun) {
       for (const name of DEPLOY_ONLY_DOCS) console.log(`build-exe-for-python-sdk: [dry-run] rm -f ${join(this.staging, name)}`)
     } else {

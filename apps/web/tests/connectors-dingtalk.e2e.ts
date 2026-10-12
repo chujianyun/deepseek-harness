@@ -122,6 +122,9 @@ it.skipIf(process.platform === 'win32')('installs, signs in to, uses, and discon
     const tenantId = (await scaffold.ctx.hubAccount.getState()).profile!.tenantId!
     const root = join(harnessHome, 'connectors', 'dingtalk')
     const control = join(root, 'control')
+    // The stand-in CLI records its calls beside its version directory; a real CLI writes only the tenant's
+    // directory, which the connector already grants. The Linux sandbox lets a command write nowhere else.
+    scaffold.ctx.sandboxPolicy.registerWritableRoot({ name: 'e2e-stand-in-cli-control', resolve: () => control })
     const tenantDir = join(root, 'tenants', tenantId)
 
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })

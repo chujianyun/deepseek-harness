@@ -28,10 +28,10 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-hub-account'
+import { followTenant } from '@deepseek-ai/dsh-hub-account'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-shell-env'
 import type {} from '@deepseek-ai/dsh-skill'
@@ -41,7 +41,7 @@ import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
-import { Bridge, SCRIPT, type BridgeReply, type Grant } from './bridge.ts'
+import { Bridge, installCommand, type BridgeReply, type Grant } from './bridge.ts'
 import { writeJsonAtomic } from './files.ts'
 import { applyUpdate, DamagedMemory, MemoryUpdate, readMemory } from './memory.ts'
 import { Cdp, closeBlankTabs, hideWindows, pageTabs, probe, showSignIn, type ProbeResult } from './cdp.ts'
@@ -59,6 +59,7 @@ export {
   DOUDIAN, mtopUserNick, matchesCheckApi, parseJsonOrJsonp, PINDUODUO, PLATFORMS, PUBLIC_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL,
   type CheckAnswer, type PlatformSpec,
 } from './platforms.ts'
+import { changeStream } from '@deepseek-ai/dsh-change-stream'
 export { RISK_PAGE } from './guard.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -138,8 +139,39 @@ type CheckResult = AccountAnswer | { readonly kind: 'gone' }
 /** The problem each failed check shows. */
 const PROBLEMS = { 'no-response': 'timeout', 'network': 'network', 'busy': 'busy' } as const satisfies Record<Exclude<AccountAnswer['kind'], 'signed-in' | 'signed-out'>, EcommerceCheckProblem>
 
+/** How long deleting an account's browser data keeps trying while another process holds its files. */
+const HELD_RETRY_MS = 10_000
+
+/**
+ * Delete a directory, trying again until `deadlineMs` passes while another process holds its files:
+ * Windows reports a file a process just let go of, or one a virus scanner reads, as `EBUSY`, `EPERM`, or
+ * `EACCES` for a moment. Node's own `rm` retries are not used: they repeat at every directory level, so a
+ * file deep in a Chrome profile kept a deletion waiting for minutes.
+ * @param dir - the directory.
+ * @param deadlineMs - how long to keep trying.
+ */
+async function removeHeld(dir: string, deadlineMs: number): Promise<void> {
+  const deadline = Date.now() + deadlineMs
+  for (let delay = 100; ; delay = Math.min(delay * 2, 800)) {
+    try {
+      await rm(dir, { recursive: true, force: true })
+      return
+    } catch (error) {
+      /* v8 ignore start -- only Windows reports a held file; POSIX coverage sees the refusal, Windows coverage the retries. */
+      const code = (error as NodeJS.ErrnoException).code
+      const held = code === 'EBUSY' || (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES'))
+      if (!held || Date.now() >= deadline) throw error
+      await new Promise(resolve => setTimeout(resolve, Math.min(delay, deadline - Date.now())))
+      /* v8 ignore stop */
+    }
+  }
+}
+
 /** The variable that gives a bash call the address of the e-commerce accounts. */
 const URL_KEY = 'DSH_ECOMMERCE_URL'
+/** The queue of tenant-wide writes; a symbol, so no account id read from the ledger can name it. */
+const TENANT_QUEUE = Symbol('tenant')
+const NODE_KEY = 'DSH_ECOMMERCE_NODE'
 
 /** Each platform's name in what the model reads. */
 const PLATFORM_NAMES = { tmall: 'Tmall', taobao: 'Taobao', pinduoduo: 'Pinduoduo', doudian: 'Douyin shop' } as const satisfies Record<EcommercePlatform, string>
@@ -210,9 +242,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
   private readonly problems = new Map<string, EcommerceCheckProblem>()
   /** Sign-ins waiting for the user, by account. */
   private readonly signIns = new Map<string, AbortController>()
-  /** One operation at a time per account, so two never drive its Chrome together. */
-  private readonly queues = new Map<string, Promise<unknown>>()
-  private writes: Promise<unknown> = Promise.resolve()
+  /** One operation at a time per account, so two never drive its Chrome together, and per tenant under TENANT_QUEUE. */
+  private readonly queues = new Map<string | typeof TENANT_QUEUE, Promise<unknown>>()
   private chrome: ChromeInfo | undefined
   private revision = Date.now()
   private readonly listeners = new Set<() => void>()
@@ -254,8 +285,13 @@ export class EcommerceAccountsService extends TypertRemoteService {
     ctx.shellEnv.registerPath({ name: 'ecommerce-accounts', resolve: () => this.tenantId === null ? undefined : join(this.root, 'bin') })
     ctx.shellEnv.register({
       name: 'ecommerce-accounts',
-      variables: { [URL_KEY]: { description: 'The address the dsh-ecommerce command reaches the e-commerce accounts at, valid for this shell call only.' } },
-      resolve: exec => this.tenantId === null ? {} : { [URL_KEY]: this.bridge.urlFor({ callId: exec.callId, tenantId: this.tenantId }) },
+      variables: {
+        [URL_KEY]: { description: 'The address the dsh-ecommerce command reaches the e-commerce accounts at, valid for this shell call only.' },
+        [NODE_KEY]: { description: 'The Node that runs the dsh-ecommerce command on Windows.' },
+      },
+      resolve: exec => this.tenantId === null
+        ? {}
+        : { [URL_KEY]: this.bridge.urlFor({ callId: exec.callId, tenantId: this.tenantId }), [NODE_KEY]: process.execPath },
     })
     // The call's token and its browser reservations end with the call.
     ctx.on('tools/result', (exec) => {
@@ -277,16 +313,11 @@ export class EcommerceAccountsService extends TypertRemoteService {
     this.chrome = await findChrome(this.options.chromePath)
     const stopBridge = await this.bridge.start()
     this.ctx.effect(() => () => { void stopBridge() }, 'ecommerce-accounts: command endpoint')
-    await mkdir(join(this.root, 'bin'), { recursive: true })
-    await writeFile(join(this.root, 'bin', 'dsh-ecommerce'), SCRIPT)
-    await chmod(join(this.root, 'bin', 'dsh-ecommerce'), 0o755)
-    await this.serialized(async () => this.switchTenant((await this.ctx.hubAccount.getState()).profile?.tenantId ?? null))
-    void (async () => {
-      for await (const state of this.ctx.hubAccount.watch(this.lifetime.signal)) {
-        const tenantId = state.profile?.tenantId ?? null
-        if (tenantId !== this.tenantId) await this.serialized(() => this.switchTenant(tenantId))
-      }
-    })()
+    await installCommand(join(this.root, 'bin'), process.platform)
+    await followTenant(
+      this.ctx.hubAccount, this.lifetime.signal, () => this.tenantId, tenantId => this.serialized(() => this.switchTenant(tenantId)),
+      this.ctx.logger, 'ecommerce-accounts',
+    )
   }
 
   /**
@@ -307,21 +338,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
    * @returns the current state, then every change.
    */
   @Remote({ mode: 'stream' })
-  async *watch(signal: AbortSignal): AsyncIterable<EcommerceAccountsState> {
-    let dirty = true
-    let wake: (() => void) | undefined
-    const changed = (): void => { dirty = true; wake?.() }
-    this.listeners.add(changed)
-    signal.addEventListener('abort', changed, { once: true })
-    try {
-      while (!this.lifetime.signal.aborted && !signal.aborted) {
-        if (dirty) { dirty = false; yield await this.getState(); continue }
-        await new Promise<void>((resolve) => { wake = resolve })
-      }
-    } finally {
-      this.listeners.delete(changed)
-      signal.removeEventListener('abort', changed)
-    }
+  watch(signal: AbortSignal): AsyncIterable<EcommerceAccountsState> {
+    return changeStream(this.listeners, () => this.getState(), signal, this.lifetime.signal)
   }
 
   /**
@@ -533,14 +551,14 @@ export class EcommerceAccountsService extends TypertRemoteService {
     return this.queued(entry.id, async () => {
       await closeChrome(dir, this.options.chromeTimeoutMs)
       try {
-        // Windows reports a file a process just let go of as busy for a moment; rm retries EBUSY and EPERM.
-        await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+        await removeHeld(dir, HELD_RETRY_MS)
       } catch (error) {
         // Its Chrome is closed and part of its data may be gone, so its sign-in is no longer known; the error
         // names only the cause, not the path. The saved answer goes too, so no take-over stands by it.
         this.setStatus(entry.id, 'signed-out')
         this.entries = this.entries.map(item => item.id === entry.id ? { ...item, signedIn: false } : item)
         await this.serialized(() => this.saveLedger(this.requireTenant()))
+        /* v8 ignore next -- rm fails with a system error, which carries a code. */
         const reason = (error as NodeJS.ErrnoException).code ?? 'unknown'
         throw new RemoteError('ecommerce-accounts/delete-failed', 'The account\'s browser data could not be removed', { accountId: entry.id, reason })
       }
@@ -570,11 +588,10 @@ export class EcommerceAccountsService extends TypertRemoteService {
         const left = await this.queued(entry.id, () => this.leftSignInPage(entry, spec, tab))
         if (!left && Date.now() - lastCheck < this.options.signInCheckEveryMs) continue
         lastCheck = Date.now()
-        if ((await this.check(entry)).kind === 'signed-in') {
+        if ((await this.check(entry, true)).kind === 'signed-in') {
           done = true
           break
         }
-        this.setStatus(entry.id, 'signing-in')
       }
       if (!done && !signal.aborted) this.setStatus(entry.id, 'signed-out')
     } finally {
@@ -605,10 +622,11 @@ export class EcommerceAccountsService extends TypertRemoteService {
    * check that gets no answer, cannot reach the page, or finds the browser data held by another
    * Chrome fails with that problem and keeps the last answer. The check works on the account as it is
    * once its turn comes: one deleted, or of another tenant, while it waited is `gone`, asks nothing,
-   * and starts no Chrome.
+   * and starts no Chrome. A sign-in's own check leaves the account showing `signing-in` and records
+   * only a signed-in answer, so the status does not flicker while the user signs in.
    */
-  private check(entry: Entry): Promise<CheckResult> {
-    this.setStatus(entry.id, 'checking')
+  private check(entry: Entry, forSignIn = false): Promise<CheckResult> {
+    if (!forSignIn) this.setStatus(entry.id, 'checking')
     return this.queued(entry.id, async () => {
       const now = this.entries.find(item => item.id === entry.id)
       if (now === undefined) return { kind: 'gone' }
@@ -623,6 +641,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
         const current = this.entries.find(item => item.id === entry.id)
         // The account was deleted, or the tenant switched, while the platform was asked.
         if (current === undefined) return result
+        if (forSignIn && result.kind !== 'signed-in') return result
         if (result.kind !== 'signed-in' && result.kind !== 'signed-out') {
           this.problems.set(entry.id, PROBLEMS[result.kind])
           this.statuses.set(entry.id, 'check-failed')
@@ -640,10 +659,12 @@ export class EcommerceAccountsService extends TypertRemoteService {
             }
             : {},
         }
+        // The answer and its status change together: a change published while the ledger is written, such as
+        // a page counted, never shows the new check time beside the old checking status.
         this.entries = this.entries.map(item => item.id === entry.id ? next : item)
+        this.statuses.set(entry.id, result.kind)
         await this.saveLedger(this.requireTenant())
         // The check time changed even when the status did not.
-        this.statuses.set(entry.id, result.kind)
         this.changed()
         return result
       })
@@ -1146,16 +1167,15 @@ export class EcommerceAccountsService extends TypertRemoteService {
     return this.tenantId
   }
 
-  private queued<T>(accountId: string, operation: () => Promise<T>): Promise<T> {
+  private queued<T>(accountId: string | typeof TENANT_QUEUE, operation: () => Promise<T>): Promise<T> {
     const result = (this.queues.get(accountId) ?? Promise.resolve()).then(operation)
     this.queues.set(accountId, result.catch(() => undefined))
     return result
   }
 
+  /** Run a write of the tenant's data after the ones before it: the tenant's own queue beside the accounts'. */
   private serialized<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.writes.then(operation)
-    this.writes = result.catch(() => undefined)
-    return result
+    return this.queued(TENANT_QUEUE, operation)
   }
 
   private changed(): void {

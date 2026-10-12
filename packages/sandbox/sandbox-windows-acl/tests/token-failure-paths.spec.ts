@@ -17,7 +17,7 @@ import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
 import {
   createRestrictedToken, findLogonSid, makeWellKnownSid, restrictTokenIntegrity, setTokenDefaultDaclGrant,
 } from '../src/token.ts'
-import { openCurrentProcessToken } from '../src/process-token.ts'
+import { currentUserSid, openCurrentProcessToken } from '../src/process-token.ts'
 import * as abi from '../src/win32-abi.ts'
 
 const PVOID = koffi.pointer('void')
@@ -489,5 +489,78 @@ describe('createRestrictedToken failure paths', () => {
     }
     expect(caught).toBeInstanceOf(Win32Error)
     expect((caught as Win32Error).api).toBe('CreateRestrictedToken')
+  })
+})
+
+describe('currentUserSid failure paths', () => {
+  const closeHandle = vi.fn<Win32Bindings['closeHandle']>(() => 1)
+
+  /** A process token whose TokenUser names a SID at 0x1000 in a 16-byte answer; `overrides` break one call. */
+  function userToken(overrides: Partial<Win32Bindings>): Win32Bindings {
+    closeHandle.mockClear()
+    return stubBindings({
+      openProcess: vi.fn<Win32Bindings['openProcess']>(() => 7n as NativePtr),
+      openProcessToken: vi.fn<Win32Bindings['openProcessToken']>((_process, _access, slot) => {
+        koffi.encode(slot, PVOID, 8n)
+        return 1
+      }),
+      getTokenInformation: vi.fn<Win32Bindings['getTokenInformation']>((_token, _class, buffer, _length, needed) => {
+        koffi.encode(needed, 'uint32', 16)
+        if (buffer === null) return 0
+        buffer.writeBigUInt64LE(0x1000n, 0)
+        return 1
+      }),
+      getLengthSid: vi.fn<Win32Bindings['getLengthSid']>(() => 8),
+      copySid: vi.fn<Win32Bindings['copySid']>(() => 1),
+      closeHandle,
+      getLastError: vi.fn<Win32Bindings['getLastError']>(() => 5),
+      formatMessageW: vi.fn<Win32Bindings['formatMessageW']>(() => 0),
+      ...overrides,
+    })
+  }
+
+  /** The error currentUserSid throws, after it closed the token. */
+  function failure(api: Win32Bindings): Win32Error {
+    let caught: unknown
+    try {
+      currentUserSid(api)
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(Win32Error)
+    expect(closeHandle).toHaveBeenLastCalledWith(8n)
+    return caught as Win32Error
+  }
+
+  it('reports a size query that names no size', () => {
+    expect(failure(userToken({ getTokenInformation: vi.fn<Win32Bindings['getTokenInformation']>(() => 0) })).message).toContain('TokenUser size query')
+  })
+
+  it('reports a TokenUser read that fails', () => {
+    const error = failure(userToken({
+      getTokenInformation: vi.fn<Win32Bindings['getTokenInformation']>((_token, _class, _buffer, _length, needed) => {
+        koffi.encode(needed, 'uint32', 16)
+        return 0
+      }),
+    }))
+    expect(error.api).toBe('GetTokenInformation')
+    expect(error.message).not.toContain('size query')
+  })
+
+  it('reports a TokenUser that carries no SID', () => {
+    expect(failure(userToken({
+      getTokenInformation: vi.fn<Win32Bindings['getTokenInformation']>((_token, _class, buffer, _length, needed) => {
+        koffi.encode(needed, 'uint32', 16)
+        return buffer === null ? 0 : 1
+      }),
+    })).message).toContain('TokenUser carries no SID')
+  })
+
+  it('reports a SID whose length cannot be read', () => {
+    expect(failure(userToken({ getLengthSid: vi.fn<Win32Bindings['getLengthSid']>(() => 0) })).api).toBe('GetLengthSid')
+  })
+
+  it('reports a SID that cannot be copied', () => {
+    expect(failure(userToken({ copySid: vi.fn<Win32Bindings['copySid']>(() => 0) })).api).toBe('CopySid')
   })
 })

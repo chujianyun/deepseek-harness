@@ -72,7 +72,14 @@ const nonLinuxWebWorkerTests = process.platform === 'linux'
 const platformUnsupportedTests = [...windowsUnsupportedTests, ...nonLinuxWebWorkerTests]
 
 const windowsUnsupportedCoveragePackages = process.platform === 'win32'
-  ? [...windowsUnsupportedPackages, 'packages/subprocess/*']
+  ? [
+      ...windowsUnsupportedPackages,
+      'packages/subprocess/*',
+      // The connectors give the model POSIX shell scripts only, and their specs drive stand-in CLIs that
+      // are POSIX shell scripts (README Known Limitations: Bash only, POSIX only); the specs skip on
+      // Windows, so the Linux and macOS lanes hold the package's per-file 100%.
+      'packages/connector/connectors',
+    ]
   : []
 
 // Windows-only packages: their sources execute exclusively on win32 (koffi

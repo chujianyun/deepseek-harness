@@ -966,7 +966,7 @@ Host owner of the embedding models and of the `embedding` Remote namespace.
  * @param signal - stream lifetime.
  * @returns the current state, then every change; download progress at most four times a second.
  */
-@Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<EmbeddingState>
+@Remote({ mode: 'stream' }) watch(signal: AbortSignal): AsyncIterable<EmbeddingState>
 
 /**
  * Pause the local model download; partial files are kept.

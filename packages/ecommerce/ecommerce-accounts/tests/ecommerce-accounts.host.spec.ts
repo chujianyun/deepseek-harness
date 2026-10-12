@@ -1,14 +1,14 @@
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { execFile } from 'node:child_process'
+import { afterAll, afterEach, describe, expect, it, vi, type MockInstance } from 'vitest'
+import { execFile, spawn } from 'node:child_process'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import { Bridge } from '../src/bridge.ts'
+import { Bridge, installCommand, SCRIPT, WINDOWS_COMMAND } from '../src/bridge.ts'
 import { writeJsonAtomic } from '../src/files.ts'
 import { applyUpdate, DamagedMemory, EMPTY_MEMORY, readMemory } from '../src/memory.ts'
 import { SKILL_CONTENT } from '../src/skill.ts'
@@ -21,15 +21,65 @@ import type { AddEcommerceAccountInput, EcommerceAccountsState } from '../src/ty
 import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import { hubStub } from '../../../connector/connectors/tests/support.ts'
+import { removeCompiledShim, scriptExecutable } from './script-executable.ts'
 
-const FAKE = fileURLToPath(new URL('./fake-chrome.mjs', import.meta.url))
+const fakeDirs: string[] = []
+afterAll(async () => {
+  for (const dir of fakeDirs) await rm(dir, { recursive: true, force: true, maxRetries: 5 })
+  await removeCompiledShim()
+})
+const FAKE = await fakeChrome('141.0.7390.65')
+
+/**
+ * The fake Chrome, reporting a version: elsewhere through FAKE_CHROME_VERSION as it answers
+ * --version, on Windows as the version-named directory beside it, where DSH reads it.
+ */
+async function fakeChrome(version: string): Promise<string> {
+  const dir = join(tmpdir(), `dsh-fake-chrome-${String(process.pid)}-${version}`)
+  fakeDirs.push(dir)
+  const exe = await scriptExecutable(fileURLToPath(new URL('./fake-chrome.mjs', import.meta.url)), dir)
+  if (process.platform === 'win32') await mkdir(join(dir, version), { recursive: true })
+  return exe
+}
+
+/** A Chrome that starts but never answers on its DevTools port. */
+async function silentChrome(dir: string): Promise<string> {
+  const script = join(dir, 'silent-chrome.mjs')
+  await writeFile(script, '#!/usr/bin/env node\nsetTimeout(() => {}, 2000)\n', { mode: 0o755 })
+  return scriptExecutable(script, dir)
+}
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
-  for (const key of ['FAKE_CHROME_VERSION', 'FAKE_CHROME_SILENT', 'FAKE_CHROME_BASE64', 'FAKE_CHROME_STUBBORN', 'FAKE_CHROME_NO_BODY', 'FAKE_CHROME_NO_CLOSE', 'FAKE_CHROME_LATE_COMMIT', 'FAKE_CHROME_LINGER_MS', 'FAKE_CHROME_OFFLINE', 'FAKE_CHROME_NO_STORE', 'FAKE_CHROME_NO_STORE_BODY']) {
+  for (const key of ['FAKE_CHROME_VERSION', 'FAKE_CHROME_SILENT', 'FAKE_CHROME_BASE64', 'FAKE_CHROME_STUBBORN', 'FAKE_CHROME_DEAF', 'FAKE_CHROME_NO_BODY', 'FAKE_CHROME_NO_CLOSE', 'FAKE_CHROME_LATE_COMMIT', 'FAKE_CHROME_LINGER_MS', 'FAKE_CHROME_OFFLINE', 'FAKE_CHROME_NO_STORE', 'FAKE_CHROME_NO_STORE_BODY']) {
     Reflect.deleteProperty(process.env, key)
   }
 })
+
+/**
+ * Keep files in `dir` from being deleted until the returned undo runs: elsewhere by taking write permission
+ * from `dir`; on Windows, where an elevated user deletes through any ACL, by holding each of `files` (created
+ * when missing) open in a PowerShell child that lets others read it but not delete it.
+ */
+async function holdDeletes(dir: string, files: readonly string[]): Promise<() => Promise<void>> {
+  if (process.platform !== 'win32') {
+    await chmod(dir, 0o500)
+    return () => chmod(dir, 0o700)
+  }
+  // A single-quoted PowerShell string doubles each quote it holds.
+  const opens = files.map(file => `[IO.File]::Open('${file.replaceAll("'", "''")}', 'OpenOrCreate', 'ReadWrite', 'Read') | Out-Null`)
+  const holder = spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', [...opens, "'held'", '[Console]::In.ReadLine() | Out-Null'].join('; ')])
+  const exited = new Promise<void>((resolve) => { holder.once('exit', () => { resolve() }) })
+  await new Promise<void>((resolve, reject) => {
+    holder.stdout.once('data', () => { resolve() })
+    holder.once('error', reject)
+    holder.once('exit', (code) => { reject(new Error(`the holder exited with ${String(code)}`)) })
+  })
+  return async () => {
+    holder.stdin.end()
+    await exited
+  }
+}
 
 async function tempDir(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-ecommerce-'))
@@ -117,10 +167,21 @@ describe('platform checks', () => {
 
 describe('Chrome processes', () => {
   it('finds Chrome and its version, and reports none or no version when missing', async () => {
-    expect(await findChrome(FAKE)).toEqual({ path: FAKE, version: '141.0.7390.65', major: 141 })
+    expect(await findChrome(FAKE, 'linux')).toEqual({ path: FAKE, version: '141.0.7390.65', major: 141 })
     expect(await findChrome(join(tmpdir(), 'no-such-chrome'))).toBeUndefined()
     process.env.FAKE_CHROME_VERSION = ''
-    expect(await findChrome(FAKE)).toEqual({ path: FAKE, version: undefined, major: undefined })
+    expect(await findChrome(FAKE, 'linux')).toEqual({ path: FAKE, version: undefined, major: undefined })
+    // A file that does not run reports no version either.
+    const notChrome = join(await tempDir(), 'chrome.txt')
+    await writeFile(notChrome, 'not a program')
+    expect(await findChrome(notChrome, 'linux')).toEqual({ path: notChrome, version: undefined, major: undefined })
+    // Windows Chrome is not run: its version is the highest version-named directory beside it.
+    const install = await tempDir()
+    const exe = join(install, 'chrome.exe')
+    await writeFile(exe, '')
+    expect(await findChrome(exe, 'win32')).toEqual({ path: exe, version: undefined, major: undefined })
+    for (const name of ['141.0.7390.65', '141.0.7390.122', '99.0.1.1', 'Dictionaries', '1.2.3']) await mkdir(join(install, name))
+    expect(await findChrome(exe, 'win32')).toEqual({ path: exe, version: '141.0.7390.122', major: 141 })
     // The standard install may or may not exist on this machine.
     const installed = await findChrome(undefined)
     expect(installed === undefined || installed.path.length > 0).toBe(true)
@@ -192,6 +253,11 @@ describe('Chrome processes', () => {
     const started = await launchChrome({ chrome: FAKE, dir, url: 'about:blank', hidden: false, timeoutMs: 5000, env: process.env })
     await closeChrome(dir, 300)
     expect(await alive(started.port)).toBe(false)
+    // One that also ignores SIGTERM is killed.
+    process.env.FAKE_CHROME_DEAF = '1'
+    const deaf = await launchChrome({ chrome: FAKE, dir: join(dir, 'deaf'), url: 'about:blank', hidden: false, timeoutMs: 5000, env: process.env })
+    await closeChrome(join(dir, 'deaf'), 300)
+    expect(await alive(deaf.port)).toBe(false)
     const silent = join(dir, 'silent.mjs')
     await writeFile(silent, 'setTimeout(() => {}, 2000)\n')
     await expect(launchChrome({ chrome: process.execPath, dir: join(dir, 'never'), url: silent, hidden: false, timeoutMs: 300, env: process.env }))
@@ -259,6 +325,16 @@ describe('e-commerce accounts', () => {
     await env.service.startSignIn(accountId)
     const tabsFile = join(env.browserDir(accountId), 'user-data', 'fake-tabs.json')
     await expect.poll(async () => JSON.parse(await readFile(tabsFile, 'utf8')) as string[]).toEqual(['https://login.tmall.com/'])
+  })
+
+  it('shows the sign-in page when Chrome refuses to close the blank page it started on', async () => {
+    process.env.FAKE_CHROME_NO_CLOSE = '1'
+    const env = await setup()
+    const { accountId } = await env.service.addAccount(merchant)
+    await env.service.startSignIn(accountId)
+    const tabsFile = join(env.browserDir(accountId), 'user-data', 'fake-tabs.json')
+    await expect.poll(async () => JSON.parse(await readFile(tabsFile, 'utf8')) as string[]).toEqual(['about:blank', 'https://login.tmall.com/'])
+    expect((await env.settle(s => s.accounts[0]!.status === 'signing-in')).accounts[0]!.status).toBe('signing-in')
   })
 
   it('leaves the blank tabs of a Chrome that was already running when a sign-in starts again', async () => {
@@ -397,8 +473,8 @@ describe('e-commerce accounts', () => {
     expect(JSON.parse(await readFile(join(dir, 'user-data', 'fake-window.json'), 'utf8'))).toMatchObject({ windowState: 'minimized' })
   })
 
-  // A directory without write permission stops the closing only for a user other than root, and not on Windows.
-  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('logs a Chrome that cannot be closed at a turn end or a switch of tenant', async () => {
+  // Root deletes in a directory without write permission, so there the closing does not fail.
+  it.skipIf(process.getuid?.() === 0)('logs a Chrome that cannot be closed at a turn end or a switch of tenant', async () => {
     const env = await setup()
     const { accountId } = await env.service.addAccount(merchant)
     const dir = env.browserDir(accountId)
@@ -409,7 +485,7 @@ describe('e-commerce accounts', () => {
     const exec = bashCall('c-1')
     expect((await runCommand(env, varsOf(env, exec), 'browser', accountId)).code).toBe(0)
     endCall(env, exec)
-    await chmod(dir, 0o500)
+    const allow = await holdDeletes(dir, [join(dir, 'chrome.json')])
     try {
       env.ctx.emit('session/event', { header: { id: 's-1' } } as never, { type: 'turn/end', data: { turn: 1, reason: 'complete' } } as never)
       await expect.poll(() => warn.mock.calls.some(([line]) => String(line).startsWith('ecommerce-accounts: closing Chrome failed'))).toBe(true)
@@ -417,7 +493,7 @@ describe('e-commerce accounts', () => {
       await env.settle(s => s.tenantId === 't-b')
       expect(warn.mock.calls.some(([line]) => String(line).includes(`closing the Chrome of ${accountId} failed`))).toBe(true)
     } finally {
-      await chmod(dir, 0o700)
+      await allow()
     }
   })
 
@@ -441,12 +517,12 @@ describe('e-commerce accounts', () => {
     expect((await missing.service.getState()).chrome.status).toBe('missing')
     expect(await code(missing.service.startSignIn(accountId))).toBe('ecommerce-accounts/chrome-missing')
     expect(await code(missing.service.startSignIn('nope'))).toBe('ecommerce-accounts/not-found')
-    process.env.FAKE_CHROME_VERSION = '100.0.1'
-    const old = await setup()
+    process.env.FAKE_CHROME_VERSION = '100.0.1.0'
+    const old = await setup({ config: { chromePath: await fakeChrome('100.0.1.0') } })
     const added = await old.service.addAccount(merchant)
-    expect((await old.service.getState()).chrome).toMatchObject({ status: 'outdated', version: '100.0.1' })
+    expect((await old.service.getState()).chrome).toMatchObject({ status: 'outdated', version: '100.0.1.0' })
     const refused = await old.service.startSignIn(added.accountId).catch((error: unknown) => error)
-    expect(remoteErrorOf(refused)).toMatchObject({ code: 'ecommerce-accounts/chrome-outdated', details: { version: '100.0.1', minVersion: 120 } })
+    expect(remoteErrorOf(refused)).toMatchObject({ code: 'ecommerce-accounts/chrome-outdated', details: { version: '100.0.1.0', minVersion: 120 } })
   })
 
   it('reports a Chrome that cannot open the sign-in page', async () => {
@@ -483,8 +559,9 @@ describe('e-commerce accounts', () => {
     expect(await readdir(join(env.home, 'ecommerce', 't-a', 'browsers'))).toEqual([])
   })
 
-  // A directory without write permission stops the removal only for a user other than root, and not on Windows.
-  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('keeps the account, signed out, and says its browser data could not be removed when the deletion fails', async () => {
+  // Root deletes in a directory without write permission, so there the removal does not fail. On Windows rm
+  // retries the held file for 10 seconds before it gives up.
+  it.skipIf(process.getuid?.() === 0)('keeps the account, signed out, and says its browser data could not be removed when the deletion fails', async () => {
     const env = await setup()
     const { accountId } = await env.service.addAccount(merchant)
     await env.service.startSignIn(accountId)
@@ -492,16 +569,16 @@ describe('e-commerce accounts', () => {
     await env.settle(s => s.accounts[0]!.status === 'signed-in')
     const other = await env.service.addAccount({ ...merchant, platform: 'pinduoduo' })
     const browsers = join(env.home, 'ecommerce', 't-a', 'browsers')
-    await chmod(browsers, 0o500)
+    const allow = await holdDeletes(browsers, [join(browsers, accountId, 'held')])
     try {
       expect(await code(env.service.deleteAccount(accountId))).toBe('ecommerce-accounts/delete-failed')
     } finally {
-      await chmod(browsers, 0o700)
+      await allow()
     }
     expect((await env.service.getState()).accounts.map(account => [account.id, account.status])).toEqual([[accountId, 'signed-out'], [other.accountId, 'signed-out']])
     // The saved answer is gone too: the account stays signed out after a restart.
     await expect.poll(async () => (JSON.parse(await readFile(join(env.home, 'ecommerce', 't-a', 'accounts.json'), 'utf8')) as { accounts: { signedIn?: boolean }[] }).accounts[0]!.signedIn).toBe(false)
-  })
+  }, 30_000)
 
   it('leaves a deleted account deleted when a check or sign-in waited behind the deletion', async () => {
     const env = await setup()
@@ -595,7 +672,16 @@ describe('e-commerce account edge cases', () => {
     await env.service.startSignIn(accountId)
     const record = await readRecord(env.browserDir(accountId))
     process.kill(record!.pid, 'SIGKILL')
-    await new Promise(resolve => setTimeout(resolve, 400))
+    // The sign-in checks the account again and again meanwhile, and it shows signing in throughout.
+    const seen = new Set<string>()
+    const watching = new AbortController()
+    const watched = (async () => {
+      for await (const state of env.service.watch(watching.signal)) seen.add(state.accounts[0]!.status)
+    })().catch(() => undefined)
+    await new Promise(resolve => setTimeout(resolve, 600))
+    watching.abort()
+    await watched
+    expect([...seen]).toEqual(['signing-in'])
     expect((await env.service.getState()).accounts.map(item => item.status)).toEqual(['signing-in', 'signed-out'])
     await env.service.deleteAccount(accountId)
     expect((await env.service.getState()).accounts.map(item => item.id)).toEqual([other.accountId])
@@ -614,8 +700,7 @@ describe('e-commerce account edge cases', () => {
     expect((await env.service.checkAccounts()).accounts[0]!.status).toBe('check-failed')
     await closeChrome(env.browserDir(accountId), 2000)
     // Chrome can no longer start: the check fails instead of throwing.
-    const silent = join(env.home, 'silent-chrome.sh')
-    await writeFile(silent, '#!/bin/sh\nsleep 2\n', { mode: 0o755 })
+    const silent = await silentChrome(env.home)
     const broken = await setup({ home: env.home, config: { chromePath: silent, chromeTimeoutMs: 200 } })
     expect((await broken.service.checkAccounts()).accounts[0]!.status).toBe('check-failed')
     expect((await broken.service.getState()).chrome).toEqual({ status: 'ready', minVersion: 120, downloadUrl: 'https://www.google.com/chrome/' })
@@ -812,9 +897,20 @@ interface Run { readonly code: number; readonly stdout: string; readonly stderr:
  * @returns what it printed and its exit code.
  */
 function runCommand(env: Awaited<ReturnType<typeof setup>>, vars: Readonly<Record<string, string>>, ...args: string[]): Promise<Run> {
-  const pathVar = [join(env.home, 'ecommerce', 'bin'), process.env.PATH ?? ''].join(':')
+  const bin = join(env.home, 'ecommerce', 'bin')
+  // Windows has the command as a .cmd running a Node script, which execFile cannot start, so the script is run directly.
+  return process.platform === 'win32'
+    ? execRun(process.execPath, [join(bin, 'dsh-ecommerce.mjs'), ...args], bin, vars)
+    : execRun('dsh-ecommerce', args, bin, vars)
+}
+
+/** Run a program with a directory first on PATH and the given variables, and collect its output. */
+function execRun(file: string, args: readonly string[], bin: string, vars: Readonly<Record<string, string>>): Promise<Run> {
+  const PATH = [bin, process.env.PATH ?? ''].join(delimiter)
+  // Windows programs need the system's own variables, such as SystemRoot, to start.
+  const base = process.platform === 'win32' ? process.env : {}
   return new Promise((resolve) => {
-    execFile('dsh-ecommerce', args, { env: { PATH: pathVar, ...vars } }, (error, stdout, stderr) => {
+    execFile(file, args, { env: { ...base, PATH, ...vars } }, (error, stdout, stderr) => {
       resolve({ code: error === null ? 0 : Number(error.code), stdout, stderr })
     })
   })
@@ -828,6 +924,40 @@ const endCall = (env: Awaited<ReturnType<typeof setup>>, exec: ToolExecution) =>
 }
 
 describe('e-commerce accounts for the model', () => {
+  it('installs the command as a POSIX script, or on Windows as a .cmd running a Node script that answers the same', async () => {
+    const env = await setup()
+    const exec = bashCall('c-node')
+    const vars = varsOf(env, exec)
+    const posix = join(env.home, 'posix-bin')
+    await installCommand(posix, 'linux')
+    expect(await readFile(join(posix, 'dsh-ecommerce'), 'utf8')).toBe(SCRIPT)
+    // A non-ASCII folder, as a Windows user name puts in the DSH home.
+    const windows = join(env.home, '命令')
+    await installCommand(windows, 'win32')
+    expect(await readFile(join(windows, 'dsh-ecommerce.cmd'), 'utf8')).toBe(WINDOWS_COMMAND)
+    expect(vars.DSH_ECOMMERCE_NODE).toBe(process.execPath)
+    const node = (variables: Readonly<Record<string, string>>, ...args: string[]) => execRun(process.execPath, [join(windows, 'dsh-ecommerce.mjs'), ...args], windows, variables)
+    const notJson = join(env.home, 'not-json.txt')
+    await writeFile(notJson, 'not json')
+    for (const args of [['accounts'], ['memory'], ['browser'], ['browser', 'nope'], ['buyer'], ['buyer', 'tmall'], ['risk'], ['risk', 'nope'], ['signed-out', 'nope'], ['remember'], ['remember', join(env.home, 'missing.json')], ['remember', notJson], ['nope'], []]) {
+      expect(await node(vars, ...args), args.join(' ')).toEqual(await runCommand(env, vars, ...args))
+    }
+    expect(await node({}, 'accounts')).toEqual({ code: 2, stdout: '', stderr: 'dsh-ecommerce: e-commerce accounts are only available in a DSH shell call while DSH is signed in to the user center.\n' })
+    if (process.platform === 'win32') {
+      // The .cmd itself, run with the Node the call names (this test's Node in place of DSH's).
+      expect(await execRun('cmd.exe', ['/d', '/s', '/c', join(windows, 'dsh-ecommerce.cmd'), 'accounts'], windows, vars)).toEqual(await runCommand(env, vars, 'accounts'))
+      const { DSH_ECOMMERCE_NODE: _node, ...withoutNode } = vars
+      expect(await execRun('cmd.exe', ['/d', '/s', '/c', join(windows, 'dsh-ecommerce.cmd'), 'accounts'], windows, withoutNode)).toEqual({
+        code: 2, stdout: '', stderr: 'dsh-ecommerce: e-commerce accounts are only available in a DSH shell call while DSH is signed in to the user center.\r\n',
+      })
+      // As the model's PowerShell calls it: by name, found on PATH.
+      expect(await execRun('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'dsh-ecommerce accounts; exit $LASTEXITCODE'], windows, vars))
+        .toEqual(await runCommand(env, vars, 'accounts'))
+    }
+    endCall(env, exec)
+    expect((await node(vars, 'accounts')).code).toBe(1)
+  })
+
   it('gives the model the Skill and the command only while signed in to the user center', async () => {
     const env = await setup()
     const skill = await env.ctx.skills.get('ecommerce-accounts')
@@ -982,8 +1112,7 @@ describe('e-commerce accounts for the model', () => {
     await symlink(`other-host-${String(process.pid)}`, lock)
     expect((await take('c-3')).stderr).toContain('its browser is in use by another program')
     await rm(lock)
-    const silent = join(env.home, 'silent-chrome.sh')
-    await writeFile(silent, '#!/bin/sh\nsleep 2\n', { mode: 0o755 })
+    const silent = await silentChrome(env.home)
     const broken = await setup({ home: env.home, config: { chromePath: silent, chromeTimeoutMs: 200 } })
     const exec5 = bashCall('c-5')
     expect((await runCommand(broken, varsOf(broken, exec5), 'browser', accountId)).stderr).toContain('could not be checked')
@@ -1175,11 +1304,21 @@ describe('buyer accounts and risk protection', () => {
     // A refusal that was no sign-out: the check finds the account signed in.
     expect(JSON.parse((await runCommand(env, varsOf(env, exec), 'signed-out', accountId)).stdout)).toEqual({ id: accountId, status: 'signed-in' })
     await rm(join(env.browserDir(accountId), 'user-data', 'fake-signed-in'))
-    // Reported twice at once, the account is checked once and shows expired.
-    const checks = vi.spyOn(env.service as never, 'check')
-    const [first, second] = await Promise.all([
+    // Reported twice while the first check runs, the account is checked once and shows expired. The check
+    // waits for both reports, so a slow machine starting the two commands far apart changes nothing.
+    const check = (Reflect.get(env.service, 'check') as (entry: unknown) => Promise<unknown>).bind(env.service)
+    const rechecks = vi.spyOn(env.service as never, 'recheck')
+    const bothReported = Promise.withResolvers<undefined>()
+    const checks = (vi.spyOn(env.service as never, 'check') as MockInstance<(entry: unknown) => Promise<unknown>>).mockImplementation(async (entry) => {
+      await bothReported.promise
+      return check(entry)
+    })
+    const reports = Promise.all([
       runCommand(env, varsOf(env, exec), 'signed-out', accountId), runCommand(env, varsOf(env, exec), 'signed-out', accountId),
     ])
+    await vi.waitFor(() => { expect(rechecks).toHaveBeenCalledTimes(2) }, { timeout: 10_000 })
+    bothReported.resolve(undefined)
+    const [first, second] = await reports
     expect([JSON.parse(first.stdout), JSON.parse(second.stdout)]).toEqual([{ id: accountId, status: 'signed-out' }, { id: accountId, status: 'signed-out' }])
     expect(checks).toHaveBeenCalledTimes(1)
     expect((await env.service.getState()).accounts[0]).toMatchObject({ status: 'signed-out', expired: true })
