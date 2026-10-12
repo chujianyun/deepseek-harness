@@ -27,7 +27,7 @@ To replace the three Office workflows and shared checker as a set, patch `skill-
 
 Repository builds also materialize a dev-only `runtime/node/` carrier. It runs `node runtime/node/node_modules/@deepseek-ai/dsh/lib/bin.js` on system Node 22.19 or newer. It is never selected automatically and is excluded from wheels and sdists.
 
-Both carriers execute the same `dsh` grammar and shipped profiles, including the standalone `sdk-minimal` tree and the full `web` profile with its frontend assets. The private `dsh-python-runtime-closure` manifest defines the packaged dependency closure; there is no Python-specific Node application or checked-in default `cordis.yml`.
+Both carriers execute the same `dsh` grammar and shipped profiles, including the standalone `sdk-minimal` tree and the full `web` profile with its frontend assets. The private `dsh-python-runtime-closure` manifest defines the packaged dependency closure, less the enterprise Desktop's plugins that the `web` profile enables only in the `desktop` profile with a user center (`scripts/build-exe-for-python-sdk-desktop-only.ts`); there is no Python-specific Node application or checked-in default `cordis.yml`.
 
 ## Python module API
 
