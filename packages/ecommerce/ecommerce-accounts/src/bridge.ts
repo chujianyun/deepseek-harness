@@ -209,17 +209,34 @@ if (typeof asked === 'string') {
 `
 
 /**
+ * The Windows `dsh-ecommerce.cmd`. ELECTRON_RUN_AS_NODE lets DSH's Electron run the script as Node.
+ */
+export const WINDOWS_COMMAND = [
+  '@echo off',
+  'setlocal',
+  'if not defined DSH_ECOMMERCE_NODE (',
+  '  1>&2 echo dsh-ecommerce: e-commerce accounts are only available in a DSH shell call while DSH is signed in to the user center.',
+  '  exit /b 2',
+  ')',
+  'set ELECTRON_RUN_AS_NODE=1',
+  '"%DSH_ECOMMERCE_NODE%" "%~dp0dsh-ecommerce.mjs" %*',
+  'exit /b %ERRORLEVEL%',
+  '',
+].join('\r\n')
+
+/**
  * Write the `dsh-ecommerce` command into the directory the model shell has on PATH: {@link SCRIPT}, or
- * on Windows a `.cmd` that runs {@link NODE_SCRIPT} with the given Node.
+ * on Windows a `.cmd` that runs {@link NODE_SCRIPT} with the Node each shell call names in
+ * DSH_ECOMMERCE_NODE. The path lives in the variable, not the file, because cmd.exe reads a batch file
+ * in the console's code page and would garble a non-ASCII install path.
  * @param bin - the directory.
  * @param platform - the platform the command runs on.
- * @param node - the Node (or Electron, which ELECTRON_RUN_AS_NODE turns into Node) that runs the Windows command.
  */
-export async function installCommand(bin: string, platform: NodeJS.Platform, node: string): Promise<void> {
+export async function installCommand(bin: string, platform: NodeJS.Platform): Promise<void> {
   await mkdir(bin, { recursive: true })
   if (platform === 'win32') {
     await writeFile(join(bin, 'dsh-ecommerce.mjs'), NODE_SCRIPT)
-    await writeFile(join(bin, 'dsh-ecommerce.cmd'), `@echo off\r\nsetlocal\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${node}" "%~dp0dsh-ecommerce.mjs" %*\r\nexit /b %ERRORLEVEL%\r\n`)
+    await writeFile(join(bin, 'dsh-ecommerce.cmd'), WINDOWS_COMMAND)
     return
   }
   await writeFile(join(bin, 'dsh-ecommerce'), SCRIPT)

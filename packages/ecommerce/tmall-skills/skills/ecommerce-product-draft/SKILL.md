@@ -9,6 +9,8 @@ description: 商品素材整理：把用户给的任意结构的新品素材文�
 
 ## 步骤
 
+Windows 上命令行是 PowerShell：以带引号的路径开头的命令前要加调用符 `& `，例如 `& "<node>" "<本技能目录>/scripts/…" …`，否则 PowerShell 不会执行它。
+
 1. 取 Node：调用 `load_workspace_dependencies`，用它返回的 `node` 路径运行脚本（`scripts/` 相对本技能目录）。
 2. 清点素材：`"<node>" "<本技能目录>/scripts/product-draft.mjs" inventory --folder <素材文件夹>`。脚本列出每张图归到哪一类及理由、每张表每一列对应的字段。
 3. 补判规则判不了的：

@@ -6,9 +6,9 @@
  * the script too, and the script sees NODE_SHIM_PARENT=1, its parent being the program others started.
  */
 import { execFile } from 'node:child_process'
-import { access, copyFile, mkdir, writeFile } from 'node:fs/promises'
+import { access, copyFile, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 
 const SHIM = `using System; using System.Diagnostics; using System.IO; using System.Runtime.InteropServices;
@@ -74,4 +74,11 @@ export async function scriptExecutable(script: string, dir: string, platform: No
     await writeFile(`${exe}.txt`, `${process.execPath}\r\n${script}\r\n`)
   }
   return exe
+}
+
+/** Remove the compiled shim; call once the test file is done with its programs. */
+export async function removeCompiledShim(): Promise<void> {
+  const exe = await compiled?.catch(() => undefined)
+  compiled = undefined
+  if (exe !== undefined) await rm(dirname(exe), { recursive: true, force: true, maxRetries: 5 })
 }

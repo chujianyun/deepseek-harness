@@ -61,19 +61,9 @@ async function reportedVersion(path: string): Promise<string | undefined> {
  * Windows does not print its version for `--version` but starts, opening a window.
  */
 async function installedVersion(path: string): Promise<string | undefined> {
-  const entries = await readdir(dirname(path)).catch(() => [] as string[])
-  const versions = entries.filter(name => /^\d+(?:\.\d+){3}$/u.test(name)).map(name => ({ name, parts: name.split('.').map(Number) }))
-  versions.sort((a, b) => compareParts(a.parts, b.parts))
-  return versions.at(-1)?.name
-}
-
-/** Compare two four-part version numbers part by part. */
-function compareParts(a: readonly number[], b: readonly number[]): number {
-  for (const [i, part] of a.entries()) {
-    const other = b[i] ?? 0
-    if (part !== other) return part - other
-  }
-  return 0
+  const versions = (await readdir(dirname(path))).filter(name => /^\d+(?:\.\d+){3}$/u.test(name))
+  // Numeric collation compares each run of digits as a number, so 141.0.7390.122 follows 141.0.7390.65.
+  return versions.sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).at(-1)
 }
 
 /** The recorded Chrome of one account. */

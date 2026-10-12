@@ -513,6 +513,8 @@ export function apply(ctx: Context, config: Config = {}): void {
           command: args.command,
           ...workdir !== undefined ? { workdir } : {},
           ...args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {},
+          // A Host started without PATH keeps only the contributed directories.
+          /* v8 ignore next -- every supported Host process inherits a PATH; unsetting it would also hide pwsh itself. */
           ...pathDirs.length > 0 ? { env: { PATH: [...pathDirs, process.env.PATH ?? ''].join(delimiter) } } : {},
           dshEnv: ctx.shellEnv.collect(exec),
           ...policy !== undefined ? { sandboxPolicy: policy } : {},

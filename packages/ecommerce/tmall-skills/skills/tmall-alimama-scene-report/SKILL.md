@@ -9,9 +9,11 @@ description: 万相台营销场景报表：用 DSH 里已登录的天猫商家�
 
 ## 步骤
 
+Windows 上命令行是 PowerShell：以带引号的路径开头的命令前要加调用符 `& `，例如 `& "<node>" "<本技能目录>/scripts/…" …`，否则 PowerShell 不会执行它。
+
 1. 选账号：按 `ecommerce-accounts` 技能的规则运行 `dsh-ecommerce accounts`，从 `platform` 为 `tmall`、`kind` 为 `merchant` 的账号中选一个。只有一个已登录时直接用，并在回复里写明用的是哪家店；有多个时先问用户；没有可用账号时停下，请用户到 DSH 设置 → 电商账号登录。
 2. 取 Node：调用 `load_workspace_dependencies`，用它返回的 `node` 路径运行脚本（员工电脑不需要另装 Node 或 Python）。
-3. 在用户的工作区里，用一次 bash 调用运行（`scripts/` 相对本技能目录）：
+3. 在用户的工作区里，用一次命令行调用运行（`scripts/` 相对本技能目录）：
 
    ```sh
    "<node>" "<本技能目录>/scripts/alimama-scene-report.mjs" --account <账号 id> --date <YYYY-MM-DD>

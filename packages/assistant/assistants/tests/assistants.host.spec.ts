@@ -144,6 +144,18 @@ describe('assistants storage', () => {
     }
   })
 
+  it('shows a tenant whose tenant file is damaged with no assistants, not the previous tenant\'s', async () => {
+    const env = await setup()
+    await env.settle(s => s.assistants.length === 1)
+    await mkdir(join(env.home, 'assistants', 't-b'), { recursive: true })
+    await writeFile(join(env.home, 'assistants', 't-b', 'tenant.json'), '{ damaged')
+    env.hub.set('t-b')
+    expect(await env.settle(s => s.tenantId === 't-b')).toMatchObject({ assistants: [] })
+    // Later sign-ins are still followed.
+    env.hub.set('t-a')
+    expect((await env.settle(s => s.tenantId === 't-a')).assistants).toHaveLength(1)
+  })
+
   it('keeps each tenant\'s assistants apart and shows none while signed out', async () => {
     const env = await setup()
     const a = await env.settle(s => s.assistants.length === 1)

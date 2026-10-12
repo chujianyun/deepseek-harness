@@ -80,6 +80,10 @@ describe('multi-publish command line', () => {
     // PowerShell on Windows doubles a quote, and backslashes need quotes.
     expect(shellWord('发品草稿\\天猫-名流旗舰店', 'win32')).toBe("'发品草稿\\天猫-名流旗舰店'")
     expect(shellWord("it's", 'win32')).toBe("'it''s'")
+    expect(shellWord('名流‘官方’店', 'win32')).toBe("'名流‘‘官方’’店'")
+    expect(shellWord('@名流店', 'win32')).toBe("'@名流店'")
+    expect(shellWord('名流店@天猫', 'win32')).toBe('名流店@天猫')
+    expect(shellWord('@名流店', 'linux')).toBe('@名流店')
   })
 
   it('lists the accounts through dsh-ecommerce', async () => {

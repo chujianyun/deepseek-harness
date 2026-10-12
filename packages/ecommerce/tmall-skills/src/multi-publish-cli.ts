@@ -170,14 +170,17 @@ const rulesDir = (target: PlanTarget) => join(PLATFORM_SKILLS[target.platform].d
 
 /**
  * A word for the model's command line, quoted when it holds anything but plain characters: for bash,
- * or for PowerShell on Windows, which doubles a quote inside quotes.
+ * or for PowerShell on Windows.
  * @param word - the word.
  * @param platform - the platform whose shell the model uses.
  * @returns the word, safe to paste.
  */
 export function shellWord(word: string, platform: NodeJS.Platform = process.platform): string {
-  if (/^[\p{L}\p{N}_./:@%+=-]+$/u.test(word)) return word
-  return platform === 'win32' ? `'${word.replaceAll("'", "''")}'` : `'${word.replaceAll("'", "'\\''")}'`
+  if (platform === 'win32') {
+    // PowerShell also takes ‘ ’ ‚ ‛ as quotes, each doubled inside quotes, and reads a leading @ as splatting.
+    return /^[\p{L}\p{N}_./:%+=-][\p{L}\p{N}_./:@%+=-]*$/u.test(word) ? word : `'${word.replace(/['‘’‚‛]/gu, quote => quote + quote)}'`
+  }
+  return /^[\p{L}\p{N}_./:@%+=-]+$/u.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`
 }
 
 async function plan(options: Extract<MultiPublishOptions, { command: 'plan' }>, deps: MultiPublishDeps): Promise<string> {

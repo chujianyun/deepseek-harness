@@ -758,10 +758,21 @@ export class AssistantsService extends TypertRemoteService {
     // tenant whole, never the new tenant without its assistants.
     let tenant: TenantFile = { version: 1, defaultId: null, seeded: false }
     let list: AssistantView[] = []
-    if (tenantId !== null) {
-      await mkdir(join(this.root, tenantId), { recursive: true })
-      tenant = await this.readTenant(tenantId)
-      list = await this.readAssistants(tenantId)
+    try {
+      if (tenantId !== null) {
+        await mkdir(join(this.root, tenantId), { recursive: true })
+        tenant = await this.readTenant(tenantId)
+        list = await this.readAssistants(tenantId)
+      }
+    } catch (error) {
+      // The previous tenant's assistants never outlive the switch: a tenant whose files cannot be read shows
+      // none, and the switch still completes, so later sign-ins are followed.
+      this.ctx.logger.warn(`assistants: reading ${String(tenantId)} failed: ${String(error)}`)
+      this.tenantId = tenantId
+      this.tenant = { version: 1, defaultId: null, seeded: false }
+      this.list = []
+      this.changed()
+      return
     }
     this.tenantId = tenantId
     this.tenant = tenant

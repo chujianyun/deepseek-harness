@@ -140,6 +140,7 @@ const PROBLEMS = { 'no-response': 'timeout', 'network': 'network', 'busy': 'busy
 
 /** The variable that gives a bash call the address of the e-commerce accounts. */
 const URL_KEY = 'DSH_ECOMMERCE_URL'
+const NODE_KEY = 'DSH_ECOMMERCE_NODE'
 
 /** Each platform's name in what the model reads. */
 const PLATFORM_NAMES = { tmall: 'Tmall', taobao: 'Taobao', pinduoduo: 'Pinduoduo', doudian: 'Douyin shop' } as const satisfies Record<EcommercePlatform, string>
@@ -254,8 +255,13 @@ export class EcommerceAccountsService extends TypertRemoteService {
     ctx.shellEnv.registerPath({ name: 'ecommerce-accounts', resolve: () => this.tenantId === null ? undefined : join(this.root, 'bin') })
     ctx.shellEnv.register({
       name: 'ecommerce-accounts',
-      variables: { [URL_KEY]: { description: 'The address the dsh-ecommerce command reaches the e-commerce accounts at, valid for this shell call only.' } },
-      resolve: exec => this.tenantId === null ? {} : { [URL_KEY]: this.bridge.urlFor({ callId: exec.callId, tenantId: this.tenantId }) },
+      variables: {
+        [URL_KEY]: { description: 'The address the dsh-ecommerce command reaches the e-commerce accounts at, valid for this shell call only.' },
+        [NODE_KEY]: { description: 'The Node that runs the dsh-ecommerce command on Windows.' },
+      },
+      resolve: exec => this.tenantId === null
+        ? {}
+        : { [URL_KEY]: this.bridge.urlFor({ callId: exec.callId, tenantId: this.tenantId }), [NODE_KEY]: process.execPath },
     })
     // The call's token and its browser reservations end with the call.
     ctx.on('tools/result', (exec) => {
@@ -277,7 +283,7 @@ export class EcommerceAccountsService extends TypertRemoteService {
     this.chrome = await findChrome(this.options.chromePath)
     const stopBridge = await this.bridge.start()
     this.ctx.effect(() => () => { void stopBridge() }, 'ecommerce-accounts: command endpoint')
-    await installCommand(join(this.root, 'bin'), process.platform, process.execPath)
+    await installCommand(join(this.root, 'bin'), process.platform)
     await this.serialized(async () => this.switchTenant((await this.ctx.hubAccount.getState()).profile?.tenantId ?? null))
     void (async () => {
       for await (const state of this.ctx.hubAccount.watch(this.lifetime.signal)) {

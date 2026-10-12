@@ -122,7 +122,9 @@ describe('takeOverMerchant', () => {
     const windows = { ...process.env, PATH: `;${join(dir, 'none')};${dir}` }
     expect(await runDshEcommerce(['ok'], 'win32', windows)).toEqual({ code: 0, stdout: '{}\n', stderr: '' })
     expect(await runDshEcommerce(['x'], 'win32', windows)).toEqual({ code: 3, stdout: '', stderr: 'no: x\n' })
+    expect(await runDshEcommerce(['ok'], 'win32', { path: dir })).toEqual({ code: 0, stdout: '{}\n', stderr: '' })
     expect((await runDshEcommerce(['ok'], 'win32', { Path: join(dir, 'none') })).code).toBe(127)
+    expect((await runDshEcommerce(['ok'], 'win32', {})).code).toBe(127)
     if (process.platform !== 'win32') {
       await writeFile(join(dir, 'dsh-ecommerce'), fake)
       await chmod(join(dir, 'dsh-ecommerce'), 0o755)

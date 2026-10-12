@@ -51,7 +51,8 @@ export function runDshEcommerce(
 
 /** The Windows `dsh-ecommerce` Node script on PATH, if any. */
 function windowsScript(env: NodeJS.ProcessEnv): string | undefined {
-  const path = env.PATH ?? env.Path ?? ''
+  // Windows names the variable in any case (Path, PATH); a plain object keeps the caller's spelling.
+  const path = Object.entries(env).find(([key]) => key.toUpperCase() === 'PATH')?.[1] ?? ''
   return path.split(';').filter(dir => dir !== '').map(dir => join(dir, 'dsh-ecommerce.mjs')).find(file => existsSync(file))
 }
 

@@ -2,13 +2,13 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { execFile } from 'node:child_process'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import { Bridge, installCommand, SCRIPT } from '../src/bridge.ts'
+import { Bridge, installCommand, SCRIPT, WINDOWS_COMMAND } from '../src/bridge.ts'
 import { writeJsonAtomic } from '../src/files.ts'
 import { applyUpdate, DamagedMemory, EMPTY_MEMORY, readMemory } from '../src/memory.ts'
 import { SKILL_CONTENT } from '../src/skill.ts'
@@ -21,8 +21,13 @@ import type { AddEcommerceAccountInput, EcommerceAccountsState } from '../src/ty
 import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import { hubStub } from '../../../connector/connectors/tests/support.ts'
-import { scriptExecutable } from './script-executable.ts'
+import { removeCompiledShim, scriptExecutable } from './script-executable.ts'
 
+const fakeDirs: string[] = []
+afterAll(async () => {
+  for (const dir of fakeDirs) await rm(dir, { recursive: true, force: true, maxRetries: 5 })
+  await removeCompiledShim()
+})
 const FAKE = await fakeChrome('141.0.7390.65')
 
 /**
@@ -31,6 +36,7 @@ const FAKE = await fakeChrome('141.0.7390.65')
  */
 async function fakeChrome(version: string): Promise<string> {
   const dir = join(tmpdir(), `dsh-fake-chrome-${String(process.pid)}-${version}`)
+  fakeDirs.push(dir)
   const exe = await scriptExecutable(fileURLToPath(new URL('./fake-chrome.mjs', import.meta.url)), dir)
   if (process.platform === 'win32') await mkdir(join(dir, version), { recursive: true })
   return exe
@@ -869,12 +875,13 @@ describe('e-commerce accounts for the model', () => {
     const exec = bashCall('c-node')
     const vars = varsOf(env, exec)
     const posix = join(env.home, 'posix-bin')
-    await installCommand(posix, 'linux', process.execPath)
+    await installCommand(posix, 'linux')
     expect(await readFile(join(posix, 'dsh-ecommerce'), 'utf8')).toBe(SCRIPT)
-    const windows = join(env.home, 'windows-bin')
-    await installCommand(windows, 'win32', 'C:\\Program Files\\MO WorkAI\\MO WorkAI.exe')
-    expect(await readFile(join(windows, 'dsh-ecommerce.cmd'), 'utf8')).toBe(
-      '@echo off\r\nsetlocal\r\nset ELECTRON_RUN_AS_NODE=1\r\n"C:\\Program Files\\MO WorkAI\\MO WorkAI.exe" "%~dp0dsh-ecommerce.mjs" %*\r\nexit /b %ERRORLEVEL%\r\n')
+    // A non-ASCII folder, as a Windows user name puts in the DSH home.
+    const windows = join(env.home, '命令')
+    await installCommand(windows, 'win32')
+    expect(await readFile(join(windows, 'dsh-ecommerce.cmd'), 'utf8')).toBe(WINDOWS_COMMAND)
+    expect(vars.DSH_ECOMMERCE_NODE).toBe(process.execPath)
     const node = (variables: Readonly<Record<string, string>>, ...args: string[]) => execRun(process.execPath, [join(windows, 'dsh-ecommerce.mjs'), ...args], windows, variables)
     const notJson = join(env.home, 'not-json.txt')
     await writeFile(notJson, 'not json')
@@ -883,9 +890,12 @@ describe('e-commerce accounts for the model', () => {
     }
     expect(await node({}, 'accounts')).toEqual({ code: 2, stdout: '', stderr: 'dsh-ecommerce: e-commerce accounts are only available in a DSH shell call while DSH is signed in to the user center.\n' })
     if (process.platform === 'win32') {
-      // The .cmd itself, as PowerShell runs it, with this test's Node in place of DSH's.
-      await installCommand(windows, 'win32', process.execPath)
+      // The .cmd itself, run with the Node the call names (this test's Node in place of DSH's).
       expect(await execRun('cmd.exe', ['/d', '/s', '/c', join(windows, 'dsh-ecommerce.cmd'), 'accounts'], windows, vars)).toEqual(await runCommand(env, vars, 'accounts'))
+      const { DSH_ECOMMERCE_NODE: _node, ...withoutNode } = vars
+      expect(await execRun('cmd.exe', ['/d', '/s', '/c', join(windows, 'dsh-ecommerce.cmd'), 'accounts'], windows, withoutNode)).toEqual({
+        code: 2, stdout: '', stderr: 'dsh-ecommerce: e-commerce accounts are only available in a DSH shell call while DSH is signed in to the user center.\r\n',
+      })
       // As the model's PowerShell calls it: by name, found on PATH.
       expect(await execRun('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'dsh-ecommerce accounts; exit $LASTEXITCODE'], windows, vars))
         .toEqual(await runCommand(env, vars, 'accounts'))

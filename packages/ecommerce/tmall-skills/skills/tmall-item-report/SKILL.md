@@ -9,8 +9,10 @@ description: 单品全量采集和报告：给天猫或淘宝商品链接或 ID�
 
 ## 步骤
 
+Windows 上命令行是 PowerShell：以带引号的路径开头的命令前要加调用符 `& `，例如 `& "<node>" "<本技能目录>/scripts/…" …`，否则 PowerShell 不会执行它。
+
 1. 取 Node：调用 `load_workspace_dependencies`，用它返回的 `node` 路径运行脚本（员工电脑不需要另装 Node 或 Python）。
-2. 在用户的工作区里，用一次 bash 调用运行（`scripts/` 相对本技能目录），并把这次调用的 `timeoutMs` 设为 600000：采集期间买家号由这次调用占用，调用结束占用就结束。
+2. 在用户的工作区里，用一次命令行调用运行（`scripts/` 相对本技能目录），并把这次调用的 `timeoutMs` 设为 600000：采集期间买家号由这次调用占用，调用结束占用就结束。
 
    ```sh
    "<node>" "<本技能目录>/scripts/item-report.mjs" <商品链接或 id> [更多商品…]
