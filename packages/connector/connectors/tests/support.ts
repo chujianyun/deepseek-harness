@@ -191,16 +191,10 @@ async function writeWhole(path: string, content: string): Promise<void> {
   await rename(staging, path)
 }
 
-/**
- * Run the model shell's `lark-cli` as its shell would find it, through the contributed PATH directory:
- * the script elsewhere, and on Windows `lark-cli.cmd` with the Node a DSH shell call names.
- */
+/** Run the model shell's POSIX `lark-cli` script as its shell would find it, through the contributed PATH directory. */
 export function shell(dir: string, args: string[], env: NodeJS.ProcessEnv = {}): Promise<{ code: number; stdout: string; stderr: string }> {
-  const windows = process.platform === 'win32'
-  const program = windows ? `"${join(dir, 'lark-cli.cmd')}"` : join(dir, 'lark-cli')
-  const options = { env: { ...process.env, ...windows ? { DSH_CONNECTOR_NODE: process.execPath } : {}, ...env }, encoding: 'utf8' as const, shell: windows }
   return new Promise((resolve) => {
-    execFile(program, windows ? args.map(arg => `"${arg}"`) : args, options, (error, stdout, stderr) => {
+    execFile(join(dir, 'lark-cli'), args, { env: { ...process.env, ...env }, encoding: 'utf8' }, (error, stdout, stderr) => {
       resolve({ code: error === null ? 0 : Number(error.code), stdout, stderr })
     })
   })

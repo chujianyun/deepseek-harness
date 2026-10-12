@@ -14,7 +14,8 @@ import type { PreToolDecision, ToolExecution, ToolExecutionResult } from '@deeps
 import { connectorGrantsProjection } from '../src/index.ts'
 import { cleanups, setup, shell } from './support.ts'
 
-const runs = it
+// The stand-in CLI is a POSIX shell script; on Windows windows-wrapper.spec.ts covers the script.
+const runs = it.skipIf(process.platform === 'win32')
 
 function bash(command: string, id = 'call-1', agent?: ToolExecution['agent']): ToolExecution {
   return {

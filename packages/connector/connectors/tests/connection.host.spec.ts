@@ -10,7 +10,8 @@ import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { failureMessage } from '../src/cli.ts'
 import { feishu, setup, VERSION } from './support.ts'
 
-const runs = it
+// The stand-in CLI is a POSIX shell script; on Windows windows-wrapper.spec.ts covers the script.
+const runs = it.skipIf(process.platform === 'win32')
 
 describe('connecting Feishu', () => {
   runs('creates the tenant\'s app, authorizes the user, and turns green, in the tenant\'s own directories', async () => {

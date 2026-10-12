@@ -15,7 +15,8 @@ import { readSkill } from '../src/lark.ts'
 import { ConnectorSkillProvider } from '../src/skills.ts'
 import { feishu, setup, shell, VERSION } from './support.ts'
 
-const runs = it
+// The stand-in CLI is a POSIX shell script; on Windows windows-wrapper.spec.ts covers the script.
+const runs = it.skipIf(process.platform === 'win32')
 
 const execution: ToolExecution = {
   signal: new AbortController().signal, token: Symbol('connectors-test') as ToolExecution['token'],
