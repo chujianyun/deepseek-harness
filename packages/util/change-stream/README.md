@@ -34,10 +34,25 @@ Use `changeStream()` for a `@Remote({ mode: 'stream' })` method that pushes a wh
 ```ts
 import { changeStream } from '@deepseek-ai/dsh-change-stream'
 
-@Remote({ mode: 'stream' })
-watch(signal: AbortSignal): AsyncIterable<State> {
-  return changeStream(this.listeners, () => this.getState(), signal, this.lifetime.signal)
+interface State { readonly count: number }
+
+class Counter {
+  private readonly listeners = new Set<() => void>()
+  private readonly lifetime = new AbortController()
+  private state: State = { count: 0 }
+
+  increment(): void {
+    this.state = { count: this.state.count + 1 }
+    for (const listener of this.listeners) listener()
+  }
+
+  // In a service, this method carries @Remote({ mode: 'stream' }).
+  watch(signal: AbortSignal): AsyncIterable<State> {
+    return changeStream(this.listeners, () => this.state, signal, this.lifetime.signal)
+  }
 }
+
+export { Counter }
 ```
 
 `listeners` is the service's set of change callbacks, which it runs on every change. See [`src/index.ts`](src/index.ts) for the exact TypeScript contract.

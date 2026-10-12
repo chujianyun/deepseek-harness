@@ -34,10 +34,25 @@ kind: "package-library"
 ```ts
 import { changeStream } from '@deepseek-ai/dsh-change-stream'
 
-@Remote({ mode: 'stream' })
-watch(signal: AbortSignal): AsyncIterable<State> {
-  return changeStream(this.listeners, () => this.getState(), signal, this.lifetime.signal)
+interface State { readonly count: number }
+
+class Counter {
+  private readonly listeners = new Set<() => void>()
+  private readonly lifetime = new AbortController()
+  private state: State = { count: 0 }
+
+  increment(): void {
+    this.state = { count: this.state.count + 1 }
+    for (const listener of this.listeners) listener()
+  }
+
+  // In a service, this method carries @Remote({ mode: 'stream' }).
+  watch(signal: AbortSignal): AsyncIterable<State> {
+    return changeStream(this.listeners, () => this.state, signal, this.lifetime.signal)
+  }
 }
+
+export { Counter }
 ```
 
 `listeners` 是服务的变化回调集合，服务在每次变化时逐个调用。确切的 TypeScript 约定见 [`src/index.ts`](src/index.ts)。
