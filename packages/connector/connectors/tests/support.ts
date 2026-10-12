@@ -1,5 +1,5 @@
 /** Shared by the connector specs: a Hub sign-in stand-in and a service booted over a stand-in lark-cli or dws. */
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, vi } from 'vitest'
@@ -141,8 +141,15 @@ export async function setup(options: {
   const tenantDir = (tenant: string) => join(root, 'tenants', tenant)
   const exists = (path: string) => stat(path).then(() => true, () => false)
   const calls = async () => (await readFile(join(control, 'calls'), 'utf8').catch(() => '')).trim().split('\n').filter(line => line !== '')
-  const answer = (step: 'app' | 'user', result: string) => writeFile(join(control, step), result)
-  const status = (value: object | string) => writeFile(join(control, 'status.json'), typeof value === 'string' ? value : JSON.stringify(value))
+  // Written aside and renamed into place: the fake CLI reads the answer as soon as the file exists.
+  const answer = async (step: 'app' | 'user', result: string) => {
+    await writeFile(join(control, `${step}.tmp`), result)
+    await rename(join(control, `${step}.tmp`), join(control, step))
+  }
+  const status = async (value: object | string) => {
+    await writeFile(join(control, 'status.json.tmp'), typeof value === 'string' ? value : JSON.stringify(value))
+    await rename(join(control, 'status.json.tmp'), join(control, 'status.json'))
+  }
   /** The always-allowed list the profile holds. */
   const saved = () => Promise.resolve((live.entry.options.config as { alwaysAllowed?: readonly string[] }).alwaysAllowed ?? [])
   return { ctx, service, fiber: live.fiber, hub, until, root, control, tenantDir, exists, calls, answer, status, saved }
