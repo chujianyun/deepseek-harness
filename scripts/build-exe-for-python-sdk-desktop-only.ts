@@ -93,7 +93,7 @@ async function packageDirectories(root: string): Promise<string[]> {
  * @param staging - The deployed closure, holding the root manifest.
  * @param bundle - The package whose edges to `cut` are not followed.
  * @param cut - The packages the bundle's edges to are cut.
- * @returns The removed package directories, relative to `staging`, sorted.
+ * @returns The removed package directories, relative to `staging` with `/` separators, sorted.
  */
 export async function pruneDesktopOnly(staging: string, bundle: string, cut: readonly string[]): Promise<string[]> {
   const directories = await packageDirectories(staging)
@@ -124,5 +124,5 @@ export async function pruneDesktopOnly(staging: string, bundle: string, cut: rea
   const removed = directories.filter(directory => !reached.has(directory))
     .filter((directory, _, all) => !all.some(other => other !== directory && directory.startsWith(other + sep)))
   for (const directory of removed) await rm(directory, { recursive: true, force: true })
-  return removed.map(directory => relative(staging, directory)).sort()
+  return removed.map(directory => relative(staging, directory).split(sep).join('/')).sort()
 }
