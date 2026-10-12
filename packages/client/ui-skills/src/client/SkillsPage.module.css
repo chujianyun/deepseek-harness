@@ -413,7 +413,7 @@
 }
 
 /* Category tints for market card avatars (MO product-line colours), lifted in the dark theme. */
-.avatar[data-tint] { width: 28px; height: 28px; border-radius: 8px; font-size: 13px; }
+.avatar[data-tint] { width: 28px; height: 28px; border-radius: var(--dsw-radius-sm); font-size: 13px; }
 .avatar[data-tint='0'] { background: color-mix(in srgb, #2A55F9 14%, transparent); color: #2A55F9; }
 .avatar[data-tint='1'] { background: color-mix(in srgb, #9B7BE8 16%, transparent); color: #7A5BD6; }
 .avatar[data-tint='2'] { background: color-mix(in srgb, #EE7A9B 16%, transparent); color: #D9567D; }

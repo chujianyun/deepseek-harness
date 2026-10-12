@@ -39,7 +39,7 @@ import { packSkills } from '@deepseek-ai/dsh-tmall-skills'
 import { png } from '../../../packages/ecommerce/tmall-skills/tests/images.ts'
 import { browse, startMockUserCenter } from '../../../packages/credentials/hub-account/tests/mock-user-center.ts'
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
-import { connectFreshWorkspaceZh, saveFailureShot, writeComposerDraft, ZH_BROWSER_LOCALE } from './support.ts'
+import { killRecordedChrome, connectFreshWorkspaceZh, saveFailureShot, writeComposerDraft, ZH_BROWSER_LOCALE } from './support.ts'
 
 const OVERLAYS = ['./hub-account.overlay.yml', './ecommerce-accounts.overlay.yml', './connectors-chat.overlay.yml']
   .map(path => fileURLToPath(new URL(path, import.meta.url)))
@@ -369,8 +369,7 @@ it.skipIf(process.platform === 'win32')('runs the packed Tmall data skills with 
   } finally {
     await browser.close()
     if (accountDir !== undefined) {
-      const record = await readFile(join(accountDir, 'chrome.json'), 'utf8').catch(() => undefined)
-      if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
+      await killRecordedChrome(accountDir)
     }
     await scaffold.close()
     await chat.close()
@@ -463,8 +462,7 @@ it.skipIf(process.platform === 'win32')('runs the packed item skill with a buyer
   } finally {
     await browser.close()
     if (accountDir !== undefined) {
-      const record = await readFile(join(accountDir, 'chrome.json'), 'utf8').catch(() => undefined)
-      if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
+      await killRecordedChrome(accountDir)
     }
     await scaffold.close()
     await chat.close()
@@ -545,8 +543,7 @@ it.skipIf(process.platform === 'win32')('saves a checked draft to a Pinduoduo st
   } finally {
     await browser.close()
     if (accountDir !== undefined) {
-      const record = await readFile(join(accountDir, 'chrome.json'), 'utf8').catch(() => undefined)
-      if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
+      await killRecordedChrome(accountDir)
     }
     await scaffold.close()
     await chat.close()
@@ -627,8 +624,7 @@ it.skipIf(process.platform === 'win32')('saves a checked draft to a Douyin shop\
   } finally {
     await browser.close()
     if (accountDir !== undefined) {
-      const record = await readFile(join(accountDir, 'chrome.json'), 'utf8').catch(() => undefined)
-      if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
+      await killRecordedChrome(accountDir)
     }
     await scaffold.close()
     await chat.close()
@@ -735,8 +731,7 @@ it.skipIf(process.platform === 'win32')('publishes one material folder to a Tmal
   } finally {
     await browser.close()
     for (const accountDir of accountDirs) {
-      const record = await readFile(join(accountDir, 'chrome.json'), 'utf8').catch(() => undefined)
-      if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
+      await killRecordedChrome(accountDir)
     }
     await scaffold.close()
     await chat.close()
@@ -818,8 +813,7 @@ it.skipIf(process.platform === 'win32')('remembers a product line\'s category on
   } finally {
     await browser.close()
     for (const accountDir of accountDirs) {
-      const record = await readFile(join(accountDir, 'chrome.json'), 'utf8').catch(() => undefined)
-      if (record !== undefined) process.kill((JSON.parse(record) as { pid: number }).pid, 'SIGKILL')
+      await killRecordedChrome(accountDir)
     }
     await scaffold.close()
     await chat.close()

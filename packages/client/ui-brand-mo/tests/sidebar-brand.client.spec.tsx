@@ -25,7 +25,7 @@ it('keeps the app icon on the collapsed rail', () => {
   expect(img).toMatchObject({ width: 24, height: 24 })
 })
 
-it('occupies both sidebar brand slots and the quick-task dock until unloaded', async () => {
+it('occupies both sidebar brand slots ahead of the official brand, and the quick-task dock, until unloaded', async () => {
   const ctx = new Context()
   ctx.provide('theme', { overrideTokens: () => () => {} } as never)
   ctx.provide('locale', { register: () => () => {}, bind: () => (key: string) => key } as never)
@@ -40,6 +40,10 @@ it('occupies both sidebar brand slots and the quick-task dock until unloaded', a
       'conversation.hero.dock': { kind: 'list', scope: 'root' },
     },
   } as never, () => null)
+  // The official brand, which the official client build registers at the default priority.
+  const Official = () => null
+  slots.register({ name: 'sidebar.brand.mark' }, Official)
+  slots.register({ name: 'sidebar.brand.name' }, Official)
   const fiber = await ctx.plugin({ inject, apply })
   expect(inject).toEqual(['theme', 'slots'])
   expect(slots.entries('sidebar.brand.mark')[0]?.component).toBe(MoBrandMark)
@@ -56,8 +60,8 @@ it('occupies both sidebar brand slots and the quick-task dock until unloaded', a
   expect(await face.pickAssistant('ecommerce')).toBe(false)
   expect(pickTemplate).toHaveBeenCalledWith('ecommerce')
   await fiber.dispose()
-  expect(slots.entries('sidebar.brand.mark')).toEqual([])
-  expect(slots.entries('sidebar.brand.name')).toEqual([])
+  expect(slots.entries('sidebar.brand.mark').map(entry => entry.component)).toEqual([Official])
+  expect(slots.entries('sidebar.brand.name').map(entry => entry.component)).toEqual([Official])
   expect(slots.entries('conversation.hero.dock')).toEqual([])
   disposeHoles()
 })
@@ -76,6 +80,10 @@ it('keeps the theme and the brand row without the settings forms, offering no qu
       'conversation.hero.dock': { kind: 'list', scope: 'root' },
     },
   } as never, () => null)
+  // The official brand, which the official client build registers at the default priority.
+  const Official = () => null
+  slots.register({ name: 'sidebar.brand.mark' }, Official)
+  slots.register({ name: 'sidebar.brand.name' }, Official)
   const fiber = await ctx.plugin({ inject, apply })
   expect(layers).toEqual(['@deepseek-ai/dsh-client-ui-brand-mo'])
   expect(slots.entries('sidebar.brand.name')[0]?.component).toBe(MoWordmark)

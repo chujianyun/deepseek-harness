@@ -4,7 +4,9 @@
  * @module @deepseek-ai/dsh-sandbox-windows-acl/process-token
  */
 
-import { allocBytes, allocPtrSlot, allocUint32, decodePtr, decodePtrAt, decodeUint32, isNullPtr, throwLastError, throwWin32 } from './ffi.ts'
+import {
+  allocBytes, allocPtrSlot, allocUint32, decodePtr, decodePtrAt, decodeUint32, freeBytes, isNullPtr, throwLastError, throwWin32,
+} from './ffi.ts'
 import type { NativePtr, Win32Bindings } from './ffi.ts'
 import * as abi from './win32-abi.ts'
 
@@ -58,7 +60,11 @@ export function currentUserSid(api: Win32Bindings): NativePtr {
     const sidLength = api.getLengthSid(sidPtr)
     if (sidLength === 0) throwLastError(api, 'GetLengthSid', 'TokenUser SID')
     const copy = allocBytes(sidLength)
-    if (api.copySid(sidLength, copy, sidPtr) === 0) throwLastError(api, 'CopySid', 'TokenUser SID')
+    if (api.copySid(sidLength, copy, sidPtr) === 0) {
+      const win32Code = api.getLastError()
+      freeBytes(copy)
+      throwWin32(api, 'CopySid', win32Code, 'TokenUser SID')
+    }
     return copy
   } finally {
     api.closeHandle(token)

@@ -42,9 +42,10 @@ export const inject = ['theme', 'slots']
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.theme.overrideTokens(MO_THEME_SOURCE, MO_THEME_TOKENS), 'ui-brand-mo: theme tokens')
+  // Ahead of the official brand (priority 0), which the official client build also registers where both run.
   ctx.slots.inject('sidebar.brand.mark', () => ctx.slots.inject('sidebar.brand.name', function* () {
-    yield ctx.slots.register({ name: 'sidebar.brand.mark' }, MoBrandMark)
-    yield ctx.slots.register({ name: 'sidebar.brand.name' }, MoWordmark)
+    yield ctx.slots.register({ name: 'sidebar.brand.mark', priority: -1 }, MoBrandMark)
+    yield ctx.slots.register({ name: 'sidebar.brand.name', priority: -1 }, MoWordmark)
   }))
   ctx.inject(['locale', 'configForms'], (scope: ClientContext) => {
     scope.effect(() => scope.locale.register(NS, { zh, en }), 'ui-brand-mo: dictionaries')

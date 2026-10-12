@@ -15,10 +15,10 @@ The user signs e-commerce accounts in to their platforms in DSH Settings → E-c
 
 ## Commands
 
-Run them in bash:
+Run them in the shell (bash; PowerShell on Windows):
 
 - \`dsh-ecommerce accounts\` prints the accounts as JSON: \`id\`, \`platform\` (\`tmall\`, \`taobao\`, \`pinduoduo\`, \`doudian\`), \`store\` (merchant accounts), \`account\`, \`kind\` (\`merchant\` or \`buyer\`), and \`status\` (\`signed-in\`, \`signed-out\`, \`signing-in\`, \`checking\`, or \`check-failed\`); a buyer account also has \`pagesToday\` and \`pageLimit\`, and \`cooldownUntil\` while it rests.
-- \`dsh-ecommerce browser <id>\` makes sure the account is signed in, checking with the platform unless a recent check found it signed in, reserves its browser for this bash call, and prints JSON with \`cdpUrl\`, the Chrome DevTools address of its signed-in Chrome. Connect to it in the same bash call, for example with Playwright's \`chromium.connectOverCDP(cdpUrl)\`; the reservation ends when the call ends. The browser runs minimized out of the user's sight: open a tab of your own in the background, close it when you are done, and never close the browser. With Playwright: \`const ctx = browser.contexts()[0]; const opened = ctx.waitForEvent('page'); await (await browser.newBrowserCDPSession()).send('Target.createTarget', { url: 'about:blank', background: true }); const page = await opened\`. Do not use \`newPage()\`: it brings the window to the front over the user's work.
+- \`dsh-ecommerce browser <id>\` makes sure the account is signed in, checking with the platform unless a recent check found it signed in, reserves its browser for this shell call, and prints JSON with \`cdpUrl\`, the Chrome DevTools address of its signed-in Chrome. Connect to it in the same shell call, for example with Playwright's \`chromium.connectOverCDP(cdpUrl)\`; the reservation ends when the call ends. The browser runs minimized out of the user's sight: open a tab of your own in the background, close it when you are done, and never close the browser. With Playwright: \`const ctx = browser.contexts()[0]; const opened = ctx.waitForEvent('page'); await (await browser.newBrowserCDPSession()).send('Target.createTarget', { url: 'about:blank', background: true }); const page = await opened\`. Do not use \`newPage()\`: it brings the window to the front over the user's work.
 - \`dsh-ecommerce buyer [tmall|taobao]\` picks a buyer account for you — signed in, not resting, with the fewest pages opened today — and takes over its browser the same way; its JSON also has \`pagesLeft\`. If none can be used, it says why for each.
 
 ## Publishing memory
@@ -32,13 +32,13 @@ What the user confirmed while publishing is remembered for the company, so the n
 
 ## What DSH enforces
 
-DSH watches the browser while your bash call uses it; a page it refuses fails to load with \`net::ERR_BLOCKED_BY_CLIENT\`.
+DSH watches the browser while your shell call uses it; a page it refuses fails to load with \`net::ERR_BLOCKED_BY_CLIENT\`.
 
 - A merchant account never opens public product or search pages (item.taobao.com, detail.tmall.com, s.taobao.com, list.tmall.com).
 - A buyer account opens at most \`pageLimit\` pages a day; every page you open counts, so open only the pages you need.
 - When the platform's risk control shows (a slider or verification page), DSH stops the task's pages at once and rests the buyer account (72 hours by default). Stop: do not retry, do not solve the verification, and do not switch to another account. Tell the user.
-- Risk control met through the platform's APIs (a call answered with a slider or \`RGV587\`) loads no page, so DSH cannot see it: report it with \`dsh-ecommerce risk <id>\` in the same bash call, which rests that buyer account the same way.
-- When a page lands on the platform's sign-in page, DSH checks the account at once. Any other sign-out you find — a sign-in screen inside the platform's page, or an API answer saying the session ended — report with \`dsh-ecommerce signed-out <id>\` in the same bash call; DSH checks the account and prints its status. A checked sign-out shows the user the account expired. Never sign in on the user's behalf.
+- Risk control met through the platform's APIs (a call answered with a slider or \`RGV587\`) loads no page, so DSH cannot see it: report it with \`dsh-ecommerce risk <id>\` in the same shell call, which rests that buyer account the same way.
+- When a page lands on the platform's sign-in page, DSH checks the account at once. Any other sign-out you find — a sign-in screen inside the platform's page, or an API answer saying the session ended — report with \`dsh-ecommerce signed-out <id>\` in the same shell call; DSH checks the account and prints its status. A checked sign-out shows the user the account expired. Never sign in on the user's behalf.
 
 ## Choosing a merchant account
 

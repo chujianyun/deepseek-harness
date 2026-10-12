@@ -29,7 +29,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import type {} from '@deepseek-ai/dsh-hub-account'
+import { followTenant } from '@deepseek-ai/dsh-hub-account'
 import type {} from '@deepseek-ai/dsh-connectors'
 import type {} from '@deepseek-ai/dsh-knowledge-base'
 import type {} from '@deepseek-ai/dsh-knowledge-selection'
@@ -45,6 +45,7 @@ import type {
   AssistantAvatar, AssistantCapabilityOptions, AssistantDetail, AssistantProjectionState, AssistantsState, AssistantSubsets,
   AssistantTemplateView, AssistantUserInfo, AssistantView, CreateAssistantInput, CreateAssistantResult, UpdateAssistantInput,
 } from './types.ts'
+import { changeStream } from '@deepseek-ai/dsh-change-stream'
 
 export type * from './types.ts'
 export { BLANK_FILES, CORE_FILE_NAMES, DAILY_ASSISTANT, ECOMMERCE_MANAGER, ECOMMERCE_SKILLS, OFFICE_SKILLS, TEMPLATES, type AssistantTemplate, type CoreFiles } from './templates.ts'
@@ -307,13 +308,10 @@ export class AssistantsService extends TypertRemoteService {
   }
 
   async [Service.init](): Promise<void> {
-    await this.serialized(async () => this.switchTenant((await this.ctx.hubAccount.getState()).profile?.tenantId ?? null))
-    void (async () => {
-      for await (const state of this.ctx.hubAccount.watch(this.lifetime.signal)) {
-        const tenantId = state.profile?.tenantId ?? null
-        if (tenantId !== this.tenantId) await this.serialized(() => this.switchTenant(tenantId))
-      }
-    })()
+    await followTenant(
+      this.ctx.hubAccount, this.lifetime.signal, () => this.tenantId, tenantId => this.serialized(() => this.switchTenant(tenantId)),
+      this.ctx.logger, 'assistants',
+    )
   }
 
   /**
@@ -333,21 +331,8 @@ export class AssistantsService extends TypertRemoteService {
    * @returns the current state, then every change.
    */
   @Remote({ mode: 'stream' })
-  async *watch(signal: AbortSignal): AsyncIterable<AssistantsState> {
-    let dirty = true
-    let wake: (() => void) | undefined
-    const changed = (): void => { dirty = true; wake?.() }
-    this.listeners.add(changed)
-    signal.addEventListener('abort', changed, { once: true })
-    try {
-      while (!this.lifetime.signal.aborted && !signal.aborted) {
-        if (dirty) { dirty = false; yield await this.getState(); continue }
-        await new Promise<void>((resolve) => { wake = resolve })
-      }
-    } finally {
-      this.listeners.delete(changed)
-      signal.removeEventListener('abort', changed)
-    }
+  watch(signal: AbortSignal): AsyncIterable<AssistantsState> {
+    return changeStream(this.listeners, () => this.getState(), signal, this.lifetime.signal)
   }
 
   /**
@@ -669,8 +654,14 @@ export class AssistantsService extends TypertRemoteService {
     }
   }
 
+  /** The session's assistant state, or the empty one once this service has unregistered the unit. */
+  private assistantState(agent: Agent): z.infer<typeof projectionStateSchema> {
+    /* v8 ignore next -- this service registers the 'assistant' unit for its lifetime, so the empty state is never read in tests. */
+    return this.ctx.sessionProjections.stateOf(agent.session, 'assistant') ?? { assistantId: null, instructions: null }
+  }
+
   private boundId(agent: Agent): string | null {
-    return this.ctx.sessionProjections.stateOf(agent.session, 'assistant')?.assistantId ?? null
+    return this.assistantState(agent).assistantId
   }
 
   private isBlank(agent: Agent): boolean {
@@ -718,18 +709,17 @@ export class AssistantsService extends TypertRemoteService {
       scope.systemPrompt.section({
         name: ASSISTANT_SECTION,
         order: scope.systemPrompt.getSectionOrder('ASSISTANT_CORE_FILES'),
-        text: () => this.ctx.sessionProjections.stateOf(agent.session, 'assistant')?.instructions ?? '',
+        text: () => this.assistantState(agent).instructions ?? '',
         interpolate: false,
       })
       scope.on('system-prompt/assemble', async (assembly, context, next) => {
         if (context.signal === undefined) return next()
-        const state = this.ctx.sessionProjections.stateOf(agent.session, 'assistant')
-        const assistantId = state?.assistantId ?? null
-        if (assistantId === null) return next()
-        const rendered = await this.instructionsFor(assistantId)
+        const state = this.assistantState(agent)
+        if (state.assistantId === null) return next()
+        const rendered = await this.instructionsFor(state.assistantId)
         // Core files that earlier turns carried stay in the conversation; say they no longer apply.
-        const text = rendered === '' && (state?.instructions ?? '') !== '' ? CORE_FILES_WITHDRAWN : rendered
-        if (text !== (state?.instructions ?? null)) agent.session.append('assistant/instructions', { text })
+        const text = rendered === '' && (state.instructions ?? '') !== '' ? CORE_FILES_WITHDRAWN : rendered
+        if (text !== (state.instructions ?? null)) agent.session.append('assistant/instructions', { text })
         assembly.sections = assembly.sections.map(section => section.name === ASSISTANT_SECTION ? { ...section, text } : section)
         return next()
       })
@@ -754,13 +744,30 @@ export class AssistantsService extends TypertRemoteService {
   }
 
   private async switchTenant(tenantId: string | null): Promise<void> {
+    // The new tenant's files are read before any of it is shown, so a read meanwhile sees the previous
+    // tenant whole, never the new tenant without its assistants.
+    let tenant: TenantFile = { version: 1, defaultId: null, seeded: false }
+    let list: AssistantView[] = []
+    try {
+      if (tenantId !== null) {
+        await mkdir(join(this.root, tenantId), { recursive: true })
+        tenant = await this.readTenant(tenantId)
+        list = await this.readAssistants(tenantId)
+      }
+    } catch (error) {
+      // The previous tenant's assistants never outlive the switch: a tenant whose files cannot be read shows
+      // none, and the switch still completes, so later sign-ins are followed.
+      this.ctx.logger.warn(`assistants: reading ${String(tenantId)} failed: ${String(error)}`)
+      this.tenantId = tenantId
+      this.tenant = { version: 1, defaultId: null, seeded: false }
+      this.list = []
+      this.changed()
+      return
+    }
     this.tenantId = tenantId
-    this.tenant = { version: 1, defaultId: null, seeded: false }
-    this.list = []
+    this.tenant = tenant
+    this.list = list
     if (tenantId !== null) {
-      await mkdir(join(this.root, tenantId), { recursive: true })
-      this.tenant = await this.readTenant(tenantId)
-      this.list = await this.readAssistants(tenantId)
       try {
         await this.seed(tenantId)
       } catch (error) {
@@ -781,7 +788,7 @@ export class AssistantsService extends TypertRemoteService {
     const start = Date.now()
     for (const [index, id] of missing.entries()) {
       const template = TEMPLATES.get(id)
-      // Config admits only template ids, so every seed id names a template.
+      /* v8 ignore next -- Config admits only template ids, so every seed id names a template. */
       if (template === undefined) continue
       const created = await this.createFrom(tenantId, template, new Date(start + index))
       this.list = [...this.list, created]

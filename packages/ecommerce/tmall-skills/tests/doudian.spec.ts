@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { takeOverMerchant, type EcommerceCommandResult } from '../src/account.ts'
 import type { FieldCheck } from '../src/draft.ts'
-import { doudianDeps, main, parseCategoryOptions } from '../src/doudian-cli.ts'
+import { doudianDeps, main } from '../src/doudian-cli.ts'
 import {
   categoryById, categoryOfLine, childCategories, doudianRules, openedTops, predictCategories, READ_FORM, readForm, searchCategories,
   type DoudianForm,
@@ -13,10 +13,12 @@ import {
 } from '../src/doudian-publish.ts'
 import { createUrl, DOUDIAN_CREATE_URL, DOUDIAN_DRAFTS_URL, doudianCall, DoudianRefusal, FIND_STORE, GUARD, isDoudianSignIn, openDoudian } from '../src/doudian.ts'
 import { EXIT, SkillError } from '../src/errors.ts'
-import type { DraftFile, PublishRecord } from '../src/publish-common.ts'
+import { parseCategoryOptions as parseDraftCategoryOptions, type DraftFile, type PublishRecord } from '../src/publish-common.ts'
 import type { PublishRules } from '../src/publish-rules.ts'
 import { jpeg, png } from './images.ts'
 import { fakeDeps, FakePage, on, tempDir, type Route } from './support.ts'
+
+const parseCategoryOptions = (argv: readonly string[]) => parseDraftCategoryOptions(argv, '抖店发品')
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {

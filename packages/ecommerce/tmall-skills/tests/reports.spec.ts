@@ -116,18 +116,23 @@ describe('takeOverMerchant', () => {
 
   it('runs the dsh-ecommerce on PATH and reports how it ended', async () => {
     const dir = await outDir()
-    await writeFile(join(dir, 'dsh-ecommerce'), '#!/bin/sh\nif [ "$1" = ok ]; then echo "{}"; exit 0; fi\necho "no: $1" >&2\nexit 3\n')
-    await chmod(join(dir, 'dsh-ecommerce'), 0o755)
-    const path = process.env.PATH
-    process.env.PATH = `${dir}:${path ?? ''}`
-    try {
-      expect(await runDshEcommerce(['ok'])).toEqual({ code: 0, stdout: '{}\n', stderr: '' })
-      expect(await runDshEcommerce(['x'])).toEqual({ code: 3, stdout: '', stderr: 'no: x\n' })
-      process.env.PATH = dir.replace(/[^/]+$/u, 'nowhere')
-      expect((await runDshEcommerce(['ok'])).code).toBe(127)
-    } finally {
-      process.env.PATH = path
+    const fake = '#!/usr/bin/env node\nif (process.argv[2] === "ok") console.log("{}")\nelse { console.error("no: " + process.argv[2]); process.exitCode = 3 }\n'
+    // Windows: the Node script found on PATH runs with this Node.
+    await writeFile(join(dir, 'dsh-ecommerce.mjs'), fake)
+    const windows = { ...process.env, PATH: `;${join(dir, 'none')};${dir}` }
+    expect(await runDshEcommerce(['ok'], 'win32', windows)).toEqual({ code: 0, stdout: '{}\n', stderr: '' })
+    expect(await runDshEcommerce(['x'], 'win32', windows)).toEqual({ code: 3, stdout: '', stderr: 'no: x\n' })
+    expect(await runDshEcommerce(['ok'], 'win32', { path: dir })).toEqual({ code: 0, stdout: '{}\n', stderr: '' })
+    expect((await runDshEcommerce(['ok'], 'win32', { Path: join(dir, 'none') })).code).toBe(127)
+    expect((await runDshEcommerce(['ok'], 'win32', {})).code).toBe(127)
+    if (process.platform !== 'win32') {
+      await writeFile(join(dir, 'dsh-ecommerce'), fake)
+      await chmod(join(dir, 'dsh-ecommerce'), 0o755)
+      const posix = { ...process.env, PATH: `${dir}:${process.env.PATH ?? ''}` }
+      expect(await runDshEcommerce(['ok'], 'linux', posix)).toEqual({ code: 0, stdout: '{}\n', stderr: '' })
+      expect(await runDshEcommerce(['x'], 'linux', posix)).toEqual({ code: 3, stdout: '', stderr: 'no: x\n' })
     }
+    expect((await runDshEcommerce(['ok'], 'linux', { PATH: join(dir, 'nowhere') })).code).toBe(127)
   })
 })
 

@@ -9,7 +9,9 @@ description: 拼多多发品存草稿：把用户给的新品素材文件夹存�
 
 ## 步骤
 
-1. 选账号：按 `ecommerce-accounts` 技能的规则选目标拼多多店铺的商家账号；`<店铺名>` 用 `dsh-ecommerce accounts` 里该账号的 `store`。运行 `dsh-ecommerce memory` 看公司记住了什么。调用 `load_workspace_dependencies` 取 `node` 路径；下面的脚本都相对本技能目录，每条命令一次 bash 调用。
+Windows 上命令行是 PowerShell：以带引号的路径开头的命令前要加调用符 `& `，例如 `& "<node>" "<本技能目录>/scripts/…" …`，否则 PowerShell 不会执行它。
+
+1. 选账号：按 `ecommerce-accounts` 技能的规则选目标拼多多店铺的商家账号；`<店铺名>` 用 `dsh-ecommerce accounts` 里该账号的 `store`。运行 `dsh-ecommerce memory` 看公司记住了什么。调用 `load_workspace_dependencies` 取 `node` 路径；下面的脚本都相对本技能目录，每条命令一次命令行调用。
 2. 定类目：`"<node>" "<本技能目录>/scripts/pdd-publish.mjs" resolve --account <账号 id>` 加一个来源：
    - 记住过产品线就先用 `--line <产品线>`；
    - 否则 `--keyword <商品名>`（拼多多类目搜索）；搜不准时再用一次 `--image <主图文件> --title <标题>`（拼多多按主图和标题推荐，每次都会新建编辑，拼多多限制频率，不要反复调用）；
@@ -29,7 +31,7 @@ description: 拼多多发品存草稿：把用户给的新品素材文件夹存�
    - **取消**（什么都不保存，告诉用户已取消）
    - **一键认可，保存到草稿箱**
    这张卡片和之后任何会导致保存或重试保存的卡片都**不要给任何选项标「推荐」/(Recommended)**。清单里还有「缺失」「不符合」时先补齐，不要保存。
-6. 用户选「一键认可」后保存：`"<node>" "<本技能目录>/scripts/pdd-publish.mjs" save --account <账号 id> --draft <商品草稿.json> --rules <字段规则.json> --confirmed [--stock <每个 SKU 的库存>]`。`--confirmed` 只能在用户这一轮选了「一键认可」之后加。bash 超时设为 600000 毫秒。脚本保存前会先查草稿箱和商品列表有没有同一商品（同标题，或 DSH 存过的同一组 SKU 编码），有就不保存。
+6. 用户选「一键认可」后保存：`"<node>" "<本技能目录>/scripts/pdd-publish.mjs" save --account <账号 id> --draft <商品草稿.json> --rules <字段规则.json> --confirmed [--stock <每个 SKU 的库存>]`。`--confirmed` 只能在用户这一轮选了「一键认可」之后加。命令超时设为 600000 毫秒。脚本保存前会先查草稿箱和商品列表有没有同一商品（同标题，或 DSH 存过的同一组 SKU 编码），有就不保存。
 7. 回复：草稿 ID、商品 ID、标题和草稿箱位置，提醒用户到拼多多后台草稿箱确认后自己提交发布。
 
 用户只想知道店里有没有这件商品时，运行 `... check --account <账号 id> --draft <商品草稿.json>`，它只查不改。

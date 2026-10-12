@@ -44,7 +44,7 @@ Host owner of the knowledge bases and of the `knowledgeBases` Remote namespace.
  * @param signal - stream lifetime.
  * @returns the current state, then every change.
  */
-@Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<KnowledgeState>
+@Remote({ mode: 'stream' }) watch(signal: AbortSignal): AsyncIterable<KnowledgeState>
 
 /**
  * Create a knowledge base for the signed-in tenant.

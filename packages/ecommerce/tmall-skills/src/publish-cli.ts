@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import type { MerchantBrowser } from './account.ts'
-import { realDeps, withMerchantPage, type Deps } from './cli.ts'
+import { realDeps, withMerchantPage, type Deps, runCli } from './cli.ts'
 import { beijingTime } from './dates.ts'
 import type { FieldCheck } from './draft.ts'
 import { EXIT, SkillError } from './errors.ts'
@@ -20,8 +20,8 @@ import type { Page } from './page.ts'
 import { isSignIn, openManager } from './publish-category.ts'
 import { parseRulesFile } from './product-draft-cli.ts'
 import {
-  blockers, codesOf, parsePublishOptions, readRecords, sameProduct, titleOf, unsettled, writeRecord, type DraftFile, type PublishOptions,
-  type PublishRecord,
+  blockers, parsePublishOptions, readRecords, sameProduct, saveContext, titleOf, unready, unsettled, writeRecord, type DraftFile,
+  type PublishOptions, type PublishRecord,
 } from './publish-common.ts'
 import { publishUrl } from './publish-rules.ts'
 import {
@@ -69,22 +69,14 @@ async function alreadySaved(
  * @returns the exit status.
  */
 export async function main(argv: readonly string[], deps: Deps = realDeps): Promise<number> {
-  try {
+  return runCli(deps, async () => {
     const options = parsePublishOptions(argv)
     const draft = JSON.parse(await readFile(options.draft, 'utf8').catch((error: unknown) => {
       throw new SkillError(`读不到商品草稿 ${options.draft}：${(error as Error).message}`, EXIT.usage)
     })) as DraftFile
     const { result } = await withMerchantPage(options, deps, (page, account) => options.command === 'check' ? check(page, account, draft, options) : save(page, account, draft, options, deps))
-    deps.stdout(`${result}\n`)
-    return 0
-  } catch (error) {
-    if (error instanceof SkillError) {
-      deps.stderr(`${error.message}\n`)
-      return error.exitCode
-    }
-    deps.stderr(`失败：${error instanceof Error ? error.message : String(error)}\n`)
-    return EXIT.failed
-  }
+    return result
+  })
 }
 
 async function check(page: Page, account: MerchantBrowser, draft: DraftFile, options: PublishOptions): Promise<string> {
@@ -103,11 +95,8 @@ async function check(page: Page, account: MerchantBrowser, draft: DraftFile, opt
 async function save(page: Page, account: MerchantBrowser, draft: DraftFile, options: PublishOptions, deps: Pick<Deps, 'now' | 'stderr'>): Promise<string> {
   const rules = parseRulesFile(await readFile(options.rules as string, 'utf8'))
   const reasons = blockers(draft, rules, options)
-  if (reasons.length > 0) throw new SkillError(`还不能保存到仓库：\n${reasons.map(reason => `- ${reason}`).join('\n')}`, EXIT.usage)
-  const title = titleOf(draft)
-  const recordPath = join(resolve(options.out), '发品记录.json')
-  const records = sameProduct(await readRecords(recordPath), account.store, draft)
-  const record = { store: account.store, account: account.id, title, catId: rules.catId, codes: codesOf(draft) }
+  if (reasons.length > 0) throw unready(reasons, '仓库')
+  const { title, recordPath, records, record } = await saveContext(options, account, draft, rules.catId)
   const found = await alreadySaved(page, records, title)
   if (found !== undefined) {
     await writeRecord(recordPath, { ...record, status: 'exists', itemId: found.itemId, at: deps.now().toISOString(), message: found.how })

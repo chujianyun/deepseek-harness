@@ -440,6 +440,37 @@ describe('mergeAndApply failure paths', () => {
     expect(error.message).toContain('Windows refused to change the permissions of this directory although the user owns it')
   })
 
+  it('reports a retried grant that fails for another reason as it is', () => {
+    // Denied, then the owner right is added, then the retry fails with ERROR_INVALID_OWNER.
+    const apply = vi.fn<Win32Bindings['setNamedSecurityInfoW']>().mockReturnValueOnce(abi.ERROR_ACCESS_DENIED).mockReturnValueOnce(0).mockReturnValue(1307)
+    const error = refusal(aclApi({ ...tokenUser(craftSid(1, 0)), setNamedSecurityInfoW: apply }), 'C:\\work')
+    expect(error.win32Code).toBe(1307)
+    expect(error.message).not.toContain('although the user owns it')
+  })
+
+  it('reports an owner that cannot be read, and frees the descriptor an owner read returns', () => {
+    const user = craftSid(1, 0)
+    const ownerRead = (result: number) => vi.fn<Win32Bindings['getNamedSecurityInfoW']>((_path, _type, info, ownerSlot, _group, dacl, sacl, descriptor) => {
+      if (info === abi.OWNER_SECURITY_INFORMATION) {
+        koffi.encode(ownerSlot, PVOID, ptrAddress(craftSid(1, 0, [0, 0, 0, 0, 0, 9])))
+        koffi.encode(descriptor, PVOID, 13n)
+        return result
+      }
+      koffi.encode(dacl, PVOID, 0n)
+      koffi.encode(sacl, PVOID, 0n)
+      koffi.encode(descriptor, PVOID, 0n)
+      return 0
+    })
+    const denied = vi.fn<Win32Bindings['setNamedSecurityInfoW']>(() => abi.ERROR_ACCESS_DENIED)
+    const unread = refusal(aclApi({ ...tokenUser(user), getNamedSecurityInfoW: ownerRead(abi.ERROR_ACCESS_DENIED), setNamedSecurityInfoW: denied }), 'C:\\work')
+    expect(unread.api).toBe('GetNamedSecurityInfoW')
+    expect(unread.message).toContain('C:\\work owner')
+    const localFree = vi.fn<Win32Bindings['localFree']>(() => 0n as NativePtr)
+    const other = refusal(aclApi({ ...tokenUser(user), getNamedSecurityInfoW: ownerRead(0), setNamedSecurityInfoW: denied, localFree }), 'C:\\work')
+    expect(other.message).toContain('the directory belongs to another account')
+    expect(localFree).toHaveBeenCalledWith(13n)
+  })
+
   it('reports a failed descriptor LocalFree after a successful apply', () => {
     const api = aclApi({
       getNamedSecurityInfoW: readStub(null, null, 6n),

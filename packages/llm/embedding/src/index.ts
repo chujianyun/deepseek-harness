@@ -32,6 +32,7 @@ import { installRuntime, loadRuntime, platformKey, runtimeInstalled } from './ru
 import type {
   ApiEmbeddingModelView, EmbeddingProviderView, EmbeddingState, LocalModelError, LocalModelStatus, LocalModelView,
 } from './types.ts'
+import { changeStream } from '@deepseek-ai/dsh-change-stream'
 
 export type * from './types.ts'
 
@@ -232,21 +233,8 @@ export class EmbeddingService extends TypertRemoteService {
    * @returns the current state, then every change; download progress at most four times a second.
    */
   @Remote({ mode: 'stream' })
-  async *watch(signal: AbortSignal): AsyncIterable<EmbeddingState> {
-    let dirty = true
-    let wake: (() => void) | undefined
-    const changed = (): void => { dirty = true; wake?.() }
-    this.listeners.add(changed)
-    signal.addEventListener('abort', changed, { once: true })
-    try {
-      while (!this.lifetime.signal.aborted && !signal.aborted) {
-        if (dirty) { dirty = false; yield await this.getState(); continue }
-        await new Promise<void>((resolve) => { wake = resolve })
-      }
-    } finally {
-      this.listeners.delete(changed)
-      signal.removeEventListener('abort', changed)
-    }
+  watch(signal: AbortSignal): AsyncIterable<EmbeddingState> {
+    return changeStream(this.listeners, () => this.getState(), signal, this.lifetime.signal)
   }
 
   /**

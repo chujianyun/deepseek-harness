@@ -9,6 +9,8 @@ description: 天猫发品的类目与字段规则：用 DSH 里已登录的天�
 
 ## 步骤
 
+Windows 上命令行是 PowerShell：以带引号的路径开头的命令前要加调用符 `& `，例如 `& "<node>" "<本技能目录>/scripts/…" …`，否则 PowerShell 不会执行它。
+
 1. 选账号：按 `ecommerce-accounts` 技能的规则运行 `dsh-ecommerce accounts`，从 `platform` 为 `tmall`、`kind` 为 `merchant` 的账号中选目标店铺的账号。只有一个已登录时直接用，并在回复里写明用的是哪家店；有多个时先问用户；没有可用账号时停下，请用户到 DSH 设置 → 电商账号登录。
 2. 取 Node：调用 `load_workspace_dependencies`，用它返回的 `node` 路径运行脚本。
 3. 定类目：先运行 `dsh-ecommerce memory`，看 `categories` 里有没有这个产品线（如「水多多」）记住的类目；有就先用 `--line`。否则按下面顺序用第一个能用的来源，每次一条命令（`scripts/` 相对本技能目录）：

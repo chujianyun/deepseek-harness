@@ -50,7 +50,7 @@ Host owner of the assistants and of the `assistants` Remote namespace.
  * @param signal - stream lifetime.
  * @returns the current state, then every change.
  */
-@Remote({ mode: 'stream' }) async *watch(signal: AbortSignal): AsyncIterable<AssistantsState>
+@Remote({ mode: 'stream' }) watch(signal: AbortSignal): AsyncIterable<AssistantsState>
 
 /**
  * Create an assistant for the signed-in tenant from a template or blank.

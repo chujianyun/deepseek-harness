@@ -18,7 +18,9 @@
         modelOverrides:
           deepseek-flash:
             maxTokens: 1024
-        streamIdleTimeoutMs: 1000
+        # pi-ai's watchdog counts stream events, not keep-alive comments, and the stand-in holds the reply until
+        # the title request arrives: a busy runner needs more than a second to send it.
+        streamIdleTimeoutMs: 10000
 
 - id: agent-loop
   config:

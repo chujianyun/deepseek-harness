@@ -12,11 +12,10 @@
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { parseArgs } from 'node:util'
 import type { MerchantBrowser } from './account.ts'
-import { fileSafe, realDeps, withMerchantPage, type Deps } from './cli.ts'
+import { fileSafe, realDeps, withMerchantPage, type Deps, runCli } from './cli.ts'
 import { beijingTime } from './dates.ts'
-import { EXIT, SkillError } from './errors.ts'
+import { EXIT, parseCommandLine, SkillError } from './errors.ts'
 import type { Page } from './page.ts'
 import {
   openEntry, resolveCategory, storeCategories,
@@ -51,20 +50,10 @@ export interface PublishCategoryOptions {
  * @throws SkillError usage for a wrong command line.
  */
 export function parsePublishCategoryOptions(argv: readonly string[]): PublishCategoryOptions {
-  let parsed: ReturnType<typeof parse>
-  const parse = (args: string[]) => parseArgs({
-    args, allowPositionals: true,
-    options: {
-      account: { type: 'string' }, out: { type: 'string' }, refresh: { type: 'boolean' },
-      cat: { type: 'string' }, item: { type: 'string' }, own: { type: 'string' }, keyword: { type: 'string' }, line: { type: 'string' },
-    },
-  })
-  try {
-    parsed = parse([...argv])
-  } catch (error) {
-    throw new SkillError(`${(error as Error).message}\n${USAGE}`, EXIT.usage)
-  }
-  const { values, positionals } = parsed
+  const { values, positionals } = parseCommandLine(argv, {
+    account: { type: 'string' }, out: { type: 'string' }, refresh: { type: 'boolean' },
+    cat: { type: 'string' }, item: { type: 'string' }, own: { type: 'string' }, keyword: { type: 'string' }, line: { type: 'string' },
+  }, USAGE)
   const command = positionals[0]
   if (command !== 'categories' && command !== 'resolve' && command !== 'rules') throw new SkillError(`缺少或认不出子命令：${command ?? '（无）'}\n${USAGE}`, EXIT.usage)
   if (values.account === undefined || values.account === '') throw new SkillError(`缺少 --account。\n${USAGE}`, EXIT.usage)
@@ -181,19 +170,11 @@ export function rulesText(rules: PublishRules): string {
  * @returns the exit status.
  */
 export async function main(argv: readonly string[], deps: Deps = realDeps): Promise<number> {
-  try {
+  return runCli(deps, async () => {
     const options = parsePublishCategoryOptions(argv)
     const { result } = await withMerchantPage(options, deps, (page, account) => run(page, account, options, deps))
-    deps.stdout(`${result}\n`)
-    return 0
-  } catch (error) {
-    if (error instanceof SkillError) {
-      deps.stderr(`${error.message}\n`)
-      return error.exitCode
-    }
-    deps.stderr(`失败：${error instanceof Error ? error.message : String(error)}\n`)
-    return EXIT.failed
-  }
+    return result
+  })
 }
 
 /**

@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/util/change-stream/README.md
+/:
+  en: 9450bdc45419e1fe
+  zh: a598e9845a03d7ff
+/deepseek-ai-dsh-change-stream:
+  en: 7e5fb6686853455b
+  zh: 97e4095b61913fb0
+/deepseek-ai-dsh-change-stream/summary:
+  en: 77049a086cc34f5d
+  zh: 818509d2188b51b3
+/deepseek-ai-dsh-change-stream/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-change-stream/use-this-package:
+  en: bbff250eba0f1b89
+  zh: 0a618f05cc88ee2b
+/deepseek-ai-dsh-change-stream/use-this-package/when-to-use-it:
+  en: 22ab06e5da6ac423
+  zh: 28720a6719ded236
+/deepseek-ai-dsh-change-stream/use-this-package/entry-point:
+  en: 9603c0bf5e8e6257
+  zh: 27293fc278a1690f
+/deepseek-ai-dsh-change-stream/understand-the-implementation:
+  en: 2928269bb47a5be5
+  zh: eedae11689d4a035
+/deepseek-ai-dsh-change-stream/understand-the-implementation/source-map:
+  en: cb1ebfae39dde328
+  zh: 8d9c17b852f96e3a
+/deepseek-ai-dsh-change-stream/further-exploration:
+  en: 1c92e960b97f701d
+  zh: c3dc846679245681
+/deepseek-ai-dsh-change-stream/model-experience:
+  en: 670d9ce184d4499e
+  zh: fdccc9387af2c462
+/deepseek-ai-dsh-change-stream/model-experience/kv-cache-effect:
+  en: e7ba08477bf22c4e
+  zh: d9b90c07d3947c3c
+/deepseek-ai-dsh-change-stream/known-limitations-and-deferred-work:
+  en: 70eb78360ba63fba
+  zh: b4b9f40bdd5081c2
+/deepseek-ai-dsh-change-stream/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 6c5f9788c6536776
