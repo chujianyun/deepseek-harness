@@ -324,7 +324,7 @@ async function main(): Promise<void> {
   })
   // One read serves the user center here and the update policy below. A packaged manifest carries the
   // release's user center; a development manifest carries none.
-  const applicationManifest = readFile(join(app.getAppPath(), 'package.json'), 'utf8').then(text => JSON.parse(text) as unknown)
+  const applicationManifest = readFile(join(app.getAppPath(), 'package.json'), 'utf8').then((text): unknown => JSON.parse(text))
   const bundledHub = applicationManifest.then(resolveDesktopHubConfig)
   // Host preparation awaits it later; a failure meanwhile must not surface as an unhandled rejection.
   void bundledHub.catch(() => undefined)
