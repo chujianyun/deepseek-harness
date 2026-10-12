@@ -14,12 +14,11 @@
 
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { parseArgs } from 'node:util'
 import { MERCHANT_PLATFORMS, runDshEcommerce, type MerchantPlatform } from './account.ts'
-import { fileSafe, realDeps, type Deps } from './cli.ts'
+import { fileSafe, realDeps, type Deps, runCli } from './cli.ts'
 import { beijingTime } from './dates.ts'
 import type { Draft } from './draft.ts'
-import { EXIT, SkillError } from './errors.ts'
+import { EXIT, parseCommandLine, SkillError } from './errors.ts'
 import {
   confirmShared, nextTarget, outcomeOf, parsePlan, PLATFORM_SKILLS, summaryText, type PlanMark, type PlanTarget, type PublishPlan,
 } from './multi-publish.ts'
@@ -53,20 +52,10 @@ export type MultiPublishOptions =
  * @throws SkillError usage for a wrong command line.
  */
 export function parseMultiPublishOptions(argv: readonly string[]): MultiPublishOptions {
-  let parsed: ReturnType<typeof parse>
-  const parse = (args: string[]) => parseArgs({
-    args, allowPositionals: true,
-    options: {
-      plan: { type: 'string' }, folder: { type: 'string' }, account: { type: 'string', multiple: true }, replace: { type: 'boolean' },
-      draft: { type: 'string' }, status: { type: 'string' }, note: { type: 'string' },
-    },
-  })
-  try {
-    parsed = parse([...argv])
-  } catch (error) {
-    throw new SkillError(`${(error as Error).message}\n${USAGE}`, EXIT.usage)
-  }
-  const { values, positionals } = parsed
+  const { values, positionals } = parseCommandLine(argv, {
+    plan: { type: 'string' }, folder: { type: 'string' }, account: { type: 'string', multiple: true }, replace: { type: 'boolean' },
+    draft: { type: 'string' }, status: { type: 'string' }, note: { type: 'string' },
+  }, USAGE)
   const command = positionals[0]
   const plan = values.plan ?? PLAN
   const given = (value: string | undefined, name: string): string => {
@@ -282,7 +271,7 @@ async function summary(path: string, deps: MultiPublishDeps): Promise<string> {
  * @returns the exit status.
  */
 export async function main(argv: readonly string[], deps: MultiPublishDeps = realMultiDeps): Promise<number> {
-  try {
+  return runCli(deps, async () => {
     const options = parseMultiPublishOptions(argv)
     const path = resolve(options.plan)
     const result = options.command === 'plan' ? await plan(options, deps)
@@ -290,14 +279,6 @@ export async function main(argv: readonly string[], deps: MultiPublishDeps = rea
         : options.command === 'confirm' ? await confirm(options, deps)
           : options.command === 'mark' ? await mark(options, deps)
             : await summary(path, deps)
-    deps.stdout(`${result}\n`)
-    return 0
-  } catch (error) {
-    if (error instanceof SkillError) {
-      deps.stderr(`${error.message}\n`)
-      return error.exitCode
-    }
-    deps.stderr(`失败：${error instanceof Error ? error.message : String(error)}\n`)
-    return EXIT.failed
-  }
+    return result
+  })
 }

@@ -1,4 +1,5 @@
 /** Why a skill run stopped, as the message the model reads and the exit status its script ends with. */
+import { parseArgs, type ParseArgsOptionsConfig } from 'node:util'
 
 /** Exit status of a run that stopped for a reason it names. */
 export const EXIT = {
@@ -23,5 +24,21 @@ export class SkillError extends Error {
   constructor(message: string, readonly exitCode: number = EXIT.failed) {
     super(message)
     this.name = 'SkillError'
+  }
+}
+
+/**
+ * Read a script's command line, stopping with its usage when the line is malformed.
+ * @param argv - the arguments after the script.
+ * @param options - the options the script takes.
+ * @param usage - the usage shown with a refusal.
+ * @returns the options' values and the positionals.
+ * @throws SkillError usage for a malformed command line.
+ */
+export function parseCommandLine<const T extends ParseArgsOptionsConfig>(argv: readonly string[], options: T, usage: string) {
+  try {
+    return parseArgs({ args: [...argv], allowPositionals: true, options })
+  } catch (error) {
+    throw new SkillError(`${(error as Error).message}\n${usage}`, EXIT.usage)
   }
 }

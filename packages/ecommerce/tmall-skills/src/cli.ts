@@ -73,11 +73,22 @@ export function parseOptions(argv: readonly string[], now: Date): Options {
  * @param report - makes the report and returns the text to print.
  * @returns the exit status.
  */
-export async function runReport(
+export function runReport(
   argv: readonly string[], deps: Deps, report: (options: Options, deps: Deps) => Promise<string>,
 ): Promise<number> {
+  return runCli(deps, () => report(parseOptions(argv, deps.now()), deps))
+}
+
+/**
+ * Run a script's command: print what it returns on stdout and exit 0, or print why it stopped on stderr
+ * and exit with that reason's status (a SkillError's own, any other failure's `failed`).
+ * @param deps - where the script prints.
+ * @param command - does the work and returns the text to print.
+ * @returns the exit status.
+ */
+export async function runCli(deps: Pick<Deps, 'stdout' | 'stderr'>, command: () => Promise<string>): Promise<number> {
   try {
-    deps.stdout(`${await report(parseOptions(argv, deps.now()), deps)}\n`)
+    deps.stdout(`${await command()}\n`)
     return 0
   } catch (error) {
     if (error instanceof SkillError) {

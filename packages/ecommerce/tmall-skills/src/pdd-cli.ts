@@ -13,9 +13,8 @@
 
 import { readFile, mkdir, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
-import { parseArgs } from 'node:util'
-import { takeOverMerchant, type MerchantBrowser } from './account.ts'
-import { realDeps, withMerchantPage, type Deps } from './cli.ts'
+import { takeOverMerchant } from './account.ts'
+import { realDeps, type Deps } from './cli.ts'
 import { beijingTime } from './dates.ts'
 import type { FieldCheck } from './draft.ts'
 import { EXIT, SkillError } from './errors.ts'
@@ -28,23 +27,11 @@ import {
   buildGoods, extraPrices, listDrafts, listGoods, readSession, saveDraft, specIdFor, uploadPddImage, type DraftRow,
 } from './pdd-publish.ts'
 import { openPdd, PDD_GOODS_URL, PddRefusal } from './pdd.ts'
-import { parseRulesFile } from './product-draft-cli.ts'
+import { readStoreRules, rulesText, runDraftStore, type CategoryFinder, type DraftStore } from './draft-store-cli.ts'
 import {
-  blockers, categoriesText as listCategories, codesOf, parsePublishOptions, readRecords, rememberedCategory, sameProduct, titleOf,
-  unsettled,
-  writeRecord,
-  type CandidateCategory, type DraftFile, type PublishOptions,
-  type PublishRecord,
+  parseCategoryOptions as parseDraftCategoryOptions, saveBlockers, saveContext, unready, unsettled, writeRecord,
+  type CategoryOptions, type DraftCategorySource, type DraftFile, type PublishRecord,
 } from './publish-common.ts'
-
-const USAGE = [
-  '用法：',
-  '  resolve --account <电商账号 id> (--keyword <商品名> | --line <产品线> | --cat <类目 id> | --image <主图文件> --title <标题>)',
-  '  children --account <电商账号 id> [--parent <类目 id，默认顶层>]',
-  '  rules --account <电商账号 id> --cat <类目 id> [--out 目录]',
-  '  check --account <电商账号 id> --draft <商品草稿 json> [--out 目录]',
-  '  save --account <电商账号 id> --draft <商品草稿 json> --rules <字段规则 json> [--confirmed] [--stock <每个 SKU 的库存>] [--unknown-checked] [--out 目录]',
-].join('\n')
 
 /** The directory the rules and the record file go to by default. */
 const OUT = '拼多多发品'
@@ -53,17 +40,7 @@ const OUT = '拼多多发品'
 export const pddDeps: Deps = { ...realDeps, takeOver: accountId => takeOverMerchant(accountId, undefined, 'pinduoduo') }
 
 /** Where a `resolve` looks. */
-export type PddSource =
-  | { readonly kind: 'keyword'; readonly keyword: string }
-  | { readonly kind: 'line'; readonly line: string }
-  | { readonly kind: 'id'; readonly id: string }
-  | { readonly kind: 'image'; readonly image: string; readonly title: string }
-
-/** A category command line, read. */
-export type CategoryOptions =
-  | { readonly command: 'resolve'; readonly account: string; readonly source: PddSource }
-  | { readonly command: 'children'; readonly account: string; readonly parent: string }
-  | { readonly command: 'rules'; readonly account: string; readonly catId: string; readonly out: string }
+export type PddSource = DraftCategorySource
 
 /**
  * Read a `resolve`, `children`, or `rules` command line.
@@ -71,80 +48,28 @@ export type CategoryOptions =
  * @returns the options.
  * @throws SkillError usage for a wrong command line.
  */
-export function parseCategoryOptions(argv: readonly string[]): CategoryOptions {
-  let parsed: ReturnType<typeof parse>
-  const parse = (args: string[]) => parseArgs({
-    args, allowPositionals: true,
-    options: {
-      account: { type: 'string' }, keyword: { type: 'string' }, line: { type: 'string' }, cat: { type: 'string' }, image: { type: 'string' },
-      title: { type: 'string' }, parent: { type: 'string' }, out: { type: 'string' },
-    },
-  })
-  try {
-    parsed = parse([...argv])
-  } catch (error) {
-    throw new SkillError(`${(error as Error).message}\n${USAGE}`, EXIT.usage)
-  }
-  const { values, positionals } = parsed
-  const command = positionals[0]
-  if (values.account === undefined || values.account === '') throw new SkillError(`缺少 --account。\n${USAGE}`, EXIT.usage)
-  const id = (value: string | undefined, name: string) => {
-    if (value === undefined || !/^\d+$/u.test(value)) throw new SkillError(`${name} 应是数字类目 id。\n${USAGE}`, EXIT.usage)
-    return value
-  }
-  if (command === 'children') return { command, account: values.account, parent: values.parent === undefined ? '0' : id(values.parent, '--parent') }
-  if (command === 'rules') return { command, account: values.account, catId: id(values.cat, '--cat'), out: values.out ?? OUT }
-  const given = (['keyword', 'line', 'cat', 'image'] as const).filter(name => values[name] !== undefined && values[name] !== '')
-  if (given.length !== 1) throw new SkillError(`resolve 需要且只能给一个来源：--keyword、--line、--cat 或 --image。\n${USAGE}`, EXIT.usage)
-  const source: PddSource = given[0] === 'keyword' ? { kind: 'keyword', keyword: values.keyword as string }
-    : given[0] === 'line' ? { kind: 'line', line: values.line as string }
-      : given[0] === 'cat' ? { kind: 'id', id: id(values.cat, '--cat') }
-        : { kind: 'image', image: values.image as string, title: values.title ?? '' }
-  return { command: 'resolve', account: values.account, source }
+export const parseCategoryOptions = (argv: readonly string[]): CategoryOptions => parseDraftCategoryOptions(argv, OUT)
+
+/** Pinduoduo's category lookups. */
+const FINDER: CategoryFinder = {
+  name: '拼多多', platform: 'pinduoduo', unusable: '缺资质', search: searchCategories, byId: categoryById,
+  children: childCategories, noChildren: parent => `类目 ${parent} 下面没有子类目。`,
+  predict: async (page, image, name, title) => {
+    const url = await uploadPddImage(page, image, name)
+    const session = await createSession(page)
+    return predictCategories(page, session.goodsId, url, title)
+  },
 }
 
-/** The category lines for the model. */
-const categoriesText = (categories: readonly CandidateCategory[], reason: string): string => listCategories(categories, reason, '缺资质')
-
-async function resolveCategory(page: Page, source: PddSource, deps: Deps): Promise<string> {
-  switch (source.kind) {
-    case 'keyword': return categoriesText(await searchCategories(page, source.keyword), `拼多多类目搜索「${source.keyword}」`)
-    case 'id': return categoriesText([await categoryById(page, source.id)], '用户指定的类目')
-    case 'line': {
-      const remembered = rememberedCategory(await deps.memory(), source.line, 'pinduoduo')
-      if (typeof remembered === 'string') return remembered
-      return categoriesText([await categoryById(page, remembered.catId)], `记住的产品线「${source.line}」类目（${beijingTime(new Date(remembered.updatedAt))} 北京时间保存）`)
-    }
-    case 'image': {
-      const bytes = await readFile(source.image).catch((error: unknown) => {
-        throw new SkillError(`读不到主图 ${source.image}：${(error as Error).message}`, EXIT.usage)
-      })
-      const url = await uploadPddImage(page, bytes, basename(source.image))
-      const session = await createSession(page)
-      return categoriesText(await predictCategories(page, session.goodsId, url, source.title), '拼多多按主图和标题推荐')
-    }
-  }
-}
-
-async function categoryCommand(page: Page, options: CategoryOptions, deps: Deps, account: MerchantBrowser): Promise<string> {
-  switch (options.command) {
-    case 'resolve': return resolveCategory(page, options.source, deps)
-    case 'children': {
-      const children = await childCategories(page, options.parent)
-      if (children.length === 0) return `类目 ${options.parent} 下面没有子类目。`
-      return children.map(child => `- ${child.name}（${child.id}）${child.leaf ? '，可发布' : ''}`).join('\n')
-    }
-    case 'rules': {
-      const category = await categoryById(page, options.catId)
-      const rules = pddRules(options.catId, category.path, await readTemplate(page, options.catId), await readLimits(page, options.catId))
-      const out = resolve(options.out)
-      await mkdir(out, { recursive: true })
-      const path = join(out, `字段规则_${options.catId}.json`)
-      await writeFile(path, `${JSON.stringify({ platform: 'pinduoduo', store: account.store, readAt: deps.now().toISOString(), ...rules }, null, 2)}\n`)
-      const required = rules.fields.filter(field => field.required).map(field => `- ${field.label}${field.options === undefined ? '' : `，可选：${field.options.map(option => option.text).join('、')}`}`)
-      return [`类目：${rules.categoryPath}（${rules.catId}），共 ${String(rules.fields.length)} 个字段。`, '', `必填字段（${String(required.length)}）：`, ...required, '', `已保存：${path}`].join('\n')
-    }
-  }
+/** `rules`: the category's field rules, written to a file. */
+const readRules: DraftStore['rules'] = async (page, options, deps, account) => {
+  const category = await categoryById(page, options.catId)
+  const rules = pddRules(options.catId, category.path, await readTemplate(page, options.catId), await readLimits(page, options.catId))
+  const out = resolve(options.out)
+  await mkdir(out, { recursive: true })
+  const path = join(out, `字段规则_${options.catId}.json`)
+  await writeFile(path, `${JSON.stringify({ platform: 'pinduoduo', store: account.store, readAt: deps.now().toISOString(), ...rules }, null, 2)}\n`)
+  return rulesText(rules, path)
 }
 
 /** Links to the 草稿箱. */
@@ -173,33 +98,13 @@ async function alreadySaved(
   return undefined
 }
 
-async function check(page: Page, account: MerchantBrowser, draft: DraftFile, options: PublishOptions): Promise<string> {
-  const title = titleOf(draft)
-  if (title === '') throw new SkillError('商品草稿还没有商品标题，没法查重；请先补上标题重新生成草稿。', EXIT.usage)
-  const records = sameProduct(await readRecords(join(resolve(options.out), '发品记录.json')), account.store, draft)
-  const found = await alreadySaved(page, records, title)
-  if (found !== undefined) return `店铺 ${account.store} 里已有「${title}」：ID ${found.id}（${found.how}）。\n${DRAFT_LINK}`
-  const open = unsettled(records)
-  return [
-    `店铺 ${account.store} 的草稿箱和商品列表里都没有「${title}」，DSH 也没有存过它。`,
-    ...open === undefined ? [] : [`注意：${beijingTime(new Date(open.at))}（北京时间）那次保存结果不明，店里暂时查不到；再存前要请用户到拼多多后台确认没有这件商品。`],
-  ].join('\n')
-}
-
-async function save(page: Page, account: MerchantBrowser, draft: DraftFile, options: PublishOptions, deps: Pick<Deps, 'now' | 'stderr'>): Promise<string> {
-  const text = await readFile(options.rules as string, 'utf8')
-  if ((JSON.parse(text) as { platform?: string }).platform !== 'pinduoduo') {
-    throw new SkillError(`${options.rules as string} 不是拼多多的字段规则，请用本技能的 rules 命令重新读取。`, EXIT.usage)
-  }
-  const rules = parseRulesFile(text)
+const save: DraftStore['save'] = async (page, account, draft, options, deps) => {
+  const rules = await readStoreRules(options.rules as string, STORE)
   const checks = (draft.checks ?? []) as FieldCheck[]
   const prices = extraPrices(checks, draft.skus.map(sku => sku.price))
-  const reasons = [...blockers(draft, rules, options), ...'problems' in prices ? prices.problems.map(problem => `不符合：${problem}`) : []]
-  if (reasons.length > 0 || 'problems' in prices) throw new SkillError(`还不能保存到草稿箱：\n${reasons.map(reason => `- ${reason}`).join('\n')}`, EXIT.usage)
-  const title = titleOf(draft)
-  const recordPath = join(resolve(options.out), '发品记录.json')
-  const records = sameProduct(await readRecords(recordPath), account.store, draft)
-  const record = { store: account.store, account: account.id, title, catId: rules.catId, codes: codesOf(draft) }
+  const reasons = saveBlockers(draft, rules, options, prices)
+  if (reasons.length > 0 || 'problems' in prices) throw unready(reasons, '草稿箱')
+  const { title, recordPath, records, record } = await saveContext(options, account, draft, rules.catId)
   const found = await alreadySaved(page, records, title)
   if (found !== undefined) {
     const id = found.draft ? { draftId: found.id } : { itemId: found.id }
@@ -278,42 +183,19 @@ async function uploadAll(page: Page, draft: DraftFile, progress: (step: string) 
   return images
 }
 
+/** The 拼多多 side of the 草稿箱 publish script. */
+const STORE: DraftStore = {
+  name: '拼多多', platform: 'pinduoduo', out: OUT, idLabel: 'ID', draftLink: DRAFT_LINK,
+  open: async (page) => { await (page => openPdd(page))(page) },
+  alreadySaved, finder: FINDER, rules: readRules, save, parseCategoryOptions,
+}
+
 /**
  * Run one command.
  * @param argv - the arguments after the script.
  * @param deps - the outside world.
  * @returns the exit status.
  */
-export async function main(argv: readonly string[], deps: Deps = pddDeps): Promise<number> {
-  try {
-    const command = argv[0]
-    let result: string
-    if (command === 'check' || command === 'save') {
-      const options = parsePublishOptions(argv, OUT, USAGE)
-      const draft = JSON.parse(await readFile(options.draft, 'utf8').catch((error: unknown) => {
-        throw new SkillError(`读不到商品草稿 ${options.draft}：${(error as Error).message}`, EXIT.usage)
-      })) as DraftFile
-      ;({ result } = await withMerchantPage(options, deps, async (page, account) => {
-        await openPdd(page)
-        return options.command === 'check' ? check(page, account, draft, options) : save(page, account, draft, options, deps)
-      }))
-    } else if (command === 'resolve' || command === 'children' || command === 'rules') {
-      const options = parseCategoryOptions(argv)
-      ;({ result } = await withMerchantPage(options, deps, async (page, account) => {
-        await openPdd(page)
-        return categoryCommand(page, options, deps, account)
-      }))
-    } else {
-      throw new SkillError(`缺少或认不出子命令：${command ?? '（无）'}\n${USAGE}`, EXIT.usage)
-    }
-    deps.stdout(`${result}\n`)
-    return 0
-  } catch (error) {
-    if (error instanceof SkillError) {
-      deps.stderr(`${error.message}\n`)
-      return error.exitCode
-    }
-    deps.stderr(`失败：${error instanceof Error ? error.message : String(error)}\n`)
-    return EXIT.failed
-  }
+export function main(argv: readonly string[], deps: Deps = pddDeps): Promise<number> {
+  return runDraftStore(argv, deps, STORE)
 }

@@ -5,10 +5,9 @@
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { parseArgs } from 'node:util'
 import { MERCHANT_PLATFORMS, type CategoryMemory, type EcommercePlatform, type PublishMemory } from './account.ts'
 import type { Draft, FieldCheck } from './draft.ts'
-import { EXIT, SkillError } from './errors.ts'
+import { EXIT, parseCommandLine, SkillError } from './errors.ts'
 import type { PublishRules } from './publish-rules.ts'
 
 /** The usage of the Tmall publish script. */
@@ -40,20 +39,10 @@ export interface PublishOptions {
  * @throws SkillError usage for a wrong command line.
  */
 export function parsePublishOptions(argv: readonly string[], out = '天猫发品', usage = USAGE): PublishOptions {
-  let parsed: ReturnType<typeof parse>
-  const parse = (args: string[]) => parseArgs({
-    args, allowPositionals: true,
-    options: {
-      account: { type: 'string' }, draft: { type: 'string' }, rules: { type: 'string' }, confirmed: { type: 'boolean' },
-      stock: { type: 'string' }, 'unknown-checked': { type: 'boolean' }, out: { type: 'string' },
-    },
-  })
-  try {
-    parsed = parse([...argv])
-  } catch (error) {
-    throw new SkillError(`${(error as Error).message}\n${usage}`, EXIT.usage)
-  }
-  const { values, positionals } = parsed
+  const { values, positionals } = parseCommandLine(argv, {
+    account: { type: 'string' }, draft: { type: 'string' }, rules: { type: 'string' }, confirmed: { type: 'boolean' },
+    stock: { type: 'string' }, 'unknown-checked': { type: 'boolean' }, out: { type: 'string' },
+  }, usage)
   const command = positionals[0]
   if (command !== 'check' && command !== 'save') throw new SkillError(`缺少或认不出子命令：${command ?? '（无）'}\n${usage}`, EXIT.usage)
   if (values.account === undefined || values.account === '') throw new SkillError(`缺少 --account。\n${usage}`, EXIT.usage)
@@ -251,4 +240,107 @@ export function rememberedCategory(memory: PublishMemory, line: string, platform
   return others.length === 0
     ? `DSH 里还没有记住产品线「${line}」的类目。`
     : `DSH 记住了产品线「${line}」在${others.join('、')}的类目，还没有记住${name}的；按商品名或主图找${name}类目，用户确认后再记下。`
+}
+
+/** The command lines of the 草稿箱 publish scripts (Pinduoduo, Douyin shop). */
+export const DRAFT_USAGE = [
+  '用法：',
+  '  resolve --account <电商账号 id> (--keyword <商品名> | --line <产品线> | --cat <类目 id> | --image <主图文件> --title <标题>)',
+  '  children --account <电商账号 id> [--parent <类目 id，默认顶层>]',
+  '  rules --account <电商账号 id> --cat <类目 id> [--out 目录]',
+  '  check --account <电商账号 id> --draft <商品草稿 json> [--out 目录]',
+  '  save --account <电商账号 id> --draft <商品草稿 json> --rules <字段规则 json> [--confirmed] [--stock <每个 SKU 的库存>] [--unknown-checked] [--out 目录]',
+].join('\n')
+
+/** Where a 草稿箱 publish script's `resolve` looks. */
+export type DraftCategorySource =
+  | { readonly kind: 'keyword'; readonly keyword: string }
+  | { readonly kind: 'line'; readonly line: string }
+  | { readonly kind: 'id'; readonly id: string }
+  | { readonly kind: 'image'; readonly image: string; readonly title: string }
+
+/** A category command line, read. */
+export type CategoryOptions =
+  | { readonly command: 'resolve'; readonly account: string; readonly source: DraftCategorySource }
+  | { readonly command: 'children'; readonly account: string; readonly parent: string }
+  | { readonly command: 'rules'; readonly account: string; readonly catId: string; readonly out: string }
+
+/**
+ * Read a `resolve`, `children`, or `rules` command line of a 草稿箱 publish script (Pinduoduo, Douyin shop).
+ * @param argv - the arguments after the script.
+ * @param out - the directory `rules` writes to by default.
+ * @param usage - the usage printed with a refusal.
+ * @returns the options.
+ * @throws SkillError usage for a wrong command line.
+ */
+export function parseCategoryOptions(argv: readonly string[], out: string, usage = DRAFT_USAGE): CategoryOptions {
+  const { values, positionals } = parseCommandLine(argv, {
+    account: { type: 'string' }, keyword: { type: 'string' }, line: { type: 'string' }, cat: { type: 'string' }, image: { type: 'string' },
+    title: { type: 'string' }, parent: { type: 'string' }, out: { type: 'string' },
+  }, usage)
+  const command = positionals[0]
+  if (values.account === undefined || values.account === '') throw new SkillError(`缺少 --account。\n${usage}`, EXIT.usage)
+  const id = (value: string | undefined, name: string) => {
+    if (value === undefined || !/^\d+$/u.test(value)) throw new SkillError(`${name} 应是数字类目 id。\n${usage}`, EXIT.usage)
+    return value
+  }
+  if (command === 'children') return { command, account: values.account, parent: values.parent === undefined ? '0' : id(values.parent, '--parent') }
+  if (command === 'rules') return { command, account: values.account, catId: id(values.cat, '--cat'), out: values.out ?? out }
+  const given = (['keyword', 'line', 'cat', 'image'] as const).filter(name => values[name] !== undefined && values[name] !== '')
+  if (given.length !== 1) throw new SkillError(`resolve 需要且只能给一个来源：--keyword、--line、--cat 或 --image。\n${usage}`, EXIT.usage)
+  const source: DraftCategorySource = given[0] === 'keyword' ? { kind: 'keyword', keyword: values.keyword as string }
+    : given[0] === 'line' ? { kind: 'line', line: values.line as string }
+      : given[0] === 'cat' ? { kind: 'id', id: id(values.cat, '--cat') }
+        : { kind: 'image', image: values.image as string, title: values.title ?? '' }
+  return { command: 'resolve', account: values.account, source }
+}
+
+
+/**
+ * The refusal of a save that the draft or the user's answers do not allow yet.
+ * @param reasons - why it cannot be saved.
+ * @param where - where it would be saved, such as 草稿箱.
+ * @returns the error to throw, listing the reasons.
+ */
+export function unready(reasons: readonly string[], where: string): SkillError {
+  return new SkillError(`还不能保存到${where}：\n${reasons.map(reason => `- ${reason}`).join('\n')}`, EXIT.usage)
+}
+
+/** What a save starts from: the product's title, its record file, earlier records of it, and its new record. */
+export interface SaveContext {
+  readonly title: string
+  readonly recordPath: string
+  readonly records: PublishRecord[]
+  readonly record: Pick<PublishRecord, 'store' | 'account' | 'title' | 'catId' | 'codes'>
+}
+
+/**
+ * Read what a save of a draft to a store starts from.
+ * @param options - the save's options.
+ * @param account - the store's merchant account.
+ * @param draft - the draft to save.
+ * @param catId - the category it is saved under.
+ * @returns the save's context.
+ */
+export async function saveContext(
+  options: Pick<PublishOptions, 'out'>, account: { readonly id: string; readonly store: string }, draft: DraftFile, catId: string,
+): Promise<SaveContext> {
+  const title = titleOf(draft)
+  const recordPath = resolve(options.out, '发品记录.json')
+  const records = sameProduct(await readRecords(recordPath), account.store, draft)
+  return { title, recordPath, records, record: { store: account.store, account: account.id, title, catId, codes: codesOf(draft) } }
+}
+
+/**
+ * Why a 草稿箱 save cannot go on: the draft's blockers, then the problems of the platform's own values.
+ * @param draft - the draft to save.
+ * @param rules - its field rules.
+ * @param options - the save's options.
+ * @param given - the platform's own values read from the draft, or their problems.
+ * @returns the reasons, none when it can.
+ */
+export function saveBlockers(
+  draft: DraftFile, rules: PublishRules, options: Pick<PublishOptions, 'confirmed' | 'stock'>, given: object | { readonly problems: readonly string[] },
+): string[] {
+  return [...blockers(draft, rules, options), ...'problems' in given ? (given.problems).map(problem => `不符合：${problem}`) : []]
 }
