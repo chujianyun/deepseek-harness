@@ -75,10 +75,10 @@ const windowsUnsupportedCoveragePackages = process.platform === 'win32'
   ? [
       ...windowsUnsupportedPackages,
       'packages/subprocess/*',
-      // The connectors give the model POSIX shell scripts only, and their specs drive stand-in CLIs that
-      // are POSIX shell scripts (README Known Limitations: Bash only, POSIX only); the specs skip on
-      // Windows, so the Linux and macOS lanes hold the package's per-file 100%.
-      'packages/connector/connectors',
+      // DingTalk's dws keeps its sign-in in a registry every tenant shares, so DingTalk is unsupported on
+      // Windows (connectors README Known Limitations); its specs skip there and the Linux and macOS lanes
+      // hold the file's per-file 100%.
+      'packages/connector/connectors/src/dingtalk.ts',
     ]
   : []
 
@@ -374,7 +374,7 @@ export default defineConfig({
         // cover and remove with the client test lane above.
         'packages/interaction/commands/src/index.ts',
         'packages/session/session-projection/src/index.ts',
-        ...windowsUnsupportedCoveragePackages.map(path => `${path}/src/**/*.ts`),
+        ...windowsUnsupportedCoveragePackages.map(path => path.endsWith('.ts') ? path : `${path}/src/**/*.ts`),
         ...windowsOnlyCoverageExclusions,
         ...windowsRunnerCoverageExclusions,
         ...pwshCoverageExclusions,

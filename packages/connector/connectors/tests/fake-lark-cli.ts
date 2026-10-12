@@ -33,7 +33,7 @@ case "$1 $2" in
     case " $* " in *" --yes "*) echo '{"ok":true,"data":{"deleted":true}}' ;; *) echo '{"ok":false,"error":{"message":"high-risk-write requires --yes"}}' >&2; exit 2 ;; esac ;;
   "--version ") echo "lark-cli version 9.9.9" ;;
   "config init")
-    env | grep -E '^(LARKSUITE_CLI_|OPENCLAW_HOME|HERMES_HOME)' | sort > "$C/env"
+    env | grep -E '^(LARKSUITE_CLI_|LARK_CLI_|LARK_CHANNEL|OPENCLAW_|HERMES_)' | sort > "$C/env"
     echo "█▀▄ QR █▀▄" >&2
     echo "打开以下链接配置应用:" >&2
     echo "  https://open.feishu.cn/page/cli?user_code=APP-1" >&2
@@ -69,7 +69,7 @@ case "$1 $2" in
     if [ "$3" != lark-calendar ]; then echo "no skill $3" >&2; exit 1; fi
     printf '%s\n' '> Tip: read files with lark-cli skills read lark-calendar <path>.' '---' 'name: lark-calendar' 'description: "飞书日历"' '---' '' '# calendar' '' 'Run lark-cli calendar +agenda.' ;;
   "calendar +agenda")
-    env | grep -E '^(LARKSUITE_CLI_|OPENCLAW_HOME|HERMES_HOME)' | sort > "$C/run-env"
+    env | grep -E '^(LARKSUITE_CLI_|LARK_CLI_|LARK_CHANNEL|OPENCLAW_|HERMES_)' | sort > "$C/run-env"
     echo '{"ok":true,"data":{"events":[{"summary":"产品周会","start":"10:00"}]}}' ;;
   "calendar +fail")
     echo '{"ok":false,"error":{"message":"permission denied"}}' >&2; exit 4 ;;

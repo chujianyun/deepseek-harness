@@ -58,20 +58,23 @@ function compileShim(): Promise<string> {
 }
 
 /**
- * The program that runs a Node script.
+ * The program that runs a script.
  * @param script - the script's path.
  * @param dir - where a Windows `.exe` for it goes.
  * @param platform - the platform to prepare for.
- * @returns the script on POSIX, else an `.exe` beside it in `dir` named after it.
+ * @param interpreter - what runs the script on Windows: Node by default, or another program such as Git's bash.
+ * @returns the script on POSIX, else an `.exe` beside it in `dir` named after it without its extension.
  */
-export async function scriptExecutable(script: string, dir: string, platform: NodeJS.Platform = process.platform): Promise<string> {
+export async function scriptExecutable(
+  script: string, dir: string, platform: NodeJS.Platform = process.platform, interpreter: string = process.execPath,
+): Promise<string> {
   if (platform !== 'win32') return script
-  const exe = join(dir, `${basename(script).replace(/\.[cm]?js$/u, '')}.exe`)
+  const exe = join(dir, `${basename(script).replace(/\.[^.]+$/u, '')}.exe`)
   const ready = await access(exe).then(() => true, () => false)
   if (!ready) {
     await mkdir(dir, { recursive: true })
     await copyFile(await compileShim(), exe)
-    await writeFile(`${exe}.txt`, `${process.execPath}\r\n${script}\r\n`)
+    await writeFile(`${exe}.txt`, `${interpreter}\r\n${script}\r\n`)
   }
   return exe
 }

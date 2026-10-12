@@ -5,7 +5,7 @@
  */
 import type { SkillResourceBase } from '@deepseek-ai/dsh-skill'
 import type { CliSpec } from './index.ts'
-import type { Health, LoginStep, TenantCli, WrapperMode } from './cli.ts'
+import type { Health, LoginStep, TenantCli, WindowsWrapper, WrapperMode } from './cli.ts'
 import type { Assessment } from './risk.ts'
 import type { ConnectorId } from './types.ts'
 
@@ -49,6 +49,8 @@ export interface ConnectorDriver {
   removeTenant(cli: TenantCli): Promise<void>
   /** The model shell's script for one tenant. */
   wrapperScript(cli: TenantCli, mode: WrapperMode, logs: string): string
+  /** The model shell's script for one tenant on Windows; a connector without one gives Windows no script. */
+  windowsWrapper?(cli: TenantCli, mode: WrapperMode, logs: string): WindowsWrapper
   /** List the Skills an installed CLI version ships; none when it cannot list them. */
   listSkills(location: SkillLocation, signal: AbortSignal): Promise<DriverSkill[]>
   /** Read one Skill's instructions without its frontmatter; undefined when it cannot. */

@@ -35,6 +35,20 @@ const ORDER: readonly Risk[] = ['none', 'read', 'write', 'unknown', 'high-risk-w
 /** Shell forms whose effect on a lark-cli call cannot be read from the words. */
 const OPAQUE = /`|\$\(|<\(|\beval\b|\b(?:ba|z)?sh\s+-c\b|\bxargs\b/u
 
+/**
+ * PowerShell forms that run a command the words do not show: expressions and script blocks it evaluates,
+ * another shell, or a started process. A backtick, its escape, is opaque already.
+ */
+const PWSH_OPAQUE = new RegExp([
+  String.raw`\b(?:Invoke-Expression|Invoke-Command|Start-Process|Start-Job|ForEach-Object)\b`,
+  String.raw`(?:^|[;|&(]\s*)(?:iex|icm|saps|start|foreach|%)(?=\s|$)`,
+  String.raw`(?<![\w.-])(?:cmd|pwsh|powershell)(?:\.exe)?\s`,
+  String.raw`\.Invoke\(|[{}]|@\(`,
+].join('|'), 'iu')
+
+/** The shell a model command is written for: the bash tool's, or PowerShell's on Windows. */
+export type ShellDialect = 'bash' | 'pwsh'
+
 /** Separators that start a new command. */
 const SEPARATORS = new Set([';', '&', '|', '&&', '||', '(', ')', '\n'])
 
@@ -59,11 +73,13 @@ interface Token {
 }
 
 /**
- * Split a bash command into words, separators, and redirections, honouring quotes and backslashes.
- * @param command - the bash command.
+ * Split a shell command into words, separators, and redirections, honouring quotes, and backslashes in
+ * bash; in PowerShell a backslash is a path separator, not an escape.
+ * @param command - the command.
+ * @param dialect - the shell it is written for.
  * @returns the tokens.
  */
-export function tokenize(command: string): Token[] {
+export function tokenize(command: string, dialect: ShellDialect = 'bash'): Token[] {
   const tokens: Token[] = []
   let word = ''
   let inWord = false
@@ -84,7 +100,7 @@ export function tokenize(command: string): Token[] {
   }
   for (let index = 0; index < command.length; index += 1) {
     const char = command.charAt(index)
-    if (char === '\\' && index + 1 < command.length) { word += command.charAt(index + 1); inWord = true; index += 1; continue }
+    if (char === '\\' && dialect === 'bash' && index + 1 < command.length) { word += command.charAt(index + 1); inWord = true; index += 1; continue }
     if (char === "'") {
       const close = command.indexOf("'", index + 1)
       const stop = close === -1 ? command.length : close
@@ -130,21 +146,27 @@ export function tokenize(command: string): Token[] {
 }
 
 /**
- * The invocations of a CLI in a bash command: each word in command position naming the CLI, by
+ * The invocations of a CLI in a shell command: each word in command position naming the CLI, by
  * name or by path, with the words after it up to the next separator. Command position is the first
  * word of a command, after any variable assignments and prefixes such as `sudo` or `env`; the CLI's
- * name elsewhere, as in `which dws`, is an argument. Redirections are not arguments.
- * @param command - the bash command.
+ * name elsewhere, as in `which dws`, is an argument. Redirections are not arguments. In PowerShell the
+ * name matches in any case and with a `.cmd`, `.bat`, or `.exe` extension, after `/` or `\\`.
+ * @param command - the command.
  * @param cli - the CLI's name, such as `lark-cli`.
+ * @param dialect - the shell the command is written for.
  * @returns each invocation's arguments, or `opaque` when the command hides how the CLI is called.
  */
-export function invocations(command: string, cli: string): readonly Token[][] | 'opaque' {
-  const named = (word: string): boolean => word === cli || word.endsWith(`/${cli}`)
-  // The name as a whole word: `dws` inside `kdws.txt` or `lark-cli` inside `lark-cli-free` is another word.
+export function invocations(command: string, cli: string, dialect: ShellDialect = 'bash'): readonly Token[][] | 'opaque' {
   const escaped = cli.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
-  if (!new RegExp(`(?:^|[^\\w.-])${escaped}(?![\\w.-])`, 'u').test(command)) return []
-  if (OPAQUE.test(command)) return 'opaque'
-  const tokens = tokenize(command)
+  const pwsh = dialect === 'pwsh'
+  const named = pwsh
+    ? (word: string): boolean => new RegExp(`(?:^|[\\\\/])${escaped}(?:\\.(?:cmd|bat|exe))?$`, 'iu').test(word)
+    : (word: string): boolean => word === cli || word.endsWith(`/${cli}`)
+  // The name as a whole word: `dws` inside `kdws.txt` or `lark-cli` inside `lark-cli-free` is another word.
+  const whole = pwsh ? `(?:^|[^\\w.-])${escaped}(?:\\.(?:cmd|bat|exe))?(?![\\w.-])` : `(?:^|[^\\w.-])${escaped}(?![\\w.-])`
+  if (!new RegExp(whole, pwsh ? 'iu' : 'u').test(command)) return []
+  if (OPAQUE.test(command) || (pwsh && PWSH_OPAQUE.test(command))) return 'opaque'
+  const tokens = tokenize(command, dialect)
   const found: Token[][] = []
   let args: Token[] | undefined
   let start = true
@@ -187,15 +209,18 @@ export function helpRiskReader(bin: string, env: NodeJS.ProcessEnv, assess: (hel
 }
 
 /**
- * Classify one CLI's calls in a bash command.
- * @param command - the bash command.
+ * Classify one CLI's calls in a shell command.
+ * @param command - the shell command.
  * @param cli - the CLI's name, such as `lark-cli`.
  * @param read - reads what the CLI states for a command.
  * @param readOnly - command words that only read, with whatever words follow, although the CLI states no risk for them.
+ * @param dialect - the shell the command is written for.
  * @returns the highest risk and each invocation.
  */
-export async function classify(command: string, cli: string, read: RiskReader, readOnly: readonly string[] = []): Promise<Classification> {
-  const found = invocations(command, cli)
+export async function classify(
+  command: string, cli: string, read: RiskReader, readOnly: readonly string[] = [], dialect: ShellDialect = 'bash',
+): Promise<Classification> {
+  const found = invocations(command, cli, dialect)
   if (found === 'opaque') return { risk: 'unknown', invocations: [{ command: command.trim(), risk: 'unknown', confirm: false }] }
   const classified: Invocation[] = []
   for (const args of found) {

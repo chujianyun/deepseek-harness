@@ -1,11 +1,12 @@
 /** Classifying a connector CLI's commands in a bash command by what the CLI states. */
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { assess as assessDws } from '../src/dingtalk.ts'
 import { assess } from '../src/lark.ts'
 import { classify, helpRiskReader, invocations, tokenize, type Risk } from '../src/risk.ts'
+import { standInCli } from './support.ts'
 
 const stated: Record<string, Risk> = { 'calendar +agenda': 'read', 'im +messages-send': 'write', 'drive +delete': 'high-risk-write' }
 const reader = vi.fn((words: readonly string[]) => {
@@ -59,6 +60,46 @@ describe('invocations', () => {
   )
 })
 
+describe('PowerShell commands', () => {
+  const words = (command: string) => tokenize(command, 'pwsh').filter(token => !token.separator).map(token => token.text)
+  const args = (command: string) => {
+    const found = invocations(command, 'lark-cli', 'pwsh')
+    return found === 'opaque' ? found : found.map(list => list.map(token => token.text))
+  }
+
+  it('keeps a backslash in a word, as a Windows path has it', () => {
+    expect(words('C:\\Users\\a\\lark-cli.cmd im +messages-send')).toEqual(['C:\\Users\\a\\lark-cli.cmd', 'im', '+messages-send'])
+    expect(tokenize('a\\b', 'bash').map(token => token.text)).toEqual(['ab'])
+  })
+
+  it('finds lark-cli by name in any case, with a .cmd, .bat, or .exe extension, by path, or after the call operator', () => {
+    expect(args("& 'C:\\Users\\a\\lark-cli.cmd' im +messages-send")).toEqual([['im', '+messages-send']])
+    expect(args('LARK-CLI.EXE calendar +agenda; .\\lark-cli.cmd drive +delete --yes')).toEqual([['calendar', '+agenda'], ['drive', '+delete', '--yes']])
+    expect(args('lark-cli.bat im +messages-send')).toEqual([['im', '+messages-send']])
+    expect(args('Get-Content lark-cli-notes.txt')).toEqual([])
+    // bash knows no such extension.
+    expect(invocations('lark-cli.cmd im +messages-send', 'lark-cli')).toEqual([])
+  })
+
+  it('reads a flag named like a cmdlet alias as an argument, and a call it cannot see through as opaque', () => {
+    expect(args('lark-cli calendar +agenda --start 2026-10-13')).toEqual([['calendar', '+agenda', '--start', '2026-10-13']])
+    for (const command of [
+      'iex "lark-cli im +messages-send"', 'Invoke-Expression "lark-cli im +messages-send"', 'Start-Process lark-cli im',
+      'start lark-cli im +messages-send', 'cmd /c lark-cli im +messages-send', 'pwsh -c "lark-cli im +messages-send"',
+      'lark-cli im +messages-send --data \'{"text":"hi"}\'', '& { lark-cli im +messages-send }', 'Get-Item x | % { lark-cli im }',
+      'lark-cli im +messages-send --text `"hi`"', '@(lark-cli im +messages-send)',
+    ]) {
+      expect(args(command), command).toBe('opaque')
+    }
+  })
+
+  it('classifies a PowerShell call as bash classifies the same words', async () => {
+    const reader = vi.fn(async (command: readonly string[]) => (command[0] === 'im' ? { risk: 'write', confirm: false } : { risk: 'read', confirm: false }) as const)
+    expect(await classify('.\\lark-cli.cmd im +messages-send --text hi', 'lark-cli', reader, [], 'pwsh'))
+      .toEqual({ risk: 'write', invocations: [{ command: 'im +messages-send', risk: 'write', confirm: false }] })
+  })
+})
+
 describe('classify', () => {
   it('takes the highest stated risk of the calls, reading only the command words before the first flag', async () => {
     expect(await classify('ls', 'lark-cli', reader)).toEqual({ risk: 'none', invocations: [] })
@@ -82,13 +123,12 @@ describe('classify', () => {
   })
 })
 
-describe.skipIf(process.platform === 'win32')('helpRiskReader', () => {
+describe('helpRiskReader', () => {
   it('parses the Risk line of --help, caches each command, and reads a command without one as unknown', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsh-risk-'))
     try {
-      const bin = join(dir, 'lark-cli')
-      await writeFile(bin, `#!/bin/sh\necho "$*" >> "${dir}/calls"\ncase "$1" in im) echo "Risk: write";; drive) echo "Risk: high-risk-write (confirm)";; *) echo "Usage";; esac\n`)
-      await chmod(bin, 0o755)
+      const calls = join(dir, 'calls').replaceAll('\\', '/')
+      const bin = await standInCli(dir, 'lark-cli', `#!/bin/sh\necho "$*" >> "${calls}"\ncase "$1" in im) echo "Risk: write";; drive) echo "Risk: high-risk-write (confirm)";; *) echo "Usage";; esac\n`)
       const read = helpRiskReader(bin, process.env, assess)
       expect(await read(['im', '+messages-send'])).toEqual({ risk: 'write', confirm: false })
       expect(await read(['im', '+messages-send'])).toEqual({ risk: 'write', confirm: false })

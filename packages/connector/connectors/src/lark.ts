@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { LARK_CLI } from './catalog.ts'
 import {
   confirmLines, failureMessage, field, json, LoginError, quote, run,
-  type Health, type LoginStep, type Run, type TenantCli, type WrapperMode,
+  type Health, type LoginStep, type Run, type TenantCli, type WindowsWrapper, type WrapperMode,
 } from './cli.ts'
 import type { ConnectorDriver, DriverSkill, SkillLocation } from './driver.ts'
 import type { Assessment } from './risk.ts'
@@ -21,8 +21,23 @@ const CHECK_TIMEOUT_MS = 30_000
 /** Longest wait for a QR code to be drawn. */
 const QR_TIMEOUT_MS = 10_000
 
-/** Variables lark-cli reads that would point an Agent run elsewhere (`config init` refuses inside one). */
-const FOREIGN = /^(?:LARKSUITE_CLI_|OPENCLAW_HOME$|HERMES_HOME$)/u
+/**
+ * Variables of the caller lark-cli must not see: its own, which name another app, profile, or
+ * credentials, and those of OpenClaw, Hermes, and Lark Channel, which move its configuration into
+ * another workspace directory (`config init` refuses inside one).
+ */
+const FOREIGN_PREFIXES = ['LARKSUITE_CLI_', 'LARK_CLI_', 'LARK_CHANNEL', 'OPENCLAW_', 'HERMES_'] as const
+const FOREIGN_SOURCE = `^(?:${FOREIGN_PREFIXES.join('|')})`
+const FOREIGN = new RegExp(FOREIGN_SOURCE, 'iu')
+
+/** Commands the model may not run: `update` installs a global npm package and replaces the pinned CLI. */
+const REFUSED = [{ words: ['update'], message: 'DSH: lark-cli update is not available here; DSH installs and updates lark-cli itself.' }] as const
+
+/** The refusal of a script whose tenant is not connected. */
+const NOT_CONNECTED = 'DSH: the Feishu connector is not connected for this company. Ask the user to connect Feishu on the DSH Connectors page (连接器), then try again.'
+
+/** What a script says after lark-cli fails, with `{status}` for its exit status. */
+const FAILURE_HINT = 'DSH: lark-cli exited with status {status}. If signing in to Feishu or a missing permission is the cause, ask the user to check the Feishu connector on the DSH Connectors page (连接器).'
 
 /**
  * The environment of a run for one tenant.
@@ -271,25 +286,35 @@ export async function readSkill(cli: TenantCli, name: string, signal: AbortSigna
 export function wrapperScript(cli: TenantCli, mode: WrapperMode, logs: string): string {
   const lines = ['#!/bin/sh', '# Written by DSH for one company\'s Feishu connector; DSH rewrites it when the connection changes.']
   if (mode === 'not-connected') {
-    lines.push(
-      'echo "DSH: the Feishu connector is not connected for this company. Ask the user to connect Feishu on the DSH Connectors page (连接器), then try again." >&2',
-      'exit 1',
-    )
+    lines.push(`echo ${quote(NOT_CONNECTED)} >&2`, 'exit 1')
     return `${lines.join('\n')}\n`
   }
   lines.push(
-    'for name in $(env | sed -n \'s/^\\(LARKSUITE_CLI_[A-Za-z0-9_]*\\)=.*/\\1/p\'); do unset "$name"; done',
-    'unset OPENCLAW_HOME HERMES_HOME',
+    ...REFUSED.map(item => `case " $* " in " ${item.words.join(' ')} "*) echo ${quote(item.message)} >&2; exit 2 ;; esac`),
+    `for name in $(env | sed -nE 's/^((${FOREIGN_PREFIXES.join('|')})[A-Za-z0-9_]*)=.*/\\1/p'); do unset "$name"; done`,
     ...Object.entries(tenantVariables(cli, logs)).map(([name, value]) => `export ${name}=${quote(value)}`),
     ...confirmLines('lark-cli', ['--yes']),
     `${quote(cli.bin)} "$@"`,
     'status=$?',
-    'if [ "$status" -ne 0 ]; then',
-    '  echo "DSH: lark-cli exited with status $status. If signing in to Feishu or a missing permission is the cause, ask the user to check the Feishu connector on the DSH Connectors page (连接器)." >&2',
-    'fi',
+    `if [ "$status" -ne 0 ]; then echo ${quote(FAILURE_HINT)} | sed "s/{status}/$status/" >&2; fi`,
     'exit $status',
   )
   return `${lines.join('\n')}\n`
+}
+
+/**
+ * The Windows script of a tenant's model shell: the same as {@link wrapperScript}, read by the shared
+ * runner beside `lark-cli.cmd`.
+ * @param cli - the tenant's lark-cli.
+ * @param mode - what the script does.
+ * @param logs - the log directory of runs through the script.
+ * @returns the script's settings.
+ */
+export function windowsWrapper(cli: TenantCli, mode: WrapperMode, logs: string): WindowsWrapper {
+  return {
+    mode, cli: 'lark-cli', bin: cli.bin, env: tenantVariables(cli, logs), foreign: FOREIGN_SOURCE, yes: ['--yes'],
+    refuse: REFUSED, failureHint: FAILURE_HINT, ...mode === 'not-connected' ? { message: NOT_CONNECTED } : {},
+  }
 }
 
 /**
@@ -317,6 +342,7 @@ export const feishu: ConnectorDriver = {
   qrCode,
   removeTenant,
   wrapperScript,
+  windowsWrapper,
   listSkills: (location, signal) => listSkills(location.cli, signal),
   readSkill: (location, name, signal) => readSkill(location.cli, name, signal),
   skillResources: (_location: SkillLocation, name) => ({ kind: 'opaque', description: `files of this Skill are read with \`lark-cli skills read ${name} <path>\`` }),

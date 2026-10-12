@@ -155,3 +155,101 @@ export async function writeWrapper(dir: string, name: string, script: string): P
   await chmod(staging, 0o755)
   await rename(staging, join(dir, name))
 }
+
+/** What a tenant's Windows `<cli>.cmd` does: the model shell's script there, read by {@link WINDOWS_RUNNER}. */
+export interface WindowsWrapper {
+  /** `run` runs the CLI; `not-connected` refuses with `message`. */
+  readonly mode: WrapperMode
+  /** The refusal of a `not-connected` wrapper. */
+  readonly message?: string
+  /** The CLI's name, which approved commands begin with. */
+  readonly cli: string
+  /** The installed CLI executable. */
+  readonly bin: string
+  /** The tenant's variables, set over the caller's. */
+  readonly env: Readonly<Record<string, string>>
+  /** Variables of the caller the CLI must not see, as a case-insensitive regular expression source. */
+  readonly foreign: string
+  /** The CLI's confirm flags; the first is added to a command the user approved for this call. */
+  readonly yes: readonly [string, ...string[]]
+  /** Commands the model may not run, by their leading words, each with what to say instead. */
+  readonly refuse: readonly { readonly words: readonly string[]; readonly message: string }[]
+  /** What to say after the CLI fails, with `{status}` for its exit status. */
+  readonly failureHint: string
+}
+
+/**
+ * The Node runner every Windows connector script shares; it reads `<cli>.json` beside it (a
+ * {@link WindowsWrapper}) and behaves as the POSIX script does.
+ */
+export const WINDOWS_RUNNER = `// Written by DSH for a company's connector; DSH rewrites the JSON beside it when the connection changes.
+import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { basename } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const name = basename(process.argv[1] ?? '', '.mjs')
+const wrapper = JSON.parse(readFileSync(fileURLToPath(new URL(\`./\${name}.json\`, import.meta.url)), 'utf8'))
+const args = process.argv.slice(2)
+if (wrapper.mode !== 'run') {
+  process.stderr.write(\`\${wrapper.message}\\n\`)
+  process.exit(1)
+}
+const refused = wrapper.refuse.find(item => item.words.every((word, index) => args[index] === word))
+if (refused !== undefined) {
+  process.stderr.write(\`\${refused.message}\\n\`)
+  process.exit(2)
+}
+const foreign = new RegExp(wrapper.foreign, 'iu')
+const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
+  !foreign.test(key) && !/^(?:ELECTRON_RUN_AS_NODE|DSH_CONNECTOR_NODE)$/iu.test(key)))
+Object.assign(env, wrapper.env)
+// A command the user approved for this call runs confirmed.
+if (!args.some(arg => wrapper.yes.includes(arg))) {
+  const line = [wrapper.cli, ...args].join(' ') + ' '
+  const approved = (process.env.DSH_CONNECTOR_CONFIRMED ?? '').split('\\n').filter(Boolean)
+  if (approved.some(command => line.startsWith(\`\${command} \`))) args.push(wrapper.yes[0])
+}
+const run = spawnSync(wrapper.bin, args, { stdio: 'inherit', env, windowsHide: true })
+const status = run.error === undefined ? run.status ?? 1 : 1
+if (run.error !== undefined) process.stderr.write(\`\${wrapper.cli}: \${run.error.message}\\n\`)
+if (status !== 0) process.stderr.write(\`\${wrapper.failureHint.replace('{status}', String(status))}\\n\`)
+process.exit(status)
+`
+
+/**
+ * The Windows `<cli>.cmd` the model's PowerShell finds on PATH. It runs {@link WINDOWS_RUNNER} with the
+ * Node each shell call names in `DSH_CONNECTOR_NODE`; ELECTRON_RUN_AS_NODE lets DSH's Electron run it as Node.
+ * @param name - the CLI's name.
+ * @returns the batch file.
+ */
+export function windowsCommand(name: string): string {
+  return [
+    '@echo off',
+    'setlocal',
+    'if not defined DSH_CONNECTOR_NODE (',
+    `  1>&2 echo ${name}: this connector runs only in a DSH shell call.`,
+    '  exit /b 2',
+    ')',
+    'set ELECTRON_RUN_AS_NODE=1',
+    `"%DSH_CONNECTOR_NODE%" "%~dp0${name}.mjs" %*`,
+    'exit /b %ERRORLEVEL%',
+    '',
+  ].join('\r\n')
+}
+
+/**
+ * Write a tenant's Windows script into `dir`: `<name>.cmd`, the shared runner as `<name>.mjs`, and
+ * the wrapper as `<name>.json`, the JSON last and in one rename, so a call reads either wrapper whole.
+ * @param dir - the directory put on the model shell's PATH.
+ * @param name - the CLI's name.
+ * @param wrapper - what the script does.
+ */
+export async function writeWindowsWrapper(dir: string, name: string, wrapper: WindowsWrapper): Promise<void> {
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, `${name}.cmd`), windowsCommand(name))
+  await writeFile(join(dir, `${name}.mjs`), WINDOWS_RUNNER)
+  const staging = join(dir, `.${name}.json.writing`)
+  await writeFile(staging, `${JSON.stringify(wrapper)}\n`)
+  await rename(staging, join(dir, `${name}.json`))
+}

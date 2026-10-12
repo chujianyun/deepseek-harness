@@ -136,7 +136,7 @@ async function boot(home: string, feishu?: CliSpec, options: BootOptions = {}) {
 
 const feishu = (state: ConnectorsState) => state.connectors.find(connector => connector.id === 'feishu')!
 const dingtalkView = (state: ConnectorsState) => state.connectors.find(connector => connector.id === 'dingtalk')!
-const runs = it.skipIf(process.platform === 'win32')
+const runs = it
 
 describe('connectors', () => {
   it('publishes the namespace, and Feishu and DingTalk with their pinned CLIs', async () => {

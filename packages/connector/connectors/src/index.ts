@@ -46,12 +46,12 @@ import { bytesOnDisk } from '@deepseek-ai/dsh-verified-download'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { DWS_CLI, LARK_CLI } from './catalog.ts'
-import { LoginError, writeWrapper, type Health, type LoginStep, type TenantCli, type WrapperMode } from './cli.ts'
+import { LoginError, writeWindowsWrapper, writeWrapper, type Health, type LoginStep, type TenantCli, type WrapperMode } from './cli.ts'
 import { dingtalk } from './dingtalk.ts'
 import type { ConnectorDriver } from './driver.ts'
 import { cliInstalled, executableName, installCli, platformKey, type InstallError } from './install.ts'
 import { feishu as feishuDriver } from './lark.ts'
-import { classify, helpRiskReader, invocations, type Classification, type RiskReader } from './risk.ts'
+import { classify, helpRiskReader, invocations, type Classification, type RiskReader, type ShellDialect } from './risk.ts'
 import { ConnectorSkillProvider, type ConnectorSkill, type SkillSource } from './skills.ts'
 import type {
   ConnectorId, ConnectorInstallError, ConnectorLoginError, ConnectorLoginView, ConnectorsState, ConnectorStatus, ConnectorView,
@@ -151,18 +151,24 @@ export const Config = Schema.object({
 
 /** The variable that names, one per line, the high-risk commands of a shell call the user approved, such as `drive +delete`. */
 const CONFIRMED_KEY = 'DSH_CONNECTOR_CONFIRMED'
+/** The variable naming the Node that runs a connector's Windows script (`<cli>.cmd`). */
+const NODE_KEY = 'DSH_CONNECTOR_NODE'
 
 /** Longest command text an approval names. */
 const APPROVAL_COMMAND_CHARS = 200
 
+/** The model shell tools by name, with the shell their commands are written for. */
+const SHELL_TOOLS: Readonly<Record<string, ShellDialect>> = { bash: 'bash', pwsh: 'pwsh' }
+
 /**
- * The command of a bash call.
+ * The command of a model shell call: bash, or PowerShell on Windows.
  * @param exec - a tool call.
- * @returns its command, or undefined for another tool.
+ * @returns its command and shell, or undefined for another tool.
  */
-function bashCommand(exec: Pick<ToolExecution, 'name' | 'arguments'>): string | undefined {
+function shellCommand(exec: Pick<ToolExecution, 'name' | 'arguments'>): { command: string; dialect: ShellDialect } | undefined {
   const command = (exec.arguments as { command?: unknown }).command
-  return exec.name === 'bash' && typeof command === 'string' ? command : undefined
+  const dialect = Object.hasOwn(SHELL_TOOLS, exec.name) ? SHELL_TOOLS[exec.name] : undefined
+  return dialect !== undefined && typeof command === 'string' ? { command, dialect } : undefined
 }
 
 /** The agent of a model shell call. */
@@ -378,27 +384,27 @@ export class ConnectorsService extends TypertRemoteService {
       return entry === undefined || this.allowed(agent, entry.id)
     }), 'connectors: session Skills')
     ctx.on('loader/volatile-update', () => { this.changed() })
-    // A bash call of a connector's CLI that fails may mean the sign-in broke: check it.
+    // A shell call of a connector's CLI that fails may mean the sign-in broke: check it.
     ctx.on('tools/result', (exec, result) => {
       this.confirmed.delete(exec.callId)
-      const command = bashCommand(exec)
-      if (command === undefined) return
+      const shell = shellCommand(exec)
+      if (shell === undefined) return
       const exitCode = result.isError ? null : (result.value as { exitCode?: unknown }).exitCode
       if (exitCode === 0) return
       for (const entry of this.installables.values()) {
-        const found = invocations(command, entry.spec.binary)
+        const found = invocations(shell.command, entry.spec.binary, shell.dialect)
         if (found === 'opaque' || found.length > 0) this.failed(entry)
       }
     })
-    // A bash call that would write through a connected connector waits for the user's approval.
+    // A shell call (bash, or PowerShell on Windows) that would write through a connected connector waits for the user's approval.
     ctx.on('tools/pre-execute', async (exec, next) => {
       const decision = await next()
-      const command = bashCommand(exec)
-      if (decision.kind !== 'allow' || command === undefined) return decision
+      const shell = shellCommand(exec)
+      if (decision.kind !== 'allow' || shell === undefined) return decision
       // A connector the session may not use is refused before anything runs, even through another copy of its CLI.
       for (const entry of this.installables.values()) {
         if (this.allowed(exec.agent, entry.id)) continue
-        const found = invocations(command, entry.spec.binary)
+        const found = invocations(shell.command, entry.spec.binary, shell.dialect)
         if (found !== 'opaque' && found.length > 0) {
           return { kind: 'deny', reason: `The ${entry.driver.name.en} connector (${entry.spec.binary}) is not available in this session.` }
         }
@@ -407,7 +413,7 @@ export class ConnectorsService extends TypertRemoteService {
       for (const entry of this.installables.values()) {
         if (this.exposure(entry)?.mode !== 'run') continue
         const cli = entry.spec.binary
-        const classification = await classify(command, cli, this.riskReader(entry), entry.driver.readOnly)
+        const classification = await classify(shell.command, cli, this.riskReader(entry), entry.driver.readOnly, shell.dialect)
         parts.push({ id: entry.id, driver: entry.driver, cli, classification })
       }
       if (parts.every(part => part.classification.risk === 'none' || part.classification.risk === 'read')) return decision
@@ -432,10 +438,17 @@ export class ConnectorsService extends TypertRemoteService {
     })
     ctx.shellEnv.register({
       name: 'connectors',
-      variables: { [CONFIRMED_KEY]: { description: 'The high-risk connector commands, one per line, the user approved for this shell call.' } },
-      resolve: (exec): Readonly<Partial<Record<typeof CONFIRMED_KEY, string>>> => {
+      variables: {
+        [CONFIRMED_KEY]: { description: 'The high-risk connector commands, one per line, the user approved for this shell call.' },
+        [NODE_KEY]: { description: 'The Node that runs a connector\'s CLI script on Windows.' },
+      },
+      resolve: (exec): Readonly<Partial<Record<typeof CONFIRMED_KEY | typeof NODE_KEY, string>>> => {
         const commands = this.confirmed.get(exec.callId)
-        return commands === undefined ? {} : { [CONFIRMED_KEY]: commands }
+        return {
+          ...commands === undefined ? {} : { [CONFIRMED_KEY]: commands },
+          /* v8 ignore next -- one arm per platform: only the Windows lane runs `<cli>.cmd`, which needs the Node */
+          ...process.platform === 'win32' ? { [NODE_KEY]: process.execPath } : {},
+        }
       },
     })
     ctx.effect(() => async () => {
@@ -838,8 +851,18 @@ export class ConnectorsService extends TypertRemoteService {
       entry.wrapper = wrapper
       if (exposure === undefined) continue
       const logs = join(tmpdir(), 'dsh-connectors', entry.id, exposure.tenant, 'logs')
-      const script = entry.driver.wrapperScript(this.cliAt(entry, exposure.tenant), exposure.mode, logs)
-      this.writes = this.writes.then(() => writeWrapper(join(entry.root, 'bin', exposure.tenant), entry.spec.binary, script))
+      const dir = join(entry.root, 'bin', exposure.tenant)
+      const cli = this.cliAt(entry, exposure.tenant)
+      // Windows runs the model's commands in PowerShell, which finds `<cli>.cmd`; a connector without a
+      // Windows script gives it none.
+      /* v8 ignore start -- one arm per platform: the Windows lane writes `<cli>.cmd`, the others the POSIX script. */
+      const windows = process.platform === 'win32' ? entry.driver.windowsWrapper?.(cli, exposure.mode, logs) : undefined
+      if (process.platform === 'win32' && windows === undefined) continue
+      const write = windows === undefined
+        ? () => writeWrapper(dir, entry.spec.binary, entry.driver.wrapperScript(cli, exposure.mode, logs))
+        : () => writeWindowsWrapper(dir, entry.spec.binary, windows)
+      /* v8 ignore stop */
+      this.writes = this.writes.then(write)
         .catch((error: unknown) => { console.info('[connectors] could not write the CLI script', { connector: entry.id, error: String(error) }) })
     }
     // The model's Skills name the CLI; they change once the scripts that run it are in place.
