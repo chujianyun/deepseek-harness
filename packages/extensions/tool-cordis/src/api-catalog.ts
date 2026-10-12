@@ -990,7 +990,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: '@Remote async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState>',
         description: 'Switch a connector on or off for the current tenant, persisting the profile\'s list. A switched-off connector stays signed in, but the model gets neither its Skills nor its CLI.',
         parameters: [{ name: 'id', description: 'the connector.' }, { name: 'enabled', description: 'whether the model may use it.' }],
-        returns: 'the state once the setting is saved.',
+        returns: 'the state once the setting is saved and the model\'s script and Skills follow it.',
         throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
       },
       {
