@@ -2,7 +2,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { execFile } from 'node:child_process'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -1255,10 +1255,10 @@ describe('buyer accounts and risk protection', () => {
     const check = (Reflect.get(env.service, 'check') as (entry: unknown) => Promise<unknown>).bind(env.service)
     const rechecks = vi.spyOn(env.service as never, 'recheck')
     const bothReported = Promise.withResolvers<undefined>()
-    const checks = vi.spyOn(env.service as never, 'check').mockImplementation((async (entry: unknown) => {
+    const checks = (vi.spyOn(env.service as never, 'check') as MockInstance<(entry: unknown) => Promise<unknown>>).mockImplementation(async (entry) => {
       await bothReported.promise
       return check(entry)
-    }) as never)
+    })
     const reports = Promise.all([
       runCommand(env, varsOf(env, exec), 'signed-out', accountId), runCommand(env, varsOf(env, exec), 'signed-out', accountId),
     ])
