@@ -38,6 +38,11 @@ export interface AssistantPackageTask {
   readonly connectors: readonly string[]
   /** Permission preset of the task's Session; absent keeps the default. */
   readonly permission?: string
+  /**
+   * Operations its scheduled runs may run without asking, as a command's first words such as
+   * `lark-cli im +messages-send`; absent declares none.
+   */
+  readonly operations?: readonly string[]
 }
 
 /** A package's `agent.json`. Absent `skills` or `connectors` allows every one. */

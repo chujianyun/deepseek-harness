@@ -5,6 +5,7 @@
  */
 import { createHash } from 'node:crypto'
 import { strFromU8, unzipSync } from 'fflate'
+import { readOperations } from '@deepseek-ai/dsh-automation-tasks/operations'
 import { z } from 'zod'
 import type { AssistantPackageManifest } from './types.ts'
 
@@ -48,6 +49,8 @@ const task = z.object({
   }, 'timeZone is not an IANA time zone'),
   connectors: z.array(key),
   permission: key.optional(),
+  // The automation task reads the declaration again when the user switches the task on.
+  operations: z.array(z.string()).optional().refine(operations => operations === undefined || 'operations' in readOperations(operations), 'operations must be plain command words'),
 })
 
 /** Runtime schema of `agent.json`; an optional field absent from the JSON stays absent. */
@@ -67,7 +70,9 @@ export const manifestSchema: z.ZodType<AssistantPackageManifest> = z.object({
   ...(preset === undefined ? {} : { preset }),
   ...(skills === undefined ? {} : { skills }),
   ...(connectors === undefined ? {} : { connectors }),
-  tasks: tasks.map(({ permission, ...fields }) => ({ ...fields, ...(permission === undefined ? {} : { permission }) })),
+  tasks: tasks.map(({ permission, operations, ...fields }) => ({
+    ...fields, ...(permission === undefined ? {} : { permission }), ...(operations === undefined ? {} : { operations }),
+  })),
 }))
 
 /** One listed package as the user center sends it. */

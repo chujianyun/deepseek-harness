@@ -8,7 +8,8 @@
  * answers from the tenant's configuration unless `control/status.json` overrides it; errors go to
  * stderr as the real CLI's do; `skills list` and `skills read lark-calendar` serve two Skills;
  * `calendar +agenda` succeeds and `calendar +fail` fails; `--help` states `calendar +agenda` read,
- * `im +messages-send` write, and `drive +delete` high-risk-write, which runs only with `--yes`; every call is logged to `control/calls`.
+ * `im +messages-send` write, and `drive +delete` high-risk-write, which runs only with `--yes`; `sheets +write` states no
+ * risk, so its risk is unknown, and succeeds; every call is logged to `control/calls`.
  */
 export const FAKE_LARK_CLI = String.raw`#!/bin/sh
 C="$(cd "$(dirname "$0")" && pwd)/../control"
@@ -29,6 +30,8 @@ esac
 case "$1 $2" in
   "im +messages-send")
     echo '{"ok":true,"data":{"message_id":"om_sent"}}' ;;
+  "sheets +write")
+    echo '{"ok":true,"data":{"updated_rows":1}}' ;;
   "drive +delete")
     case " $* " in *" --yes "*) echo '{"ok":true,"data":{"deleted":true}}' ;; *) echo '{"ok":false,"error":{"message":"high-risk-write requires --yes"}}' >&2; exit 2 ;; esac ;;
   "--version ") echo "lark-cli version 9.9.9" ;;

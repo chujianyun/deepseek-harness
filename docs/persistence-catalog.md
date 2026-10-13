@@ -29,6 +29,8 @@ The [format references](persistence-changes/historical-formats/README.md) cover 
 | `event:assistant/instructions` | event | `d670776895699c9f1c0744f7215f125a489a7a916d6fe9b53ec6e519cb49b215` | [`{ type: "assistant/instructions" }`](#persistence-type-sha256-d670776895699c9f1c0744f7215f125a489a7a916d6fe9b53ec6e519cb49b215) |
 | `event:assistant/message` | event | `1033093edd0db80ff410e00830b523405e00bb0c7684948e531ff65095799625` | [`{ type: "assistant/message" }`](#persistence-type-sha256-1033093edd0db80ff410e00830b523405e00bb0c7684948e531ff65095799625) |
 | `event:assistant/selected` | event | `14f2b844c6a6e201db115093edccf48265f1a4704f817762584babe24ef47379` | [`{ type: "assistant/selected" }`](#persistence-type-sha256-14f2b844c6a6e201db115093edccf48265f1a4704f817762584babe24ef47379) |
+| `event:automation-tasks/operations` | event | `d60ead507685260a63b9f19a000299cf336786adf7c00e6622ddfcf9c68c0b18` | [`{ type: "automation-tasks/operations" }`](#persistence-type-sha256-d60ead507685260a63b9f19a000299cf336786adf7c00e6622ddfcf9c68c0b18) |
+| `event:automation-tasks/unattended` | event | `1a6796bd36dcb998e3c06d848d57d7bdd05c122532b656118232e55bcfcde125` | [`{ type: "automation-tasks/unattended" }`](#persistence-type-sha256-1a6796bd36dcb998e3c06d848d57d7bdd05c122532b656118232e55bcfcde125) |
 | `event:command/done` | event | `15196447222782e773eb943c92b18316ce96b9af0f0cfddb6e57ba8274ecc5ff` | [`{ type: "command/done" }`](#persistence-type-sha256-15196447222782e773eb943c92b18316ce96b9af0f0cfddb6e57ba8274ecc5ff) |
 | `event:command/run` | event | `37184378c6439257d105c4e2022d80fc9c3a3f7c7f6ac661b00bc9f18d871006` | [`{ type: "command/run" }`](#persistence-type-sha256-37184378c6439257d105c4e2022d80fc9c3a3f7c7f6ac661b00bc9f18d871006) |
 | `event:compaction/end` | event | `b0127044ab31a702bddfd785d345f5abd7a70876746e895ce443afa3e60ddf2d` | [`{ type: "compaction/end" }`](#persistence-type-sha256-b0127044ab31a702bddfd785d345f5abd7a70876746e895ce443afa3e60ddf2d) |
@@ -346,6 +348,50 @@ Source: [`packages/core/session/src/types.ts:341`](../packages/core/session/src/
 ```
 
 Source: [`packages/assistant/assistants/src/types.ts:192`](../packages/assistant/assistants/src/types.ts)
+
+### `automation-tasks/*`
+
+<a id="automation-tasksoperations--log-only"></a>
+
+#### `automation-tasks/operations` — log-only
+
+```ts persistence-catalog
+/**
+ * The operations the automation task declares for its unattended runs, as the first words of a
+ * command such as `lark-cli im +messages-send`; replaces the earlier declaration, and an empty
+ * list withdraws it. Log-only, never in the model transcript.
+ */
+'automation-tasks/operations': {
+  operations: string[]
+}
+```
+
+Source: [`packages/schedule/automation-tasks/src/types.ts:21`](../packages/schedule/automation-tasks/src/types.ts)
+
+<a id="automation-tasksunattended--log-only"></a>
+
+#### `automation-tasks/unattended` — log-only
+
+```ts persistence-catalog
+/**
+ * A call in a scheduled run that would have asked for approval, answered without anyone: run,
+ * because each of its commands is a declared operation (`operations` lists them), or refused.
+ * `turn` is the scheduled run's turn; `command` is the shell command, cut to 500 characters, or
+ * the tool's name for another tool.
+ * Log-only, never in the model transcript; the refusal reaches the model as the call's result.
+ */
+'automation-tasks/unattended': {
+  callId: ToolCallId
+  turn: number
+  command: string
+  allowed: boolean
+  operations: string[]
+}
+```
+
+Types: [ToolCallId](subsystems/core.md)
+
+Source: [`packages/schedule/automation-tasks/src/types.ts:31`](../packages/schedule/automation-tasks/src/types.ts)
 
 ### `command/*`
 
@@ -1543,6 +1589,22 @@ SHA-256: `78620d166bb2eb0d04e4e138f86999f08bc685a5646415a551ddc50aa75ebdf1`
 SHA-256: `17aae616ef020b8b9f011ec398ec935450fb06d3e2a0722c456f63aeaf5ff728`
 
 `"at"`
+
+<a id="persistence-type-sha256-db3911a0f56d92b61eb3ae6475356679888c75e959099ce10974a3cafa79f5fe"></a>
+
+### `"automation-tasks/operations"`
+
+SHA-256: `db3911a0f56d92b61eb3ae6475356679888c75e959099ce10974a3cafa79f5fe`
+
+`"automation-tasks/operations"`
+
+<a id="persistence-type-sha256-fcd7b84bc8e2dfbf987878644fc361083db365dc0fe465f6cdf184ff44dbc341"></a>
+
+### `"automation-tasks/unattended"`
+
+SHA-256: `fcd7b84bc8e2dfbf987878644fc361083db365dc0fe465f6cdf184ff44dbc341`
+
+`"automation-tasks/unattended"`
 
 <a id="persistence-type-sha256-1e346446e183ee76f48d7994c97ecb302bddc682abb60b8a10ea0bb26223a69c"></a>
 
@@ -5683,6 +5745,22 @@ Sources: [`packages/preset/agent-preset-registry/src/session.ts:28`](../packages
 |---|---|---|
 | `agentPreset` | required | `string` |
 
+<a id="persistence-type-sha256-649bd3586ab7136afc82d66e78674a7fadc71190792d2ff39b9bd90bd48c76e3"></a>
+
+### `{ allowed, callId, command, operations, … }`
+
+SHA-256: `649bd3586ab7136afc82d66e78674a7fadc71190792d2ff39b9bd90bd48c76e3`
+
+Sources: [`packages/schedule/automation-tasks/src/types.ts:31`](../packages/schedule/automation-tasks/src/types.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `allowed` | required | `boolean` |
+| `callId` | required | `string` |
+| `command` | required | `string` |
+| `operations` | required | [`string[]`](#persistence-type-sha256-93c33d9687613293f8c95d46c4d922fe9ceae83b84c384beff5c3315abe005f2) |
+| `turn` | required | `number` |
+
 <a id="persistence-type-sha256-0d47a8f3d847243c4488e755ad4cab7a04ac5d4621b9c81865524cf3f4d8536f"></a>
 
 ### `{ allowedModels }`
@@ -7677,6 +7755,18 @@ Sources: [`packages/sandbox/sandbox-policy/src/session-mode.ts:33`](../packages/
 | `mode` | required | [`SandboxMode`](#persistence-type-sha256-fab2bb09bc5e3b9db0685e8f5500b029af1a2b33e70bc703c1d5d0f596fbc1fd) |
 | `source` | optional | `"delegation"` |
 
+<a id="persistence-type-sha256-af5057d29d842290d0578e435d4cd6fdd1b6de31336b893f6139e4c54a68c175"></a>
+
+### `{ operations }`
+
+SHA-256: `af5057d29d842290d0578e435d4cd6fdd1b6de31336b893f6139e4c54a68c175`
+
+Sources: [`packages/schedule/automation-tasks/src/types.ts:21`](../packages/schedule/automation-tasks/src/types.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `operations` | required | [`string[]`](#persistence-type-sha256-93c33d9687613293f8c95d46c4d922fe9ceae83b84c384beff5c3315abe005f2) |
+
 <a id="persistence-type-sha256-11f70b595aa76897fc4e25a352bfa718c659f44b799e5aa14e84e5a38fe72912"></a>
 
 ### `{ policy, source? }`
@@ -7989,6 +8079,38 @@ SHA-256: `14f2b844c6a6e201db115093edccf48265f1a4704f817762584babe24ef47379`
 | `seq` | required | `number` |
 | `time` | required | `number` |
 | `type` | required | `"assistant/selected"` |
+
+<a id="persistence-type-sha256-d60ead507685260a63b9f19a000299cf336786adf7c00e6622ddfcf9c68c0b18"></a>
+
+<a id="persistence-type-eventautomation-tasksoperations"></a>
+
+### `{ type: "automation-tasks/operations" }`
+
+SHA-256: `d60ead507685260a63b9f19a000299cf336786adf7c00e6622ddfcf9c68c0b18`
+
+| Property | Presence | Type |
+|---|---|---|
+| `data` | required | [`{ operations }`](#persistence-type-sha256-af5057d29d842290d0578e435d4cd6fdd1b6de31336b893f6139e4c54a68c175) |
+| `ignorable` | optional | `true` |
+| `seq` | required | `number` |
+| `time` | required | `number` |
+| `type` | required | `"automation-tasks/operations"` |
+
+<a id="persistence-type-sha256-1a6796bd36dcb998e3c06d848d57d7bdd05c122532b656118232e55bcfcde125"></a>
+
+<a id="persistence-type-eventautomation-tasksunattended"></a>
+
+### `{ type: "automation-tasks/unattended" }`
+
+SHA-256: `1a6796bd36dcb998e3c06d848d57d7bdd05c122532b656118232e55bcfcde125`
+
+| Property | Presence | Type |
+|---|---|---|
+| `data` | required | [`{ allowed, callId, command, operations, … }`](#persistence-type-sha256-649bd3586ab7136afc82d66e78674a7fadc71190792d2ff39b9bd90bd48c76e3) |
+| `ignorable` | optional | `true` |
+| `seq` | required | `number` |
+| `time` | required | `number` |
+| `type` | required | `"automation-tasks/unattended"` |
 
 <a id="persistence-type-sha256-d4b739491689cc6bb13d07ffac1a32239875abda364c0d5edd8f74faf5e9c00d"></a>
 

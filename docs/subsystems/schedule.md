@@ -463,6 +463,8 @@ Plugin-sourced `followup()` synchronously appends the message to the Session inb
 
 A failure to resolve the Session, enqueue the message, or confirm persistence leaves the task stored and reports a Host warning. A later management change or Host restart retries it. Session persistence and the task put are not atomic across stores. A crash after inbox persistence but before the task put can repeat delivery; the receipt does not close this gap. Schedule provides no model-result acknowledgement, execution cancellation, or external notification channel.
 
+A delivered instruction opens a turn nobody watches. In the Session of an [automation task](../../packages/schedule/automation-tasks/README.md), that turn answers approvals itself: a call that would ask runs when every command in it is one of the task's declared operations, and is refused otherwise instead of waiting; each answer is logged as `automation-tasks/unattended`, and the turn ends with a record of them.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -480,9 +482,10 @@ Host owner of the `automationTasks` Remote namespace.
 ```ts cordis-catalog
 /**
  * Create one automation task: a new Session in the workspace, named after the task, with the
- * requested assistant, model, permission preset, and connector grant, then the schedule bound to
- * it. The assistant, connectors, and permission presets are optional services; asking for one a
- * deployment lacks is `automation-tasks/unavailable`. A step's refusal passes through unchanged,
+ * requested assistant, model, permission preset, connector grant, and declared operations
+ * (`automation-tasks/operations`), then the schedule bound to it. The assistant, connectors, and
+ * permission presets are optional services; asking for one a deployment lacks is
+ * `automation-tasks/unavailable`. A step's refusal passes through unchanged,
  * except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an
  * unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.
  * @param request - the task as the form submits it.

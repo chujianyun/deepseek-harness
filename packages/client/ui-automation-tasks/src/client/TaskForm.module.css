@@ -202,6 +202,28 @@
   color-scheme: light dark;
 }
 
+.operations {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 72px;
+  padding: 8px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  resize: vertical;
+  color-scheme: light dark;
+}
+
+.operations:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 1px;
+}
+
 .connectors {
   display: flex;
   flex-wrap: wrap;

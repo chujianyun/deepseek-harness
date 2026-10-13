@@ -231,7 +231,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-knowledge': { kind: 'none', reason: 'The page only renders and edits knowledge bases.' },
   'packages/session-query/session-share': { kind: 'none', reason: 'Reads the Session log to upload a snapshot; writes nothing to the log or to a model request.' },
   'packages/assistant/assistant-packages': { kind: 'indirect', reason: 'Writes an assistant\'s core files and subsets through the assistants service and creates automation tasks; those services own what the model sees.' },
-  'packages/schedule/automation-tasks': { kind: 'none', reason: 'Creates a Session and its schedule; the Session and the schedule own everything the model sees.' },
+  'packages/schedule/automation-tasks': { kind: 'indirect', reason: 'Creates a Session and its schedule, and answers approvals in scheduled runs; a refusal reaches the model as the tool runtime\'s denial.' },
   'packages/connector/connectors': { kind: 'indirect', reason: 'Connected connectors reach the model through the skill catalog and the bash tool.' },
   'packages/client/ui-session-share': { kind: 'none', reason: 'The dialog only calls the Host share service, which reads the Session log.' },
   'packages/client/ui-automation-tasks': { kind: 'none', reason: 'The form only collects a task that the Host composer creates.' },

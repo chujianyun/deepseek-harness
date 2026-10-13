@@ -721,7 +721,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: '@Remote(\'create\') async create(request: AutomationTaskCreateRequest): Promise<AutomationTaskCreateValue>',
-        description: 'Create one automation task: a new Session in the workspace, named after the task, with the requested assistant, model, permission preset, and connector grant, then the schedule bound to it. The assistant, connectors, and permission presets are optional services; asking for one a deployment lacks is `automation-tasks/unavailable`. A step\'s refusal passes through unchanged, except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.',
+        description: 'Create one automation task: a new Session in the workspace, named after the task, with the requested assistant, model, permission preset, connector grant, and declared operations (`automation-tasks/operations`), then the schedule bound to it. The assistant, connectors, and permission presets are optional services; asking for one a deployment lacks is `automation-tasks/unavailable`. A step\'s refusal passes through unchanged, except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.',
         parameters: [{ name: 'request', description: 'the task as the form submits it.' }],
         returns: 'the new Session and the stored schedule.',
       },
@@ -5601,7 +5601,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AssistantPackageTask',
-    declaration: 'export interface AssistantPackageTask {\n    readonly id: string;\n    readonly title: string;\n    readonly prompt: string;\n    readonly timing: AssistantPackageTaskTiming;\n    readonly timeZone: string;\n    readonly connectors: readonly string[];\n    readonly permission?: string;\n}',
+    declaration: 'export interface AssistantPackageTask {\n    readonly id: string;\n    readonly title: string;\n    readonly prompt: string;\n    readonly timing: AssistantPackageTaskTiming;\n    readonly timeZone: string;\n    readonly connectors: readonly string[];\n    readonly permission?: string;\n    readonly operations?: readonly string[];\n}',
   },
   {
     name: 'AssistantPackageTaskTiming',
@@ -5741,7 +5741,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AutomationTaskCreateRequest',
-    declaration: 'export interface AutomationTaskCreateRequest {\n    readonly title: string;\n    readonly prompt: string;\n    readonly workspaceId: WorkspaceId;\n    readonly assistantId?: string;\n    readonly model?: ModelSelection;\n    readonly permission?: string;\n    readonly connectors?: readonly string[];\n    readonly timing: ScheduleTimingChange;\n    readonly window?: ScheduleWindowInput;\n}',
+    declaration: 'export interface AutomationTaskCreateRequest {\n    readonly title: string;\n    readonly prompt: string;\n    readonly workspaceId: WorkspaceId;\n    readonly assistantId?: string;\n    readonly model?: ModelSelection;\n    readonly permission?: string;\n    readonly connectors?: readonly string[];\n    readonly operations?: readonly string[];\n    readonly timing: ScheduleTimingChange;\n    readonly window?: ScheduleWindowInput;\n}',
   },
   {
     name: 'AutomationTaskCreateValue',

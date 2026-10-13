@@ -28,12 +28,15 @@ describe('building the request', () => {
   it('carries the assistant, model, connectors, and effective dates only when chosen', () => {
     const built = toRequest(base({
       assistantId: 'a-shop', model: JSON.stringify(['deepseek', 'v4']), permission: '', connectors: ['feishu'], start: '2026-10-11', end: '2026-12-31',
+      operations: ' lark-cli  sheets +write \n\nlark-cli sheets +write\ndsh-ecommerce browser\n',
     }), ZONE)
     expect(built).toMatchObject({ request: {
       assistantId: 'a-shop', model: { provider: 'deepseek', model: 'v4' }, connectors: ['feishu'],
+      operations: ['lark-cli sheets +write', 'dsh-ecommerce browser'],
       window: { start: '2026-10-11', end: '2026-12-31', time_zone: ZONE },
     } })
     expect(built).not.toHaveProperty('request.permission')
+    expect(toRequest(base({ operations: '\n  \n' }), ZONE)).not.toHaveProperty('request.operations')
     expect(toRequest(base({ end: '2026-12-31' }), ZONE)).toMatchObject({ request: { window: { end: '2026-12-31', time_zone: ZONE } } })
     expect(toRequest(base({ start: '2026-10-11' }), ZONE)).toMatchObject({ request: { window: { start: '2026-10-11', time_zone: ZONE } } })
   })
@@ -50,6 +53,10 @@ describe('building the request', () => {
     [{ mode: 'once' as const, date: '' }, 'frequency', 'error.dateRequired'],
     [{ repeat: 'weekly' as const, weekdays: [] }, 'frequency', 'error.weekdaysRequired'],
     [{ start: '2026-12-31', end: '2026-10-11' }, 'window', 'error.windowOrder'],
+    [{ operations: 'lark-cli sheets +write | jq' }, 'operations', 'error.operationShellCharacter'],
+    [{ operations: `lark-cli ${'x'.repeat(200)}` }, 'operations', 'error.operationTooLong'],
+    [{ operations: Array.from({ length: 51 }, (_, index) => `c${String(index)} x`).join('\n') }, 'operations', 'error.operationsTooMany'],
+    [{ operations: 'bash script.sh' }, 'operations', 'error.operationNotDeclarable'],
   ])('refuses %j', (patch, field, key) => {
     expect(toRequest(base(patch), ZONE)).toEqual({ problems: [{ field, key }] })
   })
@@ -61,6 +68,10 @@ describe('explaining a refused save', () => {
     [{ code: 'automation-tasks/invalid', message: '', details: { code: 'not_future' } }, false, 'frequency', 'error.notFuture'],
     [{ code: 'automation-tasks/invalid', message: '', details: { code: 'frequency_too_high' } }, false, 'frequency', 'error.intervalInvalid'],
     [{ code: 'automation-tasks/invalid', message: '', details: { code: 'unknown_permission' } }, false, 'prompt', 'error.permissionUnknown'],
+    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'shell_character' } }, false, 'operations', 'error.operationShellCharacter'],
+    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'too_many' } }, false, 'operations', 'error.operationsTooMany'],
+    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'too_long' } }, false, 'operations', 'error.operationTooLong'],
+    [{ code: 'automation-tasks/invalid', message: '', details: { code: 'not_declarable' } }, false, 'operations', 'error.operationNotDeclarable'],
     [{ code: 'automation-tasks/invalid', message: '', details: { code: 'invalid_rule' } }, true, 'window', 'error.outsideWindow'],
     [{ code: 'automation-tasks/invalid', message: '', details: { code: 'invalid_rule' } }, false, 'frequency', 'error.timingInvalid'],
     [{ code: 'automation-tasks/invalid', message: '', details: { code: 'invalid_time_zone' } }, true, 'frequency', 'error.timingInvalid'],

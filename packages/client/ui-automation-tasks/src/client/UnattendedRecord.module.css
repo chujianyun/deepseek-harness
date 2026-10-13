@@ -1,0 +1,10 @@
+/** A scheduled run's unattended record: a bordered card beneath the closing reply. */
+.root { box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; min-width: 0; margin-top: 4px; padding: 10px 12px; border: 0.5px solid var(--dsw-alias-border-l1); border-radius: var(--dsw-radius-lg); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 20px; }
+.title { margin: 0; font-weight: 500; }
+.group { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.groupTitle { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.group[data-kind='refused'] .groupTitle { color: var(--dsw-alias-state-error-primary); }
+.list { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.command { overflow-wrap: anywhere; color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-mono, ui-monospace, monospace); font-size: 12px; }
+.operations, .hint { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; }

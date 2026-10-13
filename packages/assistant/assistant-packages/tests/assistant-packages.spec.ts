@@ -11,7 +11,7 @@ import type { AssistantPackageManifest } from '../src/types.ts'
 
 const CORE = { 'IDENTITY.md': '# 身份\n', 'SOUL.md': '# 人格\n', 'USER.md': '# 用户\n', 'AGENTS.md': '# 方法\n' }
 const TASKS = [
-  { id: 'inspection', title: '部门巡检', prompt: '跑今日巡检', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '11:00' }, timeZone: 'Asia/Shanghai', connectors: ['feishu'], permission: 'full-access' },
+  { id: 'inspection', title: '部门巡检', prompt: '跑今日巡检', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '11:00' }, timeZone: 'Asia/Shanghai', connectors: ['feishu'], permission: 'full-access', operations: ['lark-cli im +messages-send'] },
   { id: 'report', title: '天猫日报', prompt: '采集昨日数据', timing: { kind: 'cron', expression: '0 6 * * 1-5' }, timeZone: 'Asia/Shanghai', connectors: [] },
 ] as const satisfies AssistantPackageManifest['tasks']
 
@@ -335,13 +335,14 @@ describe('updating', () => {
 })
 
 describe('recommended tasks', () => {
-  it('switching on creates an automation task bound to the assistant with the task\'s timing, permission, and connectors', async () => {
+  it('switching on creates an automation task bound to the assistant with the task\'s timing, permission, connectors, and operations', async () => {
     const m = await mount()
     m.publish('pkg-1', manifest())
     const { assistantId } = await m.service.installPackage('pkg-1', m.signal)
     const state = await m.service.enableTask(assistantId, 'inspection', 'ws-1' as never, m.signal)
     expect(m.automationTasks.create).toHaveBeenCalledWith({
       title: '部门巡检', prompt: '跑今日巡检', workspaceId: 'ws-1', assistantId, permission: 'full-access', connectors: ['feishu'],
+      operations: ['lark-cli im +messages-send'],
       timing: { kind: 'weekly', weekly: { time: '11:00:00', time_zone: 'Asia/Shanghai', weekdays: [1, 2, 3, 4, 5] } },
     })
     expect(state.installed[0]!.tasks[0]!.enabled).toEqual({ sessionId: 'session-schedule-1', scheduleId: 'schedule-1', version: '1.0.0' })
@@ -353,6 +354,7 @@ describe('recommended tasks', () => {
     const last = m.automationTasks.create.mock.lastCall?.[0]
     expect(last).not.toHaveProperty('connectors')
     expect(last).not.toHaveProperty('permission')
+    expect(last).not.toHaveProperty('operations')
   })
 
   it('switching off deletes the schedule; a schedule deleted elsewhere reads as off', async () => {
@@ -381,6 +383,17 @@ describe('recommended tasks', () => {
     m.publish('pkg-1', manifest('1.1.0', { tasks: [{ ...TASKS[0], prompt: '跑今日巡检（新口径）' }, TASKS[1]] }))
     const { state } = await m.service.updatePackage(assistantId, m.signal)
     expect(state.installed[0]!.tasks.map(t => t.outdated)).toEqual([true, false])
+  })
+
+  it('marks a task outdated when an update declares operations for it, and not while it declares none', async () => {
+    const m = await mount()
+    m.publish('pkg-1', manifest())
+    const { assistantId } = await m.service.installPackage('pkg-1', m.signal)
+    await m.service.enableTask(assistantId, 'report', 'ws-1' as never, m.signal)
+    m.publish('pkg-1', manifest('1.1.0', { tasks: [TASKS[0], { ...TASKS[1], operations: [] }] }))
+    expect((await m.service.updatePackage(assistantId, m.signal)).state.installed[0]!.tasks[1]!.outdated).toBe(false)
+    m.publish('pkg-1', manifest('1.2.0', { tasks: [TASKS[0], { ...TASKS[1], operations: ['dsh-ecommerce browser'] }] }))
+    expect((await m.service.updatePackage(assistantId, m.signal)).state.installed[0]!.tasks[1]!.outdated).toBe(true)
   })
 
   it('reads a switched-on task as off in a deployment without the schedule', async () => {
@@ -541,5 +554,6 @@ describe('manifest rules', () => {
     expect(refused(manifest('1.0.0', { tasks: [{ ...TASKS[0], timing: { kind: 'weekly', weekdays: [3, 1], time: '11:00' } }] }))).toThrow('ascending without repeats')
     expect(refused(manifest('1.0.0', { tasks: [TASKS[0], { ...TASKS[1], id: 'inspection' }] }))).toThrow('task ids must be unique')
     expect(refused(manifest('1.0.0', { tasks: [{ ...TASKS[0], timeZone: 'Mars/Base' }] }))).toThrow('not an IANA time zone')
+    expect(refused(manifest('1.0.0', { tasks: [{ ...TASKS[0], operations: ['lark-cli im +messages-send; rm -rf ~'] }] }))).toThrow('plain command words')
   })
 })

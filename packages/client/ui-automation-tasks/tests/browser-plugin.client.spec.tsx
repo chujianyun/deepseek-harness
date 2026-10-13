@@ -9,6 +9,8 @@ import { apply, inject } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
 import type { TaskFormInjected } from '../src/client/form-options.ts'
 import { TaskForm } from '../src/client/TaskForm.tsx'
+import { UnattendedRecord } from '../src/client/UnattendedRecord.tsx'
+import { unattendedTurnDefinition } from '../src/client/unattended-turn.ts'
 
 describe('ui-automation-tasks browser plugin', () => {
   it('occupies the task page\'s form slot over the Remotes, and leaves it with the plugin', async () => {
@@ -22,6 +24,8 @@ describe('ui-automation-tasks browser plugin', () => {
     new LocaleHolder(ctx)
     const list = createSnapshotStore({ items: [] })
     ctx.provide('workspaces', { list } as never)
+    const events = { register: vi.fn() }
+    ctx.provide('uiConversation', { events } as never)
     const ok = <T,>(value: T) => vi.fn(async () => ({ ok: true as const, value }))
     const remotes = {
       automationTasks: { create: ok({ sessionId: 's-1', record: {} }) },
@@ -32,7 +36,9 @@ describe('ui-automation-tasks browser plugin', () => {
     }
     new TestRemote(ctx, remotes)
     const slots = ctx.get('slots') as SlotRegistry
-    const removeRoot = slots.register({ name: 'root', children: { 'schedule.task.form': { kind: 'single', scope: 'root' } } } as never, () => null)
+    const removeRoot = slots.register({ name: 'root', children: {
+      'schedule.task.form': { kind: 'single', scope: 'root' }, 'conversation.chat.turnTail': { kind: 'list', scope: 'root' },
+    } } as never, () => null)
     onTestFinished(removeRoot)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
@@ -43,8 +49,14 @@ describe('ui-automation-tasks browser plugin', () => {
     expect((await face.loadOptions()).assistants).toEqual([{ value: 'a1', label: '电商管家' }])
     await face.onCreate({ title: 't', prompt: 'p', workspaceId: 'ws' as never, timing: { kind: 'every', every_seconds: 60 } })
     expect(remotes.automationTasks.create).toHaveBeenCalledOnce()
+    // A scheduled run's record follows its turn.
+    expect(events.register).toHaveBeenCalledWith(unattendedTurnDefinition)
+    const [tail] = slots.entries('conversation.chat.turnTail')
+    expect(tail?.component).toBe(UnattendedRecord)
+    expect(tail!.inject!()).toEqual({})
     await fiber.dispose()
     expect(slots.entries('schedule.task.form')).toEqual([])
+    expect(slots.entries('conversation.chat.turnTail')).toEqual([])
     applyNode()
   })
 })
