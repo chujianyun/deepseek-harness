@@ -44,7 +44,7 @@ export function AssistantSeat({ sessionId, useSessionRetainInfo, useAssistants, 
         items={[
           {
             id: NONE,
-            // The neutral avatar the sidebar's general group shows, so the three rows line up.
+            // The neutral avatar the sidebar's general group shows, so it lines up with the assistant rows.
             icon: <AssistantAvatar avatar={NEUTRAL_AVATAR} name={t('noAssistant')} size={20} />,
             label: (
               <span className={css.item}>
