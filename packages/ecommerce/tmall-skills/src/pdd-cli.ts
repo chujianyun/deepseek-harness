@@ -20,6 +20,7 @@ import type { FieldCheck } from './draft.ts'
 import { EXIT, SkillError } from './errors.ts'
 import { readImage } from './images.ts'
 import type { Page } from './page.ts'
+import type { PublishRules } from './publish-rules.ts'
 import {
   categoryById, childCategories, createSession, MEDICAL_DEVICE_IMAGE, pddRules, predictCategories, readLimits, readTemplate,
   searchCategories, setCategory,
@@ -91,7 +92,7 @@ const save: DraftStore['save'] = async (page, account, draft, options, deps) => 
   const rules = await readStoreRules(options.rules as string, STORE)
   const checks = (draft.checks ?? []) as FieldCheck[]
   const prices = extraPrices(checks, draft.skus.map(sku => sku.price))
-  const reasons = [...saveBlockers(draft, rules, options, prices), ...certificateProblems(draft, checks)]
+  const reasons = [...saveBlockers(draft, rules, options, prices), ...certificateProblems(draft, rules, checks)]
   if (reasons.length > 0 || 'problems' in prices) throw unready(reasons, '草稿箱')
   const { title, recordPath, records, record } = await saveContext(options, account, draft, rules.catId)
   const found = await alreadySaved(page, records, title)
@@ -123,7 +124,7 @@ const save: DraftStore['save'] = async (page, account, draft, options, deps) => 
     const white = draft.images.white[0]
     if (white !== undefined) {
       progress('登记白底图')
-      await fileWhiteImage(page, session.goodsId, detail.cat_ids as readonly number[], images[white] as string)
+      await fileWhiteImage(page, session.goodsId, detail.cat_ids, images[white] as string)
     }
     form = buildGoods(detail, { draft, checks, rules, template, session, images, specs, prices, stock: options.stock ?? 0 })
   } catch (error) {
@@ -163,11 +164,24 @@ async function draftListed(page: Page, draftId: string): Promise<boolean> {
   return page.waitFor(async () => (await listDrafts(page, 50)).some((row: DraftRow) => row.draftId === draftId), 30_000)
 }
 
-/** Why the registration certificate image the draft names cannot be used: it is not one of the material folder's images. */
-function certificateProblems(draft: DraftFile, checks: readonly FieldCheck[]): string[] {
+/**
+ * Why the registration certificate cannot be saved: rules that ask for it with a draft checked without it,
+ * a path that is not one of the material folder's images, or an image also sorted into the carousel or the detail.
+ */
+function certificateProblems(draft: DraftFile, rules: PublishRules, checks: readonly FieldCheck[]): string[] {
+  const asked = rules.fields.some(field => field.key === MEDICAL_DEVICE_IMAGE.key)
+  if (asked && !checks.some(check => check.key === MEDICAL_DEVICE_IMAGE.key)) {
+    return ['草稿不是按这份字段规则检查的（没有医疗器械注册证/器械备案凭证一项），请用这份字段规则重新整理素材']
+  }
   const file = certificateFile(checks)
-  if (file === undefined || Object.values(draft.images).some(files => files.includes(file))) return []
-  return [`${MEDICAL_DEVICE_IMAGE.label}写的「${file}」不是素材文件夹里的图片，请写素材里注册证图片的路径`]
+  if (file === undefined) return []
+  if (!Object.values(draft.images).some(files => files.includes(file))) {
+    return [`${MEDICAL_DEVICE_IMAGE.label}写的「${file}」不是素材文件夹里的图片，请写素材里注册证图片的路径`]
+  }
+  if ([...draft.images.main, ...draft.images.main34, ...draft.images.detail].includes(file)) {
+    return [`注册证图片「${file}」也归在了轮播图或详情图里，请在答案的 images 里把它改成 other`]
+  }
+  return []
 }
 
 /**

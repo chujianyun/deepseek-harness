@@ -206,16 +206,16 @@ function propertyEntries(property: TemplateProperty, values: readonly string[], 
 /** The gallery type of a medical device's registration certificate or filing image. */
 export const MEDICAL_DEVICE_GALLERY = 106
 
-/** The most carousel images an item takes. */
-const MOST_CAROUSEL = 10
+/** The most carousel images of each ratio an item takes, as the draft check counts them; ten in all. */
+const MOST_PER_RATIO = 5
 
 /**
- * The carousel images: the 1:1 main images, then the 3:4 ones, at most {@link MOST_CAROUSEL}.
+ * The carousel images: up to {@link MOST_PER_RATIO} 1:1 main images, then up to as many 3:4 ones.
  * @param draft - the draft.
  * @returns their paths under the material folder.
  */
 export function carouselFiles(draft: DraftFile): string[] {
-  return [...draft.images.main, ...draft.images.main34].slice(0, MOST_CAROUSEL)
+  return [...draft.images.main.slice(0, MOST_PER_RATIO), ...draft.images.main34.slice(0, MOST_PER_RATIO)]
 }
 
 /**
@@ -231,11 +231,12 @@ export function certificateFile(checks: readonly FieldCheck[]): string | undefin
  * File the white-background image as the item's 白底图 material, as uploading it on the new-item page does.
  * @param page - a seller page.
  * @param goodsId - the edit session's item.
- * @param catIds - the category and its ancestors, top level first.
+ * @param catIds - the category and its ancestors, top level first, as the session's detail gives them.
  * @param url - the uploaded image's address.
- * @throws PddRefusal with Pinduoduo's message when it refuses.
+ * @throws SkillError failed when the session gave no category levels; PddRefusal with Pinduoduo's message when it refuses.
  */
-export async function fileWhiteImage(page: Page, goodsId: number, catIds: readonly number[], url: string): Promise<void> {
+export async function fileWhiteImage(page: Page, goodsId: number, catIds: unknown, url: string): Promise<void> {
+  if (!Array.isArray(catIds)) throw new SkillError('拼多多编辑会话没有给出类目层级（cat_ids），无法登记白底图。', EXIT.failed)
   // Levels below the leaf are 0 or absent; the page sends them as null.
   const level = (at: number): number | null => (catIds[at] ?? 0) === 0 ? null : catIds[at] as number
   await pddCall(page, 'POST', '/giraffe/mms/material/createDraft', {

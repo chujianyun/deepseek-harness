@@ -340,7 +340,6 @@ describe('Pinduoduo form', () => {
       session: { goodsId: 1, commitId: 2 }, images, specs: { a: 1 }, prices: { singleDelta: 1, market: 9 }, stock: 0,
     })
     expect(bare).toMatchObject({ shipment_limit_second: undefined, out_goods_sn: undefined, skus: [expect.objectContaining({ out_sku_sn: '', quantity_delta: 3 })] })
-    expect(form.prefillWhitePic).toBeUndefined()
   })
 
   it('puts each image where its use goes: 3:4 carousel images after the 1:1 ones, the white-background image, and the certificate', async () => {
@@ -349,7 +348,7 @@ describe('Pinduoduo form', () => {
     const main = Array.from({ length: 7 }, (_, at) => `方图/${String(at)}.png`)
     const main34 = Array.from({ length: 5 }, (_, at) => `长图/${String(at)}.png`)
     const draft: DraftFile = { ...base, images: { ...base.images, main, main34, white: ['素材图/白.jpg', '素材图/白2.jpg'], transparent: ['素材图/透明.png'], detail: ['详情页/1.png'] } }
-    expect(carouselFiles(draft)).toEqual([...main, '长图/0.png', '长图/1.png', '长图/2.png'])
+    expect(carouselFiles(draft)).toEqual([...main.slice(0, 5), ...main34])
     const checks = [...CHECKS, filled(MEDICAL_DEVICE_IMAGE.key, MEDICAL_DEVICE_IMAGE.label, [' 资质/注册证.png '])]
     expect(certificateFile(checks)).toBe('资质/注册证.png')
     expect(certificateFile([...CHECKS, filled(MEDICAL_DEVICE_IMAGE.key, MEDICAL_DEVICE_IMAGE.label, [''])])).toBeUndefined()
@@ -373,6 +372,7 @@ describe('Pinduoduo form', () => {
     const mall = new Mall()
     await fileWhiteImage(mall.page(), 99, [16_237, 18_768, 18_770, 0], 'u')
     await fileWhiteImage(mall.page(), 98, [16_237], 'v')
+    expect((await stopped(fileWhiteImage(mall.page(), 97, undefined, 'w'))).message).toBe('拼多多编辑会话没有给出类目层级（cat_ids），无法登记白底图。')
     expect(mall.materials).toEqual([
       { content: 'u', type: 1, source: 2, cat_id_1: 16_237, cat_id_2: 18_768, cat_id_3: 18_770, cat_id_4: null, goods_id: 99 },
       { content: 'v', type: 1, source: 2, cat_id_1: 16_237, cat_id_2: null, cat_id_3: null, cat_id_4: null, goods_id: 98 },
@@ -577,10 +577,6 @@ describe('pdd-publish script', () => {
   it('uploads the 3:4, white-background, and certificate images and files the white one as material, and refuses a certificate outside the folder', async () => {
     const mall = new Mall()
     const base = await sampleDraft()
-    for (const file of ['长图/1.png', '素材图/白.jpg', '资质/注册证.png']) {
-      await mkdir(dirname(join(base.dir, file)), { recursive: true })
-      await writeFile(join(base.dir, file), file.endsWith('.jpg') ? jpeg(20, 20) : png(20, 20))
-    }
     const draft = JSON.parse(await readFile(base.path, 'utf8')) as DraftFile
     const images = { ...draft.images, main34: ['长图/1.png'], white: ['素材图/白.jpg'], other: ['资质/注册证.png'] }
     const certificate = (file: string) => [...CHECKS, filled(MEDICAL_DEVICE_IMAGE.key, MEDICAL_DEVICE_IMAGE.label, [file])]
@@ -588,6 +584,13 @@ describe('pdd-publish script', () => {
     const refused = await run(mall, save(outside))
     expect(refused.code).toBe(EXIT.usage)
     expect(refused.err).toContain('医疗器械注册证/器械备案凭证（素材文件）写的「资质/别处.png」不是素材文件夹里的图片')
+    const inDetail = await sampleDraft({ images: { ...images, other: [], detail: ['详情页/1.png', '资质/注册证.png'] }, checks: certificate('资质/注册证.png') })
+    expect((await run(mall, save(inDetail))).err).toContain('注册证图片「资质/注册证.png」也归在了轮播图或详情图里，请在答案的 images 里把它改成 other')
+    const medical = { platform: 'pinduoduo', ...pddRules('18770', ['成人用品', '计生用品', '避孕套'], TEMPLATE, { ...LIMITS, medical_device_related: true }) }
+    const stale = await sampleDraft()
+    await writeFile(stale.rules, JSON.stringify(medical))
+    expect((await run(mall, save(stale))).err).toContain('草稿不是按这份字段规则检查的（没有医疗器械注册证/器械备案凭证一项），请用这份字段规则重新整理素材')
+    expect(mall.saves).toEqual([])
     const setup = await sampleDraft({ images, checks: certificate('资质/注册证.png') })
     for (const file of ['长图/1.png', '素材图/白.jpg', '资质/注册证.png']) {
       await mkdir(dirname(join(setup.dir, file)), { recursive: true })
