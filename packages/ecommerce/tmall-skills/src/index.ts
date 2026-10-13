@@ -51,15 +51,7 @@ export async function packSkills(outDir: string): Promise<string[]> {
       await rm(folder, { recursive: true, force: true })
       await mkdir(join(folder, 'scripts'), { recursive: true })
       await copyFile(join(PACKAGE, 'skills', skill.name, 'SKILL.md'), join(folder, 'SKILL.md'))
-      for (const [script, module] of Object.entries(skill.scripts)) {
-        const entry = join(entries, script)
-        const source = join(PACKAGE, 'src', module)
-        await writeFile(entry, `import { main } from ${JSON.stringify(source)}\nprocess.exit(await main(process.argv.slice(2)))\n`)
-        await build({
-          config: false, entry: [entry], outDir: join(folder, 'scripts'), format: 'esm', platform: 'node', target: 'node22',
-          fixedExtension: true, dts: false, clean: false, deps: { alwaysBundle: [/./u] }, logLevel: 'error', treeshake: true, minify: false,
-        })
-      }
+      for (const [script, module] of Object.entries(skill.scripts)) await bundleScript(join(PACKAGE, 'src', module), join(folder, 'scripts'), script, entries)
       const files: Record<string, Uint8Array> = {}
       for (const { path, entry } of await walk(folder, skill.name)) files[entry] = await readFile(path)
       const zip = join(out, `${skill.name}.zip`)
@@ -70,6 +62,24 @@ export async function packSkills(outDir: string): Promise<string[]> {
     await rm(entries, { recursive: true, force: true })
   }
   return zips
+}
+
+/**
+ * Build one script as a skill carries it: a self-contained ES module that runs the source module's
+ * `main(argv)` and exits with the status it returns, importing nothing but Node's built-in modules.
+ * @param source - absolute path of the module exporting `main(argv): Promise<number>`.
+ * @param outDir - the directory the script goes to.
+ * @param script - the script's file name, ending in `.mjs`.
+ * @param workDir - an existing directory for the build's entry file.
+ * @returns when the script is written.
+ */
+export async function bundleScript(source: string, outDir: string, script: string, workDir: string): Promise<void> {
+  const entry = join(workDir, script)
+  await writeFile(entry, `import { main } from ${JSON.stringify(source)}\nprocess.exit(await main(process.argv.slice(2)))\n`)
+  await build({
+    config: false, entry: [entry], outDir, format: 'esm', platform: 'node', target: 'node22',
+    fixedExtension: true, dts: false, clean: false, deps: { alwaysBundle: [/./u] }, logLevel: 'error', treeshake: true, minify: false,
+  })
 }
 
 /** Files under `dir`, each with its ZIP entry name: `prefix` and the folder names joined by `/` on every platform. */

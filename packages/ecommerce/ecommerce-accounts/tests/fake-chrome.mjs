@@ -23,7 +23,7 @@
 // backend calls the pdd-publish skill makes: the 避孕套 category and its template, image uploads, and a
 // 草稿箱 that a save adds to, except a store whose user name has 拒, which refuses the save. A Douyin shop's new-item page has a form store DSH finds, its 避孕套 form,
 // a draft save that adds a 下架 draft, and the category, list, and upload calls the doudian-publish skill
-// makes. Its tabs are
+// makes. The Tmall home page has a report table the collection runner's table reader reads. Its tabs are
 // kept in `<user-data-dir>/fake-tabs.json` and come back with --restore-last-session. As in Chrome, a
 // closed tab is still listed once by Target.getTargets, but has no window any more.
 import { createHash } from 'node:crypto'
@@ -330,6 +330,8 @@ const itemApi = (target, expression) => {
 }
 const evaluateIn = (target, expression) => {
   if (expression === 'location.href') return target.url
+  // The collection runner's table reader, on the Tmall home page's report table.
+  if (expression.includes('"#report"')) return target.url.startsWith('https://www.tmall.com/') ? { headers: ['日期', '访客数'], rows: [['2026-10-12', '1024']], footer: [] } : null
   if (expression.includes('__ICE_APP_CONTEXT__')) return renderedItem()
   if (expression.includes('#nocaptcha')) return false
   if (expression === "document.readyState === 'complete'") return true

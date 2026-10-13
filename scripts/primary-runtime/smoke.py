@@ -1,6 +1,7 @@
 """Exercise the relocated Office payload with its own isolated interpreter."""
 
 import importlib.metadata
+import datetime
 import json
 from pathlib import Path
 import re
@@ -8,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 
+import chinese_calendar
 import numpy
 import pandas
 from docx import Document
@@ -38,6 +40,9 @@ def main():
         assert actual == expected, (name, actual, expected)
     assert numpy.arange(4).sum() == 6
     assert pandas.DataFrame({"n": [1, 2]}).n.sum() == 3
+    # Offline mainland China holidays: National Day is a holiday, the following Monday a workday.
+    assert chinese_calendar.is_holiday(datetime.date(2026, 10, 1))
+    assert chinese_calendar.is_workday(datetime.date(2026, 10, 12))
 
     with tempfile.TemporaryDirectory(prefix="dsh-office-smoke-") as directory:
         root = Path(directory)

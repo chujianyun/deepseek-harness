@@ -138,6 +138,7 @@
     "apps/web/tests/ecommerce-accounts.e2e.ts",
     "apps/web/tests/ecommerce-chat.e2e.ts",
     "apps/web/tests/tmall-skills.e2e.ts",
+    "apps/web/tests/collect-script.e2e.ts",
     "apps/web/tests/assistants.e2e.ts",
     "apps/web/tests/assistant-packages.e2e.ts",
     "apps/web/tests/automation-task-form.e2e.ts",

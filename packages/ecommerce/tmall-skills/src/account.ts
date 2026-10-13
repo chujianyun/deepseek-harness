@@ -62,6 +62,12 @@ export const MERCHANT_PLATFORMS = { tmall: '天猫', pinduoduo: '拼多多', dou
 /** A platform a merchant skill works with. */
 export type MerchantPlatform = keyof typeof MERCHANT_PLATFORMS
 
+/** The platforms a collection script reads, and their names for the user: the merchant platforms and Yuntai. */
+export const COLLECT_PLATFORMS = { ...MERCHANT_PLATFORMS, yuntai: '健康品牌云台' } as const
+
+/** A platform a collection script reads. */
+export type CollectPlatform = keyof typeof COLLECT_PLATFORMS
+
 /**
  * Reserve a merchant account's browser for this bash call, as DSH checks it is still signed in.
  * @param accountId - the account id from `dsh-ecommerce accounts`.
@@ -71,10 +77,10 @@ export type MerchantPlatform = keyof typeof MERCHANT_PLATFORMS
  * @throws SkillError with what DSH said when it refuses, signed-out when the account is signed out,
  *   or when the account is not a merchant account of that platform.
  */
-export async function takeOverMerchant(accountId: string, run = runDshEcommerce, platform: MerchantPlatform = 'tmall'): Promise<MerchantBrowser> {
+export async function takeOverMerchant(accountId: string, run = runDshEcommerce, platform: CollectPlatform = 'tmall'): Promise<MerchantBrowser> {
   const taken = await takeOver(['browser', accountId], run)
   if (taken.platform !== platform || taken.kind !== 'merchant') {
-    const name = MERCHANT_PLATFORMS[platform]
+    const name = COLLECT_PLATFORMS[platform]
     throw new SkillError(`账号 ${accountId} 不是${name}商家账号（平台 ${taken.platform}，类型 ${taken.kind}），这个技能只能用${name}商家账号。`, EXIT.usage)
   }
   return { id: taken.id, store: taken.store ?? taken.account, account: taken.account, cdpUrl: taken.cdpUrl }

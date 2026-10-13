@@ -8334,6 +8334,9 @@ importers:
       '@deepseek-ai/dsh-ecommerce-accounts':
         specifier: workspace:*
         version: link:../ecommerce-accounts
+      '@types/jsdom':
+        specifier: ^28.0.3
+        version: 28.0.3
       '@types/pngjs':
         specifier: ^6.0.5
         version: 6.0.5
@@ -8346,6 +8349,9 @@ importers:
       jpeg-js:
         specifier: ^0.4.4
         version: 0.4.4
+      jsdom:
+        specifier: 29.1.1
+        version: 29.1.1(@noble/hashes@2.3.0)
       pngjs:
         specifier: ^7.0.0
         version: 7.0.0

@@ -21,10 +21,12 @@
   "license": "MIT",
   "devDependencies": {
     "@deepseek-ai/dsh-ecommerce-accounts": "workspace:*",
+    "@types/jsdom": "^28.0.3",
     "@types/pngjs": "^6.0.5",
     "@types/ws": "^8.18.1",
     "fflate": "^0.8.2",
     "jpeg-js": "^0.4.4",
+    "jsdom": "29.1.1",
     "pngjs": "^7.0.0",
     "tsdown": "^0.22.2",
     "ws": "^8.21.0"
