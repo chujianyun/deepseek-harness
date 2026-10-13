@@ -50,6 +50,19 @@ describe('assistant picker', () => {
     expect(chip.textContent).toContain('通用模式')
   })
 
+  it('gives general mode the neutral avatar in the menu and on the chip, so all rows carry one', () => {
+    const { store } = mount()
+    const chip = screen.getByRole('button', { name: '选择这个会话的智能体' })
+    expect(chip.querySelector('[data-tone]')?.getAttribute('data-tone')).toBe('neutral')
+    fireEvent.click(chip)
+    expect(screen.getAllByRole('menuitem').map(item => item.querySelector('[data-tone]')?.getAttribute('data-tone'))).toEqual(['neutral', 'sun', 'sun'])
+    act(() => { store.set({ ...store.getSnapshot(), bound: 'a2' }) })
+    expect(chip.querySelector('[data-tone]')?.getAttribute('data-tone')).toBe('sun')
+    // Another company's assistant: the neutral avatar with a question mark.
+    act(() => { store.set({ ...store.getSnapshot(), bound: 'gone' }) })
+    expect(chip.querySelector('[data-tone]')?.textContent).toBe('?')
+  })
+
   it('picks another assistant from the menu', () => {
     const { props } = mount()
     fireEvent.click(screen.getByRole('button', { name: '选择这个会话的智能体' }))
@@ -81,7 +94,8 @@ describe('assistant picker', () => {
   it('shows the neutral label when bound to an id the tenant lacks, and is disabled while binding', () => {
     mount({ bound: 'gone', busy: true })
     const chip = screen.getByRole('button', { name: '选择这个会话的智能体' }) as HTMLButtonElement
-    expect(chip.textContent).toBe('智能体')
+    // The neutral avatar's question mark, then the label.
+    expect(chip.textContent).toBe('?智能体')
     expect(chip.disabled).toBe(true)
   })
 

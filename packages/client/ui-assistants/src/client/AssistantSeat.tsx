@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { IconChevronDownOutlineRegular, IconWarningOutlineRegular, Menu, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { AssistantAvatar } from './AssistantAvatar.tsx'
+import { AssistantAvatar, NEUTRAL_AVATAR } from './AssistantAvatar.tsx'
 import { shownAssistant, type AssistantsInjected } from './assistants-source.ts'
 import css from './AssistantSeat.module.css'
 
@@ -18,8 +18,8 @@ export type AssistantSeatProps =
   & InjectFace<AssistantsInjected>
 
 /**
- * Render the picker: the shown assistant's avatar and name, or "No assistant", opening a menu of
- * "No assistant" and the tenant's assistants.
+ * Render the picker: the shown assistant's avatar and name, or the neutral avatar and "No assistant", opening a
+ * menu of "No assistant" and the tenant's assistants, each with its avatar.
  * @param props - composed slot props.
  * @returns the chip, or null outside the main view or when the tenant has no assistants.
  */
@@ -44,6 +44,8 @@ export function AssistantSeat({ sessionId, useSessionRetainInfo, useAssistants, 
         items={[
           {
             id: NONE,
+            // The neutral avatar the sidebar's general group shows, so it lines up with the assistant rows.
+            icon: <AssistantAvatar avatar={NEUTRAL_AVATAR} name={t('noAssistant')} size={20} />,
             label: (
               <span className={css.item}>
                 <span className={css.itemName}>{t('noAssistant')}</span>
@@ -82,7 +84,9 @@ export function AssistantSeat({ sessionId, useSessionRetainInfo, useAssistants, 
             data-assistant-id={current?.id}
             onClick={() => { setOpen(value => !value) }}
           >
-            {current !== undefined && <AssistantAvatar avatar={current.avatar} name={current.name} size={18} />}
+            {current !== undefined
+              ? <AssistantAvatar avatar={current.avatar} name={current.name} size={18} />
+              : <AssistantAvatar avatar={NEUTRAL_AVATAR} name={unknown ? '?' : t('noAssistant')} size={18} />}
             <span className={css.seatLabel}>{current?.name ?? (unknown ? t('panel') : t('noAssistant'))}</span>
             <IconChevronDownOutlineRegular className={css.chevron} />
           </button>
