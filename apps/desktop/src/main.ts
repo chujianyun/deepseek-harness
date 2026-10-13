@@ -2,6 +2,7 @@ import type { ProductEventMap, ProductEvent } from '@deepseek-ai/dsh-client-prod
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
+import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -61,6 +62,7 @@ import { DesktopUpdateOverlays } from './update-overlay.ts'
 import { DesktopQuitConfirmation } from './quit-confirmation.ts'
 import { DesktopTray } from './tray.ts'
 import { DesktopBackgroundNotice } from './background-notice.ts'
+import { HubUpdater, windowsInstaller } from './hub-updater.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
@@ -513,9 +515,15 @@ async function main(): Promise<void> {
     if (isMandatory()) { mandatoryUI?.sync(); return Promise.resolve() }
     let shown = updateErrors.get(state)
     if (shown === undefined) {
+      // A failed in-app transfer or installation can still be completed from the download page.
+      const page = state.failedOperation === 'check' ? undefined : mandatoryPolicy?.state.available?.page
       shown = ordinaryMessageBox({ type: 'error', title: locale.messages.updateFailedTitle,
         message: desktopUpdateErrorSummary(state, locale.messages),
-        technicalDetails: state.technicalDetails ?? state.message ?? '' }).then(() => {})
+        ...(page === undefined ? {} : {
+          buttons: [locale.messages.updateOpenDownloadPage, locale.messages.updateAcknowledge], defaultId: 1, cancelId: 1 }),
+        technicalDetails: state.technicalDetails ?? state.message ?? '' }).then(async (result) => {
+        if (page !== undefined && result.response === 0) await shell.openExternal(page).catch((error: unknown) => { console.error(error) })
+      })
       updateErrors.set(state, shown)
     }
     return shown
@@ -579,6 +587,21 @@ async function main(): Promise<void> {
     return startup
   }
 
+  // A signed build keeps its packaged feed. Unsigned builds carry none, so the user center's installers are
+  // the update source; development runs use them only with an explicit installer kind.
+  const signedFeed = app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml'))
+  const developmentKind = app.isPackaged ? undefined : process.env.DSH_DESKTOP_IN_APP_UPDATE_KIND
+  const hubUpdater = new HubUpdater({
+    offer: () => mandatoryPolicy?.state.blocking === false ? mandatoryPolicy.state.available : undefined,
+    currentVersion: () => app.getVersion(),
+    kind: app.isPackaged ? (process.platform === 'win32' ? 'exe' : undefined)
+      : developmentKind === 'exe' || developmentKind === 'zip' || developmentKind === 'dmg' ? developmentKind : undefined,
+    directory: join(app.getPath('userData'), 'updates'),
+    install: windowsInstaller(() => { app.quit() }),
+    fetch: (input, init) => net.fetch(input instanceof URL ? input.href : input, init),
+    idleTimeoutMs: Number(process.env.DSH_DESKTOP_UPDATE_HTTP_IDLE_TIMEOUT_MS ?? 60_000),
+  })
+  void hubUpdater.clear().catch((error: unknown) => { console.error(error) })
   const updates = new DesktopUpdateCoordinator(
     publishUpdate,
     async () => {
@@ -593,7 +616,8 @@ async function main(): Promise<void> {
         type: active ? 'warning' : 'info', title: locale.messages.updateTitle,
         message: active ? locale.messages.updateActiveTasks : ready.message,
         detail: active ? locale.messages.updateActiveTasksDetail : ready.detail,
-        buttons: active ? [locale.messages.updateStopTasks, locale.messages.updateLater] : [locale.messages.installAndRestart],
+        buttons: active ? [locale.messages.updateStopTasks, locale.messages.updateLater]
+          : [locale.messages.installAndRestart, locale.messages.later],
         defaultId: 1, cancelId: 1,
       }
       if (isMandatory()) {
@@ -630,7 +654,10 @@ async function main(): Promise<void> {
       }
       return true
     },
-    undefined, undefined, undefined,
+    signedFeed ? undefined : hubUpdater,
+    // A mandatory decision keeps the download page until the forced flow installs in-app.
+    signedFeed ? undefined : () => hubUpdater.supported && mandatoryPolicy !== undefined && !mandatoryPolicy.state.blocking,
+    undefined,
     (success, reason) => { void track('desktop_upgrade_download_result', { is_success: success, ...reason === undefined ? {} : { error_reason: reason } }) },
 
   )
@@ -825,6 +852,10 @@ async function main(): Promise<void> {
           state = updates.hasUpdateSource ? await updateSchedule.check(true) : updates.state
           // Only an up-to-date result consults the policy's offered release, so only it waits for the policy.
           if (state.phase === 'idle') await policyCheck
+          // The in-app updater reads the offer from the policy, so a newly arrived offer needs another check.
+          if (state.phase === 'idle' && updates.hasUpdateSource && mandatoryPolicy?.state.available !== undefined) {
+            state = await updateSchedule.check(true)
+          }
         }
         if (isMandatory()) { mandatoryUI?.focus(); return }
         if (state.phase === 'error' && state.failedOperation === 'check') { await showUpdateFailure(state); return }
@@ -853,13 +884,16 @@ async function main(): Promise<void> {
           return
         }
         if (state.phase !== 'available' && !(state.phase === 'error' && state.failedOperation === 'download')) return
-        if (manual) {
-          const result = await ordinaryMessageBox({ title: locale.messages.updateCheckTitle,
-            message: formatDesktopMessage(locale.messages.updateAvailable, { version: state.version ?? '' }),
-            detail: locale.messages.updateDetail,
-            buttons: [locale.messages.updateDownload], cancelId: 1 })
-          if (result.response !== 0) return
-        }
+        controller?.abort()
+        const offer = mandatoryPolicy?.state.available
+        const result = await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
+          message: formatDesktopMessage(locale.messages.updateAvailable, { version: state.version ?? '' }),
+          detail: [offer?.version === state.version ? offer?.detail : undefined,
+            formatDesktopMessage(locale.messages.updateCurrentDetail, { version: desktopClientMetadata(locale.id).version }),
+            locale.messages.updateDetail]
+            .filter(line => line !== undefined).join('\n\n'),
+          buttons: [locale.messages.updateNow, locale.messages.later], defaultId: 0, cancelId: 1 })
+        if (result.response !== 0) return
         if (!isMandatory() && state.version !== undefined) {
           controller?.abort()
           failedOperation = 'download'
@@ -1326,7 +1360,13 @@ async function main(): Promise<void> {
       }
       mandatoryUI?.sync()
       const offered = state.blocking ? undefined : state.available?.version
-      if (offered !== wasOffered) broadcastUpdatePresentation()
+      if (offered !== wasOffered) {
+        broadcastUpdatePresentation()
+        // The in-app updater reads its target from the offer, so a new or withdrawn offer needs a check.
+        if (!signedFeed && hubUpdater.supported) {
+          void updateSchedule.check(false, true).catch((error: unknown) => { console.error(error) })
+        }
+      }
       wasOffered = offered
       if (state.blocking && !wasBlocking) void updateSchedule.check(false, true).catch((error: unknown) => { console.error(error) })
       wasBlocking = state.blocking

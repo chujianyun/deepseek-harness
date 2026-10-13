@@ -85,6 +85,17 @@ Function InstallerFinish
         Quit
     ${EndIf}
     System::Call 'user32::DestroyWindow(p $InstallerProgressWindow)'
+    ; An in-app update started this installer; it relaunches the application instead of showing the finish page.
+    ${If} ${isUpdated}
+        HideWindow
+        ${If} ${UAC_IsAdmin}
+            ; An elevated installer must still launch the application through the user's shell.
+            ${StdUtils.ExecShellAsUser} $0 "$INSTDIR\${APP_EXECUTABLE_FILENAME}" "open" "--updated"
+        ${Else}
+            Exec '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --updated'
+        ${EndIf}
+        Quit
+    ${EndIf}
     StrCpy $InstallerPhase "success"
     Call InstallerCreate
 FunctionEnd

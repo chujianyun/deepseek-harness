@@ -629,6 +629,7 @@ describe('desktop main startup', () => {
     await readyForUpdate()
     await vi.advanceTimersByTimeAsync(0)
     harness.updateState = { phase: 'available', version: '1.0.1-nightly.1' }
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
     await invoke(DESKTOP_IPC.updatesOpen, 'app')
     expect(harness.updateDownload).toHaveBeenCalledWith('1.0.1-nightly.1')
     expect(testAuth.login).not.toHaveBeenCalled()
@@ -1319,6 +1320,7 @@ describe('desktop main startup', () => {
     harness.updateDownload.mockImplementation(async () => { harness.updateState = { phase: 'ready', version: '1.0.1' }; return harness.updateState })
     window.close()
     window.visible = false
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
     const opened = invoke(DESKTOP_IPC.updatesOpen, 'app') as Promise<void>
     await vi.advanceTimersByTimeAsync(0)
     expect(harness.updateDownload).toHaveBeenCalledWith('1.0.1')
@@ -1497,6 +1499,7 @@ describe('desktop main startup', () => {
     await readyForUpdate()
     harness.updateCheck.mockResolvedValueOnce({ phase: 'available', version: '1.0.1-nightly.1' })
     harness.updateDownload.mockRejectedValueOnce(new Error('desktop update: download confirmation is stale'))
+    harness.dialog.showMessageBox.mockResolvedValue({ response: 0 })
     await invoke(DESKTOP_IPC.updatesOpen, 'app')
     expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'error',
       message: en.updateDownloadFailed, technicalDetails: 'desktop update: download confirmation is stale' }))
@@ -1518,6 +1521,39 @@ describe('desktop main startup', () => {
       detail: 'Faster sign-in\n\nCurrent version: 1.2.3. Download the new version from the download page and install it.' }))
     expect(harness.openExternal).toHaveBeenCalledExactlyOnceWith('https://downloads.example.com/download')
     expect(harness.updateDownload).not.toHaveBeenCalled()
+  })
+
+  it('checks the in-app updater again once the Hub offer arrives and asks before downloading', async () => {
+    harness.embeddedPolicy = { origin: 'https://policy.example.com', allowedPageOrigins: ['https://downloads.example.com'] }
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ code: 0, data: { biz_code: 0, biz_data: null,
+      available: { version: '1.3.0', desktop_app_link: 'https://downloads.example.com/download', detail: 'Faster sign-in' } } })))
+    await readyForUpdate()
+    await vi.advanceTimersByTimeAsync(0)
+    harness.dialog.showMessageBox.mockClear()
+    harness.updateCheck.mockClear()
+    harness.updateCheck.mockResolvedValueOnce({ phase: 'idle' }).mockResolvedValueOnce({ phase: 'available', version: '1.3.0' })
+    await invoke(DESKTOP_IPC.updatesOpen, 'app')
+    expect(harness.updateCheck).toHaveBeenCalledTimes(2)
+    expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({
+      message: 'New version available: 1.3.0', buttons: [en.updateNow, en.later],
+      detail: `Faster sign-in\n\nCurrent version: 1.2.3\n\n${en.updateDetail}` }))
+    expect(harness.updateDownload).not.toHaveBeenCalled()
+  })
+
+  it('offers the download page after a failed in-app download', async () => {
+    harness.embeddedPolicy = { origin: 'https://policy.example.com', allowedPageOrigins: ['https://downloads.example.com'] }
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ code: 0, data: { biz_code: 0, biz_data: null,
+      available: { version: '1.3.0', desktop_app_link: 'https://downloads.example.com/download' } } })))
+    await readyForUpdate()
+    await vi.advanceTimersByTimeAsync(0)
+    harness.updateState = { phase: 'available', version: '1.3.0' }
+    harness.updateDownload.mockResolvedValueOnce({ phase: 'error', version: '1.3.0', failedOperation: 'download', message: 'checksum does not match' })
+    harness.dialog.showMessageBox.mockClear()
+    harness.dialog.showMessageBox.mockResolvedValue({ response: 0 })
+    await invoke(DESKTOP_IPC.updatesOpen, 'app')
+    expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'error', message: en.updateDownloadFailed,
+      buttons: [en.updateOpenDownloadPage, en.updateAcknowledge], defaultId: 1, cancelId: 1 }))
+    expect(harness.openExternal).toHaveBeenCalledExactlyOnceWith('https://downloads.example.com/download')
   })
 
   it('offers the Hub release on a build without an update source instead of reporting a failed check', async () => {
@@ -1546,6 +1582,7 @@ describe('desktop main startup', () => {
     await vi.advanceTimersByTimeAsync(0)
     harness.dialog.showMessageBox.mockClear()
     harness.updateCheck.mockResolvedValueOnce({ phase: 'available', version: '1.0.1-nightly.1' })
+    harness.dialog.showMessageBox.mockResolvedValue({ response: 0 })
     await invoke(DESKTOP_IPC.updatesOpen, 'app')
     const messages = harness.dialog.showMessageBox.mock.calls.map(call => (call.at(-1) as { message: string }).message)
     expect(messages).not.toContain(en.mandatoryUnavailable)
@@ -1560,6 +1597,7 @@ describe('desktop main startup', () => {
     harness.updateCheck.mockResolvedValue({ phase: 'available', version: '1.0.1-nightly.1' })
     const operation = Promise.resolve().then(async () => {
       await readyForUpdate()
+      harness.dialog.showMessageBox.mockResolvedValue({ response: 0 })
       await invoke(DESKTOP_IPC.updatesOpen, 'app')
     })
     try {
@@ -1632,9 +1670,10 @@ describe('desktop main startup', () => {
     expect(testAuth.login).not.toHaveBeenCalled()
   })
 
-  it('downloads on the first click and opens installation confirmation only after readiness', async () => {
+  it('downloads after Update now and opens installation confirmation only after readiness', async () => {
     await readyForUpdate()
     harness.updateState = { phase: 'available', version: '1.0.1-nightly.1' }
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
     const downloading = Promise.withResolvers<DesktopUpdateState>()
     const started = Promise.withResolvers<undefined>()
     harness.updateDownload.mockImplementationOnce(async (version) => {
@@ -1645,7 +1684,8 @@ describe('desktop main startup', () => {
     const action = invoke(DESKTOP_IPC.updatesOpen, 'app')
     await started.promise
     const repeated = invoke(DESKTOP_IPC.updatesOpen, 'app')
-    expect(harness.dialog.showMessageBox).not.toHaveBeenCalled()
+    expect(harness.dialog.showMessageBox).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      message: 'New version available: 1.0.1-nightly.1', buttons: [en.updateNow, en.later], defaultId: 0, cancelId: 1 }))
     expect(harness.updateDownload).toHaveBeenCalledExactlyOnceWith('1.0.1-nightly.1')
     expect(harness.updateInstall).not.toHaveBeenCalled()
     downloading.resolve({ phase: 'ready', version: '1.0.1-nightly.1' })
@@ -1653,6 +1693,14 @@ describe('desktop main startup', () => {
     expect(harness.updateInstall).toHaveBeenCalledExactlyOnceWith('1.0.1-nightly.1')
     await harness.updateCheck()
     expect(harness.updateInstall).toHaveBeenCalledOnce()
+  })
+
+  it('does not download when the update prompt is answered with Later', async () => {
+    await readyForUpdate()
+    harness.updateState = { phase: 'available', version: '1.0.1-nightly.1' }
+    await invoke(DESKTOP_IPC.updatesOpen, 'app')
+    expect(harness.dialog.showMessageBox).toHaveBeenCalledOnce()
+    expect(harness.updateDownload).not.toHaveBeenCalled()
   })
 
   it('does not lock or stop tasks when restart confirmation is dismissed', async () => {
