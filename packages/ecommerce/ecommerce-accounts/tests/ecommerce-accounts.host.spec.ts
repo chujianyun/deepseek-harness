@@ -13,7 +13,7 @@ import { writeJsonAtomic } from '../src/files.ts'
 import { applyUpdate, DamagedMemory, EMPTY_MEMORY, readMemory } from '../src/memory.ts'
 import { SKILL_CONTENT } from '../src/skill.ts'
 import EcommerceAccountsService, {
-  DOUDIAN, matchesCheckApi, mtopUserNick, parseJsonOrJsonp, PINDUODUO, PUBLIC_PAGE, RISK_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL,
+  DOUDIAN, matchesCheckApi, mtopUserNick, parseJsonOrJsonp, PINDUODUO, PUBLIC_PAGE, RISK_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL, YUNTAI,
 } from '../src/index.ts'
 import { alive, backgroundBundle, browserPid, closeChrome, ensureTab, findChrome, launchChrome, readRecord } from '../src/chrome.ts'
 import { Cdp, pageTabs } from '../src/cdp.ts'
@@ -739,6 +739,13 @@ describe('e-commerce account edge cases', () => {
     expect(DOUDIAN.read('{"code":0,"data":{"menu_list":[]}}')).toEqual({ signedIn: false })
     expect(DOUDIAN.read('{"code":10008,"data":null}')).toEqual({ signedIn: false })
     expect(DOUDIAN.read('[]')).toEqual({ signedIn: false })
+    expect(YUNTAI.read('mtopjsonp1({"ret":["SUCCESS::调用成功"],"data":{"model":{"name":"名流官方旗舰店:ai","sellerName":"名流官方旗舰店"}}})'))
+      .toEqual({ signedIn: true, name: '名流官方旗舰店:ai' })
+    expect(YUNTAI.read('{"ret":["SUCCESS::调用成功"],"data":{"model":{"name":""}}}')).toEqual({ signedIn: true })
+    expect(YUNTAI.read('{"ret":["SUCCESS::调用成功"],"data":{"model":null}}')).toEqual({ signedIn: false })
+    expect(YUNTAI.read('{"ret":["SUCCESS::调用成功"],"data":null}')).toEqual({ signedIn: false })
+    expect(YUNTAI.read('{"ret":["FAIL_SYS_SESSION_EXPIRED::Session过期"]}')).toEqual({ signedIn: false })
+    expect(YUNTAI.read('oops')).toEqual({ signedIn: false })
     expect(PINDUODUO.store!.read('{"result":{"merchantMainSimpleVO":{"mallName":"名流保健"}}}')).toBe('名流保健')
     expect(PINDUODUO.store!.read('{"result":{"merchantMainSimpleVO":null}}')).toBeUndefined()
     expect(PINDUODUO.store!.read('{"result":null}')).toBeUndefined()
@@ -753,23 +760,29 @@ describe('e-commerce account edge cases', () => {
     expect(PINDUODUO.isLoginPage('https://mms.pinduoduo.com/home/')).toBe(false)
     expect(DOUDIAN.isLoginPage('https://fxg.jinritemai.com/login/common')).toBe(true)
     expect(DOUDIAN.isLoginPage('https://fxg.jinritemai.com/ffa/mshop/homepage/index')).toBe(false)
+    // Signed out, Yuntai goes to Alibaba Health's sign-in, which offers Taobao's or 1688's.
+    expect(YUNTAI.isLoginPage('https://mozi-login.alibaba-inc.com/ssoLogin.htm?APP_NAME=alihealth_nr_crm')).toBe(true)
+    expect(YUNTAI.isLoginPage('https://login.1688.com/member/signin.htm')).toBe(true)
+    expect(YUNTAI.isLoginPage('https://login.taobao.com/havanaone/login/login.htm')).toBe(true)
+    expect(YUNTAI.isLoginPage('https://yuntai.taobao.com/v2/third-party-invest')).toBe(false)
   })
 
-  it('signs in Taobao, Pinduoduo, and Douyin shop accounts, and shows a lost sign-in as expired', async () => {
+  it('signs in Taobao, Pinduoduo, Douyin shop, and Yuntai accounts, and shows a lost sign-in as expired', async () => {
     const env = await setup()
-    for (const platform of ['taobao', 'pinduoduo', 'doudian'] as const) {
+    for (const platform of ['taobao', 'pinduoduo', 'doudian', 'yuntai'] as const) {
       const { accountId } = await env.service.addAccount({ ...merchant, platform })
       expect((await env.service.getState()).accounts.at(-1)).toMatchObject({ platform, status: 'signed-out', expired: false })
       await env.service.startSignIn(accountId)
       await env.signIn(accountId, '小美')
     }
     const signedIn = await env.settle(s => s.accounts.every(account => account.status === 'signed-in'))
-    // These platforms name no account; Pinduoduo and Douyin shop pages name the store.
-    expect(signedIn.accounts.map(account => [account.signedInAs, account.signedInStore])).toEqual([[undefined, undefined], [undefined, '小美店'], [undefined, '小美店']])
+    // Pinduoduo and Douyin shop pages name the store; the Yuntai check names the account.
+    expect(signedIn.accounts.map(account => [account.signedInAs, account.signedInStore]))
+      .toEqual([[undefined, undefined], [undefined, '小美店'], [undefined, '小美店'], ['小美:ai', undefined]])
     for (const account of signedIn.accounts) await rm(join(env.browserDir(account.id), 'user-data', 'fake-signed-in'))
-    // Signed out, the Taobao and Douyin shop pages go to sign in, and Pinduoduo says so.
+    // Signed out, the Taobao, Douyin shop, and Yuntai pages go to sign in, and Pinduoduo says so.
     const lost = await env.service.checkAccounts()
-    expect(lost.accounts.map(account => [account.status, account.expired])).toEqual([['signed-out', true], ['signed-out', true], ['signed-out', true]])
+    expect(lost.accounts.map(account => [account.status, account.expired])).toEqual(Array.from({ length: 4 }, () => ['signed-out', true]))
   })
 
   it('shows a check that times out, cannot reach the page, or finds the browser held by another Chrome as a problem', async () => {

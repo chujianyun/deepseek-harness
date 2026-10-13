@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CategoryMemory, PublishMemory } from '@deepseek-ai/dsh-ecommerce-accounts/src/memory.ts'
-import type { EcommercePlatform } from '@deepseek-ai/dsh-ecommerce-accounts/src/types.ts'
+import type { EcommercePlatform, PublishPlatform } from '@deepseek-ai/dsh-ecommerce-accounts/src/types.ts'
 import { EXIT, SkillError } from './errors.ts'
 
 /** The account `dsh-ecommerce browser` handed over. */
@@ -152,7 +152,7 @@ export async function reportSignedOut(accountId: string, run = runDshEcommerce):
   await run(['signed-out', accountId])
 }
 
-export type { CategoryMemory, EcommercePlatform, PublishMemory }
+export type { CategoryMemory, EcommercePlatform, PublishMemory, PublishPlatform }
 
 /**
  * Read the company's publishing memory: store information, categories of product lines, table headers,

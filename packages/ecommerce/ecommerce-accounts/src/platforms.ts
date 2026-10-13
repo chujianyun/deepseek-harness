@@ -4,10 +4,13 @@
  * platform's response; it never reads or keeps a cookie.
  */
 
-import type { EcommerceAccountKind, EcommercePlatform } from './types.ts'
+import type { EcommerceAccountKind, EcommercePlatform, PublishPlatform } from './types.ts'
 
 /** Every platform an account can be on. */
-export const ECOMMERCE_PLATFORMS = ['tmall', 'taobao', 'pinduoduo', 'doudian'] as const satisfies readonly EcommercePlatform[]
+export const ECOMMERCE_PLATFORMS = ['tmall', 'taobao', 'pinduoduo', 'doudian', 'yuntai'] as const satisfies readonly EcommercePlatform[]
+
+/** Platforms new items are published to; the publishing memory keeps categories only for these. */
+export const PUBLISH_PLATFORMS = ['tmall', 'taobao', 'pinduoduo', 'doudian'] as const satisfies readonly PublishPlatform[]
 
 /** What the platform's check response says. */
 export type CheckAnswer =
@@ -162,6 +165,30 @@ export const DOUDIAN: PlatformSpec = {
   },
 }
 
+/** Where Alibaba Health's own sign-in serves a page: Yuntai sends a signed-out tab there, and on to Taobao's or 1688's. */
+const YUNTAI_LOGIN = /^https?:\/\/(?:mozi-login\.alibaba-inc\.com|login\.1688\.com)\//u
+
+/**
+ * Tmall Health Brand Yuntai (健康品牌云台), the Alibaba Health back office with its own sign-in: the
+ * third-party investment page asks `mtop.alihealth.crm.industry.user.current`, whose `data.model`
+ * names the signed-in account (`name`); its `sellerName` is the main account, not the store, so it is
+ * not read. Signed out, the page goes to Alibaba Health's sign-in.
+ */
+export const YUNTAI: PlatformSpec = {
+  id: 'yuntai',
+  loginUrl: 'https://mozi-login.alibaba-inc.com/ssoLogin.htm?APP_NAME=alihealth_nr_crm&BACK_URL=https%3A%2F%2Fyuntai.taobao.com%2Fv2%2Fthird-party-invest',
+  isLoginPage: url => YUNTAI_LOGIN.test(url) || TAOBAO_LOGIN.test(url),
+  pageUrl: 'https://yuntai.taobao.com/v2/third-party-invest',
+  checkApi: 'https://h5api.m.taobao.com/h5/mtop.alihealth.crm.industry.user.current/1.0/',
+  read: (body) => {
+    const value = objectOf(body)
+    const model = (value?.data as { model?: { name?: unknown } | null } | null | undefined)?.model
+    if (value === undefined || !mtopSucceeded(value) || typeof model !== 'object' || model === null) return { signedIn: false }
+    const name = text(model.name)
+    return { signedIn: true, ...name === undefined ? {} : { name } }
+  },
+}
+
 /** Taobao buyers: the Taobao home page asks `mtop.user.getusersimple`, which names the signed-in user. */
 export const TAOBAO_BUYER: PlatformSpec = {
   id: 'taobao',
@@ -193,7 +220,7 @@ export function specOf(platform: EcommercePlatform, kind: EcommerceAccountKind):
 
 /** Every platform by id. */
 export const PLATFORMS: Readonly<Record<EcommercePlatform, PlatformSpec>> = {
-  tmall: TMALL, taobao: TAOBAO, pinduoduo: PINDUODUO, doudian: DOUDIAN,
+  tmall: TMALL, taobao: TAOBAO, pinduoduo: PINDUODUO, doudian: DOUDIAN, yuntai: YUNTAI,
 }
 
 /**

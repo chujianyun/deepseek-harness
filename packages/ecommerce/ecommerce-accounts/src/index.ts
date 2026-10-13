@@ -56,7 +56,7 @@ import type {
 
 export type * from './types.ts'
 export {
-  DOUDIAN, mtopUserNick, matchesCheckApi, parseJsonOrJsonp, PINDUODUO, PLATFORMS, PUBLIC_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL,
+  DOUDIAN, mtopUserNick, matchesCheckApi, parseJsonOrJsonp, PINDUODUO, PLATFORMS, PUBLIC_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL, YUNTAI,
   type CheckAnswer, type PlatformSpec,
 } from './platforms.ts'
 import { changeStream } from '@deepseek-ai/dsh-change-stream'
@@ -125,7 +125,7 @@ export const Config: Schema<Config> = Schema.object({
 export const CHROME_DOWNLOAD_URL = 'https://www.google.com/chrome/'
 
 /** Which platforms and kinds can be added now, as `<platform>/<kind>`. */
-const ADDABLE: ReadonlySet<string> = new Set(['tmall/merchant', 'taobao/merchant', 'pinduoduo/merchant', 'doudian/merchant', 'tmall/buyer', 'taobao/buyer'])
+const ADDABLE: ReadonlySet<string> = new Set(['tmall/merchant', 'taobao/merchant', 'pinduoduo/merchant', 'doudian/merchant', 'yuntai/merchant', 'tmall/buyer', 'taobao/buyer'])
 
 /** What asking about an account found: the platform's answer, or its browser data held by another Chrome. */
 type AccountAnswer = ProbeResult | { readonly kind: 'busy' }
@@ -174,7 +174,9 @@ const TENANT_QUEUE = Symbol('tenant')
 const NODE_KEY = 'DSH_ECOMMERCE_NODE'
 
 /** Each platform's name in what the model reads. */
-const PLATFORM_NAMES = { tmall: 'Tmall', taobao: 'Taobao', pinduoduo: 'Pinduoduo', doudian: 'Douyin shop' } as const satisfies Record<EcommercePlatform, string>
+const PLATFORM_NAMES = {
+  tmall: 'Tmall', taobao: 'Taobao', pinduoduo: 'Pinduoduo', doudian: 'Douyin shop', yuntai: 'Tmall Health Brand Yuntai',
+} as const satisfies Record<EcommercePlatform, string>
 
 /** Each check problem in what the model reads. */
 const PROBLEM_TEXT = {

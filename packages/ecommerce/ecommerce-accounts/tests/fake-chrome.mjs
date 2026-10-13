@@ -2,8 +2,9 @@
 // A stand-in for Google Chrome in tests: it answers `--version`, serves the DevTools HTTP endpoints
 // and the browser WebSocket on --remote-debugging-port, and plays the Tmall check: the home page
 // sends `mtop.user.getusersimple`, signed in while `<user-data-dir>/fake-signed-in` holds a nick; the
-// Taobao, Pinduoduo, and Douyin shop pages answer their own checks, and the Taobao and Douyin shop
-// pages go to sign in while signed out; the Pinduoduo and Douyin shop pages also name the store, which
+// Taobao, Pinduoduo, Douyin shop, and Yuntai pages answer their own checks, and the Taobao, Douyin shop,
+// and Yuntai pages go to sign in while signed out; the Yuntai check names the account, and the
+// Pinduoduo and Douyin shop pages also name the store, which
 // FAKE_CHROME_NO_STORE leaves out and FAKE_CHROME_NO_STORE_BODY loses. FAKE_CHROME_OFFLINE fails every
 // navigation. A connection that sets auto-attach watches every tab, as DSH's guard does: each tab's
 // page loads pause until it continues or fails them; an item.taobao.com page redirects to Tmall,
@@ -95,6 +96,7 @@ const LOGINS = [
   ['https://login.taobao.com/', 'https://qn.taobao.com/home.htm/QnworkbenchHome/'],
   ['https://mms.pinduoduo.com/login', 'https://mms.pinduoduo.com/home/'],
   ['https://fxg.jinritemai.com/login', 'https://fxg.jinritemai.com/ffa/mshop/homepage/index'],
+  ['https://mozi-login.alibaba-inc.com/', 'https://yuntai.taobao.com/v2/third-party-invest'],
 ]
 const urlOf = (target) => {
   const home = LOGINS.find(([login]) => target.url.startsWith(login))?.[1]
@@ -134,6 +136,14 @@ const pageLoad = (url, nick) => {
         { url: 'https://fxg.jinritemai.com/byteshop/menu/list/v2', body: JSON.stringify({ code: 0, data: { menu_list: [{ name: '首页' }] } }) },
         ...store({ url: 'https://fxg.jinritemai.com/center/qualification/shop/info', body: JSON.stringify({ code: 0, data: { shop_name: `${nick}店` } }) }),
       ] }
+  }
+  if (url.startsWith('https://yuntai.taobao.com/')) {
+    return nick === undefined
+      ? { redirect: 'https://mozi-login.alibaba-inc.com/ssoLogin.htm?APP_NAME=alihealth_nr_crm' }
+      : { responses: [{
+        url: 'https://h5api.m.taobao.com/h5/mtop.alihealth.crm.industry.user.current/1.0/',
+        body: `mtopjsonp1(${JSON.stringify({ ret: ['SUCCESS::调用成功'], data: { model: { name: `${nick}:ai`, sellerName: `${nick}旗舰店` } } })})`,
+      }] }
   }
   return {
     responses: [{

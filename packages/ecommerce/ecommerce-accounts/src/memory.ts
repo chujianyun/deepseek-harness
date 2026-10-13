@@ -8,7 +8,7 @@
 
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
-import { ECOMMERCE_PLATFORMS } from './platforms.ts'
+import { PUBLISH_PLATFORMS } from './platforms.ts'
 
 /** A field value: one text, or several for a multi-choice field. */
 export type MemoryValue = string | readonly string[]
@@ -40,7 +40,7 @@ export interface PublishMemory {
   readonly stores: Readonly<Record<string, StoreMemory>>
   /**
    * Product line → platform → its category there. A remember writes only the platforms of
-   * {@link ECOMMERCE_PLATFORMS}; a file may hold other platform names, such as one saved before
+   * {@link PUBLISH_PLATFORMS}; a file may hold other platform names, such as one saved before
    * categories were kept per platform, which are kept as they are.
    */
   readonly categories: Readonly<Record<string, Readonly<Partial<Record<string, CategoryMemory>>>>>
@@ -71,13 +71,13 @@ const catId = z.string().regex(/^\d+$/u)
  */
 export const MemoryUpdate = z.object({
   store: z.object({ name: key, values: z.record(key, value.nullable()) }).strict().optional(),
-  category: z.object({ line: key, platform: z.enum(ECOMMERCE_PLATFORMS), catId, categoryPath: z.string().max(500).default('') }).strict().optional(),
+  category: z.object({ line: key, platform: z.enum(PUBLISH_PLATFORMS), catId, categoryPath: z.string().max(500).default('') }).strict().optional(),
   columns: z.record(key, z.enum(SKU_FIELDS).nullable()).optional(),
   declarations: z.object({
     store: key, catId, confirmed: z.array(z.object({ key, text: z.string().max(2000) }).strict()).min(1),
   }).strict().optional(),
   forget: z.object({
-    categories: z.array(z.union([key, z.object({ line: key, platform: z.enum(ECOMMERCE_PLATFORMS) }).strict()])).min(1).optional(),
+    categories: z.array(z.union([key, z.object({ line: key, platform: z.enum(PUBLISH_PLATFORMS) }).strict()])).min(1).optional(),
     /** Declarations of a store and category; without keys, all of them. */
     declarations: z.array(z.object({ store: key, catId, keys: z.array(key).min(1).optional() }).strict()).min(1).optional(),
   }).strict().optional(),

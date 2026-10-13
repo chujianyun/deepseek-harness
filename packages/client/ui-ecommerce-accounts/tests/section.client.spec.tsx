@@ -285,7 +285,7 @@ describe('e-commerce accounts section', () => {
     fireEvent.click(screen.getByRole('button', { name: '新增账号' }))
     const dialog = screen.getByRole('dialog', { name: '新增账号' })
     const platform = within(dialog).getByRole<HTMLSelectElement>('combobox', { name: '平台' })
-    expect([...platform.options].map(option => option.text)).toEqual(['天猫', '淘宝', '拼多多', '抖店'])
+    expect([...platform.options].map(option => option.text)).toEqual(['天猫', '淘宝', '拼多多', '抖店', '健康品牌云台'])
     fireEvent.change(platform, { target: { value: 'doudian' } })
     fireEvent.change(within(dialog).getByPlaceholderText('例如：名流旗舰店'), { target: { value: '抖店二号' } })
     fireEvent.change(within(dialog).getByPlaceholderText('例如：名流旗舰店:运营'), { target: { value: 'b' } })

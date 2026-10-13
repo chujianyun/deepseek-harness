@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The ecommerce family links Desktop to the e-commerce platforms a company sells on — Tmall, Taobao, Pinduoduo, and Douyin shops — through accounts the user signs in to in the system Google Chrome, one browser data directory per account. Desktop renders it as the E-commerce accounts section of Settings. The family also holds the Tmall skills that a tenant uploads to the Skill Hub, which read store data and publish rules with those accounts.
+The ecommerce family links Desktop to the e-commerce platforms a company sells on — Tmall, Taobao, Pinduoduo, Douyin shops, and Tmall Health Brand Yuntai — through accounts the user signs in to in the system Google Chrome, one browser data directory per account. Desktop renders it as the E-commerce accounts section of Settings. The family also holds the Tmall skills that a tenant uploads to the Skill Hub, which read store data and publish rules with those accounts.
 
 ## Table of Contents
 
