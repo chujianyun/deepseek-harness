@@ -158,6 +158,17 @@ describe('mandatory update policy', () => {
     expect((await policy.check('launch')).available?.packages.map(item => item.url)).toEqual(['http://127.0.0.1:3000/downloads/1.3.0/mo.exe'])
   })
 
+  it('carries the release a mandatory decision requires with its installers, ignoring a missing or older version', async () => {
+    const { policy, request } = fixture()
+    const pkg = { kind: 'exe', url: 'https://downloads.example.com/downloads/1.3.0/mo.exe', sha256: 'c'.repeat(64), size_bytes: 9 }
+    request.mockResolvedValueOnce(Response.json({ code: 40005, data: { ...force.data, version: '1.3.0', packages: [pkg] } }))
+    expect((await policy.check('launch')).required).toEqual({ version: '1.3.0', packages: [{ kind: 'exe', url: pkg.url, sha256: pkg.sha256, size: 9 }] })
+    for (const version of [undefined, '1.2.3', 'next']) {
+      request.mockResolvedValueOnce(Response.json({ code: 40005, data: { ...force.data, version, packages: [pkg] } }))
+      expect((await policy.check('manual', true)).required).toBeUndefined()
+    }
+  })
+
   it('accepts flattened 40005 on an HTTP error and keeps server content as plain text', async () => {
     const { policy, request } = fixture()
     request.mockResolvedValueOnce(Response.json(force, { status: 403 }))

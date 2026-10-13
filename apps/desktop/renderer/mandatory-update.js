@@ -28,7 +28,7 @@ function render(view) {
   let title = policy.title ?? messages.mandatoryTitle
   let detail = policy.detail ?? messages.mandatoryDetail
   let primary = '', action = '', status = ''
-  if (downloadable && !manual) { primary = failed ? messages.updateRetry : messages.updateDownload; action = 'download' }
+  if (downloadable && !manual) { primary = failed ? messages.updateRetry : messages.updateNow; action = 'download' }
   if (ready && !manual) { primary = view.deferred ? messages.mandatoryContinue : messages.updateRetry; action = 'install' }
   if (view.deferred) { title = messages.mandatoryReady; detail = messages.mandatoryDeferred }
   if (update.phase === 'downloading') status = format(messages.updateDownloading, { percent: String(Math.floor(update.percent ?? 0)) })

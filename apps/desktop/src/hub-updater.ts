@@ -17,8 +17,8 @@ export type HubPreparation = (file: string, version: string) => Promise<string>
 
 /** Process-level operations, replaceable at the platform test boundary. */
 export interface HubUpdaterOptions {
-  /** Offered release from the latest policy decision, or undefined when none is offered. */
-  readonly offer: () => DesktopAvailableRelease | undefined
+  /** Release to install from the latest policy decision, offered or required, or undefined when there is none. */
+  readonly offer: () => Pick<DesktopAvailableRelease, 'version' | 'packages'> | undefined
   readonly currentVersion: () => string
   /** Installer kind this platform installs, or undefined when in-app update is unsupported here. */
   readonly kind: DesktopUpdatePackage['kind'] | undefined
@@ -75,10 +75,16 @@ export class HubUpdater extends EventEmitter {
 
   /**
    * Download the selected installer, emitting progress, and accept it only when size and SHA-256 match.
-   * A verified file of the same target is reused without downloading again.
+   * A verified file of the same target is reused without downloading again; a changed offer is downloaded afresh.
    */
   async downloadUpdate(): Promise<string[]> {
+    // A retry can follow an installer republished under the same version; a different version needs a new check.
+    const checked = this.target?.version
+    await this.checkForUpdates()
     const target = this.target
+    if (checked !== undefined && target !== undefined && target.version !== checked) {
+      throw new Error('desktop update: the offered version changed; check again')
+    }
     if (target === undefined) throw new Error('desktop update: no checked update is available')
     const { version, pkg } = target
     await this.clearing

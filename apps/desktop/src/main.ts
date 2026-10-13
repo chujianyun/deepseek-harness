@@ -600,7 +600,7 @@ async function main(): Promise<void> {
     : developmentKind === 'exe' || developmentKind === 'zip' || developmentKind === 'dmg' ? developmentKind : undefined
   const quitForUpdate = (): void => { app.quit() }
   const hubUpdater = new HubUpdater({
-    offer: () => mandatoryPolicy?.state.blocking === false ? mandatoryPolicy.state.available : undefined,
+    offer: () => mandatoryPolicy?.state.blocking === true ? mandatoryPolicy.state.required : mandatoryPolicy?.state.available,
     currentVersion: () => app.getVersion(),
     kind: updateKind,
     directory: join(app.getPath('userData'), 'updates'),
@@ -664,8 +664,10 @@ async function main(): Promise<void> {
       return true
     },
     signedFeed ? undefined : hubUpdater,
-    // A mandatory decision keeps the download page until the forced flow installs in-app.
-    signedFeed ? undefined : () => hubUpdater.supported && mandatoryPolicy !== undefined && !mandatoryPolicy.state.blocking,
+    // A mandatory decision installs in-app when it names the required release; a disk-image update needs the
+    // user's drag, which the mandatory window cannot ask for, so that case keeps the download page.
+    signedFeed ? undefined : () => hubUpdater.supported && mandatoryPolicy !== undefined && (!mandatoryPolicy.state.blocking
+      || (hubUpdater.kind !== 'dmg' && mandatoryPolicy.state.required?.packages.some(item => item.kind === hubUpdater.kind) === true)),
     undefined,
     (success, reason) => { void track('desktop_upgrade_download_result', { is_success: success, ...reason === undefined ? {} : { error_reason: reason } }) },
 
@@ -692,9 +694,13 @@ async function main(): Promise<void> {
     return updates.state
   }
 
-  const downloadUpdate = async (version: string): Promise<DesktopUpdateState> => {
+  const downloadUpdate = async (confirmed: string): Promise<DesktopUpdateState> => {
     void track('desktop_upgrade_click', {})
     updateJournal?.action('download-requested')
+    // The user-center offer can change between polls, including after a failed download, when automatic
+    // checks pause; checking first downloads the current target.
+    const checked = signedFeed ? undefined : await updates.check(true)
+    const version = checked?.phase === 'available' ? checked.version ?? confirmed : confirmed
     const state = await updates.download(version)
     if (state.phase !== 'ready' || quitting) return state
     // Only a completed user-driven download opens this prompt; cancelling installation does not reopen it.
@@ -814,6 +820,7 @@ async function main(): Promise<void> {
     if (current.id === locale.id) return
     locale = current
     platformView.notifyLocaleChanged()
+    mandatoryUI?.sync()
     windowsLanguage = locale.id
     refreshApplicationMenu()
   })
@@ -1377,6 +1384,7 @@ async function main(): Promise<void> {
     if (!['win32', 'darwin'].includes(process.platform) || !['x64', 'arm64'].includes(process.arch)) throw new Error('desktop policy: unsupported platform')
     let wasBlocking = false
     let wasOffered: string | undefined
+    let wasTarget: string | undefined
     mandatoryPolicy = new DesktopMandatoryUpdatePolicy(policyConfig, {
       platform: process.platform as 'win32' | 'darwin', arch: process.arch as 'x64' | 'arm64',
       bundledDshVersion: app.isPackaged ? readDesktopRuntime(resources.dsh).release.version : app.getVersion(),
@@ -1388,21 +1396,23 @@ async function main(): Promise<void> {
       }
       mandatoryUI?.sync()
       const offered = state.blocking ? undefined : state.available?.version
-      if (offered !== wasOffered) {
-        broadcastUpdatePresentation()
-        // The in-app updater reads its target from the offer, so a new or withdrawn offer needs a check.
-        if (!signedFeed && hubUpdater.supported) {
-          void updateSchedule.check(false, true).catch((error: unknown) => { console.error(error) })
-        }
-      }
+      if (offered !== wasOffered) broadcastUpdatePresentation()
       wasOffered = offered
+      // The in-app updater reads its target from the policy, so a new, changed, or withdrawn target needs a check;
+      // a republished installer keeps the version but changes its checksum.
+      const release = state.blocking ? state.required : state.available
+      const target = release === undefined ? undefined : [release.version, ...release.packages.map(item => item.sha256)].join(' ')
+      if (target !== wasTarget && !signedFeed && hubUpdater.supported) {
+        void updateSchedule.check(false, true).catch((error: unknown) => { console.error(error) })
+      }
+      wasTarget = target
       if (state.blocking && !wasBlocking) void updateSchedule.check(false, true).catch((error: unknown) => { console.error(error) })
       wasBlocking = state.blocking
     }, policyAuth?.request, () => desktopClientMetadata(locale.id))
     const policy = mandatoryPolicy
     mandatoryUI = new DesktopMandatoryUpdateWindow({
       overlays: updateOverlays,
-      preload: fileURLToPath(new URL('./preload-mandatory.cjs', import.meta.url)), locale,
+      preload: fileURLToPath(new URL('./preload-mandatory.cjs', import.meta.url)), locale: () => locale,
       allowedPageOrigins: policyConfig.allowedPageOrigins, parent: () => mainWindow,
       policy: () => policy.state, update: () => updates.state, hasUpdateSource: () => updates.hasUpdateSource,
       refresh: async () => { await Promise.all([checkPolicyManually(), updateSchedule.check(true)]) },

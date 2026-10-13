@@ -32,6 +32,14 @@ export interface DesktopPolicyState {
   readonly error?: 'unavailable' | 'authentication-required'
   /** Newer release the Hub offers without forcing it; only a no-force success carries one. */
   readonly available?: DesktopAvailableRelease
+  /** Release a mandatory decision requires, when the Hub names it; its installers allow in-app update. */
+  readonly required?: DesktopRequiredRelease
+}
+
+/** The version a mandatory decision requires and its installers for this platform and architecture. */
+export interface DesktopRequiredRelease {
+  readonly version: string
+  readonly packages: readonly DesktopUpdatePackage[]
 }
 
 /** A newer release offered for manual download. */
@@ -170,8 +178,11 @@ function parsePolicy(body: unknown, ok: boolean, config: DesktopPolicyConfig, cu
     const title = text(content?.title, 256)
     const detail = text(content?.detail, 16_384)
     const page = desktopPolicyPage(data?.desktop_app_link, config.allowedPageOrigins)
+    const version = typeof data?.version === 'string' ? valid(data.version) : null
+    const required = version !== null && gt(version, current) ? { version, packages: parsePackages(data?.packages, config) } : undefined
     return { blocking: true, checking: false,
-      ...(title === undefined ? {} : { title }), ...(detail === undefined ? {} : { detail }), ...(page === undefined ? {} : { page }) }
+      ...(title === undefined ? {} : { title }), ...(detail === undefined ? {} : { detail }), ...(page === undefined ? {} : { page }),
+      ...(required === undefined ? {} : { required }) }
   }
   if (ok && root?.code === 0 && data?.biz_code === 0 && data.biz_data === null) {
     const available = parseAvailable(data.available, current, config)

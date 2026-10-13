@@ -151,8 +151,26 @@ describe('hub updater', () => {
     expect(f.updater.installer).toBeUndefined()
   })
 
-  it('requires a checked update before downloading', async () => {
-    await expect(fixture().updater.downloadUpdate()).rejects.toThrow('no checked update')
+  it('downloads the latest offer, so a retry follows a republished installer and a withdrawn offer fails', async () => {
+    const f = fixture()
+    await f.updater.checkForUpdates()
+    f.prepare.mockRejectedValueOnce(new Error('archive contains a different application'))
+    await expect(f.updater.downloadUpdate()).rejects.toThrow('different application')
+    const fixed = Buffer.from('republished build')
+    f.fetch.mockResolvedValueOnce(chunked(fixed))
+    f.offer({ version: '1.1.0', page: 'https://hub.example.com/download',
+      packages: [{ ...exe, sha256: createHash('sha256').update(fixed).digest('hex'), size: fixed.length }] })
+    expect(await readFile((await f.updater.downloadUpdate())[0]!)).toEqual(fixed)
+    f.offer(undefined)
+    await expect(f.updater.downloadUpdate()).rejects.toThrow('no checked update')
+  })
+
+  it('refuses to download a different version than the one checked', async () => {
+    const f = fixture()
+    await f.updater.checkForUpdates()
+    f.offer({ version: '1.2.0', page: 'https://hub.example.com/download', packages: [exe] })
+    await expect(f.updater.downloadUpdate()).rejects.toThrow('offered version changed')
+    expect(f.fetch).not.toHaveBeenCalled()
   })
 
   it('hands the verified installer to the platform and reports a failed start as an updater error', async () => {
