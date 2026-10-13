@@ -39,7 +39,7 @@ The optional `searchMode` defaults to `'substring'`, matching `label` and `detai
 
 ### Built-in row faces
 
-First-party command definitions carry stable `definitionId` values. The client selects their localized titles, descriptions, icons, and input spellings by identity; changing a Host description cannot change that selection. Same-name overrides without the matching identity keep their own copy and receive no first-party aliases. Chinese and English spellings resolve through the same effective Session catalog in every locale, preserving the typed spelling in the draft and submitting the registered Host name. Contributions supply their own `label`, `description`, and `icon`, read on every candidate pass. Empty-query section order follows names, with unlisted rows closing Commands.
+First-party command definitions carry stable `definitionId` values. The client selects their localized titles, descriptions, icons, and input spellings by identity; changing a Host description cannot change that selection. Same-name overrides without the matching identity keep their own copy and receive no first-party aliases. Chinese and English spellings resolve through the same effective Session catalog in every locale, preserving the typed spelling in the draft and submitting the registered Host name. Contributions supply their own `label`, `description`, and `icon`, read on every candidate pass. Empty-query section order follows names, with unlisted rows closing Commands. `commandUi.hideFromMenu(name)` leaves a command out of the empty-query menu (the composer's + button and a bare `/`) while a typed query still finds and runs it; registrations of one name count until the last is disposed.
 
 ### Attachment-carrying submissions
 

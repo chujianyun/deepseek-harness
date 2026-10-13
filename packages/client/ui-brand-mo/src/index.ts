@@ -34,6 +34,7 @@ export const Config = z.object({
   quickTaskAssistant: z.string().default('').volatile(),
   defaultSessionGrouping: z.string().default('').volatile(),
   sessionsPerGroup: z.natural().min(1).default(5).volatile(),
+  menuHiddenCommands: z.array(z.string()).default([]).volatile(),
 })
 
 /**

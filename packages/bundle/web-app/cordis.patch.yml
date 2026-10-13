@@ -486,6 +486,8 @@
         defaultSessionGrouping: assistant
         # Each group lists its five most recent Sessions before "show more".
         sessionsPerGroup: 5
+        # The composer's + menu leaves out /feedback; the Session header's 问题反馈 button reports problems instead.
+        menuHiddenCommands: [feedback]
 
     - id: ui-attachment
       name: '@deepseek-ai/dsh-client-ui-attachment'
@@ -753,5 +755,6 @@
       config:
         default: standard
         # Desktop configured with a user center (the enterprise build) runs every session on the
-        # default (Standard) preset and shows no preset chip or header label.
+        # default (Standard) preset and shows no preset chip, header label, or Agent presets settings section.
         showPicker: !!js "!(ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN)"
+        showSettings: !!js "!(ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN)"
