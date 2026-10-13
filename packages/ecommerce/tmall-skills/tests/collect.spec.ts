@@ -96,7 +96,6 @@ describe('runCollect', () => {
     expect((JSON.parse(out.join('')) as { data: unknown }).data).toEqual({ ok: true })
     const risk = collection(() => Promise.reject(new SkillError('遇到滑块验证，已停止。', EXIT.stopped)))
     expect(await runCollect(['--account', 'a1'], deps, risk)).toBe(EXIT.stopped)
-    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- a non-Error rejection is the scenario under test.
     const odd = collection(() => Promise.reject('接口返回了 502'), { attempts: 1 })
     expect(await runCollect(['--account', 'a1'], deps, odd)).toBe(EXIT.failed)
     expect(err.join('')).toBe('遇到滑块验证，已停止。\n天猫采集试了 1 次都没成功：\n第 1 次：接口返回了 502\n')
