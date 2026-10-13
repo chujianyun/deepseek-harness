@@ -37,8 +37,8 @@ export const inject = ['theme', 'slots']
  * Apply the MO token layer and occupy both sidebar brand slots for exactly the plugin lifetime:
  * the wordmark in the expanded row, the app icon on the collapsed rail. While the locale registry
  * and the settings forms are present, offer the configured quick tasks under the blank new-session
- * composer and apply the configured default grouping and rows per group to the sidebar; their absence leaves the theme
- * and the brand row in place.
+ * composer and apply the configured default grouping and rows per group to the sidebar, and, while the command UI is
+ * mounted, leave the configured commands out of the composer's + menu; their absence leaves the theme and the brand row in place.
  * @param ctx - Client root context.
  */
 export function apply(ctx: ClientContext): void {
