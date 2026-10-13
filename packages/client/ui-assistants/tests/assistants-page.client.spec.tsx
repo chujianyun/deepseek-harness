@@ -28,7 +28,7 @@ function mount(value: AssistantsState | undefined, extra: Partial<AssistantsSnap
   const props = {
     t: makeTranslate(copy), useAssistants: bindSnapshotSelector(store), useSessions: bindSnapshotSelector(sessions),
     onOpenSession: vi.fn(),
-    onPick: vi.fn(async (_id: string | null) => {}), onChat: vi.fn(async (_id: string) => {}), onDismiss: vi.fn(),
+    onPick: vi.fn(async (_id: string | null) => {}), onChat: vi.fn(async (_id: string | null) => {}), onDismiss: vi.fn(),
     onCreate: vi.fn(async () => undefined), onLoadOptions: vi.fn(async () => ({ models: [], presets: [] })),
     squareAvatar: vi.fn(async () => 'data:image/webp;base64,AA'),
     onRead: vi.fn(async (assistantId: string): Promise<AssistantDetail | string> => ({

@@ -226,6 +226,18 @@ it('seeds the Daily Assistant, starts new sessions with no assistant, carries a 
     expect(await page.getByRole('menu').last().getByRole('menuitem').allTextContents()).toEqual(['智能体', '按工作区', '按工作区树', '日期', '不分组'])
     await page.keyboard.press('Escape')
 
+    // A section heading's new-session button opens a session with that assistant, which then sits in its section.
+    const shopHeading = page.getByRole('treeitem', { name: /店铺测试助手/ }).first()
+    await shopHeading.hover()
+    await page.getByRole('button', { name: '在“店铺测试助手”中新建会话' }).click()
+    await expect.poll(() => picker.textContent()).toContain('店铺测试助手')
+    await send('分组里新建的会话')
+    await expect.poll(() => sidebarSections(page), { timeout: 15_000 }).toEqual([['店铺测试助手', 2], ['通用模式', 1], ['日常助手', 1]])
+    // General mode's button opens a session without an assistant.
+    await page.getByRole('treeitem', { name: /通用模式/ }).first().hover()
+    await page.getByRole('button', { name: '在“通用模式”中新建会话' }).click()
+    await expect.poll(() => picker.textContent()).toContain('通用模式')
+
     // The wizard creates an E-commerce Manager with an uploaded avatar, its own model, and what it should know about the user.
     await page.getByRole('button', { name: '智能体', exact: true }).click()
     await page.getByRole('button', { name: '新建智能体' }).click()

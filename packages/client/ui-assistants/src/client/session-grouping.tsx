@@ -20,6 +20,8 @@ export type AssistantGroupingKey = 'groupByAssistant' | 'noAssistant' | 'groupOt
  * @param t - translator owning {@link AssistantGroupingKey}.
  * @param assistants - the assistants snapshot; a change of its Host state regroups the sidebar.
  * @param localeChanges - subscription to language switches, which relabel General mode and Other.
+ * @param newSession - open a new session with an assistant, or in General mode for null; the General
+ *   mode and assistant headings offer it, Other does not.
  * @returns the grouping, listed first under Group by; its sections follow their most recent Session.
  *   It reads as not ready until the signed-in tenant's assistants are known.
  */
@@ -27,6 +29,7 @@ export function assistantGrouping(
   t: (key: AssistantGroupingKey) => string,
   assistants: HostObservable<AssistantsSnapshot>,
   localeChanges: (onChange: () => void) => () => void,
+  newSession: (assistantId: string | null) => void,
 ): SessionGrouping {
   // One heading per assistant for as long as the Host state stays the same object.
   let headingsOf: AssistantsState | undefined
@@ -39,6 +42,7 @@ export function assistantGrouping(
       headings = new Map(state.assistants.map(assistant => [assistant.id, {
         key: `assistant:${assistant.id}`, label: assistant.name,
         icon: <AssistantAvatar avatar={assistant.avatar} name={assistant.name} size={16} />,
+        create: () => { newSession(assistant.id) },
       }]))
     }
     return headings.get(id)
@@ -52,7 +56,9 @@ export function assistantGrouping(
       const bound = assistantOf(session)
       if (bound === null) {
         const label = t('noAssistant')
-        return { key: 'general', label, icon: <AssistantAvatar avatar={NEUTRAL_AVATAR} name={label} size={16} /> }
+        return {
+          key: 'general', label, icon: <AssistantAvatar avatar={NEUTRAL_AVATAR} name={label} size={16} />, create: () => { newSession(null) },
+        }
       }
       return assistantHeading(bound)
         ?? { key: 'other', label: t('groupOther'), icon: <AssistantAvatar avatar={NEUTRAL_AVATAR} name="?" size={16} /> }

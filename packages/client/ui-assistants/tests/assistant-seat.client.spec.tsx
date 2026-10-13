@@ -30,7 +30,7 @@ function mount(extra: Partial<AssistantsSnapshot> = {}, mainView: number | null 
     t: makeTranslate(zh), useAssistants: bindSnapshotSelector(store),
     useSessionRetainInfo: <Selected,>(selector: (value: SessionRetainInfo | undefined) => Selected) => selector(retainInfo),
     sessionId: sessionId === null ? undefined : SessionId(sessionId),
-    onPick: vi.fn(async (_id: string | null) => {}), onChat: vi.fn(async (_id: string) => {}), onDismiss: vi.fn(),
+    onPick: vi.fn(async (_id: string | null) => {}), onChat: vi.fn(async (_id: string | null) => {}), onDismiss: vi.fn(),
     onCreate: vi.fn(), onLoadOptions: vi.fn(), squareAvatar: vi.fn(),
   } as AssistantSeatProps
   render(<AssistantSeat {...props} />)
