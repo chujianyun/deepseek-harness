@@ -326,6 +326,7 @@
     { "path": "./packages/assistant/assistants" },
     { "path": "./packages/ecommerce/ecommerce-accounts" },
     { "path": "./packages/ecommerce/tmall-skills" },
+    { "path": "./packages/ecommerce/mingliu-skills" },
     { "path": "./packages/llm/deepseek-llm-api-extensions" },
     { "path": "./packages/llm/token-meter" },
     { "path": "./packages/core/session" },

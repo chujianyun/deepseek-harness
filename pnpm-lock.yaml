@@ -8335,6 +8335,18 @@ importers:
         specifier: ^0.8.2
         version: 0.8.3
 
+  packages/ecommerce/mingliu-skills:
+    devDependencies:
+      '@deepseek-ai/dsh-assistant-packages':
+        specifier: workspace:*
+        version: link:../../assistant/assistant-packages
+      '@deepseek-ai/dsh-automation-tasks':
+        specifier: workspace:*
+        version: link:../../schedule/automation-tasks
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
+
   packages/ecommerce/tmall-skills:
     devDependencies:
       '@deepseek-ai/dsh-ecommerce-accounts':

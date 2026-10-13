@@ -1,0 +1,27 @@
+{
+  "name": "@deepseek-ai/dsh-mingliu-skills",
+  "description": "名流's operations skills that only 名流's Skill Hub hands out — department AI inspection and its monthly configuration — the recommended tasks of its operations assistant, and the step that builds their upload packages",
+  "version": "1.0.3",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/ecommerce/mingliu-skills"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@deepseek-ai/dsh-assistant-packages": "workspace:*",
+    "@deepseek-ai/dsh-automation-tasks": "workspace:*",
+    "fflate": "^0.8.2"
+  }
+}

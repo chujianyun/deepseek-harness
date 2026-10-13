@@ -8,6 +8,8 @@ import { PRIVATE_EXPERIMENTAL_PACKAGE_DIRECTORIES } from './experimental-package
 export const REPOSITORY_ONLY_PACKAGE_DIRECTORIES: readonly string[] = [
   // Builds the Skill Hub upload packages from its own `src/` and `skills/`; tenants receive those zips, not this package.
   'packages/ecommerce/tmall-skills',
+  // Builds 名流's Skill Hub upload packages from its `skills/`; only 名流 receives those zips.
+  'packages/ecommerce/mingliu-skills',
 ]
 
 /**
