@@ -7,13 +7,13 @@ import { generatedLabels } from '../src/draft.ts'
 import { EXIT, SkillError } from '../src/errors.ts'
 import { main, pddDeps } from '../src/pdd-cli.ts'
 import {
-  categoryById, categoryOfLine, childCategories, createSession, pddRules, predictCategories, readLimits, readTemplate, searchCategories,
-  setCategory,
+  categoryById, categoryOfLine, childCategories, createSession, MEDICAL_DEVICE_IMAGE, pddRules, predictCategories, readLimits, readTemplate,
+  searchCategories, setCategory,
   type Template,
 } from '../src/pdd-category.ts'
 import {
-  buildGoods, extraPrices, goodsProperties, listDrafts, listGoods, MOST_DRAFTS, PACKAGE_SPEC, readSession, saveDraft, SESSION_FIELDS,
-  shelfDays, specIdFor, uploadPddImage,
+  buildGoods, carouselFiles, certificateFile, extraPrices, fileWhiteImage, goodsProperties, listDrafts, listGoods, MEDICAL_DEVICE_GALLERY,
+  MOST_DRAFTS, PACKAGE_SPEC, readSession, saveDraft, SESSION_FIELDS, shelfDays, specIdFor, uploadPddImage,
 } from '../src/pdd-publish.ts'
 import { INSTALL, isPddSignIn, openPdd, PDD_GOODS_URL, pddCall, PddRefusal } from '../src/pdd.ts'
 import { commonPrefix, parseCategoryOptions as parseDraftCategoryOptions, type DraftFile, type PublishRecord } from '../src/publish-common.ts'
@@ -73,6 +73,7 @@ class Mall {
   readonly sessions: number[] = []
   readonly saves: Record<string, unknown>[] = []
   readonly uploads: string[] = []
+  readonly materials: Record<string, unknown>[] = []
   readonly calls: string[] = []
   /** What a save does: lists the draft, lists nothing, is refused, or never answers. */
   saving: 'drafts' | 'nowhere' | 'refused' | 'lost' = 'drafts'
@@ -123,7 +124,13 @@ class Mall {
       case '/galerie/business/get_signature': return ok({ signature: 'sig' })
       case '/glide/v2/mms/query/spec/by/name': return ok(31_406_958_000 + String(body?.name).length)
       case '/glide/v2/mms/query/commit/detail':
-        return ok({ goods_id: 1, check_status: 9, cost_template_id: 544_142_245_494_784, groups: {}, mall_id: 7, galleries: [] })
+        return ok({
+          goods_id: 1, check_status: 9, cost_template_id: 544_142_245_494_784, groups: {}, mall_id: 7, galleries: [],
+          cat_ids: [16_237, 18_768, 18_770, 0],
+        })
+      case '/giraffe/mms/material/createDraft':
+        this.materials.push(body as Record<string, unknown>)
+        return ok(55_121_723_731)
       case '/glide/mms/goodsCommit/action/edit': {
         if (this.saving === 'refused') return { success: false, error_code: 2_000_000, error_msg: '价格参数不完整' }
         if (this.saving === 'lost') return new Error('Network Error')
@@ -263,13 +270,18 @@ describe('Pinduoduo categories', () => {
   it('writes the template and limits as field rules', () => {
     expect(RULES.categoryPath).toBe('成人用品 > 计生用品 > 避孕套')
     expect(RULES.fields.map(field => [field.key, field.label, field.uiType, field.required])).toEqual([
-      ['title', '商品标题', 'input', true], ['mainImagesGroup', '商品轮播图', 'image', true], ['descRepublicOfSell', '商品详情', 'image', true],
+      ['title', '商品标题', 'input', true], ['mainImagesGroup', '商品轮播图', 'image', true], ['threeToFourImages', '商品轮播图（3:4）', 'image', false],
+      ['yinHeWhiteBgImage', '白底图', 'image', false], ['descRepublicOfSell', '商品详情', 'image', true],
       ['p-310', '品牌', 'select', true], ['p-842', '注册证号', 'input', true], ['p-406', '保质期', 'input', false], ['p-405', '生产日期', 'date', false],
       ['p-660', '特点', 'checkbox', false], ['sku', '商品规格', 'sku', true], ['quantity', '库存', 'input', true], ['shipment', '发货时间', 'radio', true],
       ['singlePriceDelta', '单买价比拼单价高（元）', 'input', true], ['marketPrice', '参考价（元）', 'input', true],
     ])
     expect(RULES.fields.find(field => field.key === 'shipment')?.options).toEqual([{ value: 86_400, text: '24小时' }, { value: 172_800, text: '48小时' }])
     expect(RULES.fields.find(field => field.key === 'p-310')?.options).toEqual([{ value: 3954, text: 'Personage/名流' }])
+    expect(RULES.fields.some(field => field.key === MEDICAL_DEVICE_IMAGE.key)).toBe(false)
+    const medical = pddRules('18770', [], TEMPLATE, { ...LIMITS, medical_device_related: true })
+    expect(medical.fields.map(field => field.key).slice(-6)).toEqual([MEDICAL_DEVICE_IMAGE.key, 'sku', 'quantity', 'shipment', 'singlePriceDelta', 'marketPrice'])
+    expect(MEDICAL_DEVICE_IMAGE).toMatchObject({ label: '医疗器械注册证/器械备案凭证（素材文件）', required: true })
     const bare = pddRules('1', [], { id: 1, modules: [] }, {})
     expect(bare.fields.find(field => field.key === 'title')?.maxLength).toBe(60)
     expect(bare.fields.find(field => field.key === 'shipment')?.options).toEqual([{ value: 172_800, text: '48小时' }])
@@ -328,6 +340,43 @@ describe('Pinduoduo form', () => {
       session: { goodsId: 1, commitId: 2 }, images, specs: { a: 1 }, prices: { singleDelta: 1, market: 9 }, stock: 0,
     })
     expect(bare).toMatchObject({ shipment_limit_second: undefined, out_goods_sn: undefined, skus: [expect.objectContaining({ out_sku_sn: '', quantity_delta: 3 })] })
+  })
+
+  it('puts each image where its use goes: 3:4 carousel images after the 1:1 ones, the white-background image, and the certificate', async () => {
+    const { path } = await sampleDraft()
+    const base = JSON.parse(await readFile(path, 'utf8')) as DraftFile
+    const main = Array.from({ length: 7 }, (_, at) => `方图/${String(at)}.png`)
+    const main34 = Array.from({ length: 5 }, (_, at) => `长图/${String(at)}.png`)
+    const draft: DraftFile = { ...base, images: { ...base.images, main, main34, white: ['素材图/白.jpg', '素材图/白2.jpg'], transparent: ['素材图/透明.png'], detail: ['详情页/1.png'] } }
+    expect(carouselFiles(draft)).toEqual([...main.slice(0, 5), ...main34])
+    const checks = [...CHECKS, filled(MEDICAL_DEVICE_IMAGE.key, MEDICAL_DEVICE_IMAGE.label, [' 资质/注册证.png '])]
+    expect(certificateFile(checks)).toBe('资质/注册证.png')
+    expect(certificateFile([...CHECKS, filled(MEDICAL_DEVICE_IMAGE.key, MEDICAL_DEVICE_IMAGE.label, [''])])).toBeUndefined()
+    expect(certificateFile(CHECKS)).toBeUndefined()
+    const images = Object.fromEntries([...main, ...main34, '素材图/白.jpg', '素材图/透明.png', '详情页/1.png', '资质/注册证.png', 'sku图/a.png'].map(file => [file, `u:${file}`]))
+    const form = buildGoods({}, {
+      draft, checks, rules: RULES, template: TEMPLATE, session: { goodsId: 99, commitId: 88 }, images,
+      specs: { '1盒【到手18只】': 11, '2盒【到手40只】': 12 }, prices: { singleDelta: 5, market: 99.9 }, stock: 1000,
+    })
+    expect(form.gallery).toEqual([
+      ...carouselFiles(draft).map(file => ({ url: `u:${file}`, type: 1, file_id: null })),
+      { url: 'u:详情页/1.png', type: 2, file_id: null },
+      { url: 'u:资质/注册证.png', type: MEDICAL_DEVICE_GALLERY, file_id: null },
+    ])
+    expect(MEDICAL_DEVICE_GALLERY).toBe(106)
+    expect(form.prefillWhitePic).toBe('u:素材图/白.jpg')
+    expect(JSON.stringify(form)).not.toContain('透明')
+  })
+
+  it('files the white-background image as the item\'s material with its category levels', async () => {
+    const mall = new Mall()
+    await fileWhiteImage(mall.page(), 99, [16_237, 18_768, 18_770, 0], 'u')
+    await fileWhiteImage(mall.page(), 98, [16_237], 'v')
+    expect((await stopped(fileWhiteImage(mall.page(), 97, undefined, 'w'))).message).toBe('拼多多编辑会话没有给出类目层级（cat_ids），无法登记白底图。')
+    expect(mall.materials).toEqual([
+      { content: 'u', type: 1, source: 2, cat_id_1: 16_237, cat_id_2: 18_768, cat_id_3: 18_770, cat_id_4: null, goods_id: 99 },
+      { content: 'v', type: 1, source: 2, cat_id_1: 16_237, cat_id_2: null, cat_id_3: null, cat_id_4: null, goods_id: 98 },
+    ])
   })
 
   it('uploads images, makes spec values, reads and saves sessions, and lists drafts and goods', async () => {
@@ -421,7 +470,7 @@ describe('pdd-publish script', () => {
     expect((await run(mall, ['children', '--account', 'a', '--parent', '18768'])).out).toBe('- 避孕套（18770），可发布\n- 试纸（18769）\n')
     expect((await run(mall, ['children', '--account', 'a', '--parent', '1'])).out).toBe('类目 1 下面没有子类目。\n')
     const rules = await run(mall, ['rules', '--account', 'a', '--cat', '18770', '--out', dir])
-    expect(rules.out).toContain('类目：成人用品 > 计生用品 > 避孕套（18770），共 13 个字段。')
+    expect(rules.out).toContain('类目：成人用品 > 计生用品 > 避孕套（18770），共 15 个字段。')
     expect(rules.out).toContain('- 发货时间，可选：24小时、48小时')
     expect(JSON.parse(await readFile(join(dir, '字段规则_18770.json'), 'utf8'))).toMatchObject({ platform: 'pinduoduo', store: '名流保健用品官方旗舰店', catId: '18770' })
     expect(mall.sessions).toHaveLength(1)
@@ -523,6 +572,38 @@ describe('pdd-publish script', () => {
     expect([refused.code, refused.err]).toEqual([EXIT.usage, expect.stringContaining('那次保存结果不明，店里暂时查不到它') as string])
     expect((await run(mall, ['check', '--account', 'a', '--draft', setup.path, '--out', setup.out])).out).toContain('注意：')
     expect((await run(mall, save(setup, '--unknown-checked'))).code).toBe(0)
+  })
+
+  it('uploads the 3:4, white-background, and certificate images and files the white one as material, and refuses a certificate outside the folder', async () => {
+    const mall = new Mall()
+    const base = await sampleDraft()
+    const draft = JSON.parse(await readFile(base.path, 'utf8')) as DraftFile
+    const images = { ...draft.images, main34: ['长图/1.png'], white: ['素材图/白.jpg'], other: ['资质/注册证.png'] }
+    const certificate = (file: string) => [...CHECKS, filled(MEDICAL_DEVICE_IMAGE.key, MEDICAL_DEVICE_IMAGE.label, [file])]
+    const outside = await sampleDraft({ images, checks: certificate('资质/别处.png') })
+    const refused = await run(mall, save(outside))
+    expect(refused.code).toBe(EXIT.usage)
+    expect(refused.err).toContain('医疗器械注册证/器械备案凭证（素材文件）写的「资质/别处.png」不是素材文件夹里的图片')
+    const inDetail = await sampleDraft({ images: { ...images, other: [], detail: ['详情页/1.png', '资质/注册证.png'] }, checks: certificate('资质/注册证.png') })
+    expect((await run(mall, save(inDetail))).err).toContain('注册证图片「资质/注册证.png」也归在了轮播图或详情图里，请在答案的 images 里把它改成 other')
+    const medical = { platform: 'pinduoduo', ...pddRules('18770', ['成人用品', '计生用品', '避孕套'], TEMPLATE, { ...LIMITS, medical_device_related: true }) }
+    const stale = await sampleDraft()
+    await writeFile(stale.rules, JSON.stringify(medical))
+    expect((await run(mall, save(stale))).err).toContain('草稿不是按这份字段规则检查的（没有医疗器械注册证/器械备案凭证一项），请用这份字段规则重新整理素材')
+    expect(mall.saves).toEqual([])
+    const setup = await sampleDraft({ images, checks: certificate('资质/注册证.png') })
+    for (const file of ['长图/1.png', '素材图/白.jpg', '资质/注册证.png']) {
+      await mkdir(dirname(join(setup.dir, file)), { recursive: true })
+      await writeFile(join(setup.dir, file), file.endsWith('.jpg') ? jpeg(20, 20) : png(20, 20))
+    }
+    const saved = await run(mall, save(setup))
+    expect(saved.code).toBe(0)
+    expect(saved.err).toContain('上传 7 张图片')
+    expect(saved.err).toContain('登记白底图')
+    expect(mall.uploads).toEqual(['1.png', '2.png', '1.png', '白.jpg', '1.jpg', '注册证.png', 'a.png'])
+    expect(mall.materials).toEqual([expect.objectContaining({ content: 'https://pfs.pinduoduo.com/白.jpg', cat_id_3: 18_770, goods_id: 1_013_940_001 })])
+    expect(mall.saves[0]).toMatchObject({ prefillWhitePic: 'https://pfs.pinduoduo.com/白.jpg' })
+    expect((mall.saves[0]?.gallery as { type: number }[]).map(item => item.type)).toEqual([1, 1, 1, 2, MEDICAL_DEVICE_GALLERY])
   })
 
   it('takes the stock from the SKU table when it has one', async () => {
