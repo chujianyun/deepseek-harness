@@ -3602,6 +3602,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-assistants':
         specifier: workspace:*
         version: link:../ui-assistants
+      '@deepseek-ai/dsh-client-ui-commands':
+        specifier: workspace:*
+        version: link:../ui-commands
       '@deepseek-ai/dsh-client-ui-conversation':
         specifier: workspace:*
         version: link:../ui-conversation

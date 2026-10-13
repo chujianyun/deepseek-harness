@@ -2,6 +2,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-assistants/client'
+import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -89,6 +90,28 @@ export function apply(ctx: ClientContext): void {
         id => sidebar.uiWorkspace.setDefaultSessionGrouping(id), 'ui-brand-mo: default session grouping',
       )
       follow(settings => settings?.sessionsPerGroup, limit => sidebar.uiWorkspace.setSessionGroupLimit(limit), 'ui-brand-mo: sessions per group')
+    })
+    // The configured commands stay out of the composer's + menu while both this plugin and the command UI are mounted.
+    scope.inject(['commandUi'], (commands: ClientContext) => {
+      commands.effect(() => {
+        let current = ''
+        let withdraw: readonly (() => void)[] = []
+        const sync = (): void => {
+          const names = brandSettings.getSnapshot().value?.menuHiddenCommands ?? []
+          const next = names.join('\n')
+          if (next === current) return
+          current = next
+          const previous = withdraw
+          withdraw = names.map(name => commands.commandUi.hideFromMenu(name))
+          for (const release of previous) release()
+        }
+        sync()
+        const stop = brandSettings.subscribe(sync)
+        return () => {
+          stop()
+          for (const release of withdraw) release()
+        }
+      }, 'ui-brand-mo: commands left out of the + menu')
     })
   })
 }
