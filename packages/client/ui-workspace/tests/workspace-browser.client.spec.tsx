@@ -2645,6 +2645,26 @@ describe('a registered grouping', () => {
     expect(b.props.open).toHaveBeenCalledWith(sid('apple'))
   })
 
+  it('offers a new-session button on a heading that can start a Session, which does not fold the section', () => {
+    const store = createWorkspaceViewStore().create()
+    store.actions.setGroupBy('letter')
+    const create = vi.fn()
+    mount({
+      useSessions: hook(sessions()),
+      useGroupings: select => select([letter({
+        groupOf: session => ({ key: session.title!.slice(0, 1), label: session.title!.slice(0, 1).toUpperCase(), ...session.title!.startsWith('a') ? { create } : {} }),
+      })]),
+      useStore: bindSnapshotSelector(store),
+      actions: store.actions,
+    })
+    const button = screen.getByRole('button', { name: '在“A”中新建会话' })
+    expect(screen.queryByRole('button', { name: '在“B”中新建会话' })).toBeNull()
+    fireEvent.click(button)
+    expect(create).toHaveBeenCalledOnce()
+    // The click stays on the button: the section does not fold.
+    expect(store.getSnapshot().groupCollapsed?.letter?.a).toBeUndefined()
+  })
+
   it('shows the empty state when the status filter leaves no Session', () => {
     const store = createWorkspaceViewStore().create()
     store.actions.setGroupBy('letter')

@@ -904,6 +904,7 @@ function GroupedList({
           <div key={section.key} className={css.groupSection}>
             <GroupingSectionRow
               section={section}
+              t={t}
               onToggle={() => {
                 // Folding a section returns it to the default number of rows.
                 if (!section.collapsed && sessionLimits[section.key] !== undefined) setSessionLimit(section.key, undefined)

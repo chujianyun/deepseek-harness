@@ -524,9 +524,11 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }: 
 
 /**
  * Section heading of a registered grouping: a fold toggle with the section's optional glyph and
- * label. Without a glyph the fold arrow stays visible instead of appearing on hover.
+ * label, and a new-session button when the heading can start a Session in the section. Without a
+ * glyph the fold arrow stays visible instead of appearing on hover.
  */
-export function GroupingSectionRow({ section, onToggle }: { section: GroupingSection; onToggle: () => void }) {
+export function GroupingSectionRow({ section, onToggle, t }: { section: GroupingSection; onToggle: () => void; t: RowTranslate }) {
+  const create = section.heading.create
   const expanded = !section.collapsed
   return (
     <div
@@ -545,6 +547,20 @@ export function GroupingSectionRow({ section, onToggle }: { section: GroupingSec
       <span className={css.projectText}>
         <span className={css.title}>{section.heading.label}</span>
       </span>
+      {create !== undefined && (
+        <span className={css.headingActions}>
+          <Tooltip label={t('actions.newSession')} side="bottom" align="end" delayMs={500}>
+            <button
+              type="button"
+              className={css.iconButton}
+              aria-label={t('actions.newSession.aria', { name: section.heading.label })}
+              onClick={(e) => { e.stopPropagation(); create() }}
+            >
+              <IconNewChatOutlineRegular />
+            </button>
+          </Tooltip>
+        </span>
+      )}
     </div>
   )
 }
