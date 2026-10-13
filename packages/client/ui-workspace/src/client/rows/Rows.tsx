@@ -548,7 +548,7 @@ export function GroupingSectionRow({ section, onToggle, t }: { section: Grouping
         <span className={css.title}>{section.heading.label}</span>
       </span>
       {create !== undefined && (
-        <span className={css.rowActions}>
+        <span className={css.headingActions}>
           <Tooltip label={t('actions.newSession')} side="bottom" align="end" delayMs={500}>
             <button
               type="button"

@@ -275,7 +275,6 @@
 }
 
 .projectRow:hover .rowActions,
-.projectRow:focus-within .rowActions,
 .sessionRow:hover .rowActions,
 .searchResultRow:hover .rowActions,
 .projectRow.menuOpen .rowActions,
@@ -287,6 +286,21 @@
    right-aligns itself. */
 .searchResultHeading .rowActions {
   margin-left: auto;
+}
+
+/* A grouping heading's actions stay in the Tab order: transparent until the row is hovered or a
+   button holds keyboard focus. */
+.headingActions {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  opacity: 0;
+}
+
+.projectRow:hover .headingActions,
+.headingActions:has(:focus-visible) {
+  opacity: 1;
 }
 
 .sessionRow:hover .time,

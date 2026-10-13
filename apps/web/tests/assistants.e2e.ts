@@ -233,9 +233,10 @@ it('seeds the Daily Assistant, starts new sessions with no assistant, carries a 
     await expect.poll(() => picker.textContent()).toContain('店铺测试助手')
     await send('分组里新建的会话')
     await expect.poll(() => sidebarSections(page), { timeout: 15_000 }).toEqual([['店铺测试助手', 2], ['通用模式', 1], ['日常助手', 1]])
-    // General mode's button opens a session without an assistant.
-    await page.getByRole('treeitem', { name: /通用模式/ }).first().hover()
-    await page.getByRole('button', { name: '在“通用模式”中新建会话' }).click()
+    // General mode's button opens a session without an assistant; it is reachable from the keyboard.
+    const generalNew = page.getByRole('button', { name: '在“通用模式”中新建会话' })
+    await generalNew.focus()
+    await page.keyboard.press('Enter')
     await expect.poll(() => picker.textContent()).toContain('通用模式')
 
     // The wizard creates an E-commerce Manager with an uploaded avatar, its own model, and what it should know about the user.
