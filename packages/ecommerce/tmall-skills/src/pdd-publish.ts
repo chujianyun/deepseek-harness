@@ -1,7 +1,8 @@
 /**
  * Saving a confirmed product draft to a Pinduoduo store's 草稿箱, the way the new-item page's 「保存草稿」
  * does: in an edit session in the category, the images go to Pinduoduo's image store
- * (`galerie/business/get_signature`, then `file.pinduoduo.com/v3/store_image`), each SKU name becomes a
+ * (`galerie/business/get_signature`, then `file.pinduoduo.com/v3/store_image`), the white-background image
+ * is also filed as the item's 白底图 material (`material/createDraft`), each SKU name becomes a
  * 套餐 spec value (`query/spec/by/name`), and the session's own values with the draft set in are saved
  * with `goodsCommit/action/edit`. A saved session is a draft, listed by `query/commit/list`; nothing is
  * submitted for review or put on sale.
@@ -9,7 +10,7 @@
 
 import { EXIT, SkillError } from './errors.ts'
 import type { FieldCheck } from './draft.ts'
-import { propertyKey, type EditSession, type Template, type TemplateProperty } from './pdd-category.ts'
+import { MEDICAL_DEVICE_IMAGE, propertyKey, type EditSession, type Template, type TemplateProperty } from './pdd-category.ts'
 import { pddCall } from './pdd.ts'
 import type { Page } from './page.ts'
 import { commonPrefix, titleOf, type DraftFile } from './publish-common.ts'
@@ -202,6 +203,46 @@ function propertyEntries(property: TemplateProperty, values: readonly string[], 
   })
 }
 
+/** The gallery type of a medical device's registration certificate or filing image. */
+export const MEDICAL_DEVICE_GALLERY = 106
+
+/** The most carousel images an item takes. */
+const MOST_CAROUSEL = 10
+
+/**
+ * The carousel images: the 1:1 main images, then the 3:4 ones, at most {@link MOST_CAROUSEL}.
+ * @param draft - the draft.
+ * @returns their paths under the material folder.
+ */
+export function carouselFiles(draft: DraftFile): string[] {
+  return [...draft.images.main, ...draft.images.main34].slice(0, MOST_CAROUSEL)
+}
+
+/**
+ * The registration certificate image the draft names.
+ * @param checks - the draft's checks.
+ * @returns its path under the material folder, or undefined when the category needs none.
+ */
+export function certificateFile(checks: readonly FieldCheck[]): string | undefined {
+  return checks.find(check => check.key === MEDICAL_DEVICE_IMAGE.key)?.filled?.join('').trim() || undefined
+}
+
+/**
+ * File the white-background image as the item's 白底图 material, as uploading it on the new-item page does.
+ * @param page - a seller page.
+ * @param goodsId - the edit session's item.
+ * @param catIds - the category and its ancestors, top level first.
+ * @param url - the uploaded image's address.
+ * @throws PddRefusal with Pinduoduo's message when it refuses.
+ */
+export async function fileWhiteImage(page: Page, goodsId: number, catIds: readonly number[], url: string): Promise<void> {
+  // Levels below the leaf are 0 or absent; the page sends them as null.
+  const level = (at: number): number | null => (catIds[at] ?? 0) === 0 ? null : catIds[at] as number
+  await pddCall(page, 'POST', '/giraffe/mms/material/createDraft', {
+    content: url, type: 1, source: 2, cat_id_1: level(0), cat_id_2: level(1), cat_id_3: level(2), cat_id_4: level(3), goods_id: goodsId,
+  })
+}
+
 /** What goes into the form besides the session's own values. */
 export interface GoodsInput {
   readonly draft: DraftFile
@@ -230,7 +271,9 @@ export function buildGoods(detail: Readonly<Record<string, unknown>>, input: Goo
   const { draft, checks, session, images, specs, prices } = input
   const form: Record<string, unknown> = Object.fromEntries(SESSION_FIELDS.map(field => [field, detail[field]]))
   const title = titleOf(draft)
-  const main = draft.images.main.slice(0, 10).map(file => images[file] as string)
+  const main = carouselFiles(draft).map(file => images[file] as string)
+  const certificate = certificateFile(checks)
+  const white = draft.images.white[0]
   const shipmentText = checks.find(check => check.key === 'shipment')?.filled?.[0]
   const shipment = input.rules.fields.find(field => field.key === 'shipment')?.options?.find(option => option.text === shipmentText)?.value
   const code = commonPrefix(draft.skus.flatMap(sku => sku.code === undefined ? [] : [sku.code]))
@@ -240,7 +283,9 @@ export function buildGoods(detail: Readonly<Record<string, unknown>>, input: Goo
     gallery: [
       ...main.map(url => ({ url, type: 1, file_id: null })),
       ...draft.images.detail.map(file => ({ url: images[file] as string, type: 2, file_id: null })),
+      ...certificate === undefined ? [] : [{ url: images[certificate] as string, type: MEDICAL_DEVICE_GALLERY, file_id: null }],
     ],
+    ...white === undefined ? {} : { prefillWhitePic: images[white] },
     goods_properties: goodsProperties(input.template, checks),
     skus: draft.skus.map(sku => ({
       id: 0, limit_quantity: 0, out_sku_sn: sku.code ?? '', is_onsale: 1,
