@@ -240,6 +240,12 @@
       name: '@deepseek-ai/dsh-assistants'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
+    # Company assistant packages for Desktop: assistants a tenant administrator published on the
+    # user center, installed with their Skills and recommended scheduled tasks.
+    - id: assistant-packages
+      name: '@deepseek-ai/dsh-assistant-packages'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     # E-commerce accounts for Desktop, per tenant of the Hub sign-in: platform sign-ins
     # kept by the system Google Chrome on each account's own browser data.
     - id: ecommerce-accounts

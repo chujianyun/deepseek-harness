@@ -12,6 +12,10 @@ Assistants belong to the tenant of the current Hub sign-in and live under `<dshH
 
 The detail page edits an assistant's fields and its four core files through the `assistants` Remote. Saved core files and a new name reach every session bound to the assistant on its next step, including sessions in progress; a new model or preset applies to sessions bound afterward. A copy carries the configuration and core files under the name `<name> 副本`, without sessions. Deleting an assistant keeps its sessions, which continue without its core files: since earlier turns stay in the conversation, their next turn tells the model that those core files no longer apply; blank sessions bound to it bind none.
 
+## Company assistant packages
+
+A tenant administrator can publish an assistant to the whole company as an assistant package on the user center: `agent.json` with the name, version, avatar, Agent preset, Skill and connector subsets, and recommended scheduled tasks, plus the four core files. The Assistants page lists the company's packages; installing one creates an ordinary assistant, installs the Skills it names from the company's Skill Hub, and leaves its recommended tasks switched off until the user switches each on as an automation task. [`@deepseek-ai/dsh-assistant-packages`](../../packages/assistant/assistant-packages/README.md) owns installing, updating without overwriting the user's edits, and the recommended tasks.
+
 ## Sessions and their assistant
 
 Each session row in the sidebar shows the avatar of its assistant, named on hover and in the row's hover card; a session whose assistant belongs to another company on this machine shows an other-company mark that names nothing about it, one whose assistant was deleted shows a deleted-assistant mark, and one bound to none shows nothing. An assistant's detail page lists its recent sessions, latest first, and opens one on click.
@@ -31,6 +35,75 @@ A new main session binds no assistant. Before the first turn the new-session pic
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxassistantpackages--assistantpackagesservice"></a>
+
+### `ctx.assistantPackages` — `AssistantPackagesService`
+
+Host owner of company assistant packages and of the `assistantPackages` Remote namespace.
+
+```ts cordis-catalog
+/**
+ * Read the packages the company offers and the assistants installed from packages here. A
+ * switched-on task whose schedule was deleted elsewhere reads as switched off.
+ * @param signal - caller lifetime.
+ * @returns the offered packages (null while signed out or unreachable) and the installs.
+ */
+@Remote getState(signal: AbortSignal): Promise<AssistantPackagesState>
+
+/**
+ * Install a package: install the Skills it names from the company's Skill Hub, create its
+ * assistant, and record the install with every recommended task switched off. Installing a
+ * package already installed here updates that assistant instead.
+ * @param packageId - user center package id.
+ * @param signal - caller lifetime.
+ * @returns what was installed and the state after it.
+ * @throws RemoteError `hub-account/signed-out`, `assistant-packages/not-found`, `assistant-packages/invalid`,
+ *   `assistant-packages/unavailable`, or an `assistants/*` refusal of the package's fields.
+ */
+@Remote installPackage(packageId: string, signal: AbortSignal): Promise<AssistantPackageInstallResult>
+
+/**
+ * Update an installed assistant to its package's current version. Core files and profile fields
+ * the user has not changed since the package wrote them take the new version's; changed ones are
+ * kept. Skills the new version names are installed. Already current, nothing changes.
+ * @param assistantId - the assistant installed from a package.
+ * @param signal - caller lifetime.
+ * @returns what was updated, the files kept, and the state after it.
+ * @throws RemoteError `hub-account/signed-out`, `assistant-packages/not-installed`, `assistant-packages/not-found`,
+ *   `assistant-packages/invalid`, or `assistant-packages/unavailable`.
+ */
+@Remote updatePackage(assistantId: string, signal: AbortSignal): Promise<AssistantPackageInstallResult>
+
+/**
+ * Switch a recommended task on: create an automation task in the workspace, bound to the
+ * assistant, with the task's timing, instruction, permission preset, and connector grant.
+ * Already on, nothing changes.
+ * @param assistantId - the assistant installed from a package.
+ * @param taskId - the package's task id.
+ * @param workspaceId - workspace the task's Session is filed under.
+ * @param signal - caller lifetime.
+ * @returns the state after it.
+ * @throws RemoteError `hub-account/signed-out`, `assistant-packages/not-installed`, `assistant-packages/task-not-found`,
+ *   or an `automation-tasks/*` refusal.
+ */
+@Remote enableTask(assistantId: string, taskId: string, workspaceId: WorkspaceId, signal: AbortSignal): Promise<AssistantPackagesState>
+
+/**
+ * Switch a recommended task off: delete its schedule. Its Session and history stay.
+ * Already off, nothing changes.
+ * @param assistantId - the assistant installed from a package.
+ * @param taskId - the package's task id.
+ * @param signal - caller lifetime.
+ * @returns the state after it.
+ * @throws RemoteError `hub-account/signed-out`, `assistant-packages/not-installed`, or `assistant-packages/task-not-found`.
+ */
+@Remote disableTask(assistantId: string, taskId: string, signal: AbortSignal): Promise<AssistantPackagesState>
+```
+
+Types: [WorkspaceId](workspace.md)
+
+Source: [`packages/assistant/assistant-packages/src/index.ts`](../../packages/assistant/assistant-packages/src/index.ts)
 
 <a id="ctxassistants--assistantsservice"></a>
 

@@ -309,6 +309,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Keeps the signed-in tenant\'s assistants with their core files, binds each blank main session to one, and records the bound assistant\'s core files for its prompt section.',
   },
   {
+    key: 'assistantPackages',
+    pkg: 'assistant-packages',
+    title: 'Assistant packages',
+    mode: 'core',
+    note: 'Installs the assistants a tenant administrator published on the user center, with the Skills they name, and switches their recommended scheduled tasks on and off as automation tasks.',
+  },
+  {
     key: 'ecommerceAccounts',
     pkg: 'ecommerce-accounts',
     title: 'E-commerce accounts',

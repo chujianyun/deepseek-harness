@@ -350,6 +350,27 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-files -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-assistant-packages -->
+<a id="deepseek-aidsh-assistant-packages"></a>
+
+## `@deepseek-ai/dsh-assistant-packages`
+
+- `inject`: `hubAccount` · `assistants`
+- `source`: [`packages/assistant/assistant-packages/src/index.ts:50`](../packages/assistant/assistant-packages/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** DeepSeek Harness home; install records live under `<dshHome>/assistant-packages`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** Largest package download accepted, in bytes. */
+  maxPackageBytes?: number
+  /** Avatar key of an assistant whose package names none. */
+  defaultAvatar?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-assistant-packages -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-assistants -->
 <a id="deepseek-aidsh-assistants"></a>
 

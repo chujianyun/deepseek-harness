@@ -28,6 +28,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 
 | Package | Config | Description |
 |---|---|---|
+| `@deepseek-ai/dsh-assistant-packages` | yes | Company assistant packages for Desktop: install an assistant a tenant administrator published on the user center, with its Skills and recommended scheduled tasks |
 | `@deepseek-ai/dsh-assistants` | yes | Desktop assistants: named roles with their own core files, kept per tenant and bound to sessions |
 
 ## attachment

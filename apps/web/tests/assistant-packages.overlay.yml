@@ -1,0 +1,8 @@
+# For the assistant packages e2e (`assistant-packages.e2e.ts`), beside the Hub sign-in (`hub-account.overlay.yml`),
+# assistant (`assistants.overlay.yml`), and automation-task (`automation-tasks.overlay.yml`) rows: the company
+# assistant packages and the Skill market they install Skills from. The shipped web-app bundle enables them only
+# for the `desktop` profile with a configured user center.
+- id: assistant-packages
+  disabled: false
+- id: skill-market
+  disabled: false

@@ -147,6 +147,7 @@
     "tests/ecommerce-chat.e2e.ts",
     "tests/tmall-skills.e2e.ts",
     "tests/assistants.e2e.ts",
+      "tests/assistant-packages.e2e.ts",
       "tests/automation-task-form.e2e.ts",
     "tests/assistant-knowledge.e2e.ts",
     "tests/generate-image.e2e.ts",

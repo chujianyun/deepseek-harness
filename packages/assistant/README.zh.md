@@ -25,6 +25,7 @@ assistant 家族为桌面版用户提供具名的工作角色：每个租户的�
 | 包 | 角色 | ctx 键 |
 |---|---|---|
 | [`assistants/`](assistants/README.zh.md) | 每个租户的智能体、它们的核心文件以及会话绑定，通过 `assistants` Remote 提供 | `ctx.assistants` |
+| [`assistant-packages/`](assistant-packages/README.zh.md) | 用户中心的企业智能体包：安装、更新和推荐定时任务，通过 `assistantPackages` Remote 提供 | `ctx.assistantPackages` |
 
 -----
 

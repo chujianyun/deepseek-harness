@@ -7,12 +7,23 @@
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { strToU8, unzipSync, zipSync } from 'fflate'
-import { createServer, type IncomingMessage, type Server } from 'node:http'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 
 /** One tenant the mock employee can sign in to. */
 export interface MockTenant {
   readonly tenantId: string
   readonly tenantName: string
+}
+
+/** One published assistant package the mock serves through `/api/client/agent-packages`. */
+export interface MockAgentPackage {
+  readonly id: string
+  readonly name: string
+  readonly version: string
+  /** The package's `agent.json`, as the list carries it. */
+  readonly manifest: unknown
+  /** The package zip the download answers with. */
+  readonly zip: Uint8Array
 }
 
 /** One published Skill the mock serves through `/api/client/skills`. */
@@ -100,6 +111,8 @@ export interface MockUserCenter {
   readonly revoked: string[]
   /** Skills visible to every tenant through the client API, in list order. */
   skills: MockSkill[]
+  /** Assistant packages of the signed-in tenant, in list order. */
+  agentPackages: MockAgentPackage[]
   /** When set, a download answers with these bytes instead of the Skill's zip. */
   downloadBody: Uint8Array | undefined
   /** When set, client API calls answer with this status. */
@@ -214,6 +227,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
         if (url.pathname.startsWith('/api/client/branding')) brandingApi(url, res, json, bound)
         else if (url.pathname.startsWith('/api/client/session-shares/')) await shareApi(url, req, res, json)
         else if (url.pathname === '/api/client/feedback' && req.method === 'POST') await feedbackApi(url, req, res, json)
+        else if (url.pathname.startsWith('/api/client/agent-packages')) agentPackagesApi(url, res, json)
         else await clientApi(url, req, res, json)
       } else if (url.pathname === '/oauth/userinfo' && mock.userinfoReply !== undefined) {
         res.writeHead(mock.userinfoReply.status, { 'content-type': 'application/json' }).end(mock.userinfoReply.body)
@@ -405,13 +419,26 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     })
     json(201, { id: `fb-${String(mock.feedback.length)}`, createdAt: new Date().toISOString() })
   }
+  function agentPackagesApi(url: URL, res: ServerResponse, json: (status: number, body: unknown) => void): void {
+    const id = /^\/api\/client\/agent-packages\/([^/]+)\/download$/.exec(url.pathname)?.[1]
+    if (id === undefined) {
+      json(200, mock.agentPackages.map(item => ({
+        id: item.id, name: item.name, version: item.version, manifest: item.manifest,
+        sha256: createHash('sha256').update(item.zip).digest('hex'), sizeBytes: item.zip.byteLength, updatedAt: '2026-10-13T00:00:00.000Z',
+      })))
+      return
+    }
+    const item = mock.agentPackages.find(candidate => candidate.id === decodeURIComponent(id))
+    if (item === undefined) { json(404, { message: 'not found' }); return }
+    res.writeHead(200, { 'content-type': 'application/zip' }).end(Buffer.from(item.zip))
+  }
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const mock: MockUserCenter = {
     origin: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
     clientId: 'dsh-desktop',
     tenant, denyWith: undefined, refreshStatus: undefined, expiresIn: 7200,
     exchangeStatus: undefined, tokenBody: undefined, tokenGate: undefined, userinfoReply: undefined,
-    skills: [], downloadBody: undefined, clientStatus: undefined, clientRequests: [],
+    skills: [], agentPackages: [], downloadBody: undefined, clientStatus: undefined, clientRequests: [],
     tenantAdmin: false, owned: [], uploads: [], uploadReply: undefined, uploadHook: undefined, optionsReply: undefined,
     brandings: {}, brandingGate: undefined, logoReply: undefined, shares: {}, shareReply: undefined,
     feedback: [], feedbackReply: undefined, feedbackReplyOnce: undefined,

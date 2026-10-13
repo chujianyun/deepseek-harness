@@ -12,7 +12,7 @@ import { apply, inject } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
 import type { AssistantsInjected } from '../src/client/assistants-source.ts'
 import { AssistantSeat } from '../src/client/AssistantSeat.tsx'
-import { AssistantsPage } from '../src/client/AssistantsPage.tsx'
+import { AssistantsPage, type AssistantsPageInjected } from '../src/client/AssistantsPage.tsx'
 import { AssistantsPanelIcon } from '../src/client/AssistantsPanelIcon.tsx'
 import { SessionAssistantBadge, SessionAssistantHover } from '../src/client/SessionAssistant.tsx'
 
@@ -35,7 +35,7 @@ interface Summary {
   updatedAt?: number
 }
 
-async function bench() {
+async function bench(setup: { packages?: boolean } = {}) {
   const ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose() })
   await ctx.plugin(SlotRegistry).await()
@@ -54,6 +54,15 @@ async function bench() {
     return () => { groupings.splice(groupings.indexOf(grouping), 1) }
   })
   ctx.provide('uiWorkspace', { startSession, openSession, registerSessionGrouping } as never)
+  const workspaceList = createSnapshotStore({ items: [{ workspaceId: 'ws-1', title: 'default-workspace' }] })
+  ctx.provide('workspaces', { list: workspaceList } as never)
+  const assistantPackages = {
+    getState: vi.fn(() => Promise.resolve({ ok: true as const, value: { tenantId: 't-a', packages: [], unavailable: false, installed: [] } })),
+    installPackage: vi.fn(() => Promise.resolve({ ok: false as const, error: { message: 'gone' } })),
+    updatePackage: vi.fn(() => Promise.resolve({ ok: false as const, error: { message: 'not installed' } })),
+    enableTask: vi.fn(() => Promise.resolve({ ok: true as const, value: { tenantId: 't-a', packages: [], unavailable: false, installed: [] } })),
+    disableTask: vi.fn(() => Promise.resolve({ ok: true as const, value: { tenantId: 't-a', packages: [], unavailable: false, installed: [] } })),
+  }
   const assistants = {
     select: vi.fn((_sessionId: string, assistantId: string) => Promise.resolve({ ok: true as const, value: assistantId })),
     createAssistant: vi.fn(() => Promise.resolve({ ok: true as const, value: { assistantId: 'a9', state } })),
@@ -81,7 +90,7 @@ async function bench() {
       { id: 'broken', isDefault: false, broken: 'x' },
     ] } })),
   }
-  const remote = new TestRemote(ctx, { assistants, session, agentPresets })
+  const remote = new TestRemote(ctx, { assistants, session, agentPresets, ...(setup.packages === false ? {} : { assistantPackages }) })
   const frames: AssistantsState[] = []
   let wake: (() => void) | undefined
   let fail: ((error: Error) => void) | undefined
@@ -116,7 +125,8 @@ async function bench() {
   } as never, () => null)
   onTestFinished(removeRoot)
   return {
-    ctx, slots, assistants, session, agentPresets, options, dispose, accepted, list, startSession, openSession, groupings,
+    ctx, slots, assistants, session, agentPresets, assistantPackages, workspaceList,
+    options, dispose, accepted, list, startSession, openSession, groupings,
     setList: (byId: Record<string, Summary>) => { list.set({ ids: Object.keys(byId), byId }) },
     push: (value: AssistantsState) => { frames.push(value); wake?.() },
     fail: (error: Error) => { fail?.(error) },
@@ -234,6 +244,33 @@ describe('ui-assistants browser plugin', () => {
     injected.onOpenSession('s1' as never)
     expect(b.openSession).toHaveBeenCalledWith('s1')
     expect(injected.hooks.sessions.getSnapshot().ids).toEqual(['s1', 's2', 's3', 's4', 's5'])
+  })
+
+  it('drives company assistant packages through the Remote and offers the workspaces', async () => {
+    const b = await bench()
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const face: object = b.slots.entries('main')[0]!.inject!()
+    const injected = face as AssistantsPageInjected
+    await injected.onPackagesRefresh()
+    expect(injected.hooks.packages.getSnapshot().state?.tenantId).toBe('t-a')
+    expect(await injected.onPackageInstall('pkg-1')).toBe('gone')
+    expect(b.assistantPackages.installPackage).toHaveBeenCalledWith('pkg-1')
+    expect(await injected.onPackageUpdate('a9')).toBe('not installed')
+    expect(b.assistantPackages.updatePackage).toHaveBeenCalledWith('a9')
+    expect(await injected.onTaskEnable('a9', 'inspection', 'ws-1')).toBeUndefined()
+    expect(b.assistantPackages.enableTask).toHaveBeenCalledWith('a9', 'inspection', 'ws-1')
+    expect(await injected.onTaskDisable('a9', 'inspection')).toBeUndefined()
+    expect(b.assistantPackages.disableTask).toHaveBeenCalledWith('a9', 'inspection')
+    expect(injected.hooks.workspaces).toBe(b.workspaceList)
+  })
+
+  it('keeps the page working without the packages Remote, whose actions then refuse', async () => {
+    const b = await bench({ packages: false })
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const injected = b.slots.entries('main')[0]!.inject!() as AssistantsPageInjected
+    await injected.onPackagesRefresh()
+    expect(injected.hooks.packages.getSnapshot().state).toBeUndefined()
+    expect(await injected.onPackageInstall('pkg-1')).toBe('assistant packages are not available')
   })
 
   it('stays out of a non-Desktop renderer, and the node half does nothing', async () => {

@@ -4,7 +4,7 @@
  * assistant's recent sessions last.
  */
 
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import type { AssistantDetail as Detail, AssistantSubsets, AssistantView, CoreFileName, UpdateAssistantInput } from '@deepseek-ai/dsh-assistants/types'
 import { Button, relativeTime, SegmentedTabs } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SnapshotSelectorHook, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -95,6 +95,13 @@ export interface AssistantDetailProps extends Pick<AssistantsInjected, 'onChat' 
   readonly onDelete: () => void
   /** Failure banners of the page's actions, shown under the header. */
   readonly alerts?: ReactNode
+  /** The recommended tasks of an assistant installed from a company package, shown above its recent sessions. */
+  readonly packageTasks?: ReactNode
+  /**
+   * Changes when something outside the page rewrites the assistant, such as a package update; the page
+   * then reads it again unless it has unsaved edits.
+   */
+  readonly revision?: string | undefined
 }
 
 /**
@@ -126,6 +133,13 @@ export function AssistantDetailPage(props: AssistantDetailProps) {
 
   const changes = saved === undefined || draft === undefined ? {} : changesOf(saved, draft)
   const dirty = Object.keys(changes).length > 0
+  // A package update rewrote the assistant: show what it wrote, unless the user has edits to keep.
+  const seenRevision = useRef(props.revision)
+  useEffect(() => {
+    if (props.revision === seenRevision.current) return
+    seenRevision.current = props.revision
+    if (!dirty) void load()
+  }, [props.revision])
   const save = async (): Promise<void> => {
     setBusy(true)
     setNotice(null)
@@ -194,6 +208,7 @@ export function AssistantDetailPage(props: AssistantDetailProps) {
               />
             </div>
           </section>
+          {props.packageTasks}
           <RecentSessions {...props} />
           <footer className={css.footer}>
             {notice !== null && (

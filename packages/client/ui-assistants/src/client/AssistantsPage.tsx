@@ -14,10 +14,17 @@ import { AssistantAvatar } from './AssistantAvatar.tsx'
 import { AssistantDetailPage } from './AssistantDetail.tsx'
 import type { AssistantsInjected } from './assistants-source.ts'
 import { CreateAssistantWizard } from './CreateAssistantWizard.tsx'
+import type { PackagesInjected } from './packages-source.ts'
+import { CompanyPackages, PackageTasks } from './PackageViews.tsx'
 import css from './AssistantsPage.module.css'
 
-/** Props the page reads from its `main` registration: the translator and the assistants face. */
-export type AssistantsPageProps = PropsLocale<'assistants'> & InjectFace<AssistantsInjected>
+/** The page's injected face: the assistants face with the company packages face, their hooks merged. */
+export type AssistantsPageInjected = Omit<AssistantsInjected, 'hooks'> & Omit<PackagesInjected, 'hooks'> & {
+  readonly hooks: AssistantsInjected['hooks'] & PackagesInjected['hooks']
+}
+
+/** Props the page reads from its `main` registration: the translator, the assistants face, and the company packages face. */
+export type AssistantsPageProps = PropsLocale<'assistants'> & InjectFace<AssistantsPageInjected>
 
 /**
  * Render the search box and the assistant cards, or the open assistant's detail page.
@@ -40,6 +47,8 @@ export function AssistantsPage(props: AssistantsPageProps) {
     : assistants.filter(item => `${item.name}\n${item.description}`.toLowerCase().includes(needle))
   // A deleted assistant, or one of another tenant, closes its detail page.
   const opened = assistants.find(item => item.id === openId)
+  // An update to a newer package version rewrites core files; the detail page reads them again.
+  const openedVersion = props.usePackages(snapshot => snapshot.state?.installed.find(item => item.assistantId === openId)?.version)
   const run = async (action: Promise<string | undefined>): Promise<void> => {
     setActionFailure(null)
     const refusal = await action
@@ -83,11 +92,12 @@ export function AssistantsPage(props: AssistantsPageProps) {
     return (
       <>
         <AssistantDetailPage
-          key={opened.id} t={t} assistant={opened} alerts={alerts}
+          key={opened.id} t={t} assistant={opened} alerts={alerts} revision={openedVersion}
           onBack={() => { setOpenId(null) }} onChat={onChat} onRead={props.onRead} onUpdate={props.onUpdate}
           onLoadOptions={onLoadOptions} squareAvatar={squareAvatar} useSessions={useSessions} onOpenSession={props.onOpenSession}
           onDuplicate={() => { void duplicate(opened.id, true) }}
           onDelete={() => { setDeleting(opened) }}
+          packageTasks={<PackageTasks {...props} assistantId={opened.id} />}
         />
         {confirm}
       </>
@@ -151,6 +161,7 @@ export function AssistantsPage(props: AssistantsPageProps) {
               </li>
             ))}
           </ul>
+          <CompanyPackages {...props} onOpen={setOpenId} />
         </>
       )}
       {confirm}

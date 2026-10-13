@@ -42,6 +42,15 @@
       "path": "../../assistant/assistants"
     },
     {
+      "path": "../../assistant/assistant-packages"
+    },
+    {
+      "path": "../../api/workspace-controller/tsconfig.client.json"
+    },
+    {
+      "path": "../../workspace/workspace"
+    },
+    {
       "path": "../../api/session-controller/tsconfig.client.json"
     },
     {

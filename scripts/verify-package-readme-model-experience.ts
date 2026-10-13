@@ -230,6 +230,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/knowledge/knowledge-base': { kind: 'none', reason: 'Knowledge bases are managed and searched outside any Session; no model request carries them yet.' },
   'packages/client/ui-knowledge': { kind: 'none', reason: 'The page only renders and edits knowledge bases.' },
   'packages/session-query/session-share': { kind: 'none', reason: 'Reads the Session log to upload a snapshot; writes nothing to the log or to a model request.' },
+  'packages/assistant/assistant-packages': { kind: 'indirect', reason: 'Writes an assistant\'s core files and subsets through the assistants service and creates automation tasks; those services own what the model sees.' },
   'packages/schedule/automation-tasks': { kind: 'none', reason: 'Creates a Session and its schedule; the Session and the schedule own everything the model sees.' },
   'packages/connector/connectors': { kind: 'indirect', reason: 'Connected connectors reach the model through the skill catalog and the bash tool.' },
   'packages/client/ui-session-share': { kind: 'none', reason: 'The dialog only calls the Host share service, which reads the Session log.' },
