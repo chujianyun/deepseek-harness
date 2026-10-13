@@ -210,8 +210,10 @@ describe('subset choices', () => {
 })
 
 describe('subset search', () => {
-  it('filters a long list by name and description and counts the selection', async () => {
-    const many = Array.from({ length: 10 }, (_, index) => ({ id: `skill-${String(index)}`, name: `skill-${String(index)}`, ...index === 3 ? { description: '写周报' } : {} }))
+  it('filters a long list by name, id, and description and counts the selection', async () => {
+    const many = Array.from({ length: 10 }, (_, index) => ({
+      id: `skill-${String(index)}`, name: index === 5 ? '拼多多发品' : `skill-${String(index)}`, ...index === 3 ? { description: '写周报' } : {},
+    }))
     const props = {
       t: makeTranslate(zh), open: true, templates: [], onClose: vi.fn(), onCreate: vi.fn(async () => undefined),
       onLoadOptions: vi.fn(async () => ({ models: [], presets: [], capabilities: { skills: many, connectors: [], knowledgeBases: [] } })),
@@ -228,6 +230,12 @@ describe('subset search', () => {
     expect(within(skills).getAllByRole('checkbox')).toHaveLength(10)
     fireEvent.change(within(skills).getByRole('textbox', { name: 'Skill 搜索' }), { target: { value: '周报' } })
     expect(within(skills).getAllByRole('checkbox').map(box => box.closest('label')?.textContent)).toEqual(['skill-3'])
+    // The display name is shown, and both it and the id find the Skill.
+    for (const query of ['拼多多', 'skill-5']) {
+      fireEvent.change(within(skills).getByRole('textbox', { name: 'Skill 搜索' }), { target: { value: query } })
+      expect(within(skills).getAllByRole('checkbox').map(box => box.closest('label')?.textContent)).toEqual(['拼多多发品'])
+    }
+    fireEvent.change(within(skills).getByRole('textbox', { name: 'Skill 搜索' }), { target: { value: '周报' } })
     fireEvent.click(within(skills).getByRole('checkbox', { name: 'skill-3' }))
     expect(within(skills).getByText('已选 1 项')).toBeTruthy()
     fireEvent.change(within(skills).getByRole('textbox', { name: 'Skill 搜索' }), { target: { value: '' } })

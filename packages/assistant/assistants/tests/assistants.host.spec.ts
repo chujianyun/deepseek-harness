@@ -884,6 +884,19 @@ describe('capability subsets', () => {
     await presetless.settle(s => s.assistants.length === 1)
     expect((await presetless.service.capabilityOptions()).skills.map(skill => skill.id)).toEqual(['alpha'])
   })
+
+  it('names a Skill installed from the Skill Hub by its display name, and others by their name', async () => {
+    const env = await setup({ before: async (ctx) => {
+      await withSkills(memorySkill('alpha'), memorySkill('pdd-publish'), memorySkill('tmall-item-report'))(ctx)
+      ctx.provide('skillMarket', { records: async () => new Map([
+        ['pdd-publish', { name: 'pdd-publish', displayName: '拼多多发品' }], ['tmall-item-report', { name: 'tmall-item-report' }],
+      ]) } as never)
+    } })
+    await env.settle(s => s.assistants.length === 1)
+    expect((await env.service.capabilityOptions()).skills.map(skill => [skill.id, skill.name])).toEqual([
+      ['alpha', 'alpha'], ['pdd-publish', '拼多多发品'], ['tmall-item-report', 'tmall-item-report'],
+    ])
+  })
 })
 
 describe('knowledge preselection', () => {
