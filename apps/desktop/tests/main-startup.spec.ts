@@ -1703,6 +1703,19 @@ describe('desktop main startup', () => {
     expect(harness.updateDownload).not.toHaveBeenCalled()
   })
 
+  it('asks for a drag into Applications instead of restarting when macOS cannot replace the running App', async () => {
+    vi.stubGlobal('process', { ...process, platform: 'darwin', arch: 'arm64', resourcesPath: 'desktop-test-resources',
+      execPath: '/Volumes/MO WorkAI/MO WorkAI.app/Contents/MacOS/MO WorkAI' })
+    await readyForUpdate()
+    harness.updateState = { phase: 'ready', version: '1.0.1' }
+    harness.dialog.showMessageBox.mockClear()
+    await invoke(DESKTOP_IPC.updatesOpen, 'app')
+    expect(harness.dialog.showMessageBox).toHaveBeenLastCalledWith(expect.objectContaining({
+      message: 'Version 1.0.1 has been downloaded', detail: en.updateManualInstallDetail,
+      buttons: [en.updateOpenInstaller, en.later], defaultId: 0, cancelId: 1 }))
+    expect(harness.updateInstall).not.toHaveBeenCalled()
+  })
+
   it('does not lock or stop tasks when restart confirmation is dismissed', async () => {
     const host = await readyForUpdate()
     harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 1 })

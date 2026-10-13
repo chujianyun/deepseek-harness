@@ -330,7 +330,7 @@ pnpm run package:desktop:win:x64:unsigned
 
 ### 未签名 macOS 安装包
 
-没有 Developer ID 证书时，`pnpm run package:desktop:mac:arm64:unsigned`（或 `:mac:x64:unsigned`）在 `.desktop-build/targets/<目标>/unsigned-artifacts/` 生成名称带 `-unsigned` 的 DMG 和 ZIP。应用只做 Apple Silicon 启动所必需的 ad-hoc 签名，没有 Developer ID 签名、hardened runtime 或公证，因此首次打开时 Gatekeeper 会提示无法验证开发者；用户按住 Control 点按 → 打开，或在「系统设置 → 隐私与安全性」中允许。与未签名 Windows 安装包一样，它省略自动更新配置，不生成发布完成记录，也不需要签名钥匙串或公证凭据。
+没有 Developer ID 证书时，`pnpm run package:desktop:mac:arm64:unsigned`（或 `:mac:x64:unsigned`）在 `.desktop-build/targets/<目标>/unsigned-artifacts/` 生成名称带 `-unsigned` 的 DMG 和 ZIP。应用只做 Apple Silicon 启动所必需的 ad-hoc 签名，没有 Developer ID 签名、hardened runtime 或公证，因此首次打开时 Gatekeeper 会提示无法验证开发者；用户按住 Control 点按 → 打开，或在「系统设置 → 隐私与安全性」中允许。与未签名 Windows 安装包一样，它不含签名更新源（改为从用户中心在应用内更新，见「更新」一节），不生成发布完成记录，也不需要签名钥匙串或公证凭据。
 
 ### Windows 安装界面
 
@@ -421,7 +421,7 @@ Windows 下载完成后的更新确认说明应用会在安装期间关闭、完
 
 若任务收尾失败但已确认 Host 退出，安装会被拒绝，壳会在允许再次确认重启前恢复当前版本的 Host。Host 正常停止后的安装器启动失败使用同一恢复路径。替代 Host 启动并完成认证后，壳重新加载原有应用地址，让 Web 页面获取当前端口、Cookie 和启动注入数据；页面加载失败时打开原生致命故障恢复弹窗。未确认进程退出时，绝不允许启动替代 Host。已下载目标保留以供重试。已知强更策略在恢复过程中继续阻塞；Host 恢复失败打开原生致命故障恢复弹窗。
 
-没有打包更新源的构建（未签名构建）从用户中心策略提供的安装包更新。每个安装包带允许的下载页 origin（开发模式下也可以是回环策略 origin）上的 HTTPS 地址、SHA-256 与大小。壳选择本平台的安装包（Windows 为 NSIS `.exe`），下载到 `userData/updates/<版本>/`，大小与 SHA-256 都一致才接受；连续 `DSH_DESKTOP_UPDATE_HTTP_IDLE_TIMEOUT_MS`（默认 60000）收不到数据即失败。该目录在启动时清空，同一次运行内复用已校验的文件。Windows 安装时以 `--updated` 启动安装包后退出；安装包显示进度窗口，跳过完成页并重新打开应用。下载或安装失败时，在重试入口之外提供下载页。没有本平台安装包的版本仍显示下载页提示。强制策略生效期间不使用此更新源，强制更新窗口只提供下载页。未打包的开发模式只有在 `DSH_DESKTOP_IN_APP_UPDATE_KIND` 指定安装包类型（`exe`、`zip` 或 `dmg`）时才使用此更新源。
+没有打包更新源的构建（未签名构建）从用户中心策略提供的安装包更新。每个安装包带允许的下载页 origin（开发模式下也可以是回环策略 origin）上的 HTTPS 地址、SHA-256 与大小。壳选择本平台的安装包（Windows 为 NSIS `.exe`），下载到 `userData/updates/<版本>/`，大小与 SHA-256 都一致才接受；连续 `DSH_DESKTOP_UPDATE_HTTP_IDLE_TIMEOUT_MS`（默认 60000）收不到数据即失败。该目录在启动时清空，同一次运行内复用已校验的文件。Windows 安装时以 `--updated` 启动安装包后退出；安装包显示进度窗口，跳过完成页并重新打开应用。macOS 上，应用可写且不在已挂载的磁盘映像中、也未被系统转移运行时，下载 ZIP；准备阶段用 `ditto` 解压，只接受唯一一个与当前应用 bundle 标识相同、版本与所提供版本一致的 App。安装时启动一个独立脚本后退出；脚本最多等待十分钟让进程退出，把当前 App 移到一旁，把新 App 移入原位置，清除隔离属性并重新打开，移入失败时恢复原 App；输出写入应用日志目录的 `update-install.log`。其他情况下 macOS 下载 DMG；就绪入口提供「打开安装包并退出」，不停止 Host，由用户把 App 拖入「应用程序」。ad-hoc 签名构建每个版本的身份都不同，因此更新后需要重新授予屏幕录制、辅助功能等 macOS 隐私权限。下载或安装失败时，在重试入口之外提供下载页。没有本平台安装包的版本仍显示下载页提示。强制策略生效期间不使用此更新源，强制更新窗口只提供下载页。未打包的开发模式只有在 `DSH_DESKTOP_IN_APP_UPDATE_KIND` 指定安装包类型（`exe`、`zip` 或 `dmg`）时才使用此更新源；其中 `zip` 在开发模式下总会准备失败，因为开发用 Electron App 的 bundle 标识不同。
 
 已确认 Host 退出但任务未成功收尾时，常规与强更弹窗均展示本地化恢复提示。两种语言都根据类型化的准备失败原因选择提示，翻译文案变化不会改变失败分类。“查看技术详情”默认折叠，仅展示退出状态、信号、关闭确认和截止时间事实，不展示插件 stderr。展开详情既不重试，也不授权安装。
 

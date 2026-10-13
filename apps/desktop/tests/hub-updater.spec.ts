@@ -31,12 +31,15 @@ function fixture(overrides: Partial<HubUpdaterOptions> & { release?: DesktopAvai
     ?? { version: '1.1.0', page: 'https://hub.example.com/download', packages: [zip, exe] }
   const fetch = vi.fn<typeof globalThis.fetch>(() => Promise.resolve(chunked(content)))
   const install = vi.fn<HubUpdaterOptions['install']>(() => Promise.resolve())
-  const updater = new HubUpdater({ offer: () => release, currentVersion: () => '1.0.0', kind: 'exe', directory, install, fetch, idleTimeoutMs: 60_000, ...overrides })
+  const prepare = vi.fn<HubUpdaterOptions['prepare']>(file => Promise.resolve(`${file}.prepared`))
+  const updater = new HubUpdater({ offer: () => release, currentVersion: () => '1.0.0', kind: 'exe', directory, prepare, install, fetch,
+    idleTimeoutMs: 60_000, ...overrides })
   const progress: number[] = []
   const downloaded: string[] = []
   updater.on('download-progress', ({ percent }: { percent: number }) => { progress.push(percent) })
   updater.on('update-downloaded', ({ version }: { version: string }) => { downloaded.push(version) })
-  return { updater, fetch, install, progress, downloaded, offer: (next: DesktopAvailableRelease | undefined) => { release = next } }
+  const offer = (next: DesktopAvailableRelease | undefined): void => { release = next }
+  return { updater, fetch, prepare, install, progress, downloaded, offer }
 }
 
 describe('hub updater', () => {
@@ -48,7 +51,8 @@ describe('hub updater', () => {
       f.offer(release)
       expect(await f.updater.checkForUpdates()).toEqual({ isUpdateAvailable: false, updateInfo: { version: '1.0.0' } })
     }
-    expect(new HubUpdater({ offer: () => undefined, currentVersion: () => '1.0.0', kind: undefined, directory, install: vi.fn(), fetch: vi.fn(), idleTimeoutMs: 1 }).supported).toBe(false)
+    expect(new HubUpdater({ offer: () => undefined, currentVersion: () => '1.0.0', kind: undefined, directory, prepare: vi.fn(), install: vi.fn(), fetch: vi.fn(), idleTimeoutMs: 1 }).supported).toBe(false)
+    expect(f.updater.kind).toBe('exe')
   })
 
   it('downloads with progress, verifies size and SHA-256, and reuses the verified file', async () => {
@@ -131,6 +135,22 @@ describe('hub updater', () => {
     expect(await readdir(directory)).toEqual(['1.1.0'])
   })
 
+  it('fails the download when preparation fails and prepares again on retry', async () => {
+    const f = fixture()
+    await f.updater.checkForUpdates()
+    f.prepare.mockRejectedValueOnce(new Error('archive contains a different application'))
+    await expect(f.updater.downloadUpdate()).rejects.toThrow('different application')
+    expect(f.updater.installer).toBeUndefined()
+    expect(f.downloaded).toEqual([])
+    await f.updater.downloadUpdate()
+    expect(f.fetch).toHaveBeenCalledOnce()
+    expect(f.prepare).toHaveBeenCalledTimes(2)
+    expect(f.updater.installer).toBeDefined()
+    f.offer(undefined)
+    await f.updater.checkForUpdates()
+    expect(f.updater.installer).toBeUndefined()
+  })
+
   it('requires a checked update before downloading', async () => {
     await expect(fixture().updater.downloadUpdate()).rejects.toThrow('no checked update')
   })
@@ -139,8 +159,10 @@ describe('hub updater', () => {
     const f = fixture()
     await f.updater.checkForUpdates()
     const [file] = await f.updater.downloadUpdate()
+    expect(f.prepare).toHaveBeenCalledWith(file, '1.1.0')
+    expect(f.updater.installer).toBe(`${file!}.prepared`)
     f.updater.quitAndInstall()
-    expect(f.install).toHaveBeenCalledWith(file)
+    expect(f.install).toHaveBeenCalledWith(`${file!}.prepared`)
     const errors: Error[] = []
     f.updater.on('error', (error: Error) => { errors.push(error) })
     f.install.mockRejectedValueOnce(new Error('spawn failed')).mockRejectedValueOnce('denied')

@@ -63,6 +63,7 @@ import { DesktopQuitConfirmation } from './quit-confirmation.ts'
 import { DesktopTray } from './tray.ts'
 import { DesktopBackgroundNotice } from './background-notice.ts'
 import { HubUpdater, windowsInstaller } from './hub-updater.ts'
+import { macBundle, macInstaller, macPreparation, macReplaceable } from './mac-update.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
@@ -590,14 +591,22 @@ async function main(): Promise<void> {
   // A signed build keeps its packaged feed. Unsigned builds carry none, so the user center's installers are
   // the update source; development runs use them only with an explicit installer kind.
   const signedFeed = app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml'))
+  // macOS replaces the running App from the ZIP; where it cannot (a mounted or translocated App, or a
+  // read-only folder) the user drags the disk image's App into place instead.
   const developmentKind = app.isPackaged ? undefined : process.env.DSH_DESKTOP_IN_APP_UPDATE_KIND
+  const runningBundle = macBundle(process.execPath)
+  const updateKind = app.isPackaged
+    ? process.platform === 'win32' ? 'exe' : process.platform === 'darwin' ? (macReplaceable(runningBundle) ? 'zip' : 'dmg') : undefined
+    : developmentKind === 'exe' || developmentKind === 'zip' || developmentKind === 'dmg' ? developmentKind : undefined
+  const quitForUpdate = (): void => { app.quit() }
   const hubUpdater = new HubUpdater({
     offer: () => mandatoryPolicy?.state.blocking === false ? mandatoryPolicy.state.available : undefined,
     currentVersion: () => app.getVersion(),
-    kind: app.isPackaged ? (process.platform === 'win32' ? 'exe' : undefined)
-      : developmentKind === 'exe' || developmentKind === 'zip' || developmentKind === 'dmg' ? developmentKind : undefined,
+    kind: updateKind,
     directory: join(app.getPath('userData'), 'updates'),
-    install: windowsInstaller(() => { app.quit() }),
+    prepare: updateKind === 'zip' ? macPreparation(runningBundle) : file => Promise.resolve(file),
+    install: updateKind === 'zip' ? macInstaller(runningBundle, join(app.getPath('logs'), 'update-install.log'), quitForUpdate)
+      : windowsInstaller(quitForUpdate),
     fetch: (input, init) => net.fetch(input instanceof URL ? input.href : input, init),
     idleTimeoutMs: Number(process.env.DSH_DESKTOP_UPDATE_HTTP_IDLE_TIMEOUT_MS ?? 60_000),
   })
@@ -664,6 +673,25 @@ async function main(): Promise<void> {
 
   const updateSchedule = new DesktopUpdateSchedule(updates, resolveDesktopUpdateScheduleConfig(process.env))
 
+  /** A disk-image update cannot replace the App itself: open the image and explain the drag into Applications. */
+  const installManually = async (version: string): Promise<void> => {
+    const result = await ordinaryMessageBox({ type: 'info', title: locale.messages.updateTitle,
+      message: formatDesktopMessage(locale.messages.updateManualInstallTitle, { version }),
+      detail: locale.messages.updateManualInstallDetail,
+      buttons: [locale.messages.updateOpenInstaller, locale.messages.later], defaultId: 0, cancelId: 1 })
+    const installer = hubUpdater.installer
+    if (result.response !== 0 || installer === undefined) return
+    const failure = await shell.openPath(installer)
+    if (failure !== '') { console.error(`desktop update: cannot open ${installer}: ${failure}`); return }
+    // The running App holds the single-instance lock and its bundle, so it quits before the drag.
+    app.quit()
+  }
+  const installUpdate = async (version: string): Promise<DesktopUpdateState> => {
+    if (signedFeed || hubUpdater.kind !== 'dmg') return updates.install(version)
+    await installManually(version)
+    return updates.state
+  }
+
   const downloadUpdate = async (version: string): Promise<DesktopUpdateState> => {
     void track('desktop_upgrade_click', {})
     updateJournal?.action('download-requested')
@@ -675,7 +703,7 @@ async function main(): Promise<void> {
     if (!isMandatory()) await windowShown()
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- A quit can begin while the show is awaited.
     if (quitting) return state
-    return updates.install(version)
+    return installUpdate(version)
   }
   const windowShown = (): Promise<void> => new Promise((resolve) => {
     const window = currentDialogWindow()
@@ -879,7 +907,7 @@ async function main(): Promise<void> {
         if (state.phase === 'ready' || (state.phase === 'error' && state.failedOperation === 'install')) {
           if (state.version !== undefined) {
             failedOperation = 'install'
-            await showUpdateFailure(await updates.install(state.version))
+            await showUpdateFailure(await installUpdate(state.version))
           }
           return
         }

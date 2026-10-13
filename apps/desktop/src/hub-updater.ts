@@ -9,8 +9,11 @@ import { basename, join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import type { DesktopAvailableRelease, DesktopUpdatePackage } from './mandatory-update-policy.ts'
 
-/** Platform installation of one verified installer; resolves once the platform installer owns the update. */
-export type HubInstaller = (file: string) => Promise<void>
+/** Platform installation of one prepared installer; resolves once the platform installer owns the update. */
+export type HubInstaller = (installer: string) => Promise<void>
+
+/** Turns a verified download into what the platform installs, such as an extracted App; failures fail the download. */
+export type HubPreparation = (file: string, version: string) => Promise<string>
 
 /** Process-level operations, replaceable at the platform test boundary. */
 export interface HubUpdaterOptions {
@@ -21,6 +24,7 @@ export interface HubUpdaterOptions {
   readonly kind: DesktopUpdatePackage['kind'] | undefined
   /** Directory owned by the updater; previous downloads are removed on the next one. */
   readonly directory: string
+  readonly prepare: HubPreparation
   readonly install: HubInstaller
   readonly fetch: typeof fetch
   /** A transfer receiving no bytes for this long fails, so a stalled download can be retried. */
@@ -37,12 +41,19 @@ export class HubUpdater extends EventEmitter {
   allowDowngrade = false
   private target: { version: string; pkg: DesktopUpdatePackage } | undefined
   private downloaded: string | undefined
+  private prepared: string | undefined
   private clearing: Promise<void> = Promise.resolve()
 
   constructor(private readonly options: HubUpdaterOptions) { super() }
 
   /** Whether this platform has an installer kind; the offer can still lack a package for it. */
   get supported(): boolean { return this.options.kind !== undefined }
+
+  /** Installer kind this process downloads. */
+  get kind(): DesktopUpdatePackage['kind'] | undefined { return this.options.kind }
+
+  /** Prepared installer of the current target, once a download has been verified and prepared. */
+  get installer(): string | undefined { return this.prepared }
 
   /**
    * Select the offered installer for this platform without network work; the policy request already ran
@@ -53,7 +64,10 @@ export class HubUpdater extends EventEmitter {
     const offer = this.options.offer()
     const pkg = offer?.packages.find(item => item.kind === this.options.kind)
     const next = offer !== undefined && pkg !== undefined ? { version: offer.version, pkg } : undefined
-    if (next?.version !== this.target?.version || next?.pkg.sha256 !== this.target?.pkg.sha256) this.downloaded = undefined
+    if (next?.version !== this.target?.version || next?.pkg.sha256 !== this.target?.pkg.sha256) {
+      this.downloaded = undefined
+      this.prepared = undefined
+    }
     this.target = next
     const version = next?.version ?? this.options.currentVersion()
     return Promise.resolve({ isUpdateAvailable: next !== undefined, updateInfo: { version } })
@@ -70,6 +84,7 @@ export class HubUpdater extends EventEmitter {
     await this.clearing
     const directory = join(this.options.directory, version)
     const file = join(directory, basename(new URL(pkg.url).pathname))
+    this.prepared = undefined
     if (this.downloaded !== file || (await stat(file).catch(() => undefined))?.size !== pkg.size) {
       this.downloaded = undefined
       await this.removeOtherVersions(version)
@@ -78,14 +93,15 @@ export class HubUpdater extends EventEmitter {
       this.downloaded = file
     }
     this.emit('download-progress', { percent: 100 })
+    this.prepared = await this.options.prepare(file, version)
     this.emit('update-downloaded', { version })
     return [file]
   }
 
   /** Hand the verified installer to the platform; a failure to start it is emitted as an updater error. */
   quitAndInstall(): void {
-    if (this.downloaded === undefined) throw new Error('desktop update: no verified installer')
-    this.options.install(this.downloaded).catch((error: unknown) => {
+    if (this.prepared === undefined) throw new Error('desktop update: no verified installer')
+    this.options.install(this.prepared).catch((error: unknown) => {
       this.emit('error', error instanceof Error ? error : new Error(String(error)))
     })
   }
@@ -93,6 +109,7 @@ export class HubUpdater extends EventEmitter {
   /** Remove every retained download; a download survives only within one application run. */
   clear(): Promise<void> {
     this.downloaded = undefined
+    this.prepared = undefined
     this.clearing = rm(this.options.directory, { recursive: true, force: true })
     return this.clearing
   }
