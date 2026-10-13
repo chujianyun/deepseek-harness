@@ -226,6 +226,9 @@ function jsonText(value: object): string {
 }
 
 /** The kinds of capability a subset names. */
+/** Source of the Skills installed from the Skill Hub market (`@deepseek-ai/dsh-skill-market`). */
+const MARKET_SOURCE = 'market'
+
 const SUBSET_KINDS = ['skills', 'connectors', 'knowledgeBases'] as const
 
 /**
@@ -386,7 +389,11 @@ export class AssistantsService extends TypertRemoteService {
     const installed = await this.ctx.get('skillMarket')?.records()
     const skills = (await this.ctx.get('skills')?.list(lease === undefined ? {} : { scope: lease.key }) ?? [])
       .filter(skill => skill.invocation.modelInvocable && !systemSkill(skill))
-      .map(skill => ({ id: skill.name, name: installed?.get(skill.name)?.displayName ?? skill.name, description: skill.description }))
+      .map(skill => ({
+        id: skill.name, description: skill.description,
+        // A same-named Skill of higher precedence (such as one in ~/.agents/skills) keeps its own name.
+        name: (skill.source === MARKET_SOURCE ? installed?.get(skill.name)?.displayName : undefined) ?? skill.name,
+      }))
     // The client names each connector in its own language.
     const connectors = (await this.ctx.get('connectors')?.getState())?.connectors
       .filter(item => item.enabled && !NOT_INSTALLED.has(item.status))
