@@ -427,3 +427,57 @@
 
 /* An installed market Skill: success-coloured state instead of a neutral tag. */
 .installed { flex: none; padding: 2px 8px; border-radius: 6px; background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent); color: var(--dsw-alias-state-success-primary); font-size: 12px; line-height: 18px; white-space: nowrap; }
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Bulk management toolbar under the page intro */
+.batchBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.batchActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.pin {
+  flex: none;
+  opacity: 0.45;
+}
+
+.card:hover .pin,
+.pin:focus-visible {
+  opacity: 1;
+}
+
+.pinned {
+  flex: none;
+  color: var(--dsw-alias-state-business-primary);
+}
+
+/* The card's own name is the visible label; the checkbox keeps its accessible name */
+.select {
+  flex: none;
+}
+
+.select span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { InstalledSkillView } from '@deepseek-ai/dsh-skill-controller/types'
 import { createInstalledSource, type InstalledDependencies } from '../src/client/installed-source.ts'
 
-function skill(name: string, enabled = true): InstalledSkillView {
-  return { name, description: `${name} description`, group: 'custom', source: 'user-dsh', path: `/home/.dsh/skills/${name}/SKILL.md`, enabled, withdrawn: false }
+function skill(name: string, enabled = true, withdrawn = false): InstalledSkillView {
+  return { name, description: `${name} description`, group: 'custom', source: 'user-dsh', path: `/home/.dsh/skills/${name}/SKILL.md`, enabled, withdrawn }
 }
 
 const done = { ok: true as const, value: { done: true as const } }
@@ -25,7 +26,7 @@ function deps(overrides: Partial<InstalledDependencies> = {}): InstalledDependen
 describe('installed-skill source', () => {
   it('starts loading, then publishes the listed skills', async () => {
     const source = createInstalledSource(deps())
-    expect(source.hooks.installed.getSnapshot()).toEqual({ status: 'loading', skills: [], busy: [], failure: null })
+    expect(source.hooks.installed.getSnapshot()).toEqual({ status: 'loading', skills: [], busy: [], failure: null, pinned: [] })
     await source.onRefresh()
     expect(source.hooks.installed.getSnapshot()).toMatchObject({ status: 'ready', skills: [skill('alpha'), skill('beta', false)] })
   })
@@ -152,5 +153,38 @@ describe('installed-skill source', () => {
     const d = deps()
     createInstalledSource(d).onChat('alpha')
     expect(d.chat).toHaveBeenCalledWith('alpha')
+  })
+
+  describe('pins and bulk actions (Spec #221 T176)', () => {
+    afterEach(() => { localStorage.clear() })
+
+    it('pins and unpins on this machine, and a new source reads the pins back', () => {
+      const source = createInstalledSource(deps())
+      source.onTogglePin('custom:alpha', true)
+      source.onTogglePin('market:pdf', true)
+      source.onTogglePin('custom:alpha', false)
+      expect(source.hooks.installed.getSnapshot().pinned).toEqual(['market:pdf'])
+      expect(createInstalledSource(deps()).hooks.installed.getSnapshot().pinned).toEqual(['market:pdf'])
+    })
+
+    it('enables and disables several skills, skipping withdrawn ones, and returns the refused names', async () => {
+      const setEnabled = vi.fn(async (name: string, enabled: boolean) => (name === 'beta' ? refused('no') : { ok: true as const, value: skill(name, enabled) }))
+      const list = vi.fn(async () => ({ ok: true as const, value: { skills: [skill('alpha', false), skill('beta', false), skill('gone', false, true)] } }))
+      const source = createInstalledSource(deps({ setEnabled, list }))
+      await source.onRefresh()
+      expect(await source.onBatch('enable', ['alpha', 'beta', 'gone', 'missing'])).toEqual(['beta'])
+      expect(setEnabled.mock.calls.map(([name]) => name)).toEqual(['alpha', 'beta'])
+      expect(source.hooks.installed.getSnapshot()).toMatchObject({ failure: null, skills: [skill('alpha', true), skill('beta', false), skill('gone', false, true)] })
+      expect(await source.onBatch('disable', ['alpha', 'gone'])).toEqual([])
+      expect(setEnabled.mock.calls.slice(2).map(([name, on]) => [name, on])).toEqual([['alpha', false], ['gone', false]])
+    })
+
+    it('uninstalls several skills, dropping each once the Host confirms', async () => {
+      const uninstall = vi.fn(async (name: string) => (name === 'beta' ? refused('busy') : done))
+      const source = createInstalledSource(deps({ uninstall }))
+      await source.onRefresh()
+      expect(await source.onBatch('uninstall', ['alpha', 'beta'])).toEqual(['beta'])
+      expect(source.hooks.installed.getSnapshot().skills.map(item => item.name)).toEqual(['beta'])
+    })
   })
 })

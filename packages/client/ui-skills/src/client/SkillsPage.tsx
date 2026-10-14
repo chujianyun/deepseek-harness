@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react'
 import type { InstalledSkillGroup, InstalledSkillView } from '@deepseek-ai/dsh-skill-controller/types'
 import {
-  Button, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular,
-  IconNewChatOutlineRegular, IconTrashOutlineRegular, Menu, Modal, Switch, Tag,
+  Button, Checkbox, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular,
+  IconNewChatOutlineRegular, IconPinFillRegular, IconPinOutlineRegular, IconTrashOutlineRegular, Menu, Modal, Switch, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { InstalledSkillsInjected } from './installed-source.ts'
+import type { InstalledBatchAction, InstalledSkillsInjected } from './installed-source.ts'
+import { pinKey } from './pins.ts'
 import type { MarketInjected } from './market-source.ts'
 import type { UploadInjected } from './upload-source.ts'
 import { AddSkillDialog } from './AddSkillDialog.tsx'
@@ -84,6 +85,31 @@ export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
   const failure = useInstalled(snapshot => snapshot.failure)
   const [uninstalling, setUninstalling] = useState<string>()
   const uninstallLabel = props.useMarket(snapshot => uninstalling === undefined ? undefined : snapshot.statuses[uninstalling]?.displayName)
+  // Bulk management: a selection of skill names, a confirmation before uninstalling them, and the names a batch could not do
+  const [selected, setSelected] = useState<ReadonlySet<string> | undefined>()
+  // The names an uninstall is waiting to confirm
+  const [confirmBatch, setConfirmBatch] = useState<readonly string[]>()
+  const [batchRefused, setBatchRefused] = useState<readonly string[]>([])
+  const [batchRunning, setBatchRunning] = useState(false)
+  const runBatch = async (action: InstalledBatchAction, names: readonly string[]): Promise<void> => {
+    setBatchRunning(true)
+    setBatchRefused([])
+    const refused = await props.onBatch(action, names)
+    setBatchRunning(false)
+    setBatchRefused(refused)
+    // Uninstalled skills leave the selection; the others stay selected for a next action
+    if (action === 'uninstall') setSelected(new Set(refused))
+  }
+  const selection = selected === undefined ? undefined : {
+    has: (name: string) => selected.has(name),
+    set: (name: string, on: boolean) => {
+      setSelected((current) => {
+        const next = new Set(current)
+        if (on) next.add(name); else next.delete(name)
+        return next
+      })
+    },
+  }
 
   useEffect(() => {
     void onRefresh()
@@ -96,10 +122,37 @@ export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
       <header className={css.header} data-window-drag>
         <div className={css.headerRow}>
           <h1 className={css.title}>{t('installedTitle')}</h1>
-          <Button size="sm" variant="outline" onClick={onBack}>{t('backToMarket')}</Button>
+          <div className={css.headerActions}>
+            {selected === undefined && skills.length > 0 && (
+              <Button size="sm" variant="outline" onClick={() => { setSelected(new Set()); setBatchRefused([]) }}>{t('batchManage')}</Button>
+            )}
+            <Button size="sm" variant="outline" onClick={onBack}>{t('backToMarket')}</Button>
+          </div>
         </div>
         <p className={css.intro}>{t('installedIntro')}</p>
+        {selected !== undefined && (
+          <div className={css.batchBar} role="toolbar" aria-label={t('batchManage')}>
+            <Checkbox
+              checked={skills.length > 0 && selected.size === skills.length}
+              label={t('batchSelectAll')}
+              onChange={(all) => { setSelected(new Set(all ? skills.map(skill => skill.name) : [])) }}
+            />
+            <span className={css.meta}>{t('batchSelected', { count: String(selected.size) })}</span>
+            <span className={css.batchActions}>
+              <Button size="sm" variant="outline" disabled={selected.size === 0 || batchRunning} onClick={() => { void runBatch('enable', [...selected]) }}>{t('batchEnable')}</Button>
+              <Button size="sm" variant="outline" disabled={selected.size === 0 || batchRunning} onClick={() => { void runBatch('disable', [...selected]) }}>{t('batchDisable')}</Button>
+              <Button size="sm" variant="outline" disabled={selected.size === 0 || batchRunning} onClick={() => { setConfirmBatch([...selected]) }}>{t('batchUninstall')}</Button>
+              <Button size="sm" variant="primary" onClick={() => { setSelected(undefined); setBatchRefused([]) }}>{t('batchDone')}</Button>
+            </span>
+          </div>
+        )}
       </header>
+      {batchRefused.length > 0 && (
+        <div className={css.failure} role="alert">
+          <span>{t('batchFailed', { count: String(batchRefused.length), names: batchRefused.join('、') })}</span>
+          <Button size="sm" variant="ghost" onClick={() => { setBatchRefused([]) }}>{t('uninstallClose')}</Button>
+        </div>
+      )}
       {failure !== null && (
         <div className={css.failure} role="alert">
           <span>{t('actionFailed', { message: failure })}</span>
@@ -115,7 +168,7 @@ export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
         <p className={css.notice}>{t('loading')}</p>
       ) : (['custom', 'market'] as const).map(group => (
         <InstalledGroup key={group} group={group} skills={skills.filter(skill => skill.group === group)} props={props}
-          onUninstall={(name) => { setUninstalling(name) }} />
+          selection={selection} onUninstall={(name) => { setUninstalling(name) }} />
       ))}
       <UninstallDialog
         name={uninstalling}
@@ -127,17 +180,41 @@ export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
           void props.onUninstall(name)
         }}
       />
+      <Modal
+        open={confirmBatch !== undefined}
+        title={t('batchUninstallTitle', { count: String(confirmBatch?.length ?? 0) })}
+        description={t('batchUninstallDescription')}
+        closeLabel={t('uninstallClose')}
+        onClose={() => { setConfirmBatch(undefined) }}
+        footer={confirmBatch !== undefined && (
+          <div className={css.dialogActions}>
+            <Button variant="outline" onClick={() => { setConfirmBatch(undefined) }}>{t('uninstallCancel')}</Button>
+            <Button variant="primary" onClick={() => { setConfirmBatch(undefined); void runBatch('uninstall', confirmBatch) }}>{t('uninstallConfirm')}</Button>
+          </div>
+        )}
+      />
     </div>
   )
 }
 
-function InstalledGroup({ group, skills, props, onUninstall }: {
+/** The page's selection while bulk management is on. */
+interface Selection {
+  readonly has: (name: string) => boolean
+  readonly set: (name: string, selected: boolean) => void
+}
+
+function InstalledGroup({ group, skills: listed, props, selection, onUninstall }: {
   group: InstalledSkillGroup
   skills: readonly InstalledSkillView[]
   props: SkillsPageProps
+  selection: Selection | undefined
   onUninstall: (name: string) => void
 }) {
-  const { t } = props
+  const { t, useInstalled } = props
+  const pinned = useInstalled(snapshot => snapshot.pinned)
+  // Pinned cards first (most recently pinned first), the rest keep the list's name order
+  const rank = (skill: InstalledSkillView) => pinned.indexOf(pinKey(group, skill.name))
+  const skills = [...listed].sort((a, b) => rank(b) - rank(a))
   const [shown, setShown] = useState(PAGE_SIZE)
   const visible = skills.slice(0, shown)
   const remaining = skills.length - visible.length
@@ -151,7 +228,8 @@ function InstalledGroup({ group, skills, props, onUninstall }: {
       {skills.length === 0 ? <p className={css.notice}>{t(group === 'custom' ? 'empty' : 'emptyMarket')}</p> : (
         <ul className={css.grid}>
           {visible.map(skill => (
-            <SkillCard key={skill.name} skill={skill} props={props} onUninstall={() => { onUninstall(skill.name) }} />
+            <SkillCard key={skill.name} skill={skill} props={props} pinned={rank(skill) >= 0} selection={selection}
+              onUninstall={() => { onUninstall(skill.name) }} />
           ))}
           {remaining > 0 && (
             <li>
@@ -169,12 +247,14 @@ function InstalledGroup({ group, skills, props, onUninstall }: {
 /** Hub states that end a withdrawal: offered to the tenant again, or deleted (then usable like any unavailable Skill). */
 const OFFERED: ReadonlySet<string | undefined> = new Set(['current', 'update', 'unavailable'])
 
-function SkillCard({ skill, props, onUninstall }: {
+function SkillCard({ skill, props, pinned, selection, onUninstall }: {
   skill: InstalledSkillView
   props: SkillsPageProps
+  pinned: boolean
+  selection: Selection | undefined
   onUninstall: () => void
 }) {
-  const { t, useInstalled, useMarket, onToggle, onReveal, onEdit, onChat } = props
+  const { t, useInstalled, useMarket, onToggle, onReveal, onEdit, onChat, onTogglePin } = props
   const busy = useInstalled(snapshot => snapshot.busy.includes(skill.name))
   // A market Skill shows the display name its Hub status carries; a user Skill has only its name
   const marketName = useMarket(snapshot => skill.group === 'market' ? snapshot.statuses[skill.name]?.displayName : undefined)
@@ -187,6 +267,10 @@ function SkillCard({ skill, props, onUninstall }: {
   return (
     <li className={css.card} data-enabled={enabled ? 'true' : 'false'}>
       <div className={css.cardHead}>
+        {selection !== undefined && (
+          <Checkbox className={css.select} checked={selection.has(skill.name)} label={t('select', { name: shown })}
+            onChange={(next) => { selection.set(skill.name, next) }} />
+        )}
         <span className={css.avatar} aria-hidden="true">{initial(shown)}</span>
         {shown === skill.name ? <span className={css.name}>{shown}</span> : (
           // The slug goes under the display name, so a long slug never squeezes the name out
@@ -195,6 +279,15 @@ function SkillCard({ skill, props, onUninstall }: {
             <span className={css.slug}>{skill.name}</span>
           </span>
         )}
+        <Button
+          size="sm"
+          className={pinned ? css.pinned : css.pin}
+          aria-label={t(pinned ? 'unpin' : 'pin', { name: shown })}
+          aria-pressed={pinned}
+          onClick={() => { onTogglePin(pinKey(skill.group, skill.name), !pinned) }}
+        >
+          {pinned ? <IconPinFillRegular /> : <IconPinOutlineRegular />}
+        </Button>
         <Menu
           open={menuOpen}
           onClose={() => { setMenuOpen(false) }}
