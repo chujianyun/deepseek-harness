@@ -31,6 +31,7 @@ export function pageProps(
     useMarket: bindSnapshotSelector(marketStore),
     useUpload: bindSnapshotSelector(uploadStore),
     onRefresh: vi.fn(async () => {}),
+    onSync: vi.fn(async () => {}),
     onToggle: vi.fn(async () => {}),
     onReveal: vi.fn(async () => {}),
     onEdit: vi.fn(async () => {}),

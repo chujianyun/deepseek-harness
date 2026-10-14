@@ -32,6 +32,8 @@ export interface InstalledSkillsInjected {
   readonly hooks: { readonly installed: HostObservable<InstalledSnapshot> }
   /** Re-read the installed skills. */
   readonly onRefresh: () => Promise<void>
+  /** Read the list again without showing the loading state; a read that fails keeps the list shown. */
+  readonly onSync: () => Promise<void>
   /** Switch one skill on or off; the switch moves at once and returns if the Host refuses. */
   readonly onToggle: (name: string, enabled: boolean) => Promise<void>
   readonly onReveal: (name: string) => Promise<void>
@@ -65,6 +67,15 @@ export function createInstalledSource(deps: InstalledDependencies): InstalledSki
     patch(() => result.ok ? { status: 'ready', skills: result.value.skills } : { status: 'error' })
   }
 
+  // Supersedes a read in flight like onRefresh does, so it also ends a loading state it took over.
+  const onSync = async (): Promise<void> => {
+    const current = ++epoch
+    const result = await deps.list()
+    if (current !== epoch) return
+    if (result.ok) patch(() => ({ status: 'ready', skills: result.value.skills }))
+    else patch(({ status }) => status === 'loading' ? { status: 'error' } : {})
+  }
+
   /** Run one Host action for a skill; true when it succeeded. A list read already in flight predates it and is dropped. */
   const act = async <T>(name: string, call: () => Promise<RemoteResult<T>>): Promise<boolean> => {
     const supersedes = store.getSnapshot().status === 'loading'
@@ -84,6 +95,7 @@ export function createInstalledSource(deps: InstalledDependencies): InstalledSki
   return {
     hooks: { installed: store },
     onRefresh,
+    onSync,
     onToggle: async (name, enabled) => {
       setShown(name, enabled)
       if (!await act(name, () => deps.setEnabled(name, enabled))) setShown(name, !enabled)

@@ -3388,9 +3388,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'isDisabled(name: string): boolean',
-        description: 'Whether the signed-in tenant switched this market Skill off.',
+        description: 'Whether this market Skill is closed for the signed-in tenant: the user switched it off (`disabledSkills`), or the platform withdrew it (`withdrawnSkills`, see `isWithdrawn`).',
         parameters: [{ name: 'name', description: 'Skill name.' }],
-        returns: 'true when switched off.',
+        returns: 'true when closed.',
       },
       {
         signature: 'isWithdrawn(name: string): boolean',

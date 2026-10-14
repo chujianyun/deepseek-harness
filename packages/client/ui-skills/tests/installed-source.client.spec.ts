@@ -40,6 +40,47 @@ describe('installed-skill source', () => {
     expect(source.hooks.installed.getSnapshot()).toMatchObject({ status: 'error', skills: [skill('alpha')] })
   })
 
+  it('reads the list again quietly: no loading state, and a failed read keeps the list shown', async () => {
+    const list = vi.fn()
+      .mockResolvedValueOnce({ ok: true, value: { skills: [skill('alpha')] } })
+      .mockResolvedValueOnce({ ok: true, value: { skills: [skill('alpha', false)] } })
+      .mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'down', {}) })
+    const source = createInstalledSource(deps({ list }))
+    await source.onRefresh()
+    const sync = source.onSync()
+    expect(source.hooks.installed.getSnapshot().status).toBe('ready')
+    await sync
+    expect(source.hooks.installed.getSnapshot()).toMatchObject({ status: 'ready', skills: [skill('alpha', false)] })
+    await source.onSync()
+    expect(source.hooks.installed.getSnapshot()).toMatchObject({ status: 'ready', skills: [skill('alpha', false)] })
+  })
+
+  it('a quiet read that takes over a loading read ends the loading state, as data or as an error', async () => {
+    let finish: (value: unknown) => void = () => {}
+    const list = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+      .mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'down', {}) })
+    const source = createInstalledSource(deps({ list }))
+    const loading = source.onRefresh()
+    await source.onSync()
+    finish({ ok: true, value: { skills: [skill('alpha')] } })
+    await loading
+    expect(source.hooks.installed.getSnapshot().status).toBe('error')
+  })
+
+  it('drops a quiet read that a newer read superseded', async () => {
+    let finish: (value: unknown) => void = () => {}
+    const list = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+      .mockResolvedValueOnce({ ok: true, value: { skills: [skill('beta')] } })
+    const source = createInstalledSource(deps({ list }))
+    const sync = source.onSync()
+    await source.onRefresh()
+    finish({ ok: true, value: { skills: [skill('alpha')] } })
+    await sync
+    expect(source.hooks.installed.getSnapshot().skills).toEqual([skill('beta')])
+  })
+
   it('ignores a read superseded by a newer one', async () => {
     const first = Promise.withResolvers<Awaited<ReturnType<InstalledDependencies['list']>>>()
     const list = vi.fn()

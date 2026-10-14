@@ -3311,7 +3311,7 @@ export interface Config {
 
 - `inject`: `skills` · `hubAccount`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/skill/skill-market/src/index.ts:62`](../packages/skill/skill-market/src/index.ts)
+- `source`: [`packages/skill/skill-market/src/index.ts:84`](../packages/skill/skill-market/src/index.ts)
 
 ```ts config-catalog
 /** Market configuration. */
@@ -3322,7 +3322,10 @@ export interface Config {
   disabledSkills?: Volatile<readonly string[]>
   /** Market Skills the user uninstalled, as `<tenantId>/<name>`; auto-install leaves them out. Edited through `markUninstalled()`. */
   uninstalledSkills?: Volatile<readonly string[]>
-  /** Market Skills the platform withdrew from their tenant, as `<tenantId>/<name>`; switched off until distributed again. Kept by the market. */
+  /**
+   * Market Skills the platform withdrew from their tenant, as `<tenantId>/<name>`; switched off until
+   * distributed again. Kept by the market.
+   */
   withdrawnSkills?: Volatile<readonly string[]>
   /** After each sign-in, install the Skills the Hub marks for automatic install and update them. */
   autoInstall?: boolean

@@ -87,8 +87,9 @@ export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
 
   useEffect(() => {
     void onRefresh()
-    void props.onRefreshStatus()
-  }, [onRefresh, props.onRefreshStatus])
+    // The Hub check can switch withdrawn Skills off or back on: read the list again quietly afterwards.
+    void props.onRefreshStatus().then(() => props.onSync())
+  }, [onRefresh, props.onRefreshStatus, props.onSync])
 
   return (
     <div className={css.page}>
@@ -165,8 +166,8 @@ function InstalledGroup({ group, skills, props, onUninstall }: {
   )
 }
 
-/** Hub states that mean the Skill is offered to the tenant again, ending a withdrawal. */
-const OFFERED: ReadonlySet<string | undefined> = new Set(['current', 'update'])
+/** Hub states that end a withdrawal: offered to the tenant again, or deleted (then usable like any unavailable Skill). */
+const OFFERED: ReadonlySet<string | undefined> = new Set(['current', 'update', 'unavailable'])
 
 function SkillCard({ skill, props, onUninstall }: {
   skill: InstalledSkillView

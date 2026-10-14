@@ -295,7 +295,8 @@ Host service backing the generated `ctx.remote.installedSkills` namespace. Every
  * @param name - installed skill name.
  * @param enabled - whether the skill should be invocable.
  * @returns the skill's view after the change.
- * @throws RemoteError when the skill is not installed, is a market Skill the platform withdrew (switching on), or the setting cannot be persisted.
+ * @throws RemoteError when the skill is not installed, is a market Skill the platform withdrew (switching on),
+ *   or the setting cannot be persisted.
  */
 @Remote async setEnabled(name: string, enabled: boolean): Promise<InstalledSkillView>
 
@@ -346,9 +347,10 @@ Host owner of the market source and of the `skillMarket` Remote namespace.
 tenantDir(tenantId: string): string
 
 /**
- * Whether the signed-in tenant switched this market Skill off.
+ * Whether this market Skill is closed for the signed-in tenant: the user switched it off
+ * (`disabledSkills`), or the platform withdrew it (`withdrawnSkills`, see `isWithdrawn`).
  * @param name - Skill name.
- * @returns true when switched off.
+ * @returns true when closed.
  */
 isDisabled(name: string): boolean
 

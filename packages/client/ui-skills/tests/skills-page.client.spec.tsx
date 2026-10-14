@@ -160,6 +160,12 @@ describe('Skills page', () => {
     expect(screen.getByRole('menuitem', { name: '卸载' })).toBeTruthy()
   })
 
+  it('reads the list again quietly once the Hub check finished', async () => {
+    const { props } = pageProps({ skills: [skill('alpha')] })
+    render(<InstalledView {...props} onBack={() => {}} />)
+    await vi.waitFor(() => { expect(props.onSync).toHaveBeenCalledOnce() })
+  })
+
   it('drops the withdrawn mark as soon as the Hub check reports the Skill offered again', () => {
     const { props } = pageProps({ skills: [skill('hub-pdf', false, 'market', true)] }, {
       statuses: { 'hub-pdf': { name: 'hub-pdf', displayName: 'hub-pdf', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' } },

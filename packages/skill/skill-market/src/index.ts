@@ -43,6 +43,30 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** How many installed Skills the status check asks the Hub about at once. */
+const STATUS_CHECK_CONCURRENCY = 4
+
+type TenantListField = 'disabledSkills' | 'uninstalledSkills' | 'withdrawnSkills'
+/** One of the profile's per-tenant lists, as `<tenantId>/<name>` keys. */
+type TenantList = Volatile<readonly string[]> | undefined
+
+/**
+ * Map items with at most `limit` calls running at once, keeping the input order.
+ * @param items - the inputs.
+ * @param limit - the largest number of calls in flight.
+ * @param map - the call for one item.
+ * @returns the results in input order.
+ */
+async function mapLimited<T, R>(items: readonly T[], limit: number, map: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = []
+  let next = 0
+  const worker = async (): Promise<void> => {
+    for (let index = next++; index < items.length; index = next++) results[index] = await map(items[index] as T)
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
+}
+
 /** Page size used when automatic install walks the market (the Hub's maximum). */
 const AUTO_INSTALL_PAGE_SIZE = 100
 
@@ -372,9 +396,10 @@ export class SkillMarket extends TypertRemoteService {
   }
 
   /**
-   * Whether the signed-in tenant switched this market Skill off.
+   * Whether this market Skill is closed for the signed-in tenant: the user switched it off
+   * (`disabledSkills`), or the platform withdrew it (`withdrawnSkills`, see `isWithdrawn`).
    * @param name - Skill name.
-   * @returns true when switched off.
+   * @returns true when closed.
    */
   isDisabled(name: string): boolean {
     return this.tenantId !== undefined && (listed(this.disabledSkills, `${this.tenantId}/${name}`) || this.isWithdrawn(name))
@@ -413,20 +438,29 @@ export class SkillMarket extends TypertRemoteService {
   markUninstalled(name: string, uninstalled: boolean = true): Promise<void> {
     const tenantId = this.tenantId
     if (tenantId === undefined) return Promise.reject(signedOut())
-    return this.editTenantList('uninstalledSkills', this.uninstalledSkills, `${tenantId}/${name}`, uninstalled)
+    const key = `${tenantId}/${name}`
+    // An uninstalled Skill leaves no withdrawn mark behind; a later install starts from the Hub's answer.
+    const forgetWithdrawn = uninstalled ? this.editTenantKeys('withdrawnSkills', this.withdrawnSkills, [], [key]) : Promise.resolve()
+    return forgetWithdrawn.then(() => this.editTenantList('uninstalledSkills', this.uninstalledSkills, key, uninstalled))
   }
 
   /**
    * Add or remove `<tenantId>/<name>` in one of the profile's per-tenant lists. Writes are queued so
    * concurrent edits of either list never overwrite each other.
    */
-  private editTenantList(field: 'disabledSkills' | 'uninstalledSkills' | 'withdrawnSkills', list: Volatile<readonly string[]> | undefined, key: string, include: boolean): Promise<void> {
+  private editTenantList(field: TenantListField, list: TenantList, key: string, include: boolean): Promise<void> {
+    return include ? this.editTenantKeys(field, list, [key], []) : this.editTenantKeys(field, list, [], [key])
+  }
+
+  /** Add and remove several keys in one write (nothing is written when the list would not change). */
+  private editTenantKeys(field: TenantListField, list: TenantList, add: readonly string[], remove: readonly string[]): Promise<void> {
     const write = this.settingsWrites.then(async () => {
       const current = list?.get() ?? []
-      if (current.includes(key) === include) return
+      const next = [...new Set([...current.filter(item => !remove.includes(item)), ...add])].sort()
+      if (next.length === current.length && next.every(item => current.includes(item))) return
       const settings = this.ctx.get('settings')
       if (settings === undefined || this.entryId === undefined) throw new Error('editing market Skill lists requires the settings service and a profile entry')
-      await settings.update(this.entryId, { [field]: include ? [...current, key].sort() : current.filter(item => item !== key) })
+      await settings.update(this.entryId, { [field]: next })
     })
     this.settingsWrites = write.catch(() => {})
     return write
@@ -496,7 +530,6 @@ export class SkillMarket extends TypertRemoteService {
     if (tenantId === undefined) throw signedOut()
     const value = await this.install(tenantId, id, options, signal)
     const key = `${tenantId}/${value.name}`
-    await this.recordWithdrawn(tenantId, value.name, false)
     if (listed(this.uninstalledSkills, key)) {
       // Installed by hand again: automatic install and update apply to it from now on. The Skill is
       // installed already, so a failure to forget only stays in the log.
@@ -528,7 +561,7 @@ export class SkillMarket extends TypertRemoteService {
           throw new RemoteError('skill-market/local-changes', `local edits to "${value.name}" would be overwritten`, { name: value.name, files: changed })
         }
       }
-      const res = await this.hubRequest(`/api/client/skills/${encodeURIComponent(id)}/download`, signal)
+      const res = await this.hubRequest(`/api/client/skills/${encodeURIComponent(id)}/download`, signal, id)
       const zip = new Uint8Array(await res.arrayBuffer())
       if (zip.byteLength > this.maxPackageBytes) throw invalid('the package is too large')
       const files = packageFiles(zip, value.name, this.maxPackageBytes)
@@ -560,6 +593,8 @@ export class SkillMarket extends TypertRemoteService {
         await rm(staging, { recursive: true, force: true })
       }
       this.provider?.invalidate()
+      // The Hub just handed this Skill out, so it is offered to the tenant again.
+      await this.recordWithdrawn(tenantId, [], [value.name])
       return value
     }
     const lockKey = `${tenantId}/${id}`
@@ -580,16 +615,20 @@ export class SkillMarket extends TypertRemoteService {
 
   /**
    * After a sign-in: check the installed Skills (switching off withdrawn ones), then run the automatic
-   * install, replacing a run for an earlier tenant.
+   * install when it is on, replacing a run for an earlier tenant.
    */
   private startAutoInstall(): void {
     this.sync?.abort()
     this.sync = undefined
-    if (!this.autoInstallEnabled || this.tenantId === undefined) return
+    if (this.tenantId === undefined) return
     const sync = new AbortController()
     this.sync = sync
     const tenantId = this.tenantId
-    void this.checkInstalled(tenantId, sync.signal).then(() => this.autoInstall(tenantId, sync.signal)).catch((error: unknown) => {
+    const run = async () => {
+      await this.checkInstalled(tenantId, sync.signal)
+      if (this.autoInstallEnabled) await this.autoInstall(tenantId, sync.signal)
+    }
+    void run().catch((error: unknown) => {
       // The next sign-in or start tries again; nothing here blocks using DSH.
       this.ctx.logger.warn(`skill-market: automatic install for tenant ${tenantId} stopped: ${String(error)}`)
     })
@@ -750,7 +789,7 @@ export class SkillMarket extends TypertRemoteService {
    */
   private async checkInstalled(tenantId: string, signal: AbortSignal): Promise<readonly MarketInstalledStatus[]> {
     const installed = [...(await this.records(tenantId)).values()].sort((a, b) => Number(a.name > b.name) - Number(a.name < b.name))
-    const statuses = await Promise.all(installed.map(async (local): Promise<MarketInstalledStatus> => {
+    const statuses = await mapLimited(installed, STATUS_CHECK_CONCURRENCY, async (local): Promise<MarketInstalledStatus> => {
       const base = {
         name: local.name, displayName: shownName(local.displayName, local.name),
         hubSkillId: local.hubSkillId, installedVersion: local.version,
@@ -765,21 +804,25 @@ export class SkillMarket extends TypertRemoteService {
         const state = code === 'skill-market/withdrawn' ? 'withdrawn' : code === 'skill-market/not-found' ? 'unavailable' : 'unknown'
         return { ...base, latestVersion: null, state }
       }
-    }))
-    for (const status of statuses) {
-      // Only answers about this Skill change the list; an unreachable Hub leaves it as it was.
-      if (status.state === 'withdrawn') await this.recordWithdrawn(tenantId, status.name, true)
-      else if (status.state === 'current' || status.state === 'update') await this.recordWithdrawn(tenantId, status.name, false)
-    }
+    })
+    // Answers came under whichever sign-in was current: record them only while it is still this tenant's.
+    signal.throwIfAborted()
+    await this.assertTenant(tenantId)
+    // Only answers about the Skill change the list; an unreachable Hub leaves it as it was. A Skill
+    // deleted after its withdrawal (now unavailable) keeps working like any other unavailable one.
+    await this.recordWithdrawn(
+      tenantId,
+      statuses.filter(status => status.state === 'withdrawn').map(status => status.name),
+      statuses.filter(status => status.state !== 'withdrawn' && status.state !== 'unknown').map(status => status.name),
+    )
     return statuses
   }
 
-  /** Add or remove one Skill in the withdrawn list; a failure to persist stays in the log, the next check tries again. */
-  private async recordWithdrawn(tenantId: string, name: string, withdrawn: boolean): Promise<void> {
-    const key = `${tenantId}/${name}`
-    if (listed(this.withdrawnSkills, key) === withdrawn) return
-    await this.editTenantList('withdrawnSkills', this.withdrawnSkills, key, withdrawn).catch((error: unknown) => {
-      this.ctx.logger.warn(`skill-market: could not update the withdrawn list for "${name}": ${String(error)}`)
+  /** Mark and clear withdrawn Skills of `tenantId` in one write; a failure to persist stays in the log, the next check tries again. */
+  private async recordWithdrawn(tenantId: string, withdrawn: readonly string[], offered: readonly string[]): Promise<void> {
+    const keys = (names: readonly string[]) => names.map(name => `${tenantId}/${name}`)
+    await this.editTenantKeys('withdrawnSkills', this.withdrawnSkills, keys(withdrawn), keys(offered)).catch((error: unknown) => {
+      this.ctx.logger.warn(`skill-market: could not update the withdrawn list: ${String(error)}`)
     })
   }
 

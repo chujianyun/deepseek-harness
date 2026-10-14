@@ -766,6 +766,54 @@ describe('skillMarket', () => {
       expect(withdrawn(live)).toEqual([])
     })
 
+    it('ends a withdrawal when the platform then deletes the Skill: it keeps working like any unavailable one', async () => {
+      const { center, market, live } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      center.withdrawn.add('s-pdf')
+      await market.installedStatus(signal())
+      center.withdrawn.clear()
+      center.skills = [SQL]
+      expect((await market.installedStatus(signal()))[0]).toMatchObject({ state: 'unavailable' })
+      expect(withdrawn(live)).toEqual([])
+      expect(market.isDisabled('pdf-tools')).toBe(false)
+    })
+
+    it('checks at sign-in even when automatic install is off', async () => {
+      const { center, market, hub, signIn, live } = await boot({ skills: [PDF] })
+      await market.installSkill('s-pdf', {}, signal())
+      center.withdrawn.add('s-pdf')
+      await hub.signOut()
+      await expect.poll(() => market.tenantId).toBeUndefined()
+      await signIn()
+      await expect.poll(() => withdrawn(live)).toEqual(['t-a/pdf-tools'])
+    })
+
+    it('records nothing when the Hub sign-in moved to another tenant during the check', async () => {
+      const { center, market, hub, live } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      center.withdrawn.add('s-pdf')
+      const getState = hub.getState.bind(hub)
+      vi.spyOn(hub, 'getState').mockImplementation(async () => {
+        const state = await getState()
+        return { ...state, profile: state.profile === null ? null : { ...state.profile, tenantId: 't-other' } }
+      })
+      expect(remoteErrorOf(await market.installedStatus(signal()).catch((error: unknown) => error))).toMatchObject({ code: 'skill-market/tenant-changed' })
+      expect(withdrawn(live) ?? []).toEqual([])
+    })
+
+    it('forgets the withdrawal when the user uninstalls the Skill, and a withdrawn download says so', async () => {
+      const { center, market, live } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      center.withdrawn.add('s-pdf')
+      await market.installedStatus(signal())
+      await market.markUninstalled('pdf-tools')
+      expect(withdrawn(live)).toEqual([])
+      expect((live.entry.options.config as { uninstalledSkills?: string[] }).uninstalledSkills).toEqual(['t-a/pdf-tools'])
+      // The move failed after all: the uninstall record is forgotten again
+      await market.markUninstalled('pdf-tools', false)
+      expect((live.entry.options.config as { uninstalledSkills?: string[] }).uninstalledSkills).toEqual([])
+    })
+
     it('keeps the withdrawal when recording it fails, and logs it', async () => {
       const { ctx, center, market } = await boot()
       await market.installSkill('s-pdf', {}, signal())
