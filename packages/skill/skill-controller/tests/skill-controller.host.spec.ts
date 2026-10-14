@@ -62,9 +62,9 @@ describe('installedSkills Remote', () => {
     ctx.skills.register({ name: 'runtime-only', description: 'Runtime', source: 'runtime', content: 'x' })
     const { skills } = await controller.list()
     expect(skills).toEqual([
-      { name: 'alpha', description: 'alpha description', group: 'custom', source: 'user-agents', path: join(agentsHome, 'skills', 'alpha', 'SKILL.md'), enabled: true },
-      { name: 'beta', description: 'beta description', group: 'custom', source: 'user-dsh', path: join(dshHome, 'skills', 'beta', 'SKILL.md'), enabled: true },
-      { name: 'flat', description: 'Flat skill', group: 'custom', source: 'user-agents', path: join(agentsHome, 'skills', 'flat.md'), enabled: true },
+      { name: 'alpha', description: 'alpha description', group: 'custom', source: 'user-agents', path: join(agentsHome, 'skills', 'alpha', 'SKILL.md'), enabled: true, withdrawn: false },
+      { name: 'beta', description: 'beta description', group: 'custom', source: 'user-dsh', path: join(dshHome, 'skills', 'beta', 'SKILL.md'), enabled: true, withdrawn: false },
+      { name: 'flat', description: 'Flat skill', group: 'custom', source: 'user-agents', path: join(agentsHome, 'skills', 'flat.md'), enabled: true, withdrawn: false },
     ])
   })
 
@@ -212,12 +212,14 @@ describe('installedSkills market group', () => {
       providerName: 'market-fixture', includeDefaultRoots: false, customSkillDirs: [marketDir], customSource: 'market', customRank: 550, watch: false,
     })
     const disabled = new Set<string>()
+    const withdrawn = new Set<string>()
     const uninstalled = new Set<string>()
     let rememberFails = false
     let forgetFails = false
     if (withMarket) {
       fixture.ctx.provide('skillMarket', {
-        isDisabled: (name: string) => disabled.has(name),
+        isDisabled: (name: string) => disabled.has(name) || withdrawn.has(name),
+        isWithdrawn: (name: string) => withdrawn.has(name),
         setDisabled: async (name: string, off: boolean) => { if (off) disabled.add(name); else disabled.delete(name) },
         markUninstalled: async (name: string, on = true) => {
           if (rememberFails || (!on && forgetFails)) throw new Error('settings unavailable')
@@ -227,14 +229,14 @@ describe('installedSkills market group', () => {
     }
     const failRemember = () => { rememberFails = true }
     const failForget = () => { forgetFails = true }
-    return { ...fixture, marketDir, disabled, uninstalled, failRemember, failForget }
+    return { ...fixture, marketDir, disabled, withdrawn, uninstalled, failRemember, failForget }
   }
 
   it('lists market Skills in their own group with the market switch', async () => {
     const { controller, marketDir, disabled } = await bootMarket()
     disabled.add('hub-pdf')
     expect((await controller.list()).skills.find(skill => skill.name === 'hub-pdf')).toEqual({
-      name: 'hub-pdf', description: 'From the market', group: 'market', source: 'market', path: join(marketDir, 'hub-pdf', 'SKILL.md'), enabled: false,
+      name: 'hub-pdf', description: 'From the market', group: 'market', source: 'market', path: join(marketDir, 'hub-pdf', 'SKILL.md'), enabled: false, withdrawn: false,
     })
     expect(await controller.setEnabled('hub-pdf', true)).toMatchObject({ group: 'market', enabled: true })
     expect(disabled.has('hub-pdf')).toBe(false)
@@ -274,6 +276,17 @@ describe('installedSkills market group', () => {
     failForget()
     expect(remoteErrorOf(await controller.uninstall('hub-pdf', new AbortController().signal).catch((error: unknown) => error))?.code).toBe('installed-skills/rejected')
     expect([...uninstalled]).toEqual(['hub-pdf'])
+  })
+
+  it('shows a withdrawn market Skill switched off, refuses to switch it on, and still uninstalls it', async () => {
+    const { controller, marketDir, withdrawn, disabled } = await bootMarket()
+    withdrawn.add('hub-pdf')
+    expect((await controller.list()).skills.find(skill => skill.name === 'hub-pdf')).toMatchObject({ enabled: false, withdrawn: true })
+    expect(remoteErrorOf(await controller.setEnabled('hub-pdf', true).catch((error: unknown) => error))?.code).toBe('installed-skills/rejected')
+    expect(disabled.size).toBe(0)
+    expect(await controller.setEnabled('hub-pdf', false)).toMatchObject({ enabled: false })
+    await controller.uninstall('hub-pdf', new AbortController().signal)
+    expect(await readdir(marketDir)).toEqual([])
   })
 
   it('refuses the market switch when the market is not mounted', async () => {

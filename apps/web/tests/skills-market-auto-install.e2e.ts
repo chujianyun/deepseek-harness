@@ -1,7 +1,7 @@
 // Automatic install of Skill Hub Skills (Spec #221) over the real `skillMarket` Remote and a mock
 // Skill Hub: the Skill the Hub marks for automatic install appears under "Installed" right after
 // sign-in, an unmarked one does not, an uninstalled one stays out across later sign-ins, and
-// installing it again by hand brings it back.
+// installing it again by hand brings it back; a Skill the platform withdraws is switched off and marked.
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -84,6 +84,21 @@ it('installs the marked Skill after sign-in and keeps an uninstalled one out unt
     await page.getByRole('button', { name: 'Install pdf-tools' }).click()
     await page.getByText('Installed v1.0.0').waitFor()
     expect((await installed().then(region => region.getByText('pdf-tools').count()))).toBe(1)
+    await page.getByRole('button', { name: 'Back to Skills' }).click()
+
+    // The platform withdraws it: opening "Installed" checks the Hub, switches it off, and marks it; the files stay.
+    center.withdrawn.add('s-pdf')
+    const withdrawnRegion = await installed()
+    await withdrawnRegion.getByTestId('skill-withdrawn').waitFor()
+    expect(await withdrawnRegion.getByTestId('skill-withdrawn').textContent()).toContain('Withdrawn')
+    await expect.poll(() => withdrawnRegion.getByRole('switch', { name: 'Enable pdf-tools' }).isDisabled()).toBe(true)
+    await expect.poll(async () => (await scaffold.ctx.skills.get('pdf-tools'))?.invocation).toEqual({ modelInvocable: false, userInvocable: false })
+    // Offered again: the next check switches it back on.
+    center.withdrawn.clear()
+    await page.reload()
+    const offered = await installed()
+    await expect.poll(() => offered.getByTestId('skill-withdrawn').count()).toBe(0)
+    await expect.poll(async () => (await scaffold.ctx.skills.get('pdf-tools'))?.invocation).toEqual({ modelInvocable: true, userInvocable: true })
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
     if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-skills-market-auto-install')

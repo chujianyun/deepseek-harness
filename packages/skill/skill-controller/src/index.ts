@@ -117,11 +117,15 @@ export class SkillController extends TypertRemoteService {
    * @param name - installed skill name.
    * @param enabled - whether the skill should be invocable.
    * @returns the skill's view after the change.
-   * @throws RemoteError when the skill is not installed or the setting cannot be persisted.
+   * @throws RemoteError when the skill is not installed, is a market Skill the platform withdrew (switching on),
+   *   or the setting cannot be persisted.
    */
   @Remote
   async setEnabled(name: string, enabled: boolean): Promise<InstalledSkillView> {
     const skill = await this.find(name)
+    if (enabled && this.view(skill).withdrawn) {
+      throw new RemoteError('installed-skills/rejected', `skill "${name}" was withdrawn by the platform and cannot be enabled`, { name })
+    }
     try {
       await this.setDisabled(skill, !enabled)
     } catch (error: unknown) {
@@ -255,6 +259,7 @@ export class SkillController extends TypertRemoteService {
       source: skill.source,
       path: skill.path,
       enabled: market ? this.ctx.get('skillMarket')?.isDisabled(skill.name) !== true : skill.disabled !== true,
+      withdrawn: market && this.ctx.get('skillMarket')?.isWithdrawn(skill.name) === true,
     }
   }
 

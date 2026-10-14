@@ -4,7 +4,7 @@ import type { InstalledSkillView } from '@deepseek-ai/dsh-skill-controller/types
 import { createInstalledSource, type InstalledDependencies } from '../src/client/installed-source.ts'
 
 function skill(name: string, enabled = true): InstalledSkillView {
-  return { name, description: `${name} description`, group: 'custom', source: 'user-dsh', path: `/home/.dsh/skills/${name}/SKILL.md`, enabled }
+  return { name, description: `${name} description`, group: 'custom', source: 'user-dsh', path: `/home/.dsh/skills/${name}/SKILL.md`, enabled, withdrawn: false }
 }
 
 const done = { ok: true as const, value: { done: true as const } }

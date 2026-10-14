@@ -9,8 +9,8 @@ import { SkillsPanelIcon } from '../src/client/SkillsPanelIcon.tsx'
 
 afterEach(cleanup)
 
-function skill(name: string, enabled = true, group: InstalledSkillView['group'] = 'custom'): InstalledSkillView {
-  return { name, description: `${name} description`, group, source: group === 'custom' ? 'user-dsh' : 'market', path: `/s/${name}/SKILL.md`, enabled }
+function skill(name: string, enabled = true, group: InstalledSkillView['group'] = 'custom', withdrawn = false): InstalledSkillView {
+  return { name, description: `${name} description`, group, source: group === 'custom' ? 'user-dsh' : 'market', path: `/s/${name}/SKILL.md`, enabled, withdrawn }
 }
 
 function renderPage(initial: Partial<InstalledSnapshot> = {}) {
@@ -146,6 +146,27 @@ describe('Skills page', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '卸载' }))
     expect(screen.getByRole('dialog').textContent).toContain('天猫发品')
     expect(within(screen.getByRole('region', { name: /用户自定义/ })).getByText('alpha')).toBeTruthy()
+  })
+
+  it('marks a withdrawn market Skill and locks its switch, while uninstall stays available', () => {
+    const { props } = pageProps({ skills: [skill('hub-pdf', false, 'market', true)] }, {
+      statuses: { 'hub-pdf': { name: 'hub-pdf', displayName: 'hub-pdf', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: null, state: 'withdrawn' } },
+    })
+    render(<InstalledView {...props} onBack={() => {}} />)
+    const market = screen.getByRole('region', { name: /来自市场/ })
+    expect(within(market).getByTestId('skill-withdrawn').textContent).toContain('已被收回')
+    expect((within(market).getByRole('switch', { name: '启用 hub-pdf' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(within(market).getByRole('button', { name: 'hub-pdf 的更多操作' }))
+    expect(screen.getByRole('menuitem', { name: '卸载' })).toBeTruthy()
+  })
+
+  it('drops the withdrawn mark as soon as the Hub check reports the Skill offered again', () => {
+    const { props } = pageProps({ skills: [skill('hub-pdf', false, 'market', true)] }, {
+      statuses: { 'hub-pdf': { name: 'hub-pdf', displayName: 'hub-pdf', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' } },
+    })
+    render(<InstalledView {...props} onBack={() => {}} />)
+    expect(screen.queryByTestId('skill-withdrawn')).toBeNull()
+    expect((screen.getByRole('switch', { name: '启用 hub-pdf' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('says when nothing came from the market yet', () => {

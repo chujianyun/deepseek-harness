@@ -295,7 +295,7 @@ Host service backing the generated `ctx.remote.installedSkills` namespace. Every
  * @param name - installed skill name.
  * @param enabled - whether the skill should be invocable.
  * @returns the skill's view after the change.
- * @throws RemoteError when the skill is not installed or the setting cannot be persisted.
+ * @throws RemoteError when the skill is not installed, is a market Skill the platform withdrew (switching on), or the setting cannot be persisted.
  */
 @Remote async setEnabled(name: string, enabled: boolean): Promise<InstalledSkillView>
 
@@ -351,6 +351,14 @@ tenantDir(tenantId: string): string
  * @returns true when switched off.
  */
 isDisabled(name: string): boolean
+
+/**
+ * Whether the platform withdrew this market Skill from the signed-in tenant; such a Skill stays
+ * installed but switched off, and the user cannot switch it on.
+ * @param name - Skill name.
+ * @returns true when withdrawn.
+ */
+isWithdrawn(name: string): boolean
 
 /**
  * Switch one market Skill of the signed-in tenant on or off, persisting the profile's list.
@@ -446,7 +454,8 @@ markUninstalled(name: string, uninstalled: boolean = true): Promise<void>
 
 /**
  * Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the
- * Hub no longer shows the employee is `unavailable`; its local copy stays installed and usable.
+ * platform withdrew from the tenant is `withdrawn` and gets switched off (its files stay); one the
+ * Hub no longer shows the employee for another reason is `unavailable` and stays installed and usable.
  * @param signal - caller lifetime.
  * @returns one status per installed market Skill, sorted by name.
  */

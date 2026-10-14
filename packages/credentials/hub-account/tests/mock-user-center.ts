@@ -102,6 +102,8 @@ export interface MockUserCenter {
   readonly revoked: string[]
   /** Skills visible to every tenant through the client API, in list order. */
   skills: MockSkill[]
+  /** Skill ids the platform withdrew from the tenant: detail and download answer 410 (Spec #221). */
+  readonly withdrawn: Set<string>
   /** When set, a download answers with these bytes instead of the Skill's zip. */
   downloadBody: Uint8Array | undefined
   /** When set, client API calls answer with this status. */
@@ -331,6 +333,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
       json(200, [...seen.values()])
       return
     }
+    if (parts[0] !== undefined && mock.withdrawn.has(parts[0])) { json(410, { code: 'skill_withdrawn', message: '该平台技能已被收回，本租户不能再使用' }); return }
     const skill = mock.skills.find(item => item.id === parts[0])
     if (skill === undefined) { json(404, { message: 'Skill 不存在' }); return }
     const files = filesOf(skill)
@@ -414,7 +417,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     clientId: 'dsh-desktop',
     tenant, denyWith: undefined, refreshStatus: undefined, expiresIn: 7200,
     exchangeStatus: undefined, tokenBody: undefined, tokenGate: undefined, userinfoReply: undefined,
-    skills: [], downloadBody: undefined, clientStatus: undefined, clientRequests: [],
+    skills: [], withdrawn: new Set(), downloadBody: undefined, clientStatus: undefined, clientRequests: [],
     tenantAdmin: false, owned: [], uploads: [], uploadReply: undefined, uploadHook: undefined, optionsReply: undefined,
     brandings: {}, brandingGate: undefined, logoReply: undefined, shares: {}, shareReply: undefined,
     feedback: [], feedbackReply: undefined, feedbackReplyOnce: undefined,

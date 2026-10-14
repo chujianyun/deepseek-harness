@@ -28,8 +28,10 @@ export interface InstalledSkillView {
   readonly source: string
   /** Absolute path of the skill's instruction file. */
   readonly path: string
-  /** False when the user switched the skill off. */
+  /** False when the user switched the skill off, or the platform withdrew it. */
   readonly enabled: boolean
+  /** A market Skill the platform withdrew from the tenant: switched off, and the user cannot switch it on. */
+  readonly withdrawn: boolean
 }
 
 /** Every installed user-level skill, sorted by name. */

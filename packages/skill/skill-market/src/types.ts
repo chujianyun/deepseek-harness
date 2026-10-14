@@ -11,6 +11,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'skill-market/unavailable': { readonly status: number | null }
     /** The Skill is not visible to the signed-in employee. */
     'skill-market/not-found': { readonly id: string }
+    /** The platform withdrew this Skill from the employee's tenant (Spec #221); it cannot be installed. */
+    'skill-market/withdrawn': { readonly id: string }
     /** A Skill the user placed on this machine already uses this name. */
     'skill-market/name-conflict': { readonly name: string }
     /** The downloaded package failed validation; nothing was installed. */
@@ -100,11 +102,11 @@ export interface MarketInstallOptions {
 
 /**
  * Where an installed market Skill stands on the Skill Hub: `current` (installed version is the
- * current one), `update` (a newer version is published), `unavailable` (withdrawn, deleted, or no
- * longer visible to the employee — the local copy keeps working), or `unknown` (the Hub could not
- * be asked).
+ * current one), `update` (a newer version is published), `withdrawn` (the platform withdrew it from
+ * the tenant — the local copy stays but is switched off), `unavailable` (deleted or no longer
+ * visible to the employee — the local copy keeps working), or `unknown` (the Hub could not be asked).
  */
-export type MarketInstalledState = 'current' | 'update' | 'unavailable' | 'unknown'
+export type MarketInstalledState = 'current' | 'update' | 'withdrawn' | 'unavailable' | 'unknown'
 
 /** One installed market Skill of the signed-in tenant and its Skill Hub state. */
 export interface MarketInstalledStatus {

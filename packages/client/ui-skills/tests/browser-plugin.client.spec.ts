@@ -30,7 +30,7 @@ async function bench() {
   new LocaleHolder(ctx)
   const installedSkills = {
     list: vi.fn(async () => ({ ok: true as const, value: { skills: [] } })),
-    setEnabled: vi.fn(async (name: string, enabled: boolean) => ({ ok: true as const, value: { name, description: '', group: 'custom' as const, source: 'user-dsh', path: '/x', enabled } })),
+    setEnabled: vi.fn(async (name: string, enabled: boolean) => ({ ok: true as const, value: { name, description: '', group: 'custom' as const, source: 'user-dsh', path: '/x', enabled, withdrawn: false } })),
     reveal: vi.fn(async () => done),
     edit: vi.fn(async () => done),
     uninstall: vi.fn(async () => done),

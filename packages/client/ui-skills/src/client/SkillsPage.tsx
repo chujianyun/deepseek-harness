@@ -165,6 +165,9 @@ function InstalledGroup({ group, skills, props, onUninstall }: {
   )
 }
 
+/** Hub states that mean the Skill is offered to the tenant again, ending a withdrawal. */
+const OFFERED: ReadonlySet<string | undefined> = new Set(['current', 'update'])
+
 function SkillCard({ skill, props, onUninstall }: {
   skill: InstalledSkillView
   props: SkillsPageProps
@@ -175,9 +178,13 @@ function SkillCard({ skill, props, onUninstall }: {
   // A market Skill shows the display name its Hub status carries; a user Skill has only its name
   const marketName = useMarket(snapshot => skill.group === 'market' ? snapshot.statuses[skill.name]?.displayName : undefined)
   const shown = marketName ?? skill.name
+  // The Hub check that runs when the page opens can report a withdrawal (or its end) before the list is read again
+  const state = useMarket(snapshot => skill.group === 'market' ? snapshot.statuses[skill.name]?.state : undefined)
+  const withdrawn = state === 'withdrawn' || (skill.withdrawn && !OFFERED.has(state))
+  const enabled = skill.enabled && !withdrawn
   const [menuOpen, setMenuOpen] = useState(false)
   return (
-    <li className={css.card} data-enabled={skill.enabled ? 'true' : 'false'}>
+    <li className={css.card} data-enabled={enabled ? 'true' : 'false'}>
       <div className={css.cardHead}>
         <span className={css.avatar} aria-hidden="true">{initial(shown)}</span>
         {shown === skill.name ? <span className={css.name}>{shown}</span> : (
@@ -193,7 +200,7 @@ function SkillCard({ skill, props, onUninstall }: {
           align="end"
           portal
           items={[
-            { id: 'chat', label: t('chat'), icon: <IconNewChatOutlineRegular />, disabled: !skill.enabled },
+            { id: 'chat', label: t('chat'), icon: <IconNewChatOutlineRegular />, disabled: !enabled },
             { id: 'edit', label: t('edit'), icon: <IconEditOutlineRegular /> },
             { id: 'reveal', label: t('reveal'), icon: <IconFolderOpenOutlineRegular /> },
             { type: 'separator', id: 'separator' },
@@ -221,14 +228,17 @@ function SkillCard({ skill, props, onUninstall }: {
           )}
         />
         <Switch
-          checked={skill.enabled}
+          checked={enabled}
           label={t('toggle', { name: shown })}
-          disabled={busy}
+          // A withdrawn Skill stays switched off until the platform offers it again
+          disabled={busy || withdrawn}
           onChange={(next) => { void onToggle(skill.name, next) }}
         />
       </div>
       <p className={css.description}>{skill.description}</p>
-      {skill.group === 'market' && <MarketStatus name={skill.name} props={props} />}
+      {withdrawn
+        ? <span className={css.unavailable} data-testid="skill-withdrawn">{t('marketWithdrawn')}</span>
+        : skill.group === 'market' && <MarketStatus name={skill.name} props={props} />}
     </li>
   )
 }

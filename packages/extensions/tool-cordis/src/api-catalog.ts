@@ -3340,7 +3340,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Switch one installed skill on or off for this user.',
         parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'enabled', description: 'whether the skill should be invocable.' }],
         returns: 'the skill\'s view after the change.',
-        throws: ['RemoteError when the skill is not installed or the setting cannot be persisted.'],
+        throws: ['RemoteError when the skill is not installed, is a market Skill the platform withdrew (switching on), or the setting cannot be persisted.'],
       },
       {
         signature: '@Remote async reveal(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>',
@@ -3391,6 +3391,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Whether the signed-in tenant switched this market Skill off.',
         parameters: [{ name: 'name', description: 'Skill name.' }],
         returns: 'true when switched off.',
+      },
+      {
+        signature: 'isWithdrawn(name: string): boolean',
+        description: 'Whether the platform withdrew this market Skill from the signed-in tenant; such a Skill stays installed but switched off, and the user cannot switch it on.',
+        parameters: [{ name: 'name', description: 'Skill name.' }],
+        returns: 'true when withdrawn.',
       },
       {
         signature: 'setDisabled(name: string, disabled: boolean): Promise<void>',
@@ -3457,7 +3463,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]>',
-        description: 'Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the Hub no longer shows the employee is `unavailable`; its local copy stays installed and usable.',
+        description: 'Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the platform withdrew from the tenant is `withdrawn` and gets switched off (its files stay); one the Hub no longer shows the employee for another reason is `unavailable` and stays installed and usable.',
         parameters: [{ name: 'signal', description: 'caller lifetime.' }],
         returns: 'one status per installed market Skill, sorted by name.',
       },
@@ -6594,7 +6600,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'InstalledSkillView',
-    declaration: 'export interface InstalledSkillView {\n    readonly name: string;\n    readonly description: string;\n    readonly group: InstalledSkillGroup;\n    readonly source: string;\n    readonly path: string;\n    readonly enabled: boolean;\n}',
+    declaration: 'export interface InstalledSkillView {\n    readonly name: string;\n    readonly description: string;\n    readonly group: InstalledSkillGroup;\n    readonly source: string;\n    readonly path: string;\n    readonly enabled: boolean;\n    readonly withdrawn: boolean;\n}',
   },
   {
     name: 'InstallSpecKind',
@@ -7002,7 +7008,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MarketInstalledState',
-    declaration: 'export type MarketInstalledState = \'current\' | \'update\' | \'unavailable\' | \'unknown\';',
+    declaration: 'export type MarketInstalledState = \'current\' | \'update\' | \'withdrawn\' | \'unavailable\' | \'unknown\';',
   },
   {
     name: 'MarketInstalledStatus',

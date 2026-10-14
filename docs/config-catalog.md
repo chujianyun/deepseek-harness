@@ -3320,6 +3320,8 @@ export interface Config {
   disabledSkills?: Volatile<readonly string[]>
   /** Market Skills the user uninstalled, as `<tenantId>/<name>`; auto-install leaves them out. Edited through `markUninstalled()`. */
   uninstalledSkills?: Volatile<readonly string[]>
+  /** Market Skills the platform withdrew from their tenant, as `<tenantId>/<name>`; switched off until distributed again. Kept by the market. */
+  withdrawnSkills?: Volatile<readonly string[]>
   /** After each sign-in, install the Skills the Hub marks for automatic install and update them. */
   autoInstall?: boolean
   /** Watch the tenant directory for changes made outside DSH. */

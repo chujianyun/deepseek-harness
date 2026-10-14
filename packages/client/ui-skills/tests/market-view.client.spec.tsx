@@ -197,9 +197,11 @@ describe('Market view', () => {
   })
 
   it('shows update and unavailable states on installed market cards and reads them when the view opens', () => {
-    const market = (name: string) => ({ name, description: `${name} description`, group: 'market' as const, source: 'market', path: `/m/${name}/SKILL.md`, enabled: true })
-    const { props, marketStore } = pageProps({ skills: [market('pdf-tools'), market('old-skill'), market('fresh')] }, {
+    const market = (name: string) => ({ name, description: `${name} description`, group: 'market' as const, source: 'market', path: `/m/${name}/SKILL.md`, enabled: true, withdrawn: false })
+    const { props, marketStore } = pageProps({ skills: [market('pdf-tools'), market('old-skill'), market('fresh'), market('gone')] }, {
       statuses: {
+        // Reported withdrawn before the installed list caught up with the switch-off
+        'gone': { name: 'gone', displayName: 'gone', hubSkillId: 's-gone', installedVersion: '1.0.0', latestVersion: null, state: 'withdrawn' },
         'pdf-tools': { name: 'pdf-tools', displayName: 'PDF 工具', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.1.0', state: 'update' },
         'old-skill': { name: 'old-skill', displayName: 'old-skill', hubSkillId: 's-old', installedVersion: '1.0.0', latestVersion: null, state: 'unavailable' },
         'fresh': { name: 'fresh', displayName: 'fresh', hubSkillId: 's-fresh', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' },
@@ -209,6 +211,7 @@ describe('Market view', () => {
     expect(props.onRefreshStatus).toHaveBeenCalledOnce()
     expect(screen.getByText('可更新到 v1.1.0')).toBeTruthy()
     expect(screen.getByText('市场已不可用')).toBeTruthy()
+    expect(screen.getByText(/已被收回/)).toBeTruthy()
     expect(screen.getAllByRole('button', { name: /^更新 / })).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: '更新 PDF 工具' }))
     expect(props.onInstall).toHaveBeenCalledWith('s-pdf')
