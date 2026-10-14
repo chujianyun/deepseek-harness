@@ -26,6 +26,14 @@ const PAGE_SIZE = 100
 export interface EffectRow {
   readonly channelName?: string | null
   readonly accountName?: string | null
+  /** The account id the page shows beside the account name. */
+  readonly subAccountId?: string | null
+  /** The plan id and name, on plan rows. */
+  readonly adid?: string | null
+  readonly adname?: string | null
+  readonly rfdAmt?: number | null
+  readonly roi?: number | null
+  readonly validRoi?: number | null
   readonly sellerNick?: string | null
   readonly cost?: number | null
   readonly validGmv?: number | null
@@ -70,6 +78,19 @@ export async function queryEffect(page: Page, data: Readonly<Record<string, unkn
 }
 
 /**
+ * Open the 三方外投 page and wait for its mtop client, which the effect query runs on.
+ * @param page - the tab.
+ * @throws SkillError signed-out on a sign-in page; Error when the page loads no mtop client.
+ */
+export async function openInvestPage(page: Page): Promise<void> {
+  await page.goto(INVEST_URL)
+  if (YUNTAI.isLoginPage(await page.evaluate<string>('location.href'))) signedOut('健康品牌云台')
+  if (!await page.waitFor(() => page.evaluate<boolean>('!!(window.lib && window.lib.mtop)'), MTOP_TIMEOUT_MS)) {
+    throw new Error('云台三方外投页面没有加载完（没有 mtop 客户端）。')
+  }
+}
+
+/**
  * Read the day's 三方外投 totals and, with a keyword, the matching own accounts' sums.
  * @param page - the tab.
  * @param date - the day.
@@ -80,11 +101,7 @@ export async function queryEffect(page: Page, data: Readonly<Record<string, unkn
  * @throws SkillError signed-out on a sign-in page, not-ready when the day has no 总计 row yet, failed for another store.
  */
 export async function readYuntai(page: Page, date: string, store: string, keyword: string): Promise<PlatformFigures> {
-  await page.goto(INVEST_URL)
-  if (YUNTAI.isLoginPage(await page.evaluate<string>('location.href'))) signedOut('健康品牌云台')
-  if (!await page.waitFor(() => page.evaluate<boolean>('!!(window.lib && window.lib.mtop)'), MTOP_TIMEOUT_MS)) {
-    throw new Error('云台三方外投页面没有加载完（没有 mtop 客户端）。')
-  }
+  await openInvestPage(page)
   const day = { startDate: date, endDate: date }
   const { result } = await queryEffect(page, { pageNo: 1, pageSize: PAGE_SIZE, resultDim: 'SELLER', queryPageTag: 'SELLER', sumTag: true, advAggre: false, ...day })
   const [total, ...media] = result
@@ -128,16 +145,25 @@ export function ownAccount(name: string, keyword: string): boolean {
   return new RegExp(`(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`, 'u').test(name)
 }
 
-/** Every account row of the day, page by page. */
-async function allAccounts(page: Page, day: Readonly<Record<string, string>>, store: string): Promise<EffectRow[]> {
+/**
+ * Every row of an effect query, page by page: paging stops at a page shorter than a full one, or once the
+ * rows reach the count the query reports.
+ * @param page - the 三方外投 tab.
+ * @param data - the query fields besides paging.
+ * @returns the rows.
+ */
+export async function allRows(page: Page, data: Readonly<Record<string, unknown>>): Promise<EffectRow[]> {
   const rows: EffectRow[] = []
   for (let pageNo = 1; ; pageNo++) {
-    const { result, totalCount } = await queryEffect(page, {
-      pageNo, pageSize: PAGE_SIZE, resultDim: 'ACCOUNT', queryPageTag: 'ACCOUNT', sumTag: false, advAggre: true, sellerNames: store, ...day,
-    })
+    const { result, totalCount } = await queryEffect(page, { ...data, pageNo, pageSize: PAGE_SIZE })
     rows.push(...result)
-    if (result.length === 0 || rows.length >= totalCount) return rows
+    if (result.length < PAGE_SIZE || (totalCount > 0 && rows.length >= totalCount)) return rows
   }
+}
+
+/** Every account row of the day. */
+function allAccounts(page: Page, day: Readonly<Record<string, string>>, store: string): Promise<EffectRow[]> {
+  return allRows(page, { resultDim: 'ACCOUNT', queryPageTag: 'ACCOUNT', sumTag: false, advAggre: true, sellerNames: store, ...day })
 }
 
 /**

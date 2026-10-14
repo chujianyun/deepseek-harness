@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-mingliu-skills` 保存名流（上海名流卫生用品）从 Aily AI 工作伙伴迁移过来的技能，不随 DSH 发布：由名流管理员只上传到名流的 [Skill Hub](../../../docs/glossary.zh.md#skill-hub)。内容包括天猫一店与拼多多部门巡检及其月度配置（`ai-inspection`、`inspection-config-update`）、站外投流 ROI 巡检（`roi-inspection`），拼多多日会待办同步（`pdd-meeting-todos`）、拼多多直播数据（`pdd-live-report`）、天猫日报采集填报（`tianmao-daily-report`），以及视频素材绩效日报（`video-performance-report`）。本包还保存名流运营日报助手的推荐任务，由[智能体包](../../assistant/assistant-packages/README.zh.md)携带。
+`@deepseek-ai/dsh-mingliu-skills` 保存名流（上海名流卫生用品）从 Aily AI 工作伙伴迁移过来的技能，不随 DSH 发布：由名流管理员只上传到名流的 [Skill Hub](../../../docs/glossary.zh.md#skill-hub)。内容包括天猫一店与拼多多部门巡检及其月度配置（`ai-inspection`、`inspection-config-update`）、站外投流 ROI 巡检（`roi-inspection`），拼多多日会待办同步（`pdd-meeting-todos`）、拼多多直播数据（`pdd-live-report`）、云台补采与计划 ROI 分析（`yuntai-collect`、`plan-roi-analysis`）、天猫日报采集填报（`tianmao-daily-report`），以及视频素材绩效日报（`video-performance-report`）。本包还保存名流运营日报助手的推荐任务，由[智能体包](../../assistant/assistant-packages/README.zh.md)携带。
 
 ## 目录
 
@@ -33,6 +33,8 @@ node --input-type=module -e "import { packSkills } from './packages/ecommerce/mi
 `tianmao-daily-report`（工作日 06:00）把最近 10 天到昨天之间仍有空格的每一天，在当月天猫日报表「店铺整体」中的「实际完成」列填上，表从《AI巡检固化配置》读取：店铺gmv 以及外投、自投、推广的花费、成交和投产，数来自 `@deepseek-ai/dsh-tmall-skills` 的 `tmall-daily-figures` 技能用这家店的天猫和健康品牌云台账号读到的数（外投 = 三方外投总计减去 `ML` 账户；推广 = 万相台三个场景，1 天累计归因）。它的 `scripts/daily_report.py` 按表头「实际完成（M月D日）」找列、按 A 列指标名找行，把元换算成万元，只写空格、从不替换人工填的数，跳过公式格、名称不唯一的行和为 null 的数，并为每段相邻单元格写一个 `+cells-set` 文件；写后核对写入的格能读回、该列其他非公式格没有变。任务只声明 `lark-cli sheets +cells-set`，以 `--as user` 运行。回测闸门：`daily_report.py backtest` 与最近某天人工填报的数相差都在 1% 以内（外投成交 2%）或 0.005 万元的舍入以内后，才记入智能体工作区的 `tianmao-daily-report/backtest.json` 并开始写这个月；此前运行只做回测。
 
 `pdd-live-report`（每天 09:30）用 `@deepseek-ai/dsh-tmall-skills` 的 `pdd-live-figures` 技能取数，把拼多多直播店的数据追加到智能体工作区 `pdd-live-report/config.json` 指定的「直播数据每日」表。它的 `scripts/live_row.py` 列出表中最后日期之后到昨天为止还没写的日期（最多一周），生成下一行——A 列斜杠日期、D 列客单价公式 `=B/C`、E 列转化率 `0.00%`——表里已有的日期跳过；早于最后日期、表末行不是日期（如「合计」）或超出表格行数时拒绝；并核对回读的这一行、确认其他行没有变。任务只声明 `lark-cli sheets +cells-set`，以 `--as user` 运行。
+
+`yuntai-collect`（工作日 07:00）把站外投流 Base 缺少的健康品牌云台三方外投抖音账户行补到昨天。Base 和各服务商表来自《投流ROI巡检配置》「数据源映射」，或来自智能体工作区的 `yuntai-collect/tables.json`（测试时指向测试 Base）。它的 `scripts/collect_plan.py` 按 `yuntai-collect/checkpoint.json` 的断点找缺口（某天整天写完并核对通过才前移；第一次运行取各表最晚日期），最多两周；能读 `+record-list` 的矩阵输出；`yuntai-details` 技能取到的账户行与总计行对不平的那天拒绝写；按账户名归类服务商，跳过表里已有的同日同账户，自营（`-ML-`）和认不出的账户不写、列出；每个服务商写一个 `+record-batch-create` 文件，并核对每行在表里恰好一条。任务只声明 `lark-cli base +record-batch-create`，以 `--as user` 运行；某天通过核对后断点才前移。`plan-roi-analysis` 按需运行、没有定时任务：它的 `scripts/plan_roi.py` 把窗口内消耗过线（默认 700 元）的计划按有效ROI（默认 1.5、1.2）分档，生成 card 2.0 卡片——摘要、高 ROI 计划、优先加码 5 条、最低 10 条建议关停、账户维度——并自检结构与大小；技能先出预览，用户要求时才以 `--as bot` 发到《投流ROI巡检配置》「内部日报接收」群。
 
 技能把一切会变的内容——当月表格 token 和列、推送目标、预警线、人员——都从名流的飞书配置文档《AI巡检固化配置》和《投流ROI巡检配置》读取，不写在自己的文件里；发送时经飞书连接器的 `lark-cli` 以智能体自身的飞书身份（`--as bot`）发出。服务商提醒经技能的 `scripts/send_webhook.py` 签名后发到群 webhook；脚本从智能体工作区的 `roi-inspection/webhook_mapping.json` 自己读取各 webhook 的地址和签名密钥，密钥不出现在命令里。飞书接受消息时退出码为 0，未送达为 1，结果未知、消息可能已送达为 2；遇到 2 时技能不重发。技能文件里没有任何 webhook 或密钥。
 

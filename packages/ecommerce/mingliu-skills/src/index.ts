@@ -13,7 +13,8 @@ import { zipSync } from 'fflate'
 
 /** The skills this package builds, by folder name under `skills/`. */
 export const SKILLS: readonly string[] = [
-  'ai-inspection', 'inspection-config-update', 'pdd-live-report', 'pdd-meeting-todos', 'roi-inspection', 'tianmao-daily-report', 'video-performance-report',
+  'ai-inspection', 'inspection-config-update', 'pdd-live-report', 'pdd-meeting-todos', 'plan-roi-analysis', 'roi-inspection', 'tianmao-daily-report',
+  'video-performance-report', 'yuntai-collect',
 ]
 
 const PACKAGE = fileURLToPath(new URL('..', import.meta.url))

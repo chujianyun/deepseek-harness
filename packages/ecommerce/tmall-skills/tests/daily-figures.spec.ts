@@ -134,13 +134,16 @@ const SELLER: EffectRow[] = [
   { channelName: 'B站', sellerNick: '名流官方旗舰店', cost: 4961.808 },
 ]
 
-/** Account rows: two pages, the own accounts named with ML. */
+/** Rows of no spend that fill a page to the 100 rows a full page has. */
+const fill = (rows: EffectRow[]): EffectRow[] => [...rows, ...Array.from({ length: 100 - rows.length }, (_v, i) => ({ accountName: `其他账户-${String(i)}`, cost: 0 }))]
+
+/** Account rows: a full page and a short one, the own accounts named with ML. */
 const ACCOUNTS: EffectRow[][] = [
-  [
+  fill([
     { accountName: '上海法马有性格网络科技有限公司-在达ad01', cost: 27748.53, validGmv: 36414.68, gmv: 40176.62 },
     { accountName: '名流-爆款003-ML-1', cost: 9804.14, validGmv: 14109.69, gmv: 15783.64 },
     { accountName: '名流-官旗粉MO-ML-2', cost: 5669.85, validGmv: 6050.38, gmv: 6713.91 },
-  ],
+  ]),
   [{ accountName: '名流-官旗粉MO-ML-1', cost: 2595.07, validGmv: 3188.15, gmv: 3563.02 }, { accountName: '名流-官旗粉MO-ML-3' }, {}],
 ]
 
@@ -200,7 +203,7 @@ describe('readYuntai', () => {
     ])
     expect(figures.notes[1]).toBe('媒体明细：抖音 消耗 90；undefined 消耗 0；合计 90，与总计 100 不一致')
     const short = yuntaiPage(undefined, undefined, [on('"resultDim":"ACCOUNT"', (expression: string) =>
-      ({ result: sent(expression).pageNo === 1 ? [{ accountName: 'ML', cost: 1 }] : [], totalCount: 5 }))])
+      ({ result: sent(expression).pageNo === 1 ? fill([{ accountName: 'ML', cost: 1 }]) : [], totalCount: 500 }))])
     const own = await readYuntai(short, '2026-10-13', '名流官方旗舰店', 'ML')
     expect(own.metrics.自投花费).toBe(1)
   })

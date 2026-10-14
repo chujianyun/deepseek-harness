@@ -1,0 +1,22 @@
+{
+  "id": "yuntai-collect",
+  "title": "站外投流云台数据每日补采",
+  "prompt": "今天是工作日，执行 yuntai-collect 技能，把站外投流数据 Base 缺的云台三方外投账户数据补到昨天，直接执行、不询问用户，只在出错时提醒。\n1. Base 和各服务商表：工作区有 yuntai-collect/tables.json 就用它（名流测试期间指向测试 Base），否则读配置文档《投流ROI巡检配置》「数据源映射」。\n2. 按各表最大日期和工作区 yuntai-collect/checkpoint.json 找缺口；没有缺口就报告「断点已是最新」并结束。\n3. 用 yuntai-details 技能逐天取「名流官方旗舰店」的抖音账户明细，账户行与总计行对平才写。\n4. 按账户名归类服务商，表里已有同一天同一账户的跳过，用 lark-cli base +record-batch-create 只新增写入；自营和认不出服务商的账户不写、列出。\n5. 写后回读核对，通过才前移断点；最后报告断点、补采日期、各表写入条数和异常。",
+  "timing": {
+    "kind": "weekly",
+    "weekdays": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "time": "07:00"
+  },
+  "timeZone": "Asia/Shanghai",
+  "connectors": [],
+  "permission": "workspace-write",
+  "operations": [
+    "lark-cli base +record-batch-create"
+  ]
+}

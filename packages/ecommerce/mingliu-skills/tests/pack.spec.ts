@@ -99,7 +99,7 @@ describe('recommended tasks', () => {
   it('are tasks an assistant package accepts, declaring operations an automation task accepts', async () => {
     const tasks = await readTasks()
     expect(tasks.map(task => (task as { id: string }).id)).toEqual([
-      'ai-inspection', 'pdd-live-report', 'pdd-meeting-todos', 'roi-internal-report', 'roi-provider-reminder', 'tianmao-daily-report', 'video-reminder', 'video-report',
+      'ai-inspection', 'pdd-live-report', 'pdd-meeting-todos', 'roi-internal-report', 'roi-provider-reminder', 'tianmao-daily-report', 'video-reminder', 'video-report', 'yuntai-collect',
     ])
     const parsed = manifestSchema.parse({ name: 'mingliu-ops', displayName: '运营日报助手', description: 'x', version: '1.0.0', tasks })
     expect(parsed.tasks[0]).toMatchObject({
@@ -132,7 +132,12 @@ describe('recommended tasks', () => {
     // The video report runs at 10:00 about yesterday, its reminder at 17:30 about today; each only sends its message.
     expect(parsed.tasks[6]).toMatchObject({ title: '视频素材绩效当日提醒', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '17:30' } })
     expect(parsed.tasks[7]).toMatchObject({ title: '视频素材绩效日报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '10:00' } })
-    for (const task of parsed.tasks.slice(6)) expect(task).toMatchObject({ connectors: [], operations: ['lark-cli im +messages-send'] })
+    for (const task of parsed.tasks.slice(6, 8)) expect(task).toMatchObject({ connectors: [], operations: ['lark-cli im +messages-send'] })
+    // The 云台 backfill runs on weekdays at 07:00 and only adds records.
+    expect(parsed.tasks[8]).toMatchObject({
+      title: '站外投流云台数据每日补采', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '07:00' }, connectors: [], permission: 'workspace-write',
+      operations: ['lark-cli base +record-batch-create'],
+    })
     // Each run declares only the write it makes; other Feishu writes are not granted.
     expect(JSON.stringify(tasks)).not.toMatch(PEOPLE)
     for (const task of parsed.tasks) expect(readOperations(task.operations ?? [])).toEqual({ operations: task.operations ?? [] })
@@ -633,5 +638,193 @@ describe('live_row.py', () => {
     ].join('\n'))])
     const touched = await files(good, [{ value: '2026/10/12' }, { value: 1 }, ...day('2026/10/12').slice(2)])
     expect([touched.code, touched.out]).toEqual([1, expect.stringContaining('B2 不该被改动：写前 12991.67，写后 1')])
+  })
+})
+
+describe('the 云台 backfill', () => {
+  it('reads its Base from the configuration document or a test mapping, and its add passes the unattended check in either shell', async () => {
+    const tasks = await readTasks() as { prompt: string; operations: string[] }[]
+    const collect = tasks[8]!
+    expect(collect.prompt).toContain('yuntai-collect/tables.json')
+    const skill = await readFile(join(SKILLS_DIR, 'yuntai-collect', 'SKILL.md'), 'utf8')
+    for (const text of [collect.prompt, skill]) expect(text).not.toMatch(/OU8JbYF8WahWo3sYEzwcTyBcn8b|tbl[0-9A-Za-z]{12}/u)
+    const write = "lark-cli base +record-batch-create --as user --base-token bascnX --table-id tblX --json '@yuntai-collect/20261014/20261013/batch-在达-0.json'"
+    const remove = 'lark-cli base +record-delete --as user --base-token bascnX --table-id tblX --record-id rec1'
+    for (const dialect of ['bash', 'pwsh'] as const) {
+      expect(declaredOperations(write, dialect, collect.operations, false)).toEqual(['lark-cli base +record-batch-create'])
+      expect(declaredOperations(remove, dialect, collect.operations, false)).toBeUndefined()
+    }
+  })
+})
+
+describe('collect_plan.py', () => {
+  const script = join(SKILLS_DIR, 'yuntai-collect', 'scripts', 'collect_plan.py')
+  const row = (id: string, name: string, cost = 1) => ({
+    账户id: id, 账户名称: name, 消耗: cost, 总GMV: 2, 有效GMV: 1.5, 退款率: 0.0835, 退款金额: 0.5, 总ROI: 2, 有效ROI: 1.5,
+  })
+  /** 2026-10-13's accounts as yuntai-accounts.mjs prints them; the check says whether the rows add up. */
+  const ACCOUNTS = (rows = [
+    row('1871401277666316', '上海法马有性格网络科技有限公司-在达ad01', 27748.53), row('1', '上海法马-道有道-名流-CID-03'), row('2', '名流-爆款003-ML-1'),
+    row('3', '豹擎-名流-官旗店-粉MO-13-jw'), row('4', '某新服务商-01'), row('5', '名流-剧星-1'),
+  ], matches = true) => ({ platform: 'yuntai', data: { date: '2026-10-13', channel: '抖音', accounts: rows, check: [{ field: '消耗', rows: 1, total: matches ? 1 : 2, matches }] } })
+  const TABLES = { base_token: 'bascnX', tables: { 在达: 'tblZaida', 道有道: 'tblDao', 豹擎: 'tblBao', 剧星: 'tblJu' } }
+  /** A +record-list page: fields under `fields`, text as segments, the date as a timestamp. */
+  const page = (records: [number | string, string][]) => ({ data: { items: records.map(([date, id]) => ({ record_id: `rec${id}`, fields: { 日期: date, 账户id: [{ type: 'text', text: id }] } })), has_more: false } })
+  const OCT12 = new Date('2026-10-12T00:00:00+08:00').getTime()
+
+  async function run(args: (dir: string) => string[], files: Record<string, object>) {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-collect-'))
+    try {
+      for (const [name, content] of Object.entries(files)) {
+        await mkdir(join(dir, name, '..'), { recursive: true })
+        await writeFile(join(dir, name), JSON.stringify(content))
+      }
+      const ended = await runPython(script, args(dir))
+      const read = async (name: string) => await readFile(join(dir, 'out', name), 'utf8').then(text => JSON.parse(text) as unknown, () => undefined)
+      return { ...ended, plan: await read('plan.json'), zaida: await read('batch-在达-0.json') }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }
+  const gap = (extra: string[] = []) => (dir: string) => ['gap', '--records', join(dir, 'records'), '--to', '2026-10-13', ...extra]
+  const plan = (dir: string) => ['plan', '--accounts', join(dir, 'a.json'), '--tables', join(dir, 't.json'), '--records', join(dir, 'records'), '--out', join(dir, 'out')]
+
+  it('finds the days after the latest date of every table and the checkpoint, two weeks at most', async () => {
+    const fromTables = await run(gap(), {
+      'records/在达-0.json': page([[OCT12 - 86_400_000, '1']]), 'records/道有道-0.json': page([['2026-10-12 00:00:00', '1']]), 'records/notes.txt.json': {},
+    })
+    expect(JSON.parse(fromTables.out)).toEqual({ breakpoint: '2026-10-12', per_table_max: { 在达: '2026-10-11', 道有道: '2026-10-12' }, pending: ['2026-10-13'] })
+    const checkpointed = await run(gap(['--checkpoint', '/nonexistent']), { 'records/在达-0.json': page([['2026/9/1', '1']]) })
+    expect((JSON.parse(checkpointed.out) as { pending: string[] }).pending).toHaveLength(14)
+    const marked = await run(dir => [...gap()(dir), '--checkpoint', join(dir, 'c.json')], { 'records/在达-0.json': page([['2026-09-01', '1']]), 'c.json': { breakpoint: '2026-10-13' } })
+    expect((JSON.parse(marked.out) as { pending: string[] }).pending).toEqual([])
+    // 10-13 reached one table but not all of them: the checkpoint stayed at 10-12, so 10-13 is done again.
+    const partial = await run(dir => [...gap()(dir), '--checkpoint', join(dir, 'c.json')], {
+      'records/道有道-0.json': page([['2026-10-13', '1']]), 'c.json': { breakpoint: '2026-10-12T00:00:00' },
+    })
+    expect(JSON.parse(partial.out)).toMatchObject({ breakpoint: '2026-10-12', pending: ['2026-10-13'] })
+    // +record-list prints a matrix: column names, and rows in their order.
+    const matrix = { ok: true, data: { fields: ['账户id', '日期'], field_id_list: ['f1', 'f2'], record_id_list: ['r1', 'r2'], data: [['1', OCT12], ['2', 'x'], 'bad'] } }
+    expect(JSON.parse((await run(gap(), { 'records/在达-0.json': matrix })).out)).toMatchObject({ breakpoint: '2026-10-12', pending: ['2026-10-13'] })
+    const empty = await run(gap(), { 'records/在达-0.json': page([]) })
+    expect(JSON.parse(empty.out)).toMatchObject({ breakpoint: null, pending: ['2026-10-13'] })
+    const missing = await run(dir => ['gap', '--records', join(dir, 'none'), '--to', '2026-10-13'], {})
+    expect([missing.code, missing.out]).toEqual([2, expect.stringContaining('没有记录目录')])
+    expect((await run(dir => ['gap', '--records', dir, '--to', '2026-02-30'], {})).out).toContain('日期要写成 YYYY-MM-DD')
+  })
+
+  it('writes each provider its new rows, skipping rows the table has and accounts it cannot place', async () => {
+    const ran = await run(plan, { 'a.json': ACCOUNTS(), 't.json': TABLES, 'records/道有道-0.json': page([[OCT12 + 86_400_000, '1']]) })
+    expect(ran.code).toBe(0)
+    expect(ran.plan).toMatchObject({
+      date: '2026-10-13', accounts: 6, already_written: 1, self_operated: ['名流-爆款003-ML-1'], unknown_provider: ['某新服务商-01'], no_table: {},
+      writes: [
+        { provider: '剧星', table_id: 'tblJu', count: 1, accounts: ['5'] }, { provider: '在达', table_id: 'tblZaida', count: 1 }, { provider: '豹擎', table_id: 'tblBao', count: 1 },
+      ],
+    })
+    expect(ran.zaida).toEqual({
+      fields: ['账户id', '账户名称', '投放平台', '日期', '消耗', '总GMV', '有效GMV', '退款率', '退款金额'],
+      rows: [['1871401277666316', '上海法马有性格网络科技有限公司-在达ad01', '抖音', '2026-10-13 00:00:00', 27748.53, 2, 1.5, 0.0835, 0.5]],
+    })
+    const noTable = await run(plan, { 'a.json': ACCOUNTS([row('9', '大小无忧-名流-法马-1')]), 't.json': TABLES, 'records/x.json': {} })
+    expect(noTable.plan).toMatchObject({ writes: [], no_table: { 大小无忧: ['大小无忧-名流-法马-1'] } })
+  })
+
+  it('writes nothing when the rows do not add up to the total, or the files are not what it reads', async () => {
+    const off = await run(plan, { 'a.json': ACCOUNTS(undefined, false), 't.json': TABLES, 'records/x.json': {} })
+    expect([off.code, off.plan, off.out]).toEqual([2, undefined, expect.stringContaining('账户行合计与总计行对不上：消耗 账户合计 1 / 总计 2，不写')])
+    const notAccounts = await run(plan, { 'a.json': { data: { plans: [] } }, 't.json': TABLES, 'records/x.json': {} })
+    expect(notAccounts.out).toContain('不是 yuntai-accounts.mjs 的输出')
+    const unchecked = { platform: 'yuntai', data: { date: '2026-10-13', accounts: [row('1', '名流-青出蓝')] } }
+    expect((await run(plan, { 'a.json': unchecked, 't.json': TABLES, 'records/x.json': {} })).out).toContain('没有和总计行的对账结果（check），不写')
+    const blank = await run(plan, { 'a.json': ACCOUNTS([row('', '名流-青出蓝'), row('7', '豹擎-1')]), 't.json': TABLES, 'records/x.json': {} })
+    expect([blank.code, blank.plan, blank.out]).toEqual([2, undefined, expect.stringContaining('这些账户没有账户id，无法查重：名流-青出蓝，不写')])
+  })
+
+  it('verifies each planned row is in its table exactly once', async () => {
+    const planned = { date: '2026-10-13', writes: [{ provider: '在达', table_id: 't', file: 'f', count: 2, accounts: ['1', '2'] }] }
+    const verify = (records: object) => run(dir => ['verify', '--plan', join(dir, 'p.json'), '--records', join(dir, 'records')], { 'p.json': planned, 'records/在达-0.json': records })
+    const ok = await verify(page([['2026-10-13 00:00:00', '1'], [OCT12 + 86_400_000, '2']]))
+    expect([ok.code, ok.out]).toEqual([0, expect.stringContaining('写后核对一致：2026-10-13 共 2 条')])
+    const bad = await verify(page([['2026-10-13', '1'], ['2026-10-13', '1']]))
+    expect([bad.code, bad.out]).toEqual([1, expect.stringContaining('在达 表 2026-10-13 账户 1：有 2 条，重复了\n在达 表 2026-10-13 账户 2：没有写进去')])
+  })
+})
+
+describe('plan_roi.py', () => {
+  const script = join(SKILLS_DIR, 'plan-roi-analysis', 'scripts', 'plan_roi.py')
+  const plan = (id: string, name: string, account: string, cost: number, gmv: number, roi: number) => ({
+    计划ID: id, 计划名称: name, 账户id: 'a', 账户名称: account, 消耗: cost, 总GMV: gmv, 有效GMV: gmv, 退款率: 0, 退款金额: 0, 总ROI: roi, 有效ROI: roi,
+  })
+  /** Plans of 2026-10-07~13 (real ids and figures, a few of them). */
+  const PLANS = [
+    plan('7680509391439478793', '0901_过审素材_1', '上海法马-道有道-名流-CID-03', 10271.35, 16790.41, 1.63),
+    plan('7657093152461144102', '粉MO_063004医疗健康/二类医疗器械_4', '名流-官旗粉MO-ML-1', 936.28, 3258.58, 3.48),
+    plan('7688162732307005481', "9.22-（提价增量）'s ‘新’", '上海法马有性格网络科技有限公司-在达ad01', 37362.09, 44586.7, 1.19),
+    plan('7677539386985332774', '0831编辑|0824-最低-1', '豹擎-名流-官旗店-粉MO-13-jw', 1003.25, 390.36, 0.39),
+    plan('7686335944308195374', '9.17-对话类型素材合集1*5', '上海法马有性格网络科技有限公司-在达ad01', 36663.56, 54770.09, 1.49),
+    plan('1', '小计划', '名流-剧星-1', 700, 100, 0.14),
+  ]
+  async function run(plans: unknown, extra: string[] = []) {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-plan-roi-'))
+    try {
+      await writeFile(join(dir, 'plans.json'), JSON.stringify(plans))
+      const ended = await runPython(script, ['--plans', join(dir, 'plans.json'), '--out', join(dir, 'out'), ...extra])
+      const card = await readFile(join(dir, 'out', 'card.json'), 'utf8').catch(() => undefined)
+      const classified = await readFile(join(dir, 'out', 'classified.json'), 'utf8').then(t => JSON.parse(t) as Record<string, unknown>, () => undefined)
+      return { ...ended, card, classified }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }
+  const data = (plans: unknown[]) => ({ platform: 'yuntai', data: { from: '2026-10-07', to: '2026-10-13', plans } })
+
+  it('sorts plans over the spend line into three bands and builds the card with their full ids', async () => {
+    const ran = await run(data(PLANS))
+    expect([ran.code, ran.out]).toEqual([0, expect.stringContaining('计划 6 条，消耗 > 700 的 5 条；高 ROI 2、达标 1、低 ROI 2；整体有效 ROI 1.38')])
+    expect(ran.classified).toMatchObject({ over: 5, overall_roi: 1.38 })
+    expect(ran.card).not.toContain("'")
+    interface Card {
+      schema: string
+      header: { title: { content: string }; template: string }
+      body: { elements: { tag: string; content: string }[] }
+    }
+    const card = JSON.parse(ran.card!) as Card
+    expect([card.schema, card.header.template, card.header.title.content]).toEqual(['2.0', 'blue', '站外投流 · 7天高ROI计划清单（2026-10-07–2026-10-13）'])
+    const [summary, high, boost, stop, accounts] = card.body.elements.map(element => element.content)
+    expect(card.body.elements).toHaveLength(5)
+    expect(summary).toContain('**分档**：高 ROI（≥1.5）2 条 · 达标（1.2~1.5）1 条 · 低 ROI（<1.2）2 条')
+    expect(high).toContain('| 1 | 粉MO_063004医疗健康/二类医疗器械_4 | 7657093152461144102 | 名流-官旗粉MO-ML-1 | 936.28 | 3,258.58 | 3.48 |')
+    expect(boost!.split('\n')[1]).toBe('- 0901_过审素材_1（7680509391439478793）· 消耗 10,271.35 · ROI 1.63')
+    expect(stop).toContain('| 0831编辑/0824-最低-1 | 7677539386985332774 |')
+    // Quotes that end a single-quoted shell string are JSON escapes in the file, and read back as they were.
+    expect(ran.card).toContain('9.22-（提价增量）\\u0027s')
+    expect(ran.card).not.toMatch(/[\u2018\u2019]/u)
+    expect(stop).toContain("9.22-（提价增量）'s")
+    expect(accounts).toContain('- 头部高效账户：名流-官旗粉MO-ML-1（有效 ROI 3.48，高 ROI 计划 1 条）')
+    expect(accounts).toContain('- 不达标账户（有效 ROI 低于 1.2）：豹擎-名流-官旗店-粉MO-13-jw')
+  })
+
+  it('takes other lines, and says so when a band or the window is empty', async () => {
+    const raised = await run(data(PLANS), ['--spend-min', '10000', '--hi', '1.6', '--mid', '1.5'])
+    expect(raised.out).toContain('消耗 > 10000 的 3 条；高 ROI 1、达标 0、低 ROI 2')
+    const none = await run(data([]))
+    const card = JSON.parse(none.card!) as { body: { elements: { content: string }[] } }
+    expect(card.body.elements.map(element => element.content).join('\n')).toMatch(/整体有效 ROI\*\*：无消耗[\s\S]*按 ROI 从高到低）\*\*\n\n无[\s\S]*- 无高 ROI 计划[\s\S]*最低 10 条）\*\*\n\n无[\s\S]*计划）\*\*\n\n无\n\n- 不达标账户（有效 ROI 低于 1.2）：无/u)
+  })
+
+  it('shortens the high-ROI table to fit the card, and refuses what it cannot read', async () => {
+    const many = Array.from({ length: 200 }, (_v, i) => plan(`76000000000000${String(10000 + i)}`, `高ROI计划-${'很长的计划名称'.repeat(4)}-${String(i)}`, '在达', 1000 + i, 3000, 3))
+    const ran = await run(data(many))
+    expect([ran.code, ran.out]).toEqual([0, expect.stringMatching(/卡片自检通过（高 ROI 表列出 \d+ 条）/u)])
+    expect(ran.card).toMatch(/另有 \d+ 条高 ROI 计划未列出（卡片篇幅所限）/u)
+    expect(Buffer.byteLength(ran.card!)).toBeLessThanOrEqual(28000)
+    expect((await run(data(PLANS), ['--hi', '1.2', '--mid', '1.5'])).out).toContain('--mid 1.5 要小于 --hi 1.2')
+    expect((await run({ data: {} })).out).toContain('不是 yuntai-plans.mjs 的输出')
+    const windowless = await run({ data: { plans: PLANS } })
+    expect([windowless.code, windowless.out]).toEqual([2, expect.stringContaining('不是 yuntai-plans.mjs 的输出')])
+    const huge = Array.from({ length: 300 }, (_v, i) => plan(String(i), 'x', `账户-${'很长的账户名'.repeat(10)}-${String(i)}`, 800, 100, 0.1))
+    const tooBig = await run(data(huge))
+    expect([tooBig.code, tooBig.card, tooBig.out]).toEqual([2, undefined, expect.stringContaining('卡片自检不通过：卡片')])
   })
 })

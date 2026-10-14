@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-tmall-skills` 存放十一个 DSH 不随包发布的 Skill，由租户管理员上传到 [Skill Hub](../../../docs/glossary.zh.md#skill-hub)。用[商家账号](../../../docs/glossary.zh.md#merchant-account)：四个技能分别读取万相台各场景数据、生意参谋店铺经营核心日报、日报某一天的数（也读健康品牌云台）和拼多多直播数据；`tmall-publish-category` 找出新品的类目及其字段。用[买家账号](../../../docs/glossary.zh.md#buyer-account)：`tmall-item-report` 写出单品事实层报告。`ecommerce-product-draft` 由文件夹整理出商品草稿；三个发品技能把它存到天猫仓库或拼多多、抖店草稿箱，绝不上架；`ecommerce-multi-publish` 把一份素材发到多个店铺。为何调用页面接口：[Agent Note](../../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.zh.md)。
+`@deepseek-ai/dsh-tmall-skills` 存放十二个 DSH 不随包发布的 Skill，由租户管理员上传到 [Skill Hub](../../../docs/glossary.zh.md#skill-hub)。用[商家账号](../../../docs/glossary.zh.md#merchant-account)：五个技能分别读取万相台各场景数据、生意参谋店铺经营核心日报、日报某一天的数、云台账户与计划明细和拼多多直播数据；`tmall-publish-category` 找出新品的类目及其字段。用[买家账号](../../../docs/glossary.zh.md#buyer-account)：`tmall-item-report` 写出单品事实层报告。`ecommerce-product-draft` 由文件夹整理出商品草稿；三个发品技能把它存到天猫仓库或拼多多、抖店草稿箱，绝不上架；`ecommerce-multi-publish` 把一份素材发到多个店铺。为何调用页面接口：[Agent Note](../../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.zh.md)。
 
 ## 目录
 
@@ -34,6 +34,8 @@ node --input-type=module -e "import { packSkills } from './packages/ecommerce/tm
 - `scripts/sycm-core-daily.mjs` 调用自助取数的接口：查找「店铺经营核心日报」模板、发起导出、取下载地址（最多轮询两分钟），然后从这个签名地址下载 .xlsx（最近 30 天）。文件里没有这一天，或生意参谋显示的数据更新日期（`commDateByLocation`）早于这一天，即为未就绪，提示中写明文件覆盖的日期和数据更新日期；早于文件第一天的日期为参数错误。询问万相台时出错，报告标为未经核对，而不是整体失败。随后在同一标签页中，把关键词推广、精准人群推广、全站推广的花费与万相台场景 371、372、436 比较，允许 1 分钱误差。写出 `生意参谋店铺经营核心日报_<店铺>_<日期>.csv`（这一天的全部列）、导出的 `.xlsx` 和 `.md` 摘要；摘要标题下方的校验行是 ✅ 一致、❌ 及每一处差异，或 ⚠️ 及未能询问万相台的原因。不是数字的花费单元格按没有花费计。
 
 `tmall-daily-figures` 有两个按下文 `runCollect` 写法实现的定时采集脚本；两者都接受 `--date YYYY-MM-DD`（必填，已经结束的日期），把这一天的数（单位元）输出为 `data: { date, platforms }`，每个平台为 `{ platform, date, metrics, missing, notes }`，平台还没算完的数为 null 并附原因。`scripts/tmall-daily-figures.mjs`（天猫商家账号，`--item <名称>=<商品ID>` 可重复）先确认生意参谋首页显示的是这家店，从首页日维度概览（`coreIndex/new/overview/v3.json`，其 `statDate` 必须是这一天）读全店支付金额，从商品排行（`cc/item/view/top.json`，必须恰好一行是该商品 ID）读各商品支付金额，再按 1 天累计归因（在报表页自己的场景查询上设 `effectEqual: 1`）读万相台场景 371、372、436 的花费与成交金额，某场景当天没有数据时按 0 计并在 notes 注明；某个平台未就绪时它的数为 null，另一个平台照常。`scripts/yuntai-daily-figures.mjs`（健康品牌云台账号，`--self-keyword <文字>` 可选）通过三方外投页自己的 mtop 客户端调用 `mtop.alihealth.dsp.yt.effect.query`：读总计行（消耗、有效GMV、总GMV、退款率；总计行缺哪项，哪项为 null 并附原因），在 `notes` 中核对各媒体行与总计是否一致，出现别的店铺的行即拒绝；给了关键字时，逐页汇总名称中该关键字自成一段的账户行（名流-官旗粉MO-ML-2 里的 `ML` 算，HTML5 里的不算）。
+
+`yuntai-details` 有两个同一写法、用健康品牌云台账号的定时采集脚本，`--channel` 选媒体（默认抖音，渠道 53）。`scripts/yuntai-accounts.mjs --date` 读店铺这一天的三方外投总计行（`resultDim: SELLER`、`sumTag`；没有即未就绪）和全部账户行（`resultDim: ACCOUNT`，每页 100 条），输出账户id（`subAccountId`）、账户名称、消耗、总GMV、有效GMV、退款率、退款金额、总ROI、有效ROI，并把消耗、总GMV、有效GMV、退款金额四项合计与总计行比对（允许 5 分钱误差）。`scripts/yuntai-plans.mjs --from --to` 读这段日期的全部计划行（`resultDim: AD`），带 19 位计划ID（`adid`）和计划名称，按消耗从高到低。
 
 `scripts/pdd-live-figures.mjs`（技能 `pdd-live-figures`，拼多多商家账号，`--date` 必填）也是同一写法的定时采集脚本。它在商家后台的直播数据页调用 `queryLiveOverViewReadyTime`（晚于就绪日期即未就绪）和这一天的 `queryLiveOverView`（直播成交额、订单、转化率、人均观看时长、观看量；`statDate` 必须是这一天）；停顿 5 秒后打开用同一账号自动登录的多多直播数据中心，从 `kiwi/obs/anchor/info` 读直播间名称，从 `kiwi/obs/statistic/line` 近 30 天的趋势线（每个点是北京时间零点）取这一天的千次进人成交和直播间涨粉数；没有这一天的点即未就绪。
 
