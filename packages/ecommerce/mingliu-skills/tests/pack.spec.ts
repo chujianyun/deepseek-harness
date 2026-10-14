@@ -10,11 +10,12 @@ import { strFromU8, unzipSync } from 'fflate'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { manifestSchema } from '@deepseek-ai/dsh-assistant-packages/src/manifest.ts'
 import { readOperations } from '@deepseek-ai/dsh-automation-tasks/operations'
+import { declaredOperations } from '@deepseek-ai/dsh-automation-tasks/src/unattended.ts'
 import { packSkills, readTasks, SKILLS } from '../src/index.ts'
 
 const SKILLS_DIR = fileURLToPath(new URL('../skills', import.meta.url))
-/** 名流's people named in the handover; who does what is read from the configuration document. */
-const PEOPLE = /邓迦楠|周建平|建平|锁威|程政|王思成/u
+/** 名流's people named in the handover; who does what is read from the configuration documents or the assistant's workspace. */
+const PEOPLE = /邓迦楠|周建平|建平|锁威|程政|王思成|刘玉林|路文龙|史鹏飞|李可豪|尹城琳|丰琳琳/u
 let out: string
 let zips: string[]
 
@@ -57,8 +58,9 @@ describe('packSkills', () => {
       for (const file of await filesUnder(join(SKILLS_DIR, name))) {
         const text = await readFile(join(SKILLS_DIR, name, file), 'utf8')
         const forbidden = [/aily/iu, /larksuite-cli-guide/u, /\boc_[0-9a-f]{16,}/u, /\bou_[0-9a-f]{16,}/u, /cli_[0-9a-f]{16}/u, /评论/u]
-        // The advertising data base, like every token, is read from the configuration document.
-        forbidden.push(/OU8JbYF8WahWo3sYEzwcTyBcn8b/u)
+        // Base and table tokens are read from the configuration documents or the assistant's workspace.
+        forbidden.push(/OU8JbYF8WahWo3sYEzwcTyBcn8b/u, /DMpmbusTjaZz60sYjFdcMjcRnTc|tbldnCoi0SeSDhWU/u)
+        forbidden.push(/BfTxbFKoXaQghPsWPozcM9yun9e|tblA1lg0NDL5e8YI/u)
         forbidden.push(PEOPLE)
         for (const pattern of forbidden) expect(text, `${name}/${file}`).not.toMatch(pattern)
       }
@@ -69,21 +71,26 @@ describe('packSkills', () => {
 describe('recommended tasks', () => {
   it('are tasks an assistant package accepts, declaring operations an automation task accepts', async () => {
     const tasks = await readTasks()
-    expect(tasks.map(task => (task as { id: string }).id)).toEqual(['ai-inspection', 'roi-internal-report', 'roi-provider-reminder'])
+    expect(tasks.map(task => (task as { id: string }).id)).toEqual(['ai-inspection', 'pdd-meeting-todos', 'roi-internal-report', 'roi-provider-reminder'])
     const parsed = manifestSchema.parse({ name: 'mingliu-ops', displayName: '运营日报助手', description: 'x', version: '1.0.0', tasks })
     expect(parsed.tasks[0]).toMatchObject({
       title: '天猫一店+拼多多工作日巡检', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '11:00' }, timeZone: 'Asia/Shanghai',
       connectors: [], permission: 'workspace-write', operations: ['lark-cli im +messages-send'],
     })
-    // The ROI runs only preview; what they send waits for the person's reply, so they declare nothing.
+    // The meeting sync only adds records: it declares the one write that adds them, not updating or deleting.
     expect(parsed.tasks[1]).toMatchObject({
+      title: '拼多多日会待办同步', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '17:00' }, connectors: [], permission: 'workspace-write',
+      operations: ['lark-cli base +record-batch-create'],
+    })
+    // The ROI runs only preview; what they send waits for the person's reply, so they declare nothing.
+    expect(parsed.tasks[2]).toMatchObject({
       title: '投流ROI内部日报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '09:30' }, connectors: [], permission: 'workspace-write',
     })
-    expect(parsed.tasks[2]).toMatchObject({
+    expect(parsed.tasks[3]).toMatchObject({
       title: '投流ROI服务商提醒', timing: { kind: 'weekly', weekdays: [1, 3, 5], time: '10:00' }, connectors: [], permission: 'workspace-write',
     })
-    expect([parsed.tasks[1]!.operations, parsed.tasks[2]!.operations]).toEqual([undefined, undefined])
-    // The run's only write is sending the card, which it declares; other Feishu writes are not granted.
+    expect([parsed.tasks[2]!.operations, parsed.tasks[3]!.operations]).toEqual([undefined, undefined])
+    // Each run declares only the write it makes; other Feishu writes are not granted.
     expect(JSON.stringify(tasks)).not.toMatch(PEOPLE)
     for (const task of parsed.tasks) expect(readOperations(task.operations ?? [])).toEqual({ operations: task.operations ?? [] })
   })
@@ -96,11 +103,31 @@ describe('recommended tasks', () => {
   })
 
   it('send the ROI report only to the test group, and the provider reminders only to the test group webhook', async () => {
-    const [, report, reminder] = await readTasks() as { prompt: string }[]
+    const [, , report, reminder] = await readTasks() as { prompt: string }[]
     expect(report!.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_94a59b1b5e0f87c703bccdc0f6a10daf'])
     expect(reminder!.prompt).not.toMatch(/\boc_|https:\/\/open\.feishu\.cn|\bou_/u)
     expect(reminder!.prompt).toContain('只发到 webhook 映射里的「测试群」')
     for (const prompt of [report!.prompt, reminder!.prompt]) expect(prompt).toContain('本次运行只出预览')
+  })
+})
+
+describe('the meeting to-do sync', () => {
+  it('reads its tables and people from the workspace, and writes through the one operation it declares, in either shell', async () => {
+    const [, sync] = await readTasks() as { prompt: string; operations: string[] }[]
+    const skill = await readFile(join(SKILLS_DIR, 'pdd-meeting-todos', 'SKILL.md'), 'utf8')
+    expect(sync!.prompt).not.toMatch(/DMpmbusTjaZz60sYjFdcMjcRnTc|BfTxbFKoXaQghPsWPozcM9yun9e/u)
+    expect(sync!.prompt).toContain('pdd-meeting-todos/config.json')
+    // The records go in a file, quoted so PowerShell does not read `@` as splatting.
+    expect(skill).toContain(
+      "lark-cli base +record-batch-create --base-token <todo.base_token> --table-id <todo.table_id> --json '@pdd-meeting-todos/batch-YYYYMMDD.json'",
+    )
+    const write = "lark-cli base +record-batch-create --base-token bascnX --table-id tblX --json '@pdd-meeting-todos/batch-20260907.json'"
+    const remove = 'lark-cli base +record-delete --base-token bascnX --table-id tblX --record-id rec1'
+    // The scheduled run's check lets the add through and refuses a delete, which the task does not declare.
+    for (const dialect of ['bash', 'pwsh'] as const) {
+      expect(declaredOperations(write, dialect, sync!.operations, false)).toEqual(['lark-cli base +record-batch-create'])
+      expect(declaredOperations(remove, dialect, sync!.operations, false)).toBeUndefined()
+    }
   })
 })
 

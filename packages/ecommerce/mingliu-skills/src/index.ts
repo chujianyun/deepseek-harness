@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { zipSync } from 'fflate'
 
 /** The skills this package builds, by folder name under `skills/`. */
-export const SKILLS: readonly string[] = ['ai-inspection', 'inspection-config-update', 'roi-inspection']
+export const SKILLS: readonly string[] = ['ai-inspection', 'inspection-config-update', 'pdd-meeting-todos', 'roi-inspection']
 
 const PACKAGE = fileURLToPath(new URL('..', import.meta.url))
 
