@@ -19,16 +19,17 @@ function disabled(id: string, profile: string, hubOrigin: string | undefined): b
   return Boolean(evaluate(ctx, { env }))
 }
 
-const LEFT_OUT = ['open-in-app', 'ui-open-in-app', 'session-log-download']
+const LEFT_OUT = ['open-in-app', 'ui-open-in-app', 'session-log-download', 'ui-plugin-manager', 'ui-settings-plugins',
+  'ui-settings-plugin-inventory', 'ui-settings-shell', 'ui-settings-agent-loop', 'ui-settings-subagent', 'ui-settings-web-search']
 const ENTERPRISE_ONLY = ['feedback-report', 'ui-feedback-report', 'session-share', 'ui-session-share']
 
 describe('enterprise Desktop composition', () => {
-  it('leaves out Open In and Session log export, and composes problem reports and sharing', () => {
+  it('leaves out Open In, Session log export, and the plugin pages, and composes problem reports and sharing', () => {
     for (const id of LEFT_OUT) expect(disabled(id, 'desktop', 'https://hub.example'), id).toBe(true)
     for (const id of ENTERPRISE_ONLY) expect(disabled(id, 'desktop', 'https://hub.example'), id).toBe(false)
   })
 
-  it.each([['desktop', undefined], ['web', 'https://hub.example'], ['web', undefined]])('keeps Open In and log export for %s with user center %s', (profile, hub) => {
+  it.each([['desktop', undefined], ['web', 'https://hub.example'], ['web', undefined]])('keeps Open In, log export, and the plugin pages for %s with user center %s', (profile, hub) => {
     for (const id of LEFT_OUT) expect(disabled(id, profile, hub), id).toBe(false)
     for (const id of ENTERPRISE_ONLY) expect(disabled(id, profile, hub), id).toBe(true)
   })
