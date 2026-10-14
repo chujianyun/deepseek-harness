@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-tmall-skills` 存放九个 DSH 不随包发布的 Skill，由租户管理员上传到 [Skill Hub](../../../docs/glossary.zh.md#skill-hub)。用天猫[商家账号](../../../docs/glossary.zh.md#merchant-account)：`tmall-alimama-scene-report` 读取万相台各场景数据，`tmall-sycm-core-daily` 导出生意参谋店铺经营核心日报，`tmall-publish-category` 找出新品的类目及其表单字段。用[买家账号](../../../docs/glossary.zh.md#buyer-account)：`tmall-item-report` 写出单品事实层报告。`ecommerce-product-draft` 由素材文件夹整理出商品草稿；三个发品技能把它存到天猫仓库或拼多多、抖店草稿箱，绝不上架；`ecommerce-multi-publish` 把一份素材发到多个店铺。技能为何调用页面接口，见[电商账号 Agent Note](../../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.zh.md)。
+`@deepseek-ai/dsh-tmall-skills` 存放十个 DSH 不随包发布的 Skill，由租户管理员上传到 [Skill Hub](../../../docs/glossary.zh.md#skill-hub)。用天猫[商家账号](../../../docs/glossary.zh.md#merchant-account)：`tmall-alimama-scene-report` 读取万相台各场景数据，`tmall-sycm-core-daily` 导出生意参谋店铺经营核心日报，`tmall-publish-category` 找出新品的类目及其表单字段。用[买家账号](../../../docs/glossary.zh.md#buyer-account)：`tmall-item-report` 写出单品事实层报告。`ecommerce-product-draft` 由素材文件夹整理出商品草稿；三个发品技能把它存到天猫仓库或拼多多、抖店草稿箱，绝不上架；`ecommerce-multi-publish` 把一份素材发到多个店铺。`jackyun-package` 通过[公司工具](../../../docs/glossary.zh.md#company-tool)创建吉客云组合装。调用页面接口的原因：[电商账号 Agent Note](../../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.zh.md)。
 
 ## 目录
 
