@@ -154,6 +154,7 @@
     "tests/models-account-sign-in.e2e.ts",
     "tests/models-custom-provider.e2e.ts",
     "tests/skills-market.e2e.ts",
+    "tests/skills-market-auto-install.e2e.ts",
     "tests/skills-market-lifecycle.e2e.ts",
     "tests/skills-market-upload.e2e.ts",
     "tests/skills-page.e2e.ts",

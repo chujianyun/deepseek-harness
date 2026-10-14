@@ -146,6 +146,7 @@
     "apps/web/tests/models-account-sign-in.e2e.ts",
     "apps/web/tests/models-custom-provider.e2e.ts",
     "apps/web/tests/skills-market.e2e.ts",
+    "apps/web/tests/skills-market-auto-install.e2e.ts",
     "apps/web/tests/skills-market-lifecycle.e2e.ts",
     "apps/web/tests/skills-market-upload.e2e.ts",
     "apps/web/tests/skills-page.e2e.ts",
