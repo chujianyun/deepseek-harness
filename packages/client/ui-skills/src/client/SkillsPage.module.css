@@ -442,6 +442,11 @@
   height: 28px;
 }
 
+/* Only the search gives way; the buttons keep their labels on one line */
+.headerActions > :not(.installedSearch) {
+  flex: none;
+}
+
 /* The empty search status keeps its live region without taking space */
 .statusIdle {
   position: absolute;
