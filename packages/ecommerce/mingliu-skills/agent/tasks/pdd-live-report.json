@@ -1,0 +1,15 @@
+{
+  "id": "pdd-live-report",
+  "title": "拼多多直播数据每日采集",
+  "prompt": "执行 pdd-live-report 技能，把拼多多直播店昨天（以及表里还没写的最近几天）的直播数据追加到「直播数据每日」表。\n1. 表和店铺读工作区 pdd-live-report/config.json；没有这个文件就停止并报告缺少配置。\n2. 用 pdd-live-figures 技能逐天采集直播成交额、直播支付订单、直播支付转化率、人均观看时长、累计观看量、千次进人成交、直播间涨粉数。\n3. 用 lark-cli sheets +cells-set 在表末尾追加一行：A 列斜杠日期、D 列客单价写公式、E 列百分比格式；表里已有这一天就不写。\n4. 写后回读核对；数据未就绪或需要重新登录就停止并说明，绝不估算。最后报告每天的 7 项数值和写入的行号。不发任何群消息。",
+  "timing": {
+    "kind": "daily",
+    "time": "09:30"
+  },
+  "timeZone": "Asia/Shanghai",
+  "connectors": [],
+  "permission": "workspace-write",
+  "operations": [
+    "lark-cli sheets +cells-set"
+  ]
+}

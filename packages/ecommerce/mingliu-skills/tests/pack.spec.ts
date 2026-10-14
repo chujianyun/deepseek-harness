@@ -99,35 +99,40 @@ describe('recommended tasks', () => {
   it('are tasks an assistant package accepts, declaring operations an automation task accepts', async () => {
     const tasks = await readTasks()
     expect(tasks.map(task => (task as { id: string }).id)).toEqual([
-      'ai-inspection', 'pdd-meeting-todos', 'roi-internal-report', 'roi-provider-reminder', 'tianmao-daily-report', 'video-reminder', 'video-report',
+      'ai-inspection', 'pdd-live-report', 'pdd-meeting-todos', 'roi-internal-report', 'roi-provider-reminder', 'tianmao-daily-report', 'video-reminder', 'video-report',
     ])
     const parsed = manifestSchema.parse({ name: 'mingliu-ops', displayName: '运营日报助手', description: 'x', version: '1.0.0', tasks })
     expect(parsed.tasks[0]).toMatchObject({
       title: '天猫一店+拼多多工作日巡检', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '11:00' }, timeZone: 'Asia/Shanghai',
       connectors: [], permission: 'workspace-write', operations: ['lark-cli im +messages-send'],
     })
-    // The meeting sync only adds records: it declares the one write that adds them, not updating or deleting.
+    // The live data runs every day, weekends too, and only appends rows.
     expect(parsed.tasks[1]).toMatchObject({
+      title: '拼多多直播数据每日采集', timing: { kind: 'daily', time: '09:30' }, connectors: [], permission: 'workspace-write',
+      operations: ['lark-cli sheets +cells-set'],
+    })
+    // The meeting sync only adds records: it declares the one write that adds them, not updating or deleting.
+    expect(parsed.tasks[2]).toMatchObject({
       title: '拼多多日会待办同步', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '17:00' }, connectors: [], permission: 'workspace-write',
       operations: ['lark-cli base +record-batch-create'],
     })
     // The ROI runs only preview; what they send waits for the person's reply, so they declare nothing.
-    expect(parsed.tasks[2]).toMatchObject({
+    expect(parsed.tasks[3]).toMatchObject({
       title: '投流ROI内部日报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '09:30' }, connectors: [], permission: 'workspace-write',
     })
-    expect(parsed.tasks[3]).toMatchObject({
+    expect(parsed.tasks[4]).toMatchObject({
       title: '投流ROI服务商提醒', timing: { kind: 'weekly', weekdays: [1, 3, 5], time: '10:00' }, connectors: [], permission: 'workspace-write',
     })
-    expect([parsed.tasks[2]!.operations, parsed.tasks[3]!.operations]).toEqual([undefined, undefined])
+    expect([parsed.tasks[3]!.operations, parsed.tasks[4]!.operations]).toEqual([undefined, undefined])
     // The Tmall daily report fills the sheet at 06:00 and writes only cells.
-    expect(parsed.tasks[4]).toMatchObject({
+    expect(parsed.tasks[5]).toMatchObject({
       title: '天猫日报采集填报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '06:00' }, connectors: [], permission: 'workspace-write',
       operations: ['lark-cli sheets +cells-set'],
     })
     // The video report runs at 10:00 about yesterday, its reminder at 17:30 about today; each only sends its message.
-    expect(parsed.tasks[5]).toMatchObject({ title: '视频素材绩效当日提醒', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '17:30' } })
-    expect(parsed.tasks[6]).toMatchObject({ title: '视频素材绩效日报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '10:00' } })
-    for (const task of parsed.tasks.slice(5)) expect(task).toMatchObject({ connectors: [], operations: ['lark-cli im +messages-send'] })
+    expect(parsed.tasks[6]).toMatchObject({ title: '视频素材绩效当日提醒', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '17:30' } })
+    expect(parsed.tasks[7]).toMatchObject({ title: '视频素材绩效日报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '10:00' } })
+    for (const task of parsed.tasks.slice(6)) expect(task).toMatchObject({ connectors: [], operations: ['lark-cli im +messages-send'] })
     // Each run declares only the write it makes; other Feishu writes are not granted.
     expect(JSON.stringify(tasks)).not.toMatch(PEOPLE)
     for (const task of parsed.tasks) expect(readOperations(task.operations ?? [])).toEqual({ operations: task.operations ?? [] })
@@ -141,7 +146,7 @@ describe('recommended tasks', () => {
   })
 
   it('send the ROI report only to the test group, and the provider reminders only to the test group webhook', async () => {
-    const [, , report, reminder] = await readTasks() as { prompt: string }[]
+    const [, , , report, reminder] = await readTasks() as { prompt: string }[]
     expect(report!.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_94a59b1b5e0f87c703bccdc0f6a10daf'])
     expect(reminder!.prompt).not.toMatch(/\boc_|https:\/\/open\.feishu\.cn|\bou_/u)
     expect(reminder!.prompt).toContain('只发到 webhook 映射里的「测试群」')
@@ -151,7 +156,7 @@ describe('recommended tasks', () => {
 
 describe('the meeting to-do sync', () => {
   it('reads its tables and people from the workspace, and writes through the one operation it declares, in either shell', async () => {
-    const [, sync] = await readTasks() as { prompt: string; operations: string[] }[]
+    const [, , sync] = await readTasks() as { prompt: string; operations: string[] }[]
     const skill = await readFile(join(SKILLS_DIR, 'pdd-meeting-todos', 'SKILL.md'), 'utf8')
     expect(sync!.prompt).not.toMatch(/DMpmbusTjaZz60sYjFdcMjcRnTc|BfTxbFKoXaQghPsWPozcM9yun9e/u)
     expect(sync!.prompt).toContain('pdd-meeting-todos/config.json')
@@ -171,7 +176,7 @@ describe('the meeting to-do sync', () => {
 
 describe('the video performance report', () => {
   it('sends only to the test group, and its send passes the unattended check in either shell', async () => {
-    const [, , , , , reminder, report] = await readTasks() as { prompt: string; operations: string[] }[]
+    const [, , , , , , reminder, report] = await readTasks() as { prompt: string; operations: string[] }[]
     expect(report!.prompt).toContain('日期取昨天')
     expect(reminder!.prompt).toContain('日期取今天')
     for (const task of [report!, reminder!]) expect(task.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_94a59b1b5e0f87c703bccdc0f6a10daf'])
@@ -296,7 +301,7 @@ describe('send_webhook.py', () => {
 
 describe('the Tmall daily report', () => {
   it('reads its sheet from the configuration document, and its cell writes pass the unattended check in either shell', async () => {
-    const [, , , , daily] = await readTasks() as { prompt: string; operations: string[] }[]
+    const [, , , , , daily] = await readTasks() as { prompt: string; operations: string[] }[]
     expect(daily!.prompt).not.toMatch(/BdO2sx|0PYEgV/u)
     expect(daily!.prompt).toContain('《AI巡检固化配置》第五节')
     const skill = await readFile(join(SKILLS_DIR, 'tianmao-daily-report', 'SKILL.md'), 'utf8')
@@ -512,5 +517,121 @@ describe('daily_report.py', () => {
     const touched = cells((row, column, cell) => row === 2 && column === 'L' ? { value: '32.6' } : row === 12 && column === 'L' ? { value: 0.7 } : cell)
     const bad = await run(args, { 'plan.json': plan, 'before.json': cells(), 'after.json': touched })
     expect([bad.code, bad.out]).toEqual([1, expect.stringContaining('L2（店铺gmv）应为 32.65，回读为 32.6\nL12 不该被改动：写前 0.6，写后 0.7')])
+  })
+})
+
+describe('the 拼多多 live report', () => {
+  it('reads its sheet from the workspace, and its row write passes the unattended check in either shell', async () => {
+    const [, live] = await readTasks() as { prompt: string; operations: string[] }[]
+    expect(live!.prompt).toContain('pdd-live-report/config.json')
+    const skill = await readFile(join(SKILLS_DIR, 'pdd-live-report', 'SKILL.md'), 'utf8')
+    for (const text of [live!.prompt, skill]) expect(text).not.toMatch(/MqX2sxfqYhDJFytomMzcAuSgnod|0PpnJi/u)
+    const write = "lark-cli sheets +cells-set --as user --spreadsheet-token shtX --sheet-id s1 --range A31:I31 --cells '@pdd-live-report/20261013/row.json'"
+    for (const dialect of ['bash', 'pwsh'] as const) expect(declaredOperations(write, dialect, live!.operations, false)).toEqual(['lark-cli sheets +cells-set'])
+  })
+})
+
+describe('live_row.py', () => {
+  const script = join(SKILLS_DIR, 'pdd-live-report', 'scripts', 'live_row.py')
+  type Cell = { value: unknown; formula?: string }
+  /** The +cells-get answer of A1:I<rows>: a header and one row per given day, as dates are read back. */
+  function sheet(rows: Cell[][]): object {
+    const header = ['日期', '直播GMV', '直播支付订单', '客单价', '直播支付转化率', '人均观看时长', '千次进人成交', '直播间涨粉数', '每日观看量'].map(value => ({ value }))
+    const all = [header, ...rows]
+    return { data: { ranges: [{ cells: all, row_indices: all.map((_r, i) => i + 1), col_indices: 'ABCDEFGHI'.split('') }] } }
+  }
+  const day = (date: unknown): Cell[] => [{ value: date }, { value: 12991.67 }, { value: 455 }, { value: 28.55, formula: '=B2/C2' }, { value: 0.005 }, { value: 0.27 }, { value: 109.22 }, { value: 1262 }, { value: 119953 }]
+  /** What pdd-live-figures printed for 2026-10-13 (real figures). */
+  const LIVE = (date = '2026-10-13', metrics: object = {}) => ({ platform: 'pinduoduo', data: { date, platforms: [{ platform: '拼多多直播', date, metrics: {
+    直播GMV: 12721.91, 直播支付订单: 494, 直播支付转化率: 0.0061, 人均观看时长: 0.3, 累计观看量: 106590, 千次进人成交: 120.29, 直播间涨粉数: 1078, ...metrics,
+  }, missing: [], notes: [] }] } })
+
+  async function run(args: (dir: string) => string[], files: Record<string, object>) {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-live-row-'))
+    try {
+      for (const [name, content] of Object.entries(files)) await writeFile(join(dir, name), JSON.stringify(content))
+      const ended = await runPython(script, args(dir))
+      return { ...ended, row: await readFile(join(dir, 'out', 'row.json'), 'utf8').catch(() => undefined) }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }
+  const plan = (dir: string) => ['plan', '--cells', join(dir, 'cells.json'), '--figures', join(dir, 'live.json'), '--out', join(dir, 'out')]
+
+  it('appends the day after the last row: a slash date, the 客单价 formula, and a percent conversion', async () => {
+    // 2026-10-12 as Feishu reads a date back (a serial number), and as text.
+    for (const date of [46307, '2026/10/12']) {
+      const ran = await run(plan, { 'cells.json': sheet([day('2026/10/11'), day(date)]), 'live.json': LIVE() })
+      expect(ran.code).toBe(0)
+      expect(JSON.parse(ran.out)).toMatchObject({ status: 'append', date: '2026-10-13', row: 4, range: 'A4:I4' })
+      expect(JSON.parse(ran.row!)).toEqual([[
+        { value: '2026/10/13', cell_styles: { number_format: 'yyyy/m/d' } }, { value: 12721.91, cell_styles: { number_format: '0.00' } }, { value: 494 },
+        { formula: '=B4/C4', cell_styles: { number_format: '0.00' } }, { value: 0.0061, cell_styles: { number_format: '0.00%' } },
+        { value: 0.3 }, { value: 120.29 }, { value: 1078 }, { value: 106590 },
+      ]])
+    }
+  })
+
+  it('writes a day once, never between rows, and nothing from incomplete figures', async () => {
+    const twice = await run(plan, { 'cells.json': sheet([day('2026-10-13')]), 'live.json': LIVE() })
+    expect([twice.code, twice.row, JSON.parse(twice.out)]).toEqual([0, undefined, expect.objectContaining({ status: 'exists' })])
+    const cases: Array<[object, object, string]> = [
+      [sheet([day('2026/10/14')]), LIVE(), '早于表中最后的日期 2026-10-14'],
+      [sheet([]), LIVE('2026-10-13', { 直播间涨粉数: null }), '采集结果缺少 直播间涨粉数'],
+      [sheet([]), { data: { platforms: [] } }, '不是 pdd-live-figures 的输出'],
+      [sheet([]), LIVE('2026/13/40'), '不是 YYYY-MM-DD'],
+      [sheet([day('2026/10/11'), day('合计')]), LIVE(), 'A 列最后一行（第 3 行「合计」）不是日期'],
+      [{ data: {} }, LIVE(), '没有 data.ranges'],
+    ]
+    for (const [cells, live, why] of cases) {
+      const ran = await run(plan, { 'cells.json': cells, 'live.json': live })
+      expect([ran.code, ran.row, ran.out], why).toEqual([2, undefined, expect.stringContaining(why)])
+    }
+  })
+
+  it('refuses a row past the sheet\'s last grid row', async () => {
+    const full = await run(dir => [...plan(dir), '--rows', '2'], { 'cells.json': sheet([day('2026/10/12')]), 'live.json': LIVE() })
+    expect([full.code, full.row, full.out]).toEqual([2, undefined, expect.stringContaining('表格只有 2 行，新行要写到第 3 行：请先在表末尾插入空行')])
+    const room = await run(dir => [...plan(dir), '--rows', '3'], { 'cells.json': sheet([day('2026/10/12')]), 'live.json': LIVE() })
+    expect(room.code).toBe(0)
+  })
+
+  it('lists the days after the last row up to yesterday, a week at most', async () => {
+    const pending = async (rows: Cell[][], to: string) => {
+      const ran = await run(dir => ['pending', '--cells', join(dir, 'cells.json'), '--to', to], { 'cells.json': sheet(rows) })
+      return ran.code === 0 ? JSON.parse(ran.out) as string[] : ran.out
+    }
+    expect(await pending([day('2026/10/11')], '2026-10-13')).toEqual(['2026-10-12', '2026-10-13'])
+    expect(await pending([day('2026/10/13')], '2026-10-13')).toEqual([])
+    expect(await pending([day('2026/9/1'), day('合计')], '2026-10-13')).toEqual(['2026-10-07', '2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11', '2026-10-12', '2026-10-13'])
+    expect(await pending([], '2026-10-13')).toEqual(['2026-10-13'])
+    expect(await pending([], '2026-02-30')).toContain('不是有效日期')
+    expect(await pending([], '2026/10/13')).toContain('--to 要写成 YYYY-MM-DD')
+  })
+
+  it('verifies the new row and that no other row changed, flagging a date read back as text', async () => {
+    const files = async (after: Cell[], earlier: Cell[] = day('2026/10/12')) => {
+      const planned = await run(plan, { 'cells.json': sheet([day('2026/10/12')]), 'live.json': LIVE() })
+      return await run(dir => ['verify', '--plan', join(dir, 'plan.json'), '--before', join(dir, 'before.json'), '--after', join(dir, 'after.json')], {
+        'plan.json': JSON.parse(planned.out) as object, 'before.json': sheet([day('2026/10/12')]), 'after.json': sheet([earlier, after]),
+      })
+    }
+    const good: Cell[] = [
+      { value: 46308 }, { value: 12721.91 }, { value: 494 }, { value: 25.75, formula: '=B3/C3' }, { value: '0.61%' }, { value: 0.3 }, { value: 120.29 }, { value: 1078 },
+      { value: 106590 },
+    ]
+    const ok = await files(good)
+    expect([ok.code, ok.out]).toEqual([0, expect.stringContaining('回读一致：第 3 行')])
+    expect(ok.out).not.toContain('提醒')
+    const text = await files([{ value: '2026/10/13' }, ...good.slice(1)])
+    expect([text.code, text.out]).toEqual([0, expect.stringContaining('提醒：A3 回读为文字「2026/10/13」，请确认它是日期格式而不是文本。')])
+    // A ratio off by 0.005 and a GMV off by a cent are wrong, not rounding.
+    const bad = await files([{ value: '2026/10/12' }, { value: 12721.92 }, { value: 494 }, { value: 25.75 }, { value: 0.0111 }, ...good.slice(5, 8), {} as Cell])
+    expect([bad.code, bad.out]).toEqual([1, expect.stringContaining([
+      'A3 应为日期 2026/10/13，回读为 2026/10/12', 'B3 应为 12721.91，回读为 12721.92', 'D3 应为公式 =B3/C3，回读为 25.75', 'E3 应为 0.0061，回读为 0.0111',
+      'I3 应为 106590，回读为 None',
+    ].join('\n'))])
+    const touched = await files(good, [{ value: '2026/10/12' }, { value: 1 }, ...day('2026/10/12').slice(2)])
+    expect([touched.code, touched.out]).toEqual([1, expect.stringContaining('B2 不该被改动：写前 12991.67，写后 1')])
   })
 })
