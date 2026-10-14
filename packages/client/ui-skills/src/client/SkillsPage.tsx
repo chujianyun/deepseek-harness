@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import type { InstalledSkillGroup, InstalledSkillView } from '@deepseek-ai/dsh-skill-controller/types'
 import {
   Button, Checkbox, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular,
-  IconNewChatOutlineRegular, IconPinFillRegular, IconPinOutlineRegular, IconTrashOutlineRegular, Menu, Modal, Switch, Tag,
+  IconNewChatOutlineRegular, IconPinFillRegular, IconPinOutlineRegular, IconTrashOutlineRegular, Input, Menu, Modal, Switch, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { InstalledBatchAction, InstalledSkillsInjected } from './installed-source.ts'
@@ -81,7 +81,7 @@ export function OverwriteDialog({ t, useMarket, onConfirmOverwrite, onCancelOver
 export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
   const { t, useInstalled, onRefresh, onDismissFailure, onBack } = props
   const status = useInstalled(snapshot => snapshot.status)
-  const skills = useInstalled(snapshot => snapshot.skills)
+  const installed = useInstalled(snapshot => snapshot.skills)
   const failure = useInstalled(snapshot => snapshot.failure)
   const [uninstalling, setUninstalling] = useState<string>()
   const uninstallLabel = props.useMarket(snapshot => uninstalling === undefined ? undefined : snapshot.statuses[uninstalling]?.displayName)
@@ -92,7 +92,13 @@ export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
   const [batchRunning, setBatchRunning] = useState(false)
   const statuses = props.useMarket(snapshot => snapshot.statuses)
   const shownName = (name: string) => statuses[name]?.displayName ?? name
-  // Only skills still listed count as selected (one may leave through its own menu or a re-read)
+  // Search filters as the user types: the name the card shows, the name, and the description, ignoring case
+  const [query, setQuery] = useState('')
+  const needle = query.trim().toLowerCase()
+  const skills = needle === '' ? installed : installed.filter(skill =>
+    [skill.group === 'market' ? shownName(skill.name) : skill.name, skill.name, skill.description].some(text => text.toLowerCase().includes(needle)))
+  const noMatch = needle !== '' && installed.length > 0 && skills.length === 0
+  // Only skills still listed and matching the search count as selected (one may leave through its own menu or a re-read)
   const selected = picked === undefined ? undefined : new Set(skills.map(skill => skill.name).filter(name => picked.has(name)))
   const runBatch = async (action: InstalledBatchAction, names: readonly string[]): Promise<void> => {
     setBatchRunning(true)
@@ -135,7 +141,15 @@ export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
         <div className={css.headerRow}>
           <h1 className={css.title}>{t('installedTitle')}</h1>
           <div className={css.headerActions}>
-            {selected === undefined && skills.length > 0 && (
+            {installed.length > 0 && (
+              <Input className={`${css.installedSearch}`} type="search" value={query} placeholder={t('installedSearch')} aria-label={t('installedSearch')}
+                onChange={(event) => {
+                  setQuery(event.target.value)
+                  // A new search starts a new selection, so no skill the search hides stays selected
+                  if (picked !== undefined) setPicked(new Set())
+                }} />
+            )}
+            {selected === undefined && installed.length > 0 && (
               <Button size="sm" variant="outline" onClick={() => { setPicked(new Set()); setBatchRefused([]) }}>{t('batchManage')}</Button>
             )}
             <Button size="sm" variant="outline" onClick={onBack}>{t('backToMarket')}</Button>
@@ -173,15 +187,18 @@ export function InstalledView(props: SkillsPageProps & { onBack: () => void }) {
           <Button size="sm" variant="ghost" onClick={onDismissFailure}>{t('uninstallClose')}</Button>
         </div>
       )}
-      {status === 'error' && skills.length === 0 ? (
+      {/* Stays mounted so screen readers announce the hint when a search stops matching */}
+      <p className={noMatch ? css.notice : css.statusIdle} role="status">{noMatch ? t('installedNoMatch', { query: query.trim() }) : ''}</p>
+      {status === 'error' && installed.length === 0 ? (
         <div className={css.notice}>
           <span>{t('error')}</span>
           <Button size="sm" variant="outline" onClick={() => { void onRefresh() }}>{t('retry')}</Button>
         </div>
-      ) : status === 'loading' && skills.length === 0 ? (
+      ) : status === 'loading' && installed.length === 0 ? (
         <p className={css.notice}>{t('loading')}</p>
-      ) : (['custom', 'market'] as const).map(group => (
-        <InstalledGroup key={group} group={group} skills={skills.filter(skill => skill.group === group)} props={props}
+      ) : (['custom', 'market'] as const).filter(group => needle === '' || skills.some(skill => skill.group === group)).map(group => (
+        // Each search starts the group at its first page
+        <InstalledGroup key={`${group}:${needle}`} group={group} skills={skills.filter(skill => skill.group === group)} props={props}
           selection={selection} onUninstall={(name) => { setUninstalling(name) }} />
       ))}
       <UninstallDialog

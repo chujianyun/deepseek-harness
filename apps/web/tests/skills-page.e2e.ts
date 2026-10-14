@@ -1,5 +1,5 @@
 // The assembled Skills page over the real `installedSkills` Remote: listing, switching, reload persistence, pins,
-// bulk switching, and "chat with it".
+// bulk switching, search, and "chat with it".
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -77,6 +77,15 @@ it('lists installed skills, keeps a switched-off skill disabled across reloads, 
       await expect.poll(async () => [await enabled('beta-skill'), await enabled('gamma-skill')]).toEqual([true, true])
       await bar.getByRole('button', { name: 'Done' }).click()
       await expect.poll(() => bar.count()).toBe(0)
+
+      // Search (Spec #221 T177) filters as the user types; emptying it shows every skill again.
+      const search = page.getByRole('searchbox', { name: 'Search installed Skills' })
+      await search.fill('GAMMA')
+      await expect.poll(order).toEqual(['gamma-skill'])
+      await search.fill('nothing-like-this')
+      await page.getByRole('status').filter({ hasText: 'No Skills match “nothing-like-this”' }).waitFor()
+      await search.fill('')
+      await expect.poll(order).toEqual(['gamma-skill', 'alpha-skill', 'beta-skill'])
 
       await page.getByRole('button', { name: 'More actions for beta-skill' }).click()
       await page.getByRole('menuitem', { name: 'Chat with it' }).click()

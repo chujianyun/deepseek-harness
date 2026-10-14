@@ -310,4 +310,88 @@ describe('Skills page', () => {
       expect(screen.queryByRole('button', { name: '批量管理' })).toBeNull()
     })
   })
+
+  describe('search (Spec #221 T177)', () => {
+    const search = () => screen.getByRole('searchbox', { name: '搜索已安装的 Skill' })
+    const type = (text: string) => { fireEvent.change(search(), { target: { value: text } }) }
+    const statuses = {
+      'tmall-publish': { name: 'tmall-publish', displayName: '天猫发品', hubSkillId: 's-t', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' as const },
+    }
+    const renderMixed = () => {
+      const { props } = pageProps({ skills: [skill('alpha'), { ...skill('beta'), description: 'Writes SQL queries' }, skill('tmall-publish', true, 'market')] }, { statuses })
+      render(<InstalledView {...props} onBack={() => {}} />)
+      return props
+    }
+
+    it('filters as the user types by display name, name, or description, ignoring case, and hides groups without a match', () => {
+      renderMixed()
+      type('天猫')
+      expect(screen.getByText('天猫发品')).toBeTruthy()
+      expect(screen.queryByRole('region', { name: /用户自定义/ })).toBeNull()
+      type('TMALL')
+      expect(within(screen.getByRole('region', { name: /来自市场/ })).getByText('tmall-publish')).toBeTruthy()
+      type('  sql ')
+      expect(screen.getByRole('heading', { name: /^用户自定义\s*1$/ })).toBeTruthy()
+      expect(screen.getByText('beta')).toBeTruthy()
+      expect(screen.queryByText('alpha')).toBeNull()
+      expect(screen.queryByRole('region', { name: /来自市场/ })).toBeNull()
+    })
+
+    it('shows every skill again when the field is emptied', () => {
+      renderMixed()
+      type('alpha')
+      expect(screen.queryByText('beta')).toBeNull()
+      type('')
+      expect(screen.getByText('beta')).toBeTruthy()
+      expect(screen.getByRole('region', { name: /来自市场/ })).toBeTruthy()
+    })
+
+    it('says when nothing matches, in a status region that stays mounted', () => {
+      renderMixed()
+      expect(screen.getByRole('status').textContent).toBe('')
+      type(' zzz ')
+      expect(screen.getByRole('status').textContent).toBe('没有找到和「zzz」匹配的 Skill')
+      expect(screen.queryByRole('region')).toBeNull()
+    })
+
+    it('limits select all and the batch to the matching skills, and starts a new selection with each search', async () => {
+      const props = renderMixed()
+      fireEvent.click(screen.getByRole('button', { name: '批量管理' }))
+      expect(search()).toBeTruthy()
+      fireEvent.click(screen.getByRole('checkbox', { name: '选择 beta' }))
+      type('alpha')
+      expect(screen.getByText('已选 0 个')).toBeTruthy()
+      fireEvent.click(screen.getByRole('checkbox', { name: '全选' }))
+      expect(screen.getByText('已选 1 个')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: '停用' }))
+      await vi.waitFor(() => { expect(props.onBatch).toHaveBeenCalledWith('disable', ['alpha']) })
+      type('')
+      expect(screen.getByText('已选 0 个')).toBeTruthy()
+      type('天猫')
+      fireEvent.click(screen.getByRole('checkbox', { name: '全选' }))
+      fireEvent.click(screen.getByRole('button', { name: '卸载' }))
+      expect(screen.getByRole('dialog').textContent).toContain('将卸载：天猫发品。')
+    })
+
+    it('starts each search at the first page of a group', () => {
+      renderPage({ skills: Array.from({ length: 30 }, (_, index) => skill(`skill-${String(index).padStart(2, '0')}`)) })
+      fireEvent.click(screen.getByRole('button', { name: '加载更多（剩 18 个）' }))
+      expect(screen.getByText('skill-20')).toBeTruthy()
+      type('skill-')
+      expect(screen.getByRole('button', { name: '加载更多（剩 18 个）' })).toBeTruthy()
+      expect(screen.queryByText('skill-20')).toBeNull()
+    })
+
+    it('matches a custom skill by its own name, not a market display name for the same slug', () => {
+      const { props } = pageProps({ skills: [skill('tmall-publish')] }, { statuses })
+      render(<InstalledView {...props} onBack={() => {}} />)
+      type('天猫')
+      expect(screen.getByRole('status').textContent).toBe('没有找到和「天猫」匹配的 Skill')
+    })
+
+    it('offers no search when nothing is installed', () => {
+      renderPage({ skills: [] })
+      expect(screen.queryByRole('searchbox')).toBeNull()
+    })
+  })
 })

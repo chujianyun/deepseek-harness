@@ -432,6 +432,23 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+
+/* Matches the small buttons beside it and gives way first on a narrow window */
+.headerActions .installedSearch {
+  flex: 0 1 220px;
+  min-width: 140px;
+  height: 28px;
+}
+
+/* The empty search status keeps its live region without taking space */
+.statusIdle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 
 /* Bulk management toolbar under the page intro */
