@@ -3311,7 +3311,7 @@ export interface Config {
 
 - `inject`: `skills` · `hubAccount`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/skill/skill-market/src/index.ts:84`](../packages/skill/skill-market/src/index.ts)
+- `source`: [`packages/skill/skill-market/src/index.ts:86`](../packages/skill/skill-market/src/index.ts)
 
 ```ts config-catalog
 /** Market configuration. */
