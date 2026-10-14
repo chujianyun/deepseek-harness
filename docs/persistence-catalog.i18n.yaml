@@ -84,8 +84,8 @@
   en: b25a2042e3adc414
   zh: b25a2042e3adc414
 /session-persistence-event-catalog/events/connectors/connectors-always-allowed-log-only:
-  en: 87aad687ccd91d3c
-  zh: 4ea4308161bfbdcd
+  en: 042ac898f4ec1427
+  zh: c70cf5b31ffefe24
 /session-persistence-event-catalog/events/connectors/connectors-session-allowed-log-only:
   en: 39488dfcd8138a96
   zh: 5fe657600c782490
@@ -1395,8 +1395,8 @@
   en: 623c7ca3ddb37002
   zh: 12bc02769556c6ed
 /session-persistence-event-catalog/resolved-persistence-types/callid-commands:
-  en: b27e0424f5db0636
-  zh: 35f4b6b5f5e2e066
+  en: 9c2941747eb83afb
+  zh: 4c94c760adcc08db
 /session-persistence-event-catalog/resolved-persistence-types/callid-files-turn:
   en: 5f4d3f66ed86a14d
   zh: 7c729360fa1279e6

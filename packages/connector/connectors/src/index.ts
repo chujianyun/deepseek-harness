@@ -38,20 +38,17 @@ import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-shell-env'
 import type {} from '@deepseek-ai/dsh-skill'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm'
-import type { Session } from '@deepseek-ai/dsh-session'
-import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { PreToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { bytesOnDisk } from '@deepseek-ai/dsh-verified-download'
 import Schema from '@deepseek-ai/schemastery'
-import { z } from 'zod'
 import { DWS_CLI, LARK_CLI } from './catalog.ts'
 import { LoginError, writeWindowsWrapper, writeWrapper, type Health, type LoginStep, type TenantCli, type WrapperMode } from './cli.ts'
 import { dingtalk } from './dingtalk.ts'
 import type { ConnectorDriver } from './driver.ts'
 import { cliInstalled, executableName, installCli, platformKey, type InstallError } from './install.ts'
 import { feishu as feishuDriver } from './lark.ts'
-import { classify, helpRiskReader, invocations, type Classification, type RiskReader, type ShellDialect } from './risk.ts'
+import { classify, helpRiskReader, invocations, type Invocation, type RiskReader, type ShellDialect } from './risk.ts'
 import { ConnectorSkillProvider, type ConnectorSkill, type SkillSource } from './skills.ts'
 import type {
   ConnectorId, ConnectorInstallError, ConnectorLoginError, ConnectorLoginView, ConnectorsState, ConnectorStatus, ConnectorView,
@@ -115,8 +112,6 @@ export interface Config {
   checkIntervalMs?: number
   /** Connectors switched off, as `<tenantId>/<id>`; edited live through `setEnabled()`. */
   disabled?: Volatile<readonly string[]>
-  /** Write commands always allowed, as `<tenantId>/<id>/<command words>`; added from an approval, revoked by `revokeAlwaysAllowed()`. */
-  alwaysAllowed?: Volatile<readonly string[]>
 }
 
 const cliSpec = Schema.object({
@@ -145,8 +140,6 @@ export const Config = Schema.object({
   checkIntervalMs: Schema.natural().min(1000).default(30 * 60 * 1000),
   disabled: Schema.array(Schema.string()).default([]).volatile()
     .description('Connectors switched off, as `<tenantId>/<id>`. A switched-off connector stays signed in, but the model gets neither its Skills nor its CLI.'),
-  alwaysAllowed: Schema.array(Schema.string()).default([]).volatile()
-    .description('Write commands that run without asking, as `<tenantId>/<id>/<command words>`, such as `t-1/feishu/im +messages-send`.'),
 }) as Schema<Config>
 
 /** The variable that names, one per line, the high-risk commands of a shell call the user approved, such as `drive +delete`. */
@@ -183,43 +176,39 @@ type CallingAgent = NonNullable<ToolExecution['agent']>
  */
 export type ConnectorFilter = (agent: CallingAgent, connectorId: ConnectorId) => boolean
 
-/** What a bash call does through one connected connector. */
-interface Classified {
-  readonly id: ConnectorId
+/**
+ * A connector command of a shell call that waits for the user: a high-risk write, one its CLI runs
+ * only confirmed, or one whose risk cannot be read.
+ */
+interface Asked extends Invocation {
   readonly driver: ConnectorDriver
   readonly cli: string
-  readonly classification: Classification
 }
 
-const RISK_ORDER: readonly Classification['risk'][] = ['none', 'read', 'write', 'unknown', 'high-risk-write']
-
 /**
- * How the profile names a write command a tenant always allows.
- * @param tenant - the user-center tenant.
- * @param id - the connector.
- * @param command - its command words, such as `im +messages-send`.
- * @returns `<tenant>/<id>/<command>`.
+ * Whether a connector command waits for the user's approval: reads and plain writes run as the CLI
+ * states them, and the rest is confirmed.
+ * @param item - the command.
+ * @returns true for a high-risk write, a command the CLI runs only confirmed, or one of unknown risk.
  */
-function grantKey(tenant: string, id: ConnectorId, command: string): string {
-  return `${tenant}/${id}/${command}`
+function asks(item: Invocation): boolean {
+  return item.risk === 'high-risk-write' || item.risk === 'unknown' || item.confirm
 }
 
 /**
- * The approval a bash call that writes through connectors asks for: the audit reason names the
- * commands, and the user sees what will happen as them — with a warning for a high-risk command,
- * and the note that DSH confirms the commands the CLI asks to confirm.
- * @param parts - the call's commands per connector; at least one writes.
+ * The approval a shell call asks for when it holds connector commands that wait for the user: the
+ * audit reason names the commands, and the user sees what will happen as them — with a warning for a
+ * high-risk command, and the note that DSH confirms the commands the CLI asks to confirm.
+ * @param asked - those commands; at least one.
  * @returns the pre-execution decision.
  */
-function approvalAsk(parts: readonly Classified[]): PreToolDecision {
-  // Every risk is in the order, so the highest index names one.
-  const risk = RISK_ORDER[Math.max(...parts.map(part => RISK_ORDER.indexOf(part.classification.risk)))] as Classification['risk']
-  const asked = parts.flatMap(part => part.classification.invocations.filter(item => item.risk !== 'read').map(item => ({ ...item, cli: part.cli })))
+function approvalAsk(asked: readonly Asked[]): PreToolDecision {
   const listed = asked.map(item => `${item.cli} ${item.command}`.trim()).join('; ')
   const commands = listed.length > APPROVAL_COMMAND_CHARS ? `${listed.slice(0, APPROVAL_COMMAND_CHARS)}…` : listed
-  const drivers = parts.filter(part => part.classification.risk !== 'none' && part.classification.risk !== 'read').map(part => part.driver)
+  const drivers = [...new Set(asked.map(item => item.driver))]
   const en = drivers.map(driver => driver.name.en).join(' and ')
   const zh = drivers.map(driver => driver.name.zh).join('、')
+  const risk = asked.some(item => item.risk === 'high-risk-write') ? 'high-risk-write' : asked.some(item => item.risk === 'unknown') ? 'unknown' : 'write'
   const reason = `${en} connector ${risk} command: ${commands}`
   const yes = asked.some(item => item.confirm)
   const yesEn = yes ? ' If you allow it, DSH confirms it with --yes for this run.' : ''
@@ -237,11 +226,11 @@ function approvalAsk(parts: readonly Classified[]): PreToolDecision {
       return {
         kind: 'ask', reason,
         displayReason: {
-          en: `The risk of this ${en} command cannot be determined, so it is confirmed like a write: ${commands}. Allow it to run as you once?${yesEn}`,
-          zh: `无法确定这条${zh}命令的风险，按写操作确认：${commands}。允许以你的身份执行一次吗？${yesZh}`,
+          en: `The risk of this ${en} command cannot be determined, so it is confirmed: ${commands}. Allow it to run as you once?${yesEn}`,
+          zh: `无法确定这条${zh}命令的风险，需要确认：${commands}。允许以你的身份执行一次吗？${yesZh}`,
         },
       }
-    default:
+    case 'write':
       return {
         kind: 'ask', reason,
         displayReason: {
@@ -303,27 +292,15 @@ function idle(epoch: number): Connection {
   return { state: 'disconnected', account: null, problem: null, login: null, loginError: null, controller: undefined, running: undefined, epoch }
 }
 
-/** The `connectorGrants` Session projection: connectors whose plain writes run without asking in the session. */
-export const connectorGrantsProjection = {
-  key: 'connectorGrants',
-  stateSchema: z.object({ connectors: z.array(z.string()), tenantId: z.string().nullable() }),
-  init: () => ({ connectors: [], tenantId: null }),
-  apply: (state, event) => event.type === 'connectors/session-allowed'
-    ? { connectors: [...event.data.connectors], tenantId: event.data.tenantId }
-    : state,
-  stateVersion: 1,
-} satisfies ProjectionDefinition<'connectorGrants', { connectors: string[]; tenantId: string | null }>
-
 /** Host owner of the connectors and of the `connectors` Remote namespace. */
 export class ConnectorsService extends TypertRemoteService {
-  static inject = ['hubAccount', 'skills', 'shellEnv', 'sessionProjections']
+  static inject = ['hubAccount', 'skills', 'shellEnv']
   static Config = Config
 
   /** The supported connectors, in display order. */
   private readonly installables = new Map<ConnectorId, Installable>()
   private readonly checkIntervalMs: number
   private readonly disabled: Volatile<readonly string[]> | undefined
-  private readonly alwaysAllowed: Volatile<readonly string[]> | undefined
   private readonly entryId: string | undefined
   private provider: ConnectorSkillProvider | undefined
   /** Calls whose high-risk connector commands wait for, or have, the user's approval, with those commands one per line. */
@@ -336,7 +313,7 @@ export class ConnectorsService extends TypertRemoteService {
   /** The CLI directories the model's Skills were last listed from; undefined before the first sync. */
   private skillDirs: readonly string[] | undefined
   private writes: Promise<void> = Promise.resolve()
-  /** Profile writes of the `disabled` and `alwaysAllowed` lists, one at a time. */
+  /** Profile writes of the `disabled` list, one at a time. */
   private settingsWrites: Promise<void> = Promise.resolve()
   private failureTimer: ReturnType<typeof setTimeout> | undefined
   private tenantId: string | null = null
@@ -347,13 +324,11 @@ export class ConnectorsService extends TypertRemoteService {
   /** @param ctx - Host context with the Hub sign-in. @param config - home, pinned CLIs, and the check interval. */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'connectors', { namespace: 'connectors' })
-    ctx.sessionProjections.register(connectorGrantsProjection)
     // The live lists arrive as Volatile handles; the schema validates the rest.
-    const { disabled, alwaysAllowed, ...rest } = config
+    const { disabled, ...rest } = config
     const resolved = Config(rest) as Config & { feishu: CliSpec; dingtalk: CliSpec; checkIntervalMs: number }
     this.checkIntervalMs = resolved.checkIntervalMs
     this.disabled = disabled
-    this.alwaysAllowed = alwaysAllowed
     this.entryId = ctx.fiber.entry?.options.id
     const root = join(resolveDshHome(resolved.dshHome), 'connectors')
     for (const [driver, spec] of [[feishuDriver, resolved.feishu], [dingtalk, resolved.dingtalk]] as const) {
@@ -396,7 +371,8 @@ export class ConnectorsService extends TypertRemoteService {
         if (found === 'opaque' || found.length > 0) this.failed(entry)
       }
     })
-    // A shell call (bash, or PowerShell on Windows) that would write through a connected connector waits for the user's approval.
+    // A shell call (bash, or PowerShell on Windows) runs a connected connector's reads and plain writes
+    // as the CLI states them; a high-risk, confirm-only, or unknown-risk command waits for the user's approval.
     ctx.on('tools/pre-execute', async (exec, next) => {
       const decision = await next()
       const shell = shellCommand(exec)
@@ -409,32 +385,18 @@ export class ConnectorsService extends TypertRemoteService {
           return { kind: 'deny', reason: `The ${entry.driver.name.en} connector (${entry.spec.binary}) is not available in this session.` }
         }
       }
-      const parts: Classified[] = []
+      const asked: Asked[] = []
       for (const entry of this.installables.values()) {
         if (this.exposure(entry)?.mode !== 'run') continue
         const cli = entry.spec.binary
-        const classification = await classify(shell.command, cli, this.riskReader(entry), entry.driver.readOnly, shell.dialect)
-        parts.push({ id: entry.id, driver: entry.driver, cli, classification })
+        const { invocations: found } = await classify(shell.command, cli, this.riskReader(entry), entry.driver.readOnly, shell.dialect)
+        for (const item of found) if (asks(item)) asked.push({ ...item, driver: entry.driver, cli })
       }
-      if (parts.every(part => part.classification.risk === 'none' || part.classification.risk === 'read')) return decision
-      // Only plain writes the CLI runs unconfirmed can be always allowed; a call that holds anything else always asks.
-      const asked = parts.flatMap(part => part.classification.invocations.filter(item => item.risk !== 'read').map(item => ({ ...item, id: part.id, cli: part.cli })))
-      const tenant = this.tenantId
-      const rememberable = tenant !== null && asked.every(item => item.risk === 'write' && !item.confirm)
-      const granted = new Set(this.alwaysAllowedList())
-      // Remembered for the tenant, or granted to this session by the same tenant, as an automation task's session is.
-      const remembered = rememberable && asked.every(item => granted.has(grantKey(tenant, item.id, item.command)))
-      const sessionAllowed = rememberable && exec.agent !== undefined && this.sessionAllows(exec.agent.session, tenant, asked)
-      if (exec.agent !== undefined && (remembered || sessionAllowed)) {
-        exec.agent.session.append('connectors/always-allowed', { callId: exec.callId, commands: [...new Set(asked.map(item => `${item.cli} ${item.command}`))] })
-        return decision
-      }
+      if (asked.length === 0) return decision
       // Commands the CLI runs only confirmed get its confirm flag once the user approves the call.
-      const confirmed = parts.flatMap(part => part.classification.invocations.filter(item => item.confirm).map(item => `${part.cli} ${item.command}`))
+      const confirmed = asked.filter(item => item.confirm).map(item => `${item.cli} ${item.command}`)
       if (confirmed.length > 0) this.confirmed.set(exec.callId, confirmed.join('\n'))
-      const ask = approvalAsk(parts)
-      if (!rememberable || ask.kind !== 'ask') return ask
-      return { ...ask, onRemember: () => { this.remember(asked.map(item => grantKey(tenant, item.id, item.command))) } }
+      return approvalAsk(asked)
     })
     ctx.shellEnv.register({
       name: 'connectors',
@@ -533,7 +495,6 @@ export class ConnectorsService extends TypertRemoteService {
     if (entry.install === 'installed') {
       for (const tenant of await readdir(join(entry.root, 'tenants')).catch(() => [])) await entry.driver.removeTenant(this.cliAt(entry, tenant))
     }
-    await this.forget(key => key.split('/')[1] === entry.id)
     this.changed()
     await this.writes
     await rm(entry.root, { recursive: true, force: true })
@@ -598,7 +559,6 @@ export class ConnectorsService extends TypertRemoteService {
     await this.stopLogin(entry)
     entry.connection = idle(entry.connection.epoch + 1)
     if (entry.install === 'installed') await entry.driver.removeTenant(this.cliAt(entry, tenant))
-    await this.forget(key => key.startsWith(grantKey(tenant, entry.id, '')))
     this.changed()
     return this.getState()
   }
@@ -626,57 +586,10 @@ export class ConnectorsService extends TypertRemoteService {
   async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState> {
     this.installable(id)
     const key = `${this.requireTenant()}/${id}`
-    await this.updateList('disabled', current => enabled ? current.filter(item => item !== key) : [...current, key])
+    await this.updateDisabled(current => enabled ? current.filter(item => item !== key) : [...current, key])
     // Switched on, its Skills reach the model once its CLI script is in place.
     await this.writes
     return this.getState()
-  }
-
-  /**
-   * Stop always allowing a write command for the current tenant: it asks again.
-   * @param id - the connector.
-   * @param command - the command words, as the view lists them.
-   * @returns the state once the setting is saved.
-   * @throws RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`;
-   *   Error when mounted without Settings or a profile entry.
-   */
-  @Remote
-  async revokeAlwaysAllowed(id: string, command: string): Promise<ConnectorsState> {
-    const { entry } = this.installable(id)
-    const key = grantKey(this.requireTenant(), entry.id, command)
-    await this.updateList('alwaysAllowed', current => current.filter(item => item !== key))
-    return this.getState()
-  }
-
-  /**
-   * Let a session's plain connector writes through these connectors run without asking while the
-   * signed-in tenant stays signed in, as the session of an unattended automation task needs: appends
-   * `connectors/session-allowed`, which replaces the session's earlier grant and survives a restart
-   * with the session log; an unchanged grant appends nothing. High-risk writes, commands the CLI
-   * runs only confirmed, and commands of unknown risk still ask.
-   * @param session - the session to grant.
-   * @param ids - connectors to allow; an empty list withdraws the grant. Refuses an unknown id with
-   *   `connectors/not-found`, one unsupported here with `connectors/unavailable`, and a signed-out Hub
-   *   with `hub-account/signed-out`.
-   */
-  allowInSession(session: Session, ids: readonly string[]): void {
-    const tenantId = this.requireTenant()
-    for (const id of ids) this.installable(id)
-    const connectors = [...new Set(ids)].sort()
-    const current = this.grantOf(session)
-    if (current.tenantId === tenantId && current.connectors.join('\n') === connectors.join('\n')) return
-    session.append('connectors/session-allowed', { connectors, tenantId })
-  }
-
-  /** The session's grant: whether every asked command goes through a connector granted by the signed-in tenant. */
-  private sessionAllows(session: Session, tenantId: string, asked: readonly { id: string }[]): boolean {
-    const grant = this.grantOf(session)
-    return grant.tenantId === tenantId && asked.every(item => grant.connectors.includes(item.id))
-  }
-
-  private grantOf(session: Session): { connectors: readonly string[]; tenantId: string | null } {
-    /* v8 ignore next -- this service registers the projection, so its state is always there. */
-    return this.ctx.sessionProjections.stateOf(session, 'connectorGrants') ?? { connectors: [], tenantId: null }
   }
 
   /** A connector this platform can install, with its archive. */
@@ -705,48 +618,22 @@ export class ConnectorsService extends TypertRemoteService {
       totalBytes: archive === undefined ? 0 : archive.size + (entry.spec.skills?.size ?? 0),
       error: entry.error, login: status === 'connecting' ? connection.login : null, loginError: connection.loginError,
       account: status === 'connected' ? connection.account : null, problem: status === 'degraded' ? connection.problem : null,
-      enabled: this.enabled(entry), skills: entry.skills, alwaysAllowed: this.grantsOf(entry),
+      enabled: this.enabled(entry), skills: entry.skills,
     }
   }
 
-  /** The write commands the current tenant always allows through a connector, sorted. */
-  private grantsOf(entry: Installable): string[] {
-    if (this.tenantId === null) return []
-    const prefix = grantKey(this.tenantId, entry.id, '')
-    return this.alwaysAllowedList().filter(key => key.startsWith(prefix)).map(key => key.slice(prefix.length)).sort()
-  }
-
-  private alwaysAllowedList(): readonly string[] {
-    // Every mount passes the Volatile handle; the optional type comes from the Config interface.
-    /* v8 ignore next */
-    return this.alwaysAllowed?.get() ?? []
-  }
-
-  /** Always allow the write commands the user granted from an approval; a failed save leaves them asking. */
-  private remember(keys: readonly string[]): void {
-    this.updateList('alwaysAllowed', current => [...current, ...keys]).catch((error: unknown) => {
-      this.ctx.logger.warn(`connectors: could not save always-allowed commands: ${String(error)}`)
-    })
-  }
-
-  /** Stop always allowing anything the predicate picks. */
-  private forget(pick: (key: string) => boolean): Promise<void> {
-    return this.updateList('alwaysAllowed', current => current.filter(key => !pick(key)))
-  }
-
   /**
-   * Save one of the profile's lists, sorted and without duplicates, after the writes before it.
-   * @param field - the list.
+   * Save the profile's `disabled` list, sorted and without duplicates, after the writes before it.
    * @param edit - the new list from the current one.
    */
-  private async updateList(field: 'disabled' | 'alwaysAllowed', edit: (current: readonly string[]) => readonly string[]): Promise<void> {
+  private async updateDisabled(edit: (current: readonly string[]) => readonly string[]): Promise<void> {
     const write = this.settingsWrites.then(async () => {
-      const current = field === 'disabled' ? this.disabledList() : this.alwaysAllowedList()
+      const current = this.disabledList()
       const next = [...new Set(edit(current))].sort()
       if (next.length === current.length && next.every((item, index) => item === current[index])) return
       const settings = this.ctx.get('settings')
       if (settings === undefined || this.entryId === undefined) throw new Error('changing connector settings requires the settings service and a profile entry')
-      await settings.update(this.entryId, { [field]: next })
+      await settings.update(this.entryId, { disabled: next })
     })
     this.settingsWrites = write.catch(() => {})
     await write
@@ -953,14 +840,7 @@ export class ConnectorsService extends TypertRemoteService {
     // A connect() while a sign-in stops changes nothing, as the connection still reads `connecting`
     // until that sign-in settles, so no sign-in can start for the old tenant before the replacement.
     for (const entry of this.installables.values()) await this.stopLogin(entry)
-    const previous = this.tenantId
     this.tenantId = tenantId
-    // Signing out of the Hub ends what that tenant always allowed; switching tenants keeps it for when it returns.
-    if (tenantId === null && previous !== null) {
-      await this.forget(key => key.startsWith(`${previous}/`)).catch((error: unknown) => {
-        this.ctx.logger.warn(`connectors: could not clear always-allowed commands: ${String(error)}`)
-      })
-    }
     for (const entry of this.installables.values()) entry.connection = idle(entry.connection.epoch + 1)
     this.changed()
     await this.checkAll()

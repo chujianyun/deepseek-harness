@@ -110,7 +110,8 @@ describe('the model shell\'s lark-cli', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {})
     const t = await setup({ files: [] })
     await t.until(view => view.status === 'disconnected')
-    await vi.waitFor(async () => { await stat(join(t.root, 'bin', 't-a', 'lark-cli')) })
+    // Writing the first script takes about half a second, longer while other specs run beside it.
+    await vi.waitFor(async () => { await stat(join(t.root, 'bin', 't-a', 'lark-cli')) }, { timeout: 5000 })
     // A file where the next tenant's script directory belongs.
     await writeFile(join(t.root, 'bin', 't-b'), '')
     t.hub.set('t-b')

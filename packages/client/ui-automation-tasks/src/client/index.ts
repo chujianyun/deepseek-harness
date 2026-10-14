@@ -28,7 +28,7 @@ const NS = 'automationTaskForm'
 
 /** Services the form reads: the slots, the copy, and the Remotes it offers options from and saves through. */
 export const inject = [
-  'slots', 'locale', 'workspaces', 'remote', 'remote.automationTasks', 'remote.assistants', 'remote.session', 'remote.permissionPresets', 'remote.connectors',
+  'slots', 'locale', 'workspaces', 'remote', 'remote.automationTasks', 'remote.assistants', 'remote.session', 'remote.permissionPresets',
 ]
 
 /**
@@ -44,7 +44,6 @@ export function apply(ctx: ClientContext): void {
       assistants: () => remote.assistants.getState(),
       models: () => remote.session.modelCatalog(),
       permissions: () => remote.permissionPresets.catalog(),
-      connectors: () => remote.connectors.getState(),
     }),
     onCreate: request => remote.automationTasks.create(request),
   }

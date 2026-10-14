@@ -181,29 +181,40 @@ describe('DingTalk Skills', () => {
   })
 })
 
-describe('confirming DingTalk writes', () => {
-  runs('runs reads unasked and asks before a write, by the Safety its help states', async () => {
+describe('confirming DingTalk commands', () => {
+  runs('runs reads and plain writes unasked, and asks before a command of unknown risk, by the Safety its help states', async () => {
     const t = await connected()
     expect(await t.gate(bash('dws calendar event list --start 2026-10-06'))).toEqual({ kind: 'allow' })
     // Listed read-only commands need no help.
     expect(await t.gate(bash('dws auth status'))).toEqual({ kind: 'allow' })
     expect(await t.gate(bash('dws shortcut list --service chat --format json 2>&1 | head -200'))).toEqual({ kind: 'allow' })
     expect((await t.calls()).filter(call => call.startsWith('auth status --help'))).toEqual([])
-    expect(await t.gate(bash('dws chat message send --text hi'))).toMatchObject({
-      kind: 'ask', reason: 'DingTalk connector write command: dws chat message send',
-      displayReason: { zh: '钉钉连接器将以你的身份执行写操作：dws chat message send。允许执行一次吗？' },
-    })
+    expect(await t.gate(bash('dws chat message send --text hi'))).toEqual({ kind: 'allow' })
     expect(await t.gate(bash('dws todo task create --title x'))).toMatchObject({
-      kind: 'ask', displayReason: { zh: '无法确定这条钉钉命令的风险，按写操作确认：dws todo task create。允许以你的身份执行一次吗？' },
+      kind: 'ask', displayReason: { zh: '无法确定这条钉钉命令的风险，需要确认：dws todo task create。允许以你的身份执行一次吗？' },
     })
   })
 
-  runs('offers to always allow a plain write, never a destructive or unknown command', async () => {
+  runs('asks before a write the CLI runs only confirmed, and before a destructive command it runs unconfirmed', async () => {
     const t = await connected()
-    expect(typeof (await t.gate(bash('dws chat message send --text hi')) as { onRemember?: unknown }).onRemember).toBe('function')
-    for (const command of ['dws doc delete --doc-id d1', 'dws todo task create --title x']) {
-      expect(await t.gate(bash(command))).not.toHaveProperty('onRemember')
-    }
+    const dismiss = bash('dws chat group dismiss --group g1', 'call-dismiss')
+    expect(await t.gate(dismiss)).toEqual({
+      kind: 'ask', reason: 'DingTalk connector write command: dws chat group dismiss',
+      displayReason: {
+        en: 'The DingTalk connector will write as you: dws chat group dismiss. Allow it to run once? If you allow it, DSH confirms it with --yes for this run.',
+        zh: '钉钉连接器将以你的身份执行写操作：dws chat group dismiss。允许执行一次吗？同意后 DSH 会为本次执行加上 --yes。',
+      },
+    })
+    expect(t.ctx.shellEnv.collect(dismiss)).toHaveProperty('DSH_CONNECTOR_CONFIRMED', 'dws chat group dismiss')
+    const archive = bash('dws doc archive --doc-id d1', 'call-archive')
+    expect(await t.gate(archive)).toEqual({
+      kind: 'ask', reason: 'DingTalk connector high-risk-write command: dws doc archive',
+      displayReason: {
+        en: '⚠️ High-risk operation: the DingTalk connector will run dws doc archive as you. It may delete data or make changes that cannot be undone.',
+        zh: '⚠️ 高风险操作：钉钉连接器将以你的身份执行 dws doc archive，可能删除数据或造成无法撤销的修改。',
+      },
+    })
+    expect(t.ctx.shellEnv.collect(archive)).not.toHaveProperty('DSH_CONNECTOR_CONFIRMED')
   })
 
   runs('warns before a destructive command and, once approved, runs it with --yes', async () => {
