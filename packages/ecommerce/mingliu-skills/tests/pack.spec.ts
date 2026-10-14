@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { createHmac } from 'node:crypto'
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -21,14 +21,17 @@ let zips: string[]
 
 beforeAll(async () => {
   out = await mkdtemp(join(tmpdir(), 'dsh-mingliu-skills-'))
-  // A hidden file, as Finder leaves, stays out of the zip.
+  // A hidden file, as Finder leaves, and Python's bytecode cache stay out of the zip.
   await writeFile(join(SKILLS_DIR, 'ai-inspection', '.DS_Store'), 'finder')
+  await mkdir(join(SKILLS_DIR, 'roi-inspection', 'scripts', '__pycache__'), { recursive: true })
+  await writeFile(join(SKILLS_DIR, 'roi-inspection', 'scripts', '__pycache__', 'send_webhook.pyc'), 'bytecode')
   zips = await packSkills(out)
   // A second build replaces the first.
   zips = await packSkills(out)
 })
 afterAll(async () => {
   await rm(join(SKILLS_DIR, 'ai-inspection', '.DS_Store'), { force: true })
+  await rm(join(SKILLS_DIR, 'roi-inspection', 'scripts', '__pycache__'), { recursive: true, force: true })
   await rm(out, { recursive: true, force: true })
 })
 
@@ -36,7 +39,7 @@ afterAll(async () => {
 async function filesUnder(dir: string, prefix = ''): Promise<string[]> {
   const found: string[] = []
   for (const item of await readdir(dir, { withFileTypes: true })) {
-    if (item.name.startsWith('.')) continue
+    if (item.name.startsWith('.') || item.name === '__pycache__') continue
     if (item.isDirectory()) found.push(...await filesUnder(join(dir, item.name), `${prefix}${item.name}/`))
     else found.push(`${prefix}${item.name}`)
   }
@@ -79,7 +82,9 @@ describe('packSkills', () => {
       for (const file of await filesUnder(join(SKILLS_DIR, name))) {
         // The video report's template counts 微博 and 视频号 comments; any other 评论 is Aily's comment delivery.
         const text = (await readFile(join(SKILLS_DIR, name, file), 'utf8')).replaceAll(/(?:微博|视频号)评论：/gu, '')
-        const forbidden = [/aily/iu, /larksuite-cli-guide/u, /\boc_[0-9a-f]{16,}/u, /\bou_[0-9a-f]{16,}/u, /cli_[0-9a-f]{16}/u, /评论/u]
+        // Aily, not the daily of a skill name.
+        const forbidden = [/(?<![a-z])aily/iu, /larksuite-cli-guide/u, /\boc_[0-9a-f]{16,}/u, /\bou_[0-9a-f]{16,}/u, /cli_[0-9a-f]{16}/u]
+        forbidden.push(/评论/u)
         // Base and table tokens are read from the configuration documents or the assistant's workspace.
         forbidden.push(/OU8JbYF8WahWo3sYEzwcTyBcn8b/u, /DMpmbusTjaZz60sYjFdcMjcRnTc|tbldnCoi0SeSDhWU/u)
         forbidden.push(/BfTxbFKoXaQghPsWPozcM9yun9e|tblA1lg0NDL5e8YI/u)
@@ -94,7 +99,7 @@ describe('recommended tasks', () => {
   it('are tasks an assistant package accepts, declaring operations an automation task accepts', async () => {
     const tasks = await readTasks()
     expect(tasks.map(task => (task as { id: string }).id)).toEqual([
-      'ai-inspection', 'pdd-meeting-todos', 'roi-internal-report', 'roi-provider-reminder', 'video-reminder', 'video-report',
+      'ai-inspection', 'pdd-meeting-todos', 'roi-internal-report', 'roi-provider-reminder', 'tianmao-daily-report', 'video-reminder', 'video-report',
     ])
     const parsed = manifestSchema.parse({ name: 'mingliu-ops', displayName: '运营日报助手', description: 'x', version: '1.0.0', tasks })
     expect(parsed.tasks[0]).toMatchObject({
@@ -114,10 +119,15 @@ describe('recommended tasks', () => {
       title: '投流ROI服务商提醒', timing: { kind: 'weekly', weekdays: [1, 3, 5], time: '10:00' }, connectors: [], permission: 'workspace-write',
     })
     expect([parsed.tasks[2]!.operations, parsed.tasks[3]!.operations]).toEqual([undefined, undefined])
+    // The Tmall daily report fills the sheet at 06:00 and writes only cells.
+    expect(parsed.tasks[4]).toMatchObject({
+      title: '天猫日报采集填报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '06:00' }, connectors: [], permission: 'workspace-write',
+      operations: ['lark-cli sheets +cells-set'],
+    })
     // The video report runs at 10:00 about yesterday, its reminder at 17:30 about today; each only sends its message.
-    expect(parsed.tasks[4]).toMatchObject({ title: '视频素材绩效当日提醒', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '17:30' } })
-    expect(parsed.tasks[5]).toMatchObject({ title: '视频素材绩效日报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '10:00' } })
-    for (const task of parsed.tasks.slice(4)) expect(task).toMatchObject({ connectors: [], operations: ['lark-cli im +messages-send'] })
+    expect(parsed.tasks[5]).toMatchObject({ title: '视频素材绩效当日提醒', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '17:30' } })
+    expect(parsed.tasks[6]).toMatchObject({ title: '视频素材绩效日报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '10:00' } })
+    for (const task of parsed.tasks.slice(5)) expect(task).toMatchObject({ connectors: [], operations: ['lark-cli im +messages-send'] })
     // Each run declares only the write it makes; other Feishu writes are not granted.
     expect(JSON.stringify(tasks)).not.toMatch(PEOPLE)
     for (const task of parsed.tasks) expect(readOperations(task.operations ?? [])).toEqual({ operations: task.operations ?? [] })
@@ -161,7 +171,7 @@ describe('the meeting to-do sync', () => {
 
 describe('the video performance report', () => {
   it('sends only to the test group, and its send passes the unattended check in either shell', async () => {
-    const [, , , , reminder, report] = await readTasks() as { prompt: string; operations: string[] }[]
+    const [, , , , , reminder, report] = await readTasks() as { prompt: string; operations: string[] }[]
     expect(report!.prompt).toContain('日期取昨天')
     expect(reminder!.prompt).toContain('日期取今天')
     for (const task of [report!, reminder!]) expect(task.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_94a59b1b5e0f87c703bccdc0f6a10daf'])
@@ -281,5 +291,226 @@ describe('send_webhook.py', () => {
       const sent = await send(mapping, args, ok)
       expect([sent.code, sent.body, sent.out]).toEqual([1, undefined, expect.stringContaining(why)])
     }
+  })
+})
+
+describe('the Tmall daily report', () => {
+  it('reads its sheet from the configuration document, and its cell writes pass the unattended check in either shell', async () => {
+    const [, , , , daily] = await readTasks() as { prompt: string; operations: string[] }[]
+    expect(daily!.prompt).not.toMatch(/BdO2sx|0PYEgV/u)
+    expect(daily!.prompt).toContain('《AI巡检固化配置》第五节')
+    const skill = await readFile(join(SKILLS_DIR, 'tianmao-daily-report', 'SKILL.md'), 'utf8')
+    expect(skill).toContain("lark-cli sheets +cells-set --as user --spreadsheet-token <token> --sheet-id <sheet_id> --range <range> --cells '@<file>'")
+    const write = "lark-cli sheets +cells-set --as user --spreadsheet-token shtX --sheet-id s1 --range L2:L11 --cells '@tianmao-daily-report/20261013/cells-L2-L11.json'"
+    const clear = 'lark-cli sheets +cells-clear --as user --spreadsheet-token shtX --sheet-id s1 --range L2:L11'
+    for (const dialect of ['bash', 'pwsh'] as const) {
+      expect(declaredOperations(write, dialect, daily!.operations, false)).toEqual(['lark-cli sheets +cells-set'])
+      expect(declaredOperations(clear, dialect, daily!.operations, false)).toBeUndefined()
+    }
+  })
+
+  it('carries the same holiday check as the video report', async () => {
+    const copy = (skill: string) => readFile(join(SKILLS_DIR, skill, 'scripts', 'holiday.py'), 'utf8')
+    expect(await copy('tianmao-daily-report')).toBe(await copy('video-performance-report'))
+  })
+})
+
+describe('daily_report.py', () => {
+  const script = join(SKILLS_DIR, 'tianmao-daily-report', 'scripts', 'daily_report.py')
+  const LABELS = ['渠道', '店铺gmv', '外投花费（辅助项）', '外投成交', '外投投产', '自投花费', '自投成交', '自投投产', '推广花费', '推广成交', '推广投产', '会员', '店铺费比']
+  const COLUMNS = ['A', 'B', 'G', 'H', 'K', 'L']
+  const HEADERS: Record<string, string> = {
+    A: '渠道', B: '负责人', G: '10月12日', H: '实际完成（10月12日）', K: '10月13日', L: '实际完成（10月13日）',
+  }
+  /** 10-12 as people filled it, in 万元 (投产 as ratios); 店铺费比 is a formula. */
+  const FILLED_1012 = [32.65, 5.72, 6.85, 1.2, 1.81, 2.34, 1.29, 11.32, 14.44, 1.28, 0.5]
+
+  type Cell = { value: unknown; formula?: string }
+  /** What plan.json holds. */
+  interface Plan {
+    column: string
+    writes: { cell: string; label: string; value: number }[]
+    files: { range: string }[]
+    skipped: { label: string; reason: string }[]
+    not_written: string[]
+  }
+  /** The +cells-get answer of a sheet shaped like 10 月「店铺整体」, with cells changed by `edit`. */
+  function cells(edit: (row: number, column: string, cell: Cell) => Cell = (_r, _c, cell) => cell): object {
+    const rows = LABELS.map((label, r) => COLUMNS.map((column) => {
+      const row = r + 1
+      let cell: Cell = { value: null }
+      if (row === 1) cell = { value: HEADERS[column] }
+      else if (column === 'A') cell = { value: label }
+      else if (label === '店铺费比' && (column === 'H' || column === 'L')) cell = { value: 0.3, formula: `=(${column}3+${column}9+${column}6)/${column}2` }
+      else if (column === 'H') cell = { value: FILLED_1012[r - 1] }
+      else if (column === 'L' && label === '会员') cell = { value: 0.6 }
+      return edit(row, column, cell)
+    }))
+    return { ok: true, data: { ranges: [{ cells: rows, row_indices: LABELS.map((_l, r) => r + 1), col_indices: COLUMNS }] } }
+  }
+
+  /** What tmall-daily-figures printed for 2026-10-13 (real figures). */
+  const TMALL = (date = '2026-10-13', alimama: object = {}) => ({
+    platform: 'tmall', data: { date, platforms: [
+      { platform: '生意参谋', date, metrics: { 全店支付金额: 326455.47, MO支付金额: 107565.75 }, missing: [], notes: [] },
+      { platform: '万相台', date, metrics: {
+        关键词推广花费: 67351.25, 关键词推广成交: 77473.03, 人群推广花费: 39783.68, 人群推广成交: 53286.31, 货品全站推花费: 6056.87, 货品全站推成交: 13603, ...alimama,
+      }, missing: [], notes: [] },
+    ] },
+  })
+  const YUNTAI = (date = '2026-10-13', metrics: object = {}) => ({
+    platform: 'yuntai', data: { date, platforms: [{ platform: '健康品牌云台', date, metrics: {
+      三方外投消耗: 75318.96, 三方外投有效GMV: 91920.27, 自投花费: 18105.81, 自投有效GMV: 23432.13, ...metrics,
+    }, missing: [], notes: [] }] },
+  })
+
+  /** Run a command with files in a fresh directory; `files` values are JSON, or raw bytes. */
+  async function run(args: (dir: string) => string[], files: Record<string, object | Uint8Array>) {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-daily-report-'))
+    try {
+      for (const [name, content] of Object.entries(files)) {
+        await writeFile(join(dir, name), content instanceof Uint8Array ? content : JSON.stringify(content))
+      }
+      const ended = await runPython(script, args(dir))
+      const read = async (name: string) => await readFile(join(dir, name), 'utf8').catch(() => undefined)
+      return { ...ended, plan: await read('out/plan.json'), cellsFile: await read('out/cells-L2-L11.json') }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }
+  const planArgs = (date = '2026-10-13') => (dir: string) => [
+    'plan', '--cells', join(dir, 'cells.json'), '--date', date,
+    '--figures', join(dir, 't.json'), '--figures', join(dir, 'y.json'), '--out', join(dir, 'out'),
+  ]
+
+  it('plans the mapped cells of the day\'s 实际完成 column in 万元, leaving other rows and formulas alone', async () => {
+    const ran = await run(planArgs(), { 'cells.json': cells(), 't.json': TMALL(), 'y.json': YUNTAI() })
+    expect(ran.code).toBe(0)
+    const plan = JSON.parse(ran.plan!) as Plan
+    expect(plan.column).toBe('L')
+    expect(plan.writes.map(({ cell, label, value }) => [cell, label, value])).toEqual([
+      ['L2', '店铺gmv', 32.65], ['L3', '外投花费', 5.72], ['L4', '外投成交', 6.85], ['L5', '外投投产', 1.2], ['L6', '自投花费', 1.81],
+      ['L7', '自投成交', 2.34], ['L8', '自投投产', 1.29], ['L9', '推广花费', 11.32], ['L10', '推广成交', 14.44], ['L11', '推广投产', 1.28],
+    ])
+    expect([plan.skipped, plan.not_written]).toEqual([[], ['会员', '店铺费比']])
+    expect(JSON.parse(ran.cellsFile!)).toEqual(plan.writes.map(({ value }) => [{ value }]))
+  })
+
+  it('skips formulas, labels found twice, and figures that are missing or divide by zero, splitting the writes into runs', async () => {
+    const edited = cells((row, column, cell) => {
+      if (row === 3 && column === 'L') return { value: 5, formula: '=1+1' }
+      if (row === 7 && column === 'A') return { value: '店铺gmv' }
+      return cell
+    })
+    const figures = { 't.json': TMALL('2026-10-13', { 人群推广成交: null }), 'y.json': YUNTAI('2026-10-13', { 自投花费: 0, 自投有效GMV: 0 }) }
+    const ran = await run(planArgs(), { 'cells.json': edited, ...figures })
+    const plan = JSON.parse(ran.plan!) as Plan
+    // 外投投产 still divides the collected figures when the 外投花费 cell is a formula.
+    expect(plan.writes.map(({ cell }) => cell)).toEqual(['L4', 'L5', 'L6', 'L9'])
+    expect(plan.files.map(({ range }) => range)).toEqual(['L4:L6', 'L9:L9'])
+    expect(plan.skipped).toEqual([
+      { label: '店铺gmv', reason: 'A 列指标名无法唯一定位：店铺gmv（找到 2 行）' },
+      { label: '外投花费', reason: 'L3 是公式，已跳过' },
+      { label: '自投成交', reason: 'A 列指标名无法唯一定位：自投成交（找到 0 行）' },
+      { label: '自投投产', reason: '自投花费为 0' },
+      { label: '推广成交', reason: '缺 万相台.人群推广成交（采集结果里没有）' },
+      { label: '推广投产', reason: '推广成交或推广花费没有值' },
+    ])
+  })
+
+  it('never replaces a cell a person filled, and lists the days that still have empty cells', async () => {
+    const filled = cells((row, column, cell) => row === 2 && column === 'L' ? { value: 33.1 } : cell)
+    const ran = await run(planArgs(), { 'cells.json': filled, 't.json': TMALL(), 'y.json': YUNTAI() })
+    const plan = JSON.parse(ran.plan!) as Plan
+    expect(plan.writes.map(({ cell }) => cell)[0]).toBe('L3')
+    expect(plan.skipped).toEqual([{ label: '店铺gmv', reason: 'L2 已有值 33.1，未覆盖' }])
+    const pending = (args: string[], content: object) => run(dir => ['pending', '--cells', join(dir, 'cells.json'), ...args], { 'cells.json': content })
+    // 10-12 is filled (its 店铺费比 is a formula), 10-13 is empty.
+    expect(JSON.parse((await pending(['--from', '2026-10-04', '--to', '2026-10-13'], cells())).out)).toEqual(['2026-10-13'])
+    expect(JSON.parse((await pending(['--from', '2026-10-13', '--to', '2026-10-13'], cells())).out)).toEqual(['2026-10-13'])
+    const done = cells((row, column, cell) => column === 'L' && row > 1 && row < 12 ? { value: 1 } : cell)
+    expect(JSON.parse((await pending(['--from', '2026-10-04', '--to', '2026-10-13'], done)).out)).toEqual([])
+    // Across the new year, October is last year's.
+    expect(JSON.parse((await pending(['--from', '2026-10-04', '--to', '2027-01-03'], cells())).out)).toEqual(['2026-10-13'])
+    expect((await pending(['--from', '2026-10-4', '--to', '2026-10-13'], cells())).code).toBe(2)
+  })
+
+  it('refuses inputs it cannot place: another month, figures of another day, unreadable files, a bad date', async () => {
+    const cases: Array<[string[] | ((dir: string) => string[]), Record<string, object | Uint8Array>, string]> = [
+      [planArgs('2026-11-02'), { 'cells.json': cells(), 't.json': TMALL('2026-11-02'), 'y.json': YUNTAI('2026-11-02') }, '表头里没有「实际完成（11月02日）」列'],
+      [planArgs(), { 'cells.json': cells((row, column, cell) => row === 1 && column === 'H' ? { value: '实际完成（10月13日）' } : cell), 't.json': TMALL(), 'y.json': YUNTAI() }, '不止一列'],
+      [planArgs(), { 'cells.json': cells(), 't.json': TMALL('2026-10-12'), 'y.json': YUNTAI() }, "采集文件的日期 ['2026-10-12', '2026-10-13'] 和 --date 2026-10-13 不一致"],
+      [planArgs(), { 'cells.json': { ok: false }, 't.json': TMALL(), 'y.json': YUNTAI() }, '没有 data.ranges'],
+      [planArgs(), { 'cells.json': cells(), 't.json': { data: {} }, 'y.json': YUNTAI() }, '不是 tmall-daily-figures 的输出'],
+      [planArgs(), { 'cells.json': new TextEncoder().encode('not json'), 't.json': TMALL(), 'y.json': YUNTAI() }, '不是 JSON'],
+      [planArgs(), { 't.json': TMALL(), 'y.json': YUNTAI() }, '读不了'],
+      [planArgs('2026-10-1'), { 'cells.json': cells(), 't.json': TMALL(), 'y.json': YUNTAI() }, '日期要写成 YYYY-MM-DD'],
+    ]
+    for (const [args, files, why] of cases) {
+      const ran = await run(typeof args === 'function' ? args : () => args, files)
+      expect([ran.code, ran.out], why).toEqual([2, expect.stringContaining(why)])
+    }
+  })
+
+  it('reads a file PowerShell 5.1 redirected as UTF-16', async () => {
+    const utf16 = (value: object) => new Uint8Array([0xFF, 0xFE, ...new Uint8Array(Buffer.from(JSON.stringify(value), 'utf16le'))])
+    const ran = await run(planArgs(), { 'cells.json': utf16(cells()), 't.json': utf16(TMALL()), 'y.json': YUNTAI() })
+    expect(ran.code).toBe(0)
+  })
+
+  it('backtests against the figures people filled, passing within the tolerance and failing beyond it or without them', async () => {
+    const args = (dir: string) => ['backtest', '--cells', join(dir, 'cells.json'), '--date', '2026-10-12', '--figures', join(dir, 't.json'), '--figures', join(dir, 'y.json')]
+    const passed = await run(args, { 'cells.json': cells(), 't.json': TMALL('2026-10-12'), 'y.json': YUNTAI('2026-10-12') })
+    expect([passed.code, passed.out]).toEqual([0, expect.stringContaining('结论：回测通过')])
+    expect(passed.out).toContain('| 店铺gmv | 32.65 | 32.65 | 通过（差异 0.01%，允许 1%） |')
+    expect(passed.out).toContain('| 外投投产 | 1.2 | 1.2 | 随花费与成交判定 |')
+    expect(passed.out).toContain('| 外投成交 | 6.85 | 6.85 | 通过（差异 0.02%，允许 2%） |')
+    // 3.5% more 店铺gmv is beyond 1%; a key figure nobody filled cannot be compared.
+    const off = await run(args, { 'cells.json': cells(), 't.json': TMALL('2026-10-12'), 'y.json': YUNTAI('2026-10-12', { 自投有效GMV: null }) })
+    expect([off.code, off.out]).toEqual([1, expect.stringContaining('| 自投成交 | 2.34 |  | 不通过：缺 健康品牌云台.自投有效GMV（采集结果里没有） |')])
+    const empty = await run(args, {
+      'cells.json': cells((row, column, cell) => row === 4 && column === 'H' ? { value: null } : cell),
+      't.json': TMALL('2026-10-12', { 关键词推广成交: 87473.03 }), 'y.json': YUNTAI('2026-10-12'),
+    })
+    expect(empty.out).toContain('| 外投成交 |  | 6.85 | 不通过：表中无值，这一天不能用来回测 |')
+    expect(empty.out).toContain('| 推广成交 | 14.44 | 15.44 | 不通过（差异 6.90%，允许 1%） |')
+    expect(empty.code).toBe(1)
+  })
+
+  it('passes small figures within rounding, and does not judge a ratio whose spend is 0', async () => {
+    const args = (dir: string) => ['backtest', '--cells', join(dir, 'cells.json'), '--date', '2026-10-12', '--figures', join(dir, 't.json'), '--figures', join(dir, 'y.json')]
+    // 345 yuan of 自投 is 0.0345 万元, which a person wrote as 0.03.
+    const small = cells((row, column, cell) => column === 'H' && row === 6 ? { value: 0.03 } : column === 'H' && row === 3 ? { value: 7.5 } : cell)
+    const figures = { 't.json': TMALL('2026-10-12'), 'y.json': YUNTAI('2026-10-12', { 自投花费: 345, 三方外投消耗: 75345 }) }
+    const ran = await run(args, { 'cells.json': small, ...figures })
+    expect(ran.out).toContain('| 自投花费 | 0.03 | 0.03 | 通过（差异 15.00%，允许 1%） |')
+    // A day without 自投 spend has no 自投投产 to compute, which does not fail the backtest.
+    const none = cells((row, column, cell) => column === 'H' && (row === 6 || row === 7) ? { value: 0 } : cell)
+    const idle = await run(args, { 'cells.json': none, ...figures, 'y.json': YUNTAI('2026-10-12', { 自投花费: 0, 自投有效GMV: 0, 三方外投消耗: 57213.15, 三方外投有效GMV: 68488.14 }) })
+    expect([idle.code, idle.out]).toEqual([0, expect.stringContaining('| 自投投产 | 1.29 |  | 随花费与成交判定 |')])
+    expect(ran.code).toBe(0)
+  })
+
+  it('lists the days people filled every key figure, latest first', async () => {
+    const both = cells((row, column, cell) => column === 'L' && row > 1 && row < 12 ? { value: 1 } : cell)
+    const listed = await run(dir => ['candidates', '--cells', join(dir, 'cells.json')], { 'cells.json': both })
+    expect(JSON.parse(listed.out)).toEqual([{ month: 10, day: 13, column: 'L' }, { month: 10, day: 12, column: 'H' }])
+    const only = await run(dir => ['candidates', '--cells', join(dir, 'cells.json')], { 'cells.json': cells() })
+    expect(JSON.parse(only.out)).toEqual([{ month: 10, day: 12, column: 'H' }])
+    const renamed = await run(dir => ['candidates', '--cells', join(dir, 'cells.json')], {
+      'cells.json': cells((row, column, cell) => row === 2 && column === 'A' ? { value: '全店gmv' } : cell),
+    })
+    expect([renamed.code, renamed.out]).toEqual([2, expect.stringContaining('A 列找不到唯一的 店铺gmv')])
+  })
+
+  it('verifies the written cells and that no other plain cell of the column changed', async () => {
+    const plan = { column: 'L', writes: [{ cell: 'L2', row: 2, label: '店铺gmv', value: 32.65 }] }
+    const args = (dir: string) => ['verify', '--plan', join(dir, 'plan.json'), '--before', join(dir, 'before.json'), '--after', join(dir, 'after.json')]
+    const written = cells((row, column, cell) => row === 2 && column === 'L' ? { value: 32.65 } : row === 13 && column === 'L' ? { value: 0.9, formula: '=x' } : cell)
+    const ok = await run(args, { 'plan.json': plan, 'before.json': cells(), 'after.json': written })
+    expect([ok.code, ok.out]).toEqual([0, expect.stringContaining('回读一致：1 格写入值正确')])
+    const touched = cells((row, column, cell) => row === 2 && column === 'L' ? { value: '32.6' } : row === 12 && column === 'L' ? { value: 0.7 } : cell)
+    const bad = await run(args, { 'plan.json': plan, 'before.json': cells(), 'after.json': touched })
+    expect([bad.code, bad.out]).toEqual([1, expect.stringContaining('L2（店铺gmv）应为 32.65，回读为 32.6\nL12 不该被改动：写前 0.6，写后 0.7')])
   })
 })

@@ -12,7 +12,9 @@ import { fileURLToPath } from 'node:url'
 import { zipSync } from 'fflate'
 
 /** The skills this package builds, by folder name under `skills/`. */
-export const SKILLS: readonly string[] = ['ai-inspection', 'inspection-config-update', 'pdd-meeting-todos', 'roi-inspection', 'video-performance-report']
+export const SKILLS: readonly string[] = [
+  'ai-inspection', 'inspection-config-update', 'pdd-meeting-todos', 'roi-inspection', 'tianmao-daily-report', 'video-performance-report',
+]
 
 const PACKAGE = fileURLToPath(new URL('..', import.meta.url))
 
@@ -51,12 +53,12 @@ export async function readTasks(): Promise<unknown[]> {
 
 /**
  * Files under `dir`, each with its ZIP entry name: `prefix` and the folder names joined by `/` on
- * every platform. Hidden files and folders, such as Finder's `.DS_Store`, are left out.
+ * every platform. Hidden files and folders, such as Finder's `.DS_Store`, and Python's `__pycache__` are left out.
  */
 async function walk(dir: string, prefix: string): Promise<Array<{ path: string; entry: string }>> {
   const found: Array<{ path: string; entry: string }> = []
   for (const item of await readdir(dir, { withFileTypes: true })) {
-    if (item.name.startsWith('.')) continue
+    if (item.name.startsWith('.') || item.name === '__pycache__') continue
     const path = join(dir, item.name)
     const entry = `${prefix}/${item.name}`
     if (item.isDirectory()) found.push(...await walk(path, entry))
