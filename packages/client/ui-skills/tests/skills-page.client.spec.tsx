@@ -265,7 +265,9 @@ describe('Skills page', () => {
       fireEvent.click(screen.getByRole('button', { name: '启用' }))
       expect(props.onBatch).toHaveBeenCalledWith('enable', ['alpha'])
       expect((screen.getByRole('button', { name: '完成' }) as HTMLButtonElement).disabled).toBe(true)
-      expect((screen.getByRole('switch', { name: '启用 alpha' }) as HTMLButtonElement).disabled).toBe(true)
+      // Bulk mode keeps only the checkbox on each card
+      expect(screen.queryByRole('switch', { name: '启用 alpha' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'alpha 的更多操作' })).toBeNull()
       expect((screen.getByRole('checkbox', { name: '选择 alpha' }) as HTMLInputElement).disabled).toBe(true)
       await act(async () => { finish([]) })
       expect((screen.getByRole('button', { name: '完成' }) as HTMLButtonElement).disabled).toBe(false)

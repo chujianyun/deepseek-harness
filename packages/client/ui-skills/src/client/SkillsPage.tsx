@@ -282,7 +282,7 @@ function SkillCard({ skill, props, pinned, selection, onUninstall }: {
   selection: Selection | undefined
   onUninstall: () => void
 }) {
-  // A running batch owns every card's state until it ends
+  // A running batch locks the selection; the card's own controls are hidden in bulk mode
   const locked = selection?.running === true
   const { t, useInstalled, useMarket, onToggle, onReveal, onEdit, onChat, onTogglePin } = props
   const busy = useInstalled(snapshot => snapshot.busy.includes(skill.name))
@@ -308,56 +308,60 @@ function SkillCard({ skill, props, pinned, selection, onUninstall }: {
             <span className={css.slug}>{skill.name}</span>
           </span>
         )}
-        <Button
-          size="sm"
-          className={pinned ? css.pinned : css.pin}
-          aria-label={t('pin', { name: shown })}
-          aria-pressed={pinned}
-          disabled={locked}
-          onClick={() => { onTogglePin(pinKey(skill), !pinned) }}
-        >
-          {pinned ? <IconPinFillRegular /> : <IconPinOutlineRegular />}
-        </Button>
-        <Menu
-          open={menuOpen}
-          onClose={() => { setMenuOpen(false) }}
-          align="end"
-          portal
-          items={[
-            { id: 'chat', label: t('chat'), icon: <IconNewChatOutlineRegular />, disabled: !enabled },
-            { id: 'edit', label: t('edit'), icon: <IconEditOutlineRegular /> },
-            { id: 'reveal', label: t('reveal'), icon: <IconFolderOpenOutlineRegular /> },
-            { type: 'separator', id: 'separator' },
-            { id: 'uninstall', label: t('uninstall'), icon: <IconTrashOutlineRegular />, danger: true },
-          ]}
-          onSelect={(id) => {
-            setMenuOpen(false)
-            if (id === 'chat') onChat(skill.name)
-            else if (id === 'edit') void onEdit(skill.name)
-            else if (id === 'reveal') void onReveal(skill.name)
-            else onUninstall()
-          }}
-          anchor={(
+        {/* Bulk mode keeps only the checkbox, so the name has the room */}
+        {selection === undefined && (
+          <>
             <Button
               size="sm"
-              className={css.more}
-              aria-label={t('more', { name: shown })}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              disabled={busy || locked}
-              onClick={() => { setMenuOpen(open => !open) }}
+              className={pinned ? css.pinned : css.pin}
+              aria-label={t('pin', { name: shown })}
+              aria-pressed={pinned}
+              onClick={() => { onTogglePin(pinKey(skill), !pinned) }}
             >
-              <IconEllipsisOutlineRegular />
+              {pinned ? <IconPinFillRegular /> : <IconPinOutlineRegular />}
             </Button>
-          )}
-        />
-        <Switch
-          checked={enabled}
-          label={t('toggle', { name: shown })}
-          // A withdrawn Skill stays switched off until the platform offers it again
-          disabled={busy || withdrawn || locked}
-          onChange={(next) => { void onToggle(skill.name, next) }}
-        />
+            <Menu
+              open={menuOpen}
+              onClose={() => { setMenuOpen(false) }}
+              align="end"
+              portal
+              items={[
+                { id: 'chat', label: t('chat'), icon: <IconNewChatOutlineRegular />, disabled: !enabled },
+                { id: 'edit', label: t('edit'), icon: <IconEditOutlineRegular /> },
+                { id: 'reveal', label: t('reveal'), icon: <IconFolderOpenOutlineRegular /> },
+                { type: 'separator', id: 'separator' },
+                { id: 'uninstall', label: t('uninstall'), icon: <IconTrashOutlineRegular />, danger: true },
+              ]}
+              onSelect={(id) => {
+                setMenuOpen(false)
+                if (id === 'chat') onChat(skill.name)
+                else if (id === 'edit') void onEdit(skill.name)
+                else if (id === 'reveal') void onReveal(skill.name)
+                else onUninstall()
+              }}
+              anchor={(
+                <Button
+                  size="sm"
+                  className={css.more}
+                  aria-label={t('more', { name: shown })}
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  disabled={busy}
+                  onClick={() => { setMenuOpen(open => !open) }}
+                >
+                  <IconEllipsisOutlineRegular />
+                </Button>
+              )}
+            />
+            <Switch
+              checked={enabled}
+              label={t('toggle', { name: shown })}
+              // A withdrawn Skill stays switched off until the platform offers it again
+              disabled={busy || withdrawn}
+              onChange={(next) => { void onToggle(skill.name, next) }}
+            />
+          </>
+        )}
       </div>
       <p className={css.description}>{skill.description}</p>
       {withdrawn

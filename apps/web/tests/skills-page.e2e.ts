@@ -53,6 +53,8 @@ it('lists installed skills, keeps a switched-off skill disabled across reloads, 
       await page.getByRole('button', { name: 'Skills', exact: true }).click()
       await page.getByRole('button', { name: /^Installed \(\d+\)$/ }).click()
       const custom = page.getByRole('region', { name: /Custom/ })
+      // The pin of an unpinned card shows on hover
+      await custom.getByRole('listitem').filter({ hasText: 'gamma-skill' }).hover()
       await custom.getByRole('button', { name: 'Pin gamma-skill' }).click()
       const order = async () => (await custom.getByRole('listitem').allTextContents()).map(text => /alpha-skill|beta-skill|gamma-skill/.exec(text)?.[0]).filter(Boolean)
       expect(await order()).toEqual(['gamma-skill', 'alpha-skill', 'beta-skill'])
