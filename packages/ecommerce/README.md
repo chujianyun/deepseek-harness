@@ -25,7 +25,7 @@ The ecommerce family links Desktop to the e-commerce platforms a company sells o
 | Package | Role | ctx key |
 |---|---|---|
 | [`ecommerce-accounts/`](ecommerce-accounts/README.md) | The tenant's e-commerce accounts and their Chrome sign-ins, over the `ecommerceAccounts` Remote | `ctx.ecommerceAccounts` |
-| [`mingliu-skills/`](mingliu-skills/README.md) | 名流's operations skills (department AI inspection and its monthly configuration) uploaded to 名流's Skill Hub only, the recommended tasks of its operations assistant, and their packaging | — |
+| [`mingliu-skills/`](mingliu-skills/README.md) | 名流's operations skills (department AI inspection and its monthly configuration, advertising ROI inspection) uploaded to 名流's Skill Hub only, the recommended tasks of its operations assistant, and their packaging | — |
 | [`tmall-skills/`](tmall-skills/README.md) | Tmall skills (merchant reports, publish categories and field rules, the buyer item report, product drafts from material folders, and publishing them to Tmall warehouses and Pinduoduo and Douyin shop 草稿箱, one store or several) uploaded to the Skill Hub for the tenants that need them, and their packaging | — |
 
 -----

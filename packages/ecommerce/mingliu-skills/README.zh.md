@@ -1,5 +1,5 @@
 ---
-description: "名流运营技能，只由名流的 Skill Hub 下发——天猫一店与拼多多部门 AI 巡检及其月度配置更新——名流运营日报助手的推荐任务，以及构建技能上传包的步骤。"
+description: "名流运营技能，只由名流的 Skill Hub 下发——天猫一店与拼多多部门 AI 巡检及其月度配置更新，以及站外投流 ROI 巡检——名流运营日报助手的推荐任务，以及构建技能上传包的步骤。"
 kind: "package-reference"
 ---
 # 名流运营技能
@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-mingliu-skills` 保存名流（上海名流卫生用品）从 Aily AI 工作伙伴迁移过来的技能，不随 DSH 发布：由名流管理员只上传到名流的 [Skill Hub](../../../docs/glossary.zh.md#skill-hub)。`ai-inspection` 对照目标检查天猫一店和拼多多的部门日报，生成六章节巡检；`inspection-config-update` 把新月份的目标表配置进巡检的配置文档。本包还保存名流运营日报助手的推荐任务，由[智能体包](../../assistant/assistant-packages/README.zh.md)携带。
+`@deepseek-ai/dsh-mingliu-skills` 保存名流（上海名流卫生用品）从 Aily AI 工作伙伴迁移过来的技能，不随 DSH 发布：由名流管理员只上传到名流的 [Skill Hub](../../../docs/glossary.zh.md#skill-hub)。`ai-inspection` 对照目标检查天猫一店和拼多多的部门日报，生成六章节巡检；`inspection-config-update` 把新月份的目标表配置进巡检的配置文档；`roi-inspection` 把投流服务商和账户自上次报告以来的有效 ROI 汇总成内部日报，并给低于预警线的服务商写提醒。本包还保存名流运营日报助手的推荐任务，由[智能体包](../../assistant/assistant-packages/README.zh.md)携带。
 
 ## 目录
 
@@ -28,9 +28,9 @@ kind: "package-reference"
 node --input-type=module -e "import { packSkills } from './packages/ecommerce/mingliu-skills/src/index.ts'; console.log(await packSkills('dist/mingliu-skills'))"
 ```
 
-`readTasks()` 按文件名顺序读取推荐任务（`agent/tasks/` 下每个任务一个 JSON 文件），与智能体包 `agent.json` 列出的格式相同：id、标题、指令、运行时间及时区、免确认普通写操作的连接器（`ai-inspection` 不授予，它唯一的写操作是发卡片）、权限预设，以及无人值守运行可执行的[操作](../../schedule/automation-tasks/README.zh.md)。`ai-inspection` 在工作日 11:00（Asia/Shanghai）运行，指令沿用它所替代的 Aily 任务，从配置文档读取当月表格映射；名流测试期间，卡片只发到巡检测试群。
+`readTasks()` 按文件名顺序读取推荐任务（`agent/tasks/` 下每个任务一个 JSON 文件），与智能体包 `agent.json` 列出的格式相同：id、标题、指令、运行时间及时区、免确认普通写操作的连接器（`ai-inspection` 不授予，它唯一的写操作是发卡片）、权限预设，以及无人值守运行可执行的[操作](../../schedule/automation-tasks/README.zh.md)。`ai-inspection` 在工作日 11:00（Asia/Shanghai）运行，指令沿用它所替代的 Aily 任务，从配置文档读取当月表格映射；名流测试期间，卡片只发到巡检测试群。`roi-internal-report`（工作日 09:30）与 `roi-provider-reminder`（周一、三、五 10:00）只出预览、不声明操作：用户在该会话回复「发送内部日报」或「发送外部提醒」后才发出日报或提醒；运行断点存于智能体工作区的 `roi-inspection/checkpoint.json`，发送后才前移，所以下一次运行不会重复统计同几天。名流测试期间，日报发到测试群，所有提醒发到测试群的 webhook。
 
-技能把一切会变的内容——当月表格 token 和列、推送目标、人员——都从名流的飞书配置文档《AI巡检固化配置》读取，不写在自己的文件里；发送时经飞书连接器的 `lark-cli` 以智能体自身的飞书身份（`--as bot`）发出。
+技能把一切会变的内容——当月表格 token 和列、推送目标、预警线、人员——都从名流的飞书配置文档《AI巡检固化配置》和《投流ROI巡检配置》读取，不写在自己的文件里；发送时经飞书连接器的 `lark-cli` 以智能体自身的飞书身份（`--as bot`）发出。服务商提醒经技能的 `scripts/send_webhook.py` 签名后发到群 webhook；脚本从智能体工作区的 `roi-inspection/webhook_mapping.json` 自己读取各 webhook 的地址和签名密钥，密钥不出现在命令里。飞书接受消息时退出码为 0，未送达为 1，结果未知、消息可能已送达为 2；遇到 2 时技能不重发。技能文件里没有任何 webhook 或密钥。
 
 -----
 
@@ -49,6 +49,7 @@ node --input-type=module -e "import { packSkills } from './packages/ecommerce/mi
 
 - **事实都在配置文档里** — 表格 token、推送目标和 open_id 都在《AI巡检固化配置》中；智能体的飞书身份需要能读取它和各表格，open_id 只对读取它的那个飞书应用有效。
 - **目前只发测试群** — 巡检任务只发测试群；JACK 和两个正式群在名流用真实账号验收时再加上。
+- **webhook 密钥需手工放置** — 由名流管理员把 `roi-inspection/webhook_mapping.json` 放进每个运行该智能体的工作区；8 家服务商的 webhook 在名流同意做连通测试前都未验证。
 - **连续未达标提醒保持暂停** — 流程保留在技能参考文件中，名流要求恢复时才执行。
 
 <a id="dev-note"></a>
@@ -57,7 +58,7 @@ node --input-type=module -e "import { packSkills } from './packages/ecommerce/mi
 <details>
 <summary>维护者工作背景 — 点击展开</summary>
 
-技能来自名流的交接包（AI工作伙伴项目运行包 v2，2026-10-12）：Aily 的工具、工作区路径和评论交付都换成了 MO 的，已归档的直连推送脚本和按月的映射快照没有迁入。`tests/pack.spec.ts` 确保技能文件里没有 Aily 名称和群或人员 id。
+技能来自名流的交接包（AI工作伙伴项目运行包 v2，2026-10-12）：Aily 的工具、工作区路径和评论交付都换成了 MO 的，已归档的直连推送脚本、按月的映射快照和交接包里的 webhook 文件没有迁入。`tests/pack.spec.ts` 确保技能文件里没有 Aily 名称和群或人员 id。
 
 本包只在仓库内使用（[`scripts/repository-only-package-policy.ts`](../../../scripts/repository-only-package-policy.ts)）：名流拿到的是 zip，不是本包。
 

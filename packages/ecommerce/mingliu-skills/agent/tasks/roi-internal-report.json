@@ -1,0 +1,19 @@
+{
+  "id": "roi-internal-report",
+  "title": "投流ROI内部日报",
+  "prompt": "执行 roi-inspection 技能的内部日报链路（仅此链路，不跑外部服务商群提醒）。\n1. 先读取配置文档《投流ROI巡检配置》https://scnntx5zuepg.feishu.cn/docx/DdcJd7xIyoX1FgxTd5dcAOHXnue 全部当前值（巡检参数与预警线、数据源映射、日报接收群）。\n2. 按工作区 roi-inspection/checkpoint.json 的 internal 断点确定统计窗口：断点后一天 ~ T-1；没有断点时只取 T-1 单日，并在预览开头注明「首次运行：窗口起点请人工核对」；本窗口已发送过则不重复统计。\n3. 读取站外投流数据 Base 各服务商子表，按技能规则计算并生成内部日报互动卡片的只读预览（统计窗口与预警线、各服务商整体状态、低ROI账户明细、数据缺失与消耗为0说明）。\n4. 本次运行只出预览：不发送任何消息、不写断点。等用户在本会话回复「发送内部日报」后，先重新读取断点、只发本会话最新一份预览（断点已变化就重算并重新出预览），再以智能体自身的飞书身份（lark-cli --as bot）发送，发送成功后才前移 internal 断点。\n5. 名流测试期间日报只发到测试群 chat_id=oc_94a59b1b5e0f87c703bccdc0f6a10daf，不发配置文档里的正式接收群。",
+  "timing": {
+    "kind": "weekly",
+    "weekdays": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "time": "09:30"
+  },
+  "timeZone": "Asia/Shanghai",
+  "connectors": [],
+  "permission": "workspace-write"
+}
