@@ -63,7 +63,8 @@
         appVersion: !!js process.env.DSH_CLIENT_VERSION
 
     # Host-owned opt-in sampled when a new Web session receives its preset
-    # delegation tools. The Plugins page edits this settings namespace.
+    # delegation tools. The Plugins page edits this settings namespace (not in the
+    # enterprise Desktop, which keeps the shipped value).
     - id: subagent-model-selection-settings
       name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 
@@ -405,9 +406,12 @@
 
     # Plugin management: the sidebar Plugins page installs, enables, disables,
     # and removes the profile's bundles through the `pluginManager` Remote.
-    # Without a profile-backed Host it reports itself unavailable.
+    # Without a profile-backed Host it reports itself unavailable. The enterprise
+    # Desktop (a user center configured) leaves the page out: its employees keep
+    # the shipped plugin defaults.
     - id: ui-plugin-manager
       name: '@deepseek-ai/dsh-client-ui-plugin-manager'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     # Desktop Skills page: the sidebar entry and the installed-skill cards over
     # the `installedSkills` Remote.
@@ -454,9 +458,11 @@
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
 
     # Read-only Plugin list tab in the Settings Plugins section; the built-in
-    # bundles the sidebar page leaves out are inspected here.
+    # bundles the sidebar page leaves out are inspected here. Left out of the
+    # enterprise Desktop with the section it registers into.
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     - id: ui-conversation
       name: '@deepseek-ai/dsh-client-ui-conversation'
@@ -589,24 +595,31 @@
 
     # The Built-in plugins settings section: the navigation entry and the tab
     # row the inventory tab registers into. The official configuration pages
-    # are the companion rows below.
+    # are the companion rows below. Left out of the enterprise Desktop, as the
+    # Plugins page is.
     - id: ui-settings-plugins
       name: '@deepseek-ai/dsh-client-ui-settings-plugins'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     # The official settings pages: one companion package per host-plane
     # namespace, each registering its page into the Plugins page while the
-    # Host serves the namespace.
+    # Host serves the namespace. Left out of the enterprise Desktop with the
+    # Plugins page; the namespaces keep their shipped values there.
     - id: ui-settings-shell
       name: '@deepseek-ai/dsh-client-ui-settings-shell'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     - id: ui-settings-agent-loop
       name: '@deepseek-ai/dsh-client-ui-settings-agent-loop'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     - id: ui-settings-subagent
       name: '@deepseek-ai/dsh-client-ui-settings-subagent'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     - id: ui-settings-web-search
       name: '@deepseek-ai/dsh-client-ui-settings-web-search'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     # Plan control: the composer plan seat over the plan projection + /plan channel.
     - id: ui-plan
