@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The **Skills** sidebar entry opens the Skill Hub market: cards with search, category tabs, and load more, a detail dialog with the rendered SKILL.md and file list, and one-click install through the [`skillMarket` Remote](../../skill/skill-market/README.md). **Installed (N)** shows this machine's skills in two groups, custom and from the market, as cards with a name initial, the name (a market Skill shows its Hub display name with the slug beside it), a short description, a pin button, an on/off switch, and an actions menu: chat with it, edit, open folder, and uninstall after a confirmation. It reads and acts through the [`installedSkills` Remote](../../skill/skill-controller/README.md).
+The **Skills** sidebar entry opens the Skill Hub market: cards with search, category tabs, and load more, a detail dialog with the rendered SKILL.md and file list, and one-click install through the [`skillMarket` Remote](../../skill/skill-market/README.md). **Installed (N)** shows this machine's skills in two groups, custom and from the market, as cards with a name initial, the name (a market Skill shows its Hub display name with the slug beside it), a short description, a pin button, an on/off switch, and an actions menu: chat with it, edit, open folder, and uninstall after confirming. It reads and acts through the [`installedSkills` Remote](../../skill/skill-controller/README.md).
 
 ## Table of Contents
 
