@@ -3,13 +3,31 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
-import electronUpdater, { type AppUpdater, type ProgressInfo, type UpdateInfo } from 'electron-updater'
+import electronUpdater, { type ProgressInfo, type UpdateInfo } from 'electron-updater'
 import { gt, valid } from 'semver'
 import type { DesktopUpdateState } from './ipc.ts'
 import { DesktopUpdateHttpExecutor } from './update-http-executor.ts'
 import { DesktopUpdatePreparationError } from './update-error.ts'
 
 const { autoUpdater } = electronUpdater
+
+/** Updater surface the coordinator drives: electron-updater's AppUpdater or the user-center updater. */
+export interface DesktopUpdater {
+  autoDownload: boolean
+  autoInstallOnAppQuit: boolean
+  channel: string | null
+  allowPrerelease: boolean
+  allowDowngrade: boolean
+  on(event: 'download-progress', listener: (progress: Pick<ProgressInfo, 'percent'>) => void): this
+  on(event: 'update-downloaded', listener: (info: Pick<UpdateInfo, 'version'>) => void): this
+  on(event: 'error', listener: (error: Error) => void): this
+  off(event: 'download-progress', listener: (progress: Pick<ProgressInfo, 'percent'>) => void): this
+  off(event: 'update-downloaded', listener: (info: Pick<UpdateInfo, 'version'>) => void): this
+  off(event: 'error', listener: (error: Error) => void): this
+  checkForUpdates(): Promise<{ readonly isUpdateAvailable: boolean; readonly updateInfo: Pick<UpdateInfo, 'version'> } | null>
+  downloadUpdate(): Promise<unknown>
+  quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void
+}
 
 /** Owns one updater target until its download and installation settle. */
 export class DesktopUpdateCoordinator {
@@ -21,13 +39,13 @@ export class DesktopUpdateCoordinator {
   private downloadOperation: Promise<DesktopUpdateState> | undefined
   private installOperation: Promise<DesktopUpdateState> | undefined
 
-  private readonly onProgress = (progress: ProgressInfo): void => {
+  private readonly onProgress = (progress: Pick<ProgressInfo, 'percent'>): void => {
     if (this.downloadOperation === undefined || this.downloaded) return
     const percent = Math.min(100, Math.max(0, progress.percent))
     this.setState({ phase: percent >= 100 ? 'verifying' : 'downloading', ...this.target(), percent })
   }
 
-  private readonly onDownloaded = (info: UpdateInfo): void => {
+  private readonly onDownloaded = (info: Pick<UpdateInfo, 'version'>): void => {
     if (this.downloadOperation === undefined || info.version !== this.candidate) return
     this.downloaded = true
   }
@@ -42,7 +60,7 @@ export class DesktopUpdateCoordinator {
   /**
    * @param publish - Receives observable states for every Desktop window.
    * @param beforeRestart - Completes task authorization, admission locking, and owned-process shutdown.
-   * @param updater - Process-owned Electron updater, replaceable at the network/platform test boundary.
+   * @param updater - Process-owned updater: electron-updater for signed feeds or the user-center updater.
    * @param enabled - Whether this process has a packaged update source.
    * @param currentVersion - Actual installed application version.
    * @param downloadResult - Once per completed download attempt, including platform preparation failures.
@@ -50,7 +68,7 @@ export class DesktopUpdateCoordinator {
   constructor(
     private readonly publish: (state: DesktopUpdateState) => DesktopUpdateState,
     private readonly beforeRestart: () => Promise<boolean>,
-    private readonly updater: AppUpdater = autoUpdater,
+    private readonly updater: DesktopUpdater = autoUpdater,
     private readonly enabled: () => boolean = () => app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml')),
     private readonly currentVersion: () => string = () => app.getVersion(),
     private readonly downloadResult?: (success: boolean, reason?: string) => void,
@@ -58,10 +76,10 @@ export class DesktopUpdateCoordinator {
     if (updater === autoUpdater) {
       // electron-updater omits this internal transport property from its public declarations.
       // Real-Electron qualification exercises the pinned dependency integration.
-      const transportOwner = updater as AppUpdater & { httpExecutor: DesktopUpdateHttpExecutor }
+      const transportOwner = autoUpdater as typeof autoUpdater & { httpExecutor: DesktopUpdateHttpExecutor }
       transportOwner.httpExecutor = new DesktopUpdateHttpExecutor(
         Number(process.env.DSH_DESKTOP_UPDATE_HTTP_IDLE_TIMEOUT_MS ?? 60_000),
-        (authInfo, callback) => { updater.emit('login', authInfo, callback) },
+        (authInfo, callback) => { autoUpdater.emit('login', authInfo, callback) },
       )
     }
     this.updater.autoDownload = false

@@ -125,6 +125,20 @@ it('paints primary buttons, send, and the active panel 名流蓝 in both palette
     await page.getByRole('button', { name: /Publish to several stores/ }).click()
     const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
     await expect.poll(() => composer.innerText()).toContain('Publish one new product to several stores')
+    // The + menu leaves out /feedback; typing it still finds the command.
+    await page.getByRole('button', { name: 'New session', exact: true }).first().click()
+    await page.getByRole('button', { name: 'Add files or run commands', exact: true }).last().click()
+    const menu = page.getByRole('listbox').last()
+    await expect.poll(() => menu.innerText()).toContain('Compact')
+    expect(await menu.innerText()).not.toMatch(/feedback/iu)
+    await page.keyboard.press('Escape')
+    const input = page.locator('[data-composer-input][contenteditable="true"]:visible').first()
+    // The blank Session still holds the quick task's draft; clear it so the slash leads the line.
+    await input.click()
+    await page.keyboard.press('ControlOrMeta+A')
+    await page.keyboard.press('Backspace')
+    await input.pressSequentially('/feedback')
+    await expect.poll(() => page.getByRole('listbox').last().innerText().catch(() => '')).toMatch(/feedback/iu)
   }, 'brand-mo')
 })
 

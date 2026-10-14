@@ -246,7 +246,7 @@ export function SubsetFields({ t, value, onChange, options }: SubsetFieldsProps)
         const chosen = value[kind]
         const available = options?.[kind] ?? []
         const needle = (queries[kind] ?? '').trim().toLowerCase()
-        const matching = needle === '' ? available : available.filter(option => `${option.name}\n${option.description ?? ''}`.toLowerCase().includes(needle))
+        const matching = needle === '' ? available : available.filter(option => `${option.name}\n${option.id}\n${option.description ?? ''}`.toLowerCase().includes(needle))
         const first = (option: AssistantCapabilityOption): number => Number(opened[kind]?.includes(option.id) ?? false)
         const ordered = [...matching].sort((a, b) => first(b) - first(a))
         const gone = options === undefined ? [] : (chosen ?? []).filter(id => !available.some(option => option.id === id))

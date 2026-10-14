@@ -71,7 +71,7 @@ export const inject = [
  */
 export function apply(ctx: ClientContext): void {
   const toolsSettings = ctx.configForms.get<{ enabled: boolean }>('ui-settings')
-  const presetSettings = ctx.configForms.get<{ showPicker?: boolean }>(AGENT_PRESET_SETTINGS_NS)
+  const presetSettings = ctx.configForms.get<{ showPicker?: boolean; showSettings?: boolean }>(AGENT_PRESET_SETTINGS_NS)
   let active = true
   // Host preferences start at false before their first accepted document.
   const codingToolsDisabled = (): boolean => active && toolsSettings.getSnapshot().mode === 'host'
@@ -280,14 +280,36 @@ export function apply(ctx: ClientContext): void {
     makeDefault: (id: string) => section.makeDefault(id, captureBlankSessionSync()),
   })
 
+  // The deployment can hide the section (`showSettings` on the registry); shown unless the setting reads false.
+  const settingsShown = (): boolean => {
+    const { status, value } = presetSettings.getSnapshot()
+    return !(status === 'ready' && value?.showSettings === false)
+  }
   // Ordered after Models: choosing a model is routine, and composing an
   // agent is the deployment-shaping act behind it.
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section',
-    id: 'agent-presets',
-    order: 20,
-    label: () => ctx.locale.bind('settings.agentPreset')('nav'),
-    locale: 'settings.agentPreset',
-    inject: sectionInjected,
-  }, AgentPresetSection))
+  ctx.slots.inject('settings.section', () => {
+    let unregister: (() => void) | undefined
+    const sync = (): void => {
+      if (settingsShown() === (unregister !== undefined)) return
+      if (unregister !== undefined) {
+        unregister()
+        unregister = undefined
+        return
+      }
+      unregister = ctx.slots.register({
+        name: 'settings.section',
+        id: 'agent-presets',
+        order: 20,
+        label: () => ctx.locale.bind('settings.agentPreset')('nav'),
+        locale: 'settings.agentPreset',
+        inject: sectionInjected,
+      }, AgentPresetSection)
+    }
+    const unsubscribe = presetSettings.subscribe(sync)
+    sync()
+    return () => {
+      unsubscribe()
+      unregister?.()
+    }
+  })
 }

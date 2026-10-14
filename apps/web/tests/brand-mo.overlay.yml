@@ -10,3 +10,5 @@
     defaultSessionGrouping: assistant
     # Each group lists its five most recent Sessions before "show more".
     sessionsPerGroup: 5
+    # As shipped: the composer's + menu leaves out /feedback.
+    menuHiddenCommands: [feedback]

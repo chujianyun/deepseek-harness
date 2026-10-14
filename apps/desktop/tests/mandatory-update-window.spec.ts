@@ -39,7 +39,7 @@ function setup(platform: NodeJS.Platform = 'darwin') {
   const install = vi.fn(async () => update)
   const createOverlay = (): WindowFixture => window
   const parent = createOverlay as () => BrowserWindow
-  ui = new DesktopMandatoryUpdateWindow({ overlays: { create: parent }, preload: 'owned', locale: resolveDesktopLocale('zh'),
+  ui = new DesktopMandatoryUpdateWindow({ overlays: { create: parent }, preload: 'owned', locale: () => resolveDesktopLocale('zh'),
     allowedPageOrigins: ['https://downloads.example.com'], parent,
     policy: () => policy, update: () => update, hasUpdateSource: () => source,
     refresh: async () => {}, download: async () => update, install })

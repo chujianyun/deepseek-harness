@@ -155,6 +155,8 @@ export interface Config {
    * deployment that runs every session on its default preset composes `false`.
    */
   showPicker: Volatile<boolean>
+  /** Whether clients show the Agent presets settings section; a deployment whose sessions all run on its default composes `false`. */
+  showSettings: Volatile<boolean>
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-agent-preset-registry -->
@@ -356,7 +358,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-assistants`
 
 - `inject`: `hubAccount` · `sessionProjections` · `agents`
-- `source`: [`packages/assistant/assistants/src/index.ts:61`](../packages/assistant/assistants/src/index.ts)
+- `source`: [`packages/assistant/assistants/src/index.ts:62`](../packages/assistant/assistants/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */

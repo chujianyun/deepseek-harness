@@ -102,7 +102,7 @@ describe('mandatory update policy', () => {
     const offer = (available: unknown) => Response.json({ ...clear, data: { ...clear.data, available } })
     request.mockResolvedValueOnce(offer({ version: '1.3.0', desktop_app_link: 'https://downloads.example.com/download', detail: '修复登录' }))
     expect(await policy.check('launch')).toEqual({ blocking: false, checking: false,
-      available: { version: '1.3.0', page: 'https://downloads.example.com/download', detail: '修复登录' } })
+      available: { version: '1.3.0', page: 'https://downloads.example.com/download', detail: '修复登录', packages: [] } })
     for (const available of [
       { version: '1.2.3', desktop_app_link: 'https://downloads.example.com/download' },
       { version: '1.1.0', desktop_app_link: 'https://downloads.example.com/download' },
@@ -112,6 +112,60 @@ describe('mandatory update policy', () => {
     ]) {
       request.mockResolvedValueOnce(offer(available))
       expect(await policy.check('manual', true)).toEqual({ blocking: false, checking: false })
+    }
+  })
+
+  it('keeps only well-formed installers from an allowed download origin or the policy origin', async () => {
+    const { policy, request } = fixture()
+    const sha = 'a'.repeat(64)
+    const good = { kind: 'exe', url: 'https://downloads.example.com/downloads/1.3.0/mo.exe?sha256=a', sha256: sha, size_bytes: 10 }
+    request.mockResolvedValueOnce(Response.json({ ...clear, data: { ...clear.data, available: {
+      version: '1.3.0', desktop_app_link: 'https://downloads.example.com/download', packages: [
+        good,
+        { ...good, kind: 'zip', url: 'https://policy.example.com/downloads/1.3.0/mo.zip' },
+        { ...good, kind: 'msi' },
+        { ...good, sha256: 'A'.repeat(64) },
+        { ...good, sha256: 1 },
+        { ...good, size_bytes: 0 },
+        { ...good, size_bytes: 1.5 },
+        { ...good, size_bytes: '10' },
+        { ...good, url: 'https://evil.example.com/mo.exe' },
+        { ...good, url: 'http://downloads.example.com/mo.exe' },
+        { ...good, url: 'https://user:pass@downloads.example.com/mo.exe' },
+        { ...good, url: 'not a url' },
+        null,
+      ] } } }))
+    expect((await policy.check('launch')).available?.packages).toEqual([
+      { kind: 'exe', url: good.url, sha256: sha, size: 10 },
+      { kind: 'zip', url: 'https://policy.example.com/downloads/1.3.0/mo.zip', sha256: sha, size: 10 },
+    ])
+    request.mockResolvedValueOnce(Response.json({ ...clear, data: { ...clear.data, available: {
+      version: '1.3.0', desktop_app_link: 'https://downloads.example.com/download', packages: 'nope' } } }))
+    expect((await policy.check('manual', true)).available?.packages).toEqual([])
+  })
+
+  it('accepts a loopback policy origin for development packages only', async () => {
+    const request = vi.fn<typeof fetch>()
+    const policy = new DesktopMandatoryUpdatePolicy(resolveDesktopPolicyConfig({ ...deployment, origin: 'http://127.0.0.1:3000' }, true)!,
+      identity, vi.fn(), request, () => client)
+    instances.push(policy)
+    const pkg = { kind: 'exe', sha256: 'b'.repeat(64), size_bytes: 3 }
+    request.mockResolvedValueOnce(Response.json({ ...clear, data: { ...clear.data, available: {
+      version: '1.3.0', desktop_app_link: 'https://downloads.example.com/download', packages: [
+        { ...pkg, url: 'http://127.0.0.1:3000/downloads/1.3.0/mo.exe' },
+        { ...pkg, url: 'http://127.0.0.1:4000/downloads/1.3.0/mo.exe' },
+      ] } } }))
+    expect((await policy.check('launch')).available?.packages.map(item => item.url)).toEqual(['http://127.0.0.1:3000/downloads/1.3.0/mo.exe'])
+  })
+
+  it('carries the release a mandatory decision requires with its installers, ignoring a missing or older version', async () => {
+    const { policy, request } = fixture()
+    const pkg = { kind: 'exe', url: 'https://downloads.example.com/downloads/1.3.0/mo.exe', sha256: 'c'.repeat(64), size_bytes: 9 }
+    request.mockResolvedValueOnce(Response.json({ code: 40005, data: { ...force.data, version: '1.3.0', packages: [pkg] } }))
+    expect((await policy.check('launch')).required).toEqual({ version: '1.3.0', packages: [{ kind: 'exe', url: pkg.url, sha256: pkg.sha256, size: 9 }] })
+    for (const version of [undefined, '1.2.3', 'next']) {
+      request.mockResolvedValueOnce(Response.json({ code: 40005, data: { ...force.data, version, packages: [pkg] } }))
+      expect((await policy.check('manual', true)).required).toBeUndefined()
     }
   })
 

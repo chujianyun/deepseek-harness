@@ -100,9 +100,8 @@ export function EcommerceAccountsSection(props: EcommerceAccountsSectionProps) {
       {opened === undefined
         ? (
           <>
-            <div className={css.header}>
-              <p className={css.intro}>{t('intro')}</p>
-              {accounts.length > 0 && (
+            {accounts.length > 0 && (
+              <div className={css.header}>
                 <span className={css.headerActions}>
                   <CheckButton
                     {...props} small label={t('checkAll')} checking={accounts.some(item => item.status === 'checking')}
@@ -110,8 +109,8 @@ export function EcommerceAccountsSection(props: EcommerceAccountsSectionProps) {
                   />
                   <Button variant="primary" size="sm" onClick={() => { setAdding(true) }}>{t('add')}</Button>
                 </span>
-              )}
-            </div>
+              </div>
+            )}
             {banner}
             {checkRefusal !== undefined && <p className={css.error} role="alert">{refusalText(t, checkRefusal)}</p>}
             {state !== undefined && accounts.length === 0 && (

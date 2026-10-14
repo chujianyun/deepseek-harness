@@ -74,6 +74,7 @@ async function bench(options: {
   developerToolsEnabled?: boolean
   memory?: boolean
   showPicker?: boolean
+  showSettings?: boolean
 } = {}) {
   const ctx = new Context()
   // The host's answer, mutable so a spec can move the default the way the
@@ -90,6 +91,7 @@ async function bench(options: {
   let presetRevision = 0
   let developerToolsEnabled = options.developerToolsEnabled ?? true
   let showPicker = options.showPicker
+  let showSettings = options.showSettings
   let settingsSaved = false
   const settingsRosterStarted = Promise.withResolvers<undefined>()
   // The row reads `describe` to learn whether this browser may write at all,
@@ -111,8 +113,13 @@ async function bench(options: {
           revision: 0,
         }, {
           ns: 'agent-preset-registry',
-          schema: { type: 'object', dict: { selectedDefault: { type: 'string', meta: {} }, showPicker: { type: 'boolean', meta: {} } } },
-          value: { selectedDefault: savedDefault, ...showPicker === undefined ? {} : { showPicker } },
+          schema: { type: 'object', dict: {
+            selectedDefault: { type: 'string', meta: {} }, showPicker: { type: 'boolean', meta: {} }, showSettings: { type: 'boolean', meta: {} },
+          } },
+          value: {
+            selectedDefault: savedDefault, ...showPicker === undefined ? {} : { showPicker },
+            ...showSettings === undefined ? {} : { showSettings },
+          },
           autoGenerate: false,
           applies: 'live',
           secrets: [],
@@ -193,9 +200,16 @@ async function bench(options: {
     remote.emit('settings/document-updated', ['agent-preset-registry', presetRevision])
     await vi.waitFor(() => { expect(ctx.configForms.get<{ showPicker?: boolean }>('agent-preset-registry').getSnapshot().value?.showPicker).toBe(next) })
   }
+  /** Publish a new settings-section choice the way the settings mirror does. */
+  const setShowSettings = async (next: boolean): Promise<void> => {
+    showSettings = next
+    presetRevision += 1
+    remote.emit('settings/document-updated', ['agent-preset-registry', presetRevision])
+    await vi.waitFor(() => { expect(ctx.configForms.get<{ showSettings?: boolean }>('agent-preset-registry').getSnapshot().value?.showSettings).toBe(next) })
+  }
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault, remote,
-    settingsRosterStarted: settingsRosterStarted.promise, setDeveloperTools, setShowPicker,
+    settingsRosterStarted: settingsRosterStarted.promise, setDeveloperTools, setShowPicker, setShowSettings,
   }
 }
 
@@ -537,6 +551,27 @@ describe('ui-agent-preset apply', () => {
     // The settings section stays, so the roster and Creator mode remain reachable.
     expect(slots.entries('settings.section')).toHaveLength(1)
     await fiber.dispose()
+    conversation()
+  })
+
+  it('shows no settings section when the deployment hides it, and follows a later change', async () => {
+    const { ctx, slots, setShowSettings } = await bench({ showSettings: false })
+    declareRoot(slots)
+    const conversation = declareConversation(slots)
+    ctx.provide('conversation', {} as never)
+    ctx.provide('sessions', sessionsDouble(ctx, { byId: {} }) as never)
+    ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
+    const fiber = ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply })
+    await fiber.await()
+    await vi.waitFor(() => { expect(ctx.configForms.get('agent-preset-registry').getSnapshot().status).toBe('ready') })
+    expect(slots.entries('settings.section')).toHaveLength(0)
+    await setShowSettings(true)
+    expect(slots.entries('settings.section')).toHaveLength(1)
+    await setShowSettings(false)
+    expect(slots.entries('settings.section')).toHaveLength(0)
+    await setShowSettings(true)
+    await fiber.dispose()
+    expect(slots.entries('settings.section')).toHaveLength(0)
     conversation()
   })
 

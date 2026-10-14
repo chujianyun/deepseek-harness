@@ -3,7 +3,7 @@
     "title": "Update to continue",
     "detail": "This version is no longer supported. Update to continue. Tasks in progress will keep running until you confirm installation and restart.",
     "version": "New version: 0.1.7-alpha.2",
-    "update": "Download update"
+    "update": "Update now"
   },
   {
     "title": "Update ready",

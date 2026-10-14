@@ -153,7 +153,7 @@ it('uses client copy and retry when optional policy fields are absent', async ()
 
 it('uses the same modal for download, verification, inspected confirmation and task-aware restart', async () => {
   const p = mandatoryPage({ phase: 'available', version: '1.0.1-nightly.1' })
-  await expect.poll(() => p.element('update').textContent).toBe('下载更新')
+  await expect.poll(() => p.element('update').textContent).toBe('立即更新')
   const modal = p.document.querySelector('main')
   const pending = Promise.withResolvers<undefined>()
   p.action.mockReturnValueOnce(pending.promise)
@@ -209,7 +209,7 @@ it('reveals the complete selectable address only after copy failure, without rep
 
 it('renders server markup literally in a dedicated safety case', async () => {
   const p = mandatoryPage({ phase: 'available', version: '1.0.1-nightly.1' })
-  await expect.poll(() => p.element('update').textContent).toBe('下载更新')
+  await expect.poll(() => p.element('update').textContent).toBe('立即更新')
   p.publish({ ...p.initial, policy: { ...p.initial.policy, title: '<b>请更新</b>', detail: '<img src=x onerror=alert(1)>' } })
   expect(p.element('title').textContent).toBe('<b>请更新</b>')
   expect(p.element('title').childElementCount).toBe(0)

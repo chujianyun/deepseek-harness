@@ -386,7 +386,7 @@ describe('e-commerce accounts section', () => {
     expect(screen.getByText('风控冷却').nextSibling?.textContent).toMatch(/^剩 \d+ 小时（01-02 \d\d:04 结束）$/u)
   })
 
-  it('renders nothing but the intro before the first state, and follows an account that disappears', () => {
+  it('renders nothing before the first state, and follows an account that disappears', () => {
     const props = mount(undefined)
     expect(screen.queryByText('还没有电商账号。')).toBeNull()
     props.set({ ...base, accounts: [account()] })

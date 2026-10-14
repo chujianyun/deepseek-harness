@@ -23,7 +23,7 @@ function setup(platform: string) {
     isDestroyed: () => false, flashFrame: vi.fn() })
   const modal = Object.assign(new EventEmitter(), { isFocused: () => false })
   const returned = vi.fn()
-  attention = new DesktopUpdateAttention(resolveDesktopLocale('zh'), platform)
+  attention = new DesktopUpdateAttention(() => resolveDesktopLocale('zh'), platform)
   const ready = () => { attention!.ready('1.0.1-nightly.1', window as unknown as BrowserWindow, modal as unknown as BrowserWindow, returned) }
   return { window, modal, returned, ready }
 }

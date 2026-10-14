@@ -91,8 +91,8 @@ export interface AssistantsInjected {
   readonly hooks: { readonly assistants: HostObservable<AssistantsSnapshot>; readonly sessions: HostObservable<SessionListState> }
   /** Bind an assistant, or none (null), to the session about to start. */
   readonly onPick: (assistantId: string | null) => Promise<void>
-  /** Open a new session with this assistant. */
-  readonly onChat: (assistantId: string) => Promise<void>
+  /** Open a new session with this assistant, or in General mode for null. */
+  readonly onChat: (assistantId: string | null) => Promise<void>
   /** Clear the last failure. */
   readonly onDismiss: () => void
   /** Create an assistant; resolves to the Host's refusal message, or undefined once created. */

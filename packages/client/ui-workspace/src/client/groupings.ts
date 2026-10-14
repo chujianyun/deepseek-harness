@@ -27,6 +27,11 @@ export interface SessionGroupHeading {
    * a rank follow ranked ones, most recently active first.
    */
   readonly rank?: number
+  /**
+   * Start a new Session that falls in this section, shown as a new-session button on the heading;
+   * absent for a section no new Session can join.
+   */
+  readonly create?: () => void
 }
 
 /** A grouping a plugin adds to the sidebar's Group by menu. */
