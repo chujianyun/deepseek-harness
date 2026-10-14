@@ -1,6 +1,6 @@
 /**
  * Automation tasks, Host half: creates a task in one call — a new Session named after the task in
- * the chosen workspace, bound to its assistant, model, permission preset, and connector grant, and
+ * the chosen workspace, bound to its assistant, model, and permission preset, and
  * the Host schedule that sends the task's instruction to that Session at each run. Any failed step
  * archives the new Session, so a refused task leaves nothing behind.
  *
@@ -9,7 +9,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-assistants'
-import type {} from '@deepseek-ai/dsh-connectors'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import { randomUUID } from 'node:crypto'
 import { ScheduleInputError, timingRequest, type ScheduleCreateRequest } from '@deepseek-ai/dsh-schedule'
@@ -38,8 +37,8 @@ export class AutomationTasksService extends TypertRemoteService {
 
   /**
    * Create one automation task: a new Session in the workspace, named after the task, with the
-   * requested assistant, model, permission preset, and connector grant, then the schedule bound to
-   * it. The assistant, connectors, and permission presets are optional services; asking for one a
+   * requested assistant, model, and permission preset, then the schedule bound to
+   * it. The assistant and permission presets are optional services; asking for one a
    * deployment lacks is `automation-tasks/unavailable`. A step's refusal passes through unchanged,
    * except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an
    * unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.
@@ -51,9 +50,6 @@ export class AutomationTasksService extends TypertRemoteService {
     const assistant = request.assistantId === undefined
       ? undefined
       : { service: this.require('assistants', 'assistant'), id: request.assistantId }
-    const grant = request.connectors === undefined || request.connectors.length === 0
-      ? undefined
-      : { service: this.require('connectors', 'connectors'), ids: request.connectors }
     const permission = request.permission === undefined
       ? undefined
       : { service: this.require('permissionPresets', 'permission'), preset: request.permission }
@@ -82,7 +78,6 @@ export class AutomationTasksService extends TypertRemoteService {
         throw new RemoteError('automation-tasks/model-unavailable', `the model ${provider}/${model} is not available`, { provider, model })
       }
       if (permission !== undefined) permission.service.set(agent.session, permission.preset)
-      if (grant !== undefined) grant.service.allowInSession(agent.session, grant.ids)
       const record = await this.ctx.schedule.create(sessionId, scheduled, undefined, request.window)
       return { sessionId, record }
     } catch (error: unknown) {
@@ -99,8 +94,8 @@ export class AutomationTasksService extends TypertRemoteService {
   }
 
   /** An optional service the request needs, or `automation-tasks/unavailable`. */
-  private require<K extends 'assistants' | 'connectors' | 'permissionPresets'>(
-    name: K, field: 'assistant' | 'connectors' | 'permission',
+  private require<K extends 'assistants' | 'permissionPresets'>(
+    name: K, field: 'assistant' | 'permission',
   ): NonNullable<Context[K]> {
     const service = this.ctx.get(name)
     if (service === undefined) throw new RemoteError('automation-tasks/unavailable', `this deployment has no ${field} service`, { field })

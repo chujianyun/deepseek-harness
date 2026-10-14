@@ -26,6 +26,8 @@ export interface MockSkill {
   readonly version: string
   /** Files relative to the Skill root; `SKILL.md` is generated from name and description when absent. */
   readonly files?: Readonly<Record<string, string>>
+  /** Platform Skill marked for automatic install (Spec #221); left out, the answers omit both fields as a user center before it does. */
+  readonly autoInstall?: boolean
 }
 
 /** One upload the mock received through the client write API. */
@@ -100,6 +102,8 @@ export interface MockUserCenter {
   readonly revoked: string[]
   /** Skills visible to every tenant through the client API, in list order. */
   skills: MockSkill[]
+  /** Skill ids the platform withdrew from the tenant: detail and download answer 410 (Spec #221). */
+  readonly withdrawn: Set<string>
   /** When set, a download answers with these bytes instead of the Skill's zip. */
   downloadBody: Uint8Array | undefined
   /** When set, client API calls answer with this status. */
@@ -235,6 +239,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
   })
   const summary = (skill: MockSkill) => ({
     id: skill.id, name: skill.name, ...skill.displayName === undefined ? {} : { displayName: skill.displayName }, category: skill.category,
+    ...skill.autoInstall === undefined ? {} : { platform: true, autoInstall: skill.autoInstall },
     currentVersion: { id: `${skill.id}-v`, version: skill.version, description: skill.description, uploaderName: '韩梅梅',
       uploadedAt: '2026-10-01T08:00:00.000Z', sizeBytes: 100, fileCount: Object.keys(filesOf(skill)).length, downloadCount: 0 },
   })
@@ -328,6 +333,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
       json(200, [...seen.values()])
       return
     }
+    if (parts[0] !== undefined && mock.withdrawn.has(parts[0])) { json(410, { code: 'skill_withdrawn', message: '该平台技能已被收回，本租户不能再使用' }); return }
     const skill = mock.skills.find(item => item.id === parts[0])
     if (skill === undefined) { json(404, { message: 'Skill 不存在' }); return }
     const files = filesOf(skill)
@@ -411,7 +417,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     clientId: 'dsh-desktop',
     tenant, denyWith: undefined, refreshStatus: undefined, expiresIn: 7200,
     exchangeStatus: undefined, tokenBody: undefined, tokenGate: undefined, userinfoReply: undefined,
-    skills: [], downloadBody: undefined, clientStatus: undefined, clientRequests: [],
+    skills: [], withdrawn: new Set(), downloadBody: undefined, clientStatus: undefined, clientRequests: [],
     tenantAdmin: false, owned: [], uploads: [], uploadReply: undefined, uploadHook: undefined, optionsReply: undefined,
     brandings: {}, brandingGate: undefined, logoReply: undefined, shares: {}, shareReply: undefined,
     feedback: [], feedbackReply: undefined, feedbackReplyOnce: undefined,

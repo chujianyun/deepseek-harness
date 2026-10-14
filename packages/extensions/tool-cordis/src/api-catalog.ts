@@ -680,7 +680,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: '@Remote(\'create\') async create(request: AutomationTaskCreateRequest): Promise<AutomationTaskCreateValue>',
-        description: 'Create one automation task: a new Session in the workspace, named after the task, with the requested assistant, model, permission preset, and connector grant, then the schedule bound to it. The assistant, connectors, and permission presets are optional services; asking for one a deployment lacks is `automation-tasks/unavailable`. A step\'s refusal passes through unchanged, except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.',
+        description: 'Create one automation task: a new Session in the workspace, named after the task, with the requested assistant, model, and permission preset, then the schedule bound to it. The assistant and permission presets are optional services; asking for one a deployment lacks is `automation-tasks/unavailable`. A step\'s refusal passes through unchanged, except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.',
         parameters: [{ name: 'request', description: 'the task as the form submits it.' }],
         returns: 'the new Session and the stored schedule.',
       },
@@ -992,18 +992,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'id', description: 'the connector.' }, { name: 'enabled', description: 'whether the model may use it.' }],
         returns: 'the state once the setting is saved and the model\'s script and Skills follow it.',
         throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
-      },
-      {
-        signature: '@Remote async revokeAlwaysAllowed(id: string, command: string): Promise<ConnectorsState>',
-        description: 'Stop always allowing a write command for the current tenant: it asks again.',
-        parameters: [{ name: 'id', description: 'the connector.' }, { name: 'command', description: 'the command words, as the view lists them.' }],
-        returns: 'the state once the setting is saved.',
-        throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
-      },
-      {
-        signature: 'allowInSession(session: Session, ids: readonly string[]): void',
-        description: 'Let a session\'s plain connector writes through these connectors run without asking while the signed-in tenant stays signed in, as the session of an unattended automation task needs: appends `connectors/session-allowed`, which replaces the session\'s earlier grant and survives a restart with the session log; an unchanged grant appends nothing. High-risk writes, commands the CLI runs only confirmed, and commands of unknown risk still ask.',
-        parameters: [{ name: 'session', description: 'the session to grant.' }, { name: 'ids', description: 'connectors to allow; an empty list withdraws the grant. Refuses an unknown id with `connectors/not-found`, one unsupported here with `connectors/unavailable`, and a signed-out Hub with `hub-account/signed-out`.' }],
       },
       {
         signature: 'restrict(filter: ConnectorFilter): () => void',
@@ -2237,7 +2225,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'set(session: Session, name: string): void',
-        description: 'Record a changed preset, then update each changed knob through its own setter. Selecting the effective preset again appends nothing.',
+        description: 'Record a changed preset, then update each changed knob through its own setter. Selecting the effective preset again appends nothing. The default of later sessions stays; only the user\'s `/permission` switch changes it.',
         parameters: [{ name: 'session', description: 'the session the switch belongs to.' }, { name: 'name', description: 'the preset to switch to; unknown names throw.' }],
       },
     ],
@@ -3340,7 +3328,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Switch one installed skill on or off for this user.',
         parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'enabled', description: 'whether the skill should be invocable.' }],
         returns: 'the skill\'s view after the change.',
-        throws: ['RemoteError when the skill is not installed or the setting cannot be persisted.'],
+        throws: ['RemoteError when the skill is not installed, is a market Skill the platform withdrew (switching on), or the setting cannot be persisted.'],
       },
       {
         signature: '@Remote async reveal(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>',
@@ -3358,7 +3346,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async uninstall(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>',
-        description: 'Move an installed skill\'s folder (or flat file) to the platform trash and forget its disabled state.',
+        description: 'Move an installed skill\'s folder (or flat file) to the platform trash and forget its disabled state. Only this machine\'s copy goes; the Skill stays on the Skill Hub. A market Skill is also remembered as uninstalled, so the market\'s automatic install does not bring it back.',
         parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
         returns: 'confirmation after the move.',
         throws: ['RemoteError when the skill is not installed, the platform has no trash, or the move fails.'],
@@ -3388,14 +3376,26 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'isDisabled(name: string): boolean',
-        description: 'Whether the signed-in tenant switched this market Skill off.',
+        description: 'Whether this market Skill is closed for the signed-in tenant: the user switched it off (`disabledSkills`), or the platform withdrew it (`withdrawnSkills`, see `isWithdrawn`).',
         parameters: [{ name: 'name', description: 'Skill name.' }],
-        returns: 'true when switched off.',
+        returns: 'true when closed.',
+      },
+      {
+        signature: 'isWithdrawn(name: string): boolean',
+        description: 'Whether the platform withdrew this market Skill from the signed-in tenant; such a Skill stays installed but switched off, and the user cannot switch it on.',
+        parameters: [{ name: 'name', description: 'Skill name.' }],
+        returns: 'true when withdrawn.',
       },
       {
         signature: 'setDisabled(name: string, disabled: boolean): Promise<void>',
         description: 'Switch one market Skill of the signed-in tenant on or off, persisting the profile\'s list.',
         parameters: [{ name: 'name', description: 'Skill name.' }, { name: 'disabled', description: 'whether to switch it off.' }],
+        throws: ['when signed out, or when mounted without Settings or a profile entry.'],
+      },
+      {
+        signature: 'markUninstalled(name: string, uninstalled: boolean = true): Promise<void>',
+        description: 'Record (or forget) that the user uninstalled a market Skill of the signed-in tenant, so automatic install leaves it out. The installed-skill Remote records it before moving the folder away, and forgets it again when the move fails; installing it by hand forgets it too.',
+        parameters: [{ name: 'name', description: 'Skill name.' }, { name: 'uninstalled', description: 'whether the Skill is uninstalled; defaults to true.' }],
         throws: ['when signed out, or when mounted without Settings or a profile entry.'],
       },
       {
@@ -3451,14 +3451,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]>',
-        description: 'Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the Hub no longer shows the employee is `unavailable`; its local copy stays installed and usable.',
+        description: 'Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the platform withdrew from the tenant is `withdrawn` and gets switched off (its files stay); one the Hub no longer shows the employee for another reason is `unavailable` and stays installed and usable.',
         parameters: [{ name: 'signal', description: 'caller lifetime.' }],
         returns: 'one status per installed market Skill, sorted by name.',
       },
       {
-        signature: 'async records(): Promise<Map<string, MarketInstallRecord>>',
-        description: 'Install records of the signed-in tenant\'s market Skills, keyed by Skill name.',
-        parameters: [],
+        signature: 'async records(tenantId: string | undefined = this.tenantId): Promise<Map<string, MarketInstallRecord>>',
+        description: 'Install records of a tenant\'s market Skills (the signed-in tenant\'s by default), keyed by Skill name.',
+        parameters: [{ name: 'tenantId', description: 'the tenant whose directory to read.' }],
         returns: 'the readable records; a directory without one is not a market install.',
       },
     ],
@@ -5676,7 +5676,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AutomationTaskCreateRequest',
-    declaration: 'export interface AutomationTaskCreateRequest {\n    readonly title: string;\n    readonly prompt: string;\n    readonly workspaceId: WorkspaceId;\n    readonly assistantId?: string;\n    readonly model?: ModelSelection;\n    readonly permission?: string;\n    readonly connectors?: readonly string[];\n    readonly timing: ScheduleTimingChange;\n    readonly window?: ScheduleWindowInput;\n}',
+    declaration: 'export interface AutomationTaskCreateRequest {\n    readonly title: string;\n    readonly prompt: string;\n    readonly workspaceId: WorkspaceId;\n    readonly assistantId?: string;\n    readonly model?: ModelSelection;\n    readonly permission?: string;\n    readonly timing: ScheduleTimingChange;\n    readonly window?: ScheduleWindowInput;\n}',
   },
   {
     name: 'AutomationTaskCreateValue',
@@ -5924,7 +5924,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectorView',
-    declaration: 'export interface ConnectorView {\n    readonly id: ConnectorId;\n    readonly status: ConnectorStatus;\n    readonly cli: string;\n    readonly version: string;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly error: ConnectorInstallError | null;\n    readonly login: ConnectorLoginView | null;\n    readonly loginError: ConnectorLoginError | null;\n    readonly account: string | null;\n    readonly problem: string | null;\n    readonly enabled: boolean;\n    readonly skills: readonly ConnectorSkillView[];\n    readonly alwaysAllowed: readonly string[];\n}',
+    declaration: 'export interface ConnectorView {\n    readonly id: ConnectorId;\n    readonly status: ConnectorStatus;\n    readonly cli: string;\n    readonly version: string;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly error: ConnectorInstallError | null;\n    readonly login: ConnectorLoginView | null;\n    readonly loginError: ConnectorLoginError | null;\n    readonly account: string | null;\n    readonly problem: string | null;\n    readonly enabled: boolean;\n    readonly skills: readonly ConnectorSkillView[];\n}',
   },
   {
     name: 'ContentBlockMap',
@@ -6588,7 +6588,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'InstalledSkillView',
-    declaration: 'export interface InstalledSkillView {\n    readonly name: string;\n    readonly description: string;\n    readonly group: InstalledSkillGroup;\n    readonly source: string;\n    readonly path: string;\n    readonly enabled: boolean;\n}',
+    declaration: 'export interface InstalledSkillView {\n    readonly name: string;\n    readonly description: string;\n    readonly group: InstalledSkillGroup;\n    readonly source: string;\n    readonly path: string;\n    readonly enabled: boolean;\n    readonly withdrawn: boolean;\n}',
   },
   {
     name: 'InstallSpecKind',
@@ -6996,7 +6996,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MarketInstalledState',
-    declaration: 'export type MarketInstalledState = \'current\' | \'update\' | \'unavailable\' | \'unknown\';',
+    declaration: 'export type MarketInstalledState = \'current\' | \'update\' | \'withdrawn\' | \'unavailable\' | \'unknown\';',
   },
   {
     name: 'MarketInstalledStatus',

@@ -6,7 +6,9 @@
  * the command child registers `/permission` whose handler switches
  * through `permission.set` (bare invocation reports, unknown names error).
  * The service requires the projection registry, omits the command without its
- * registry, and removes the projection key on unload (HMR safety).
+ * registry, and removes the projection key on unload (HMR safety). The
+ * user's `/permission` switch becomes the default of later sessions, saved
+ * through Settings; Auto and a programmatic switch leave it alone.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -20,7 +22,7 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import PermissionPresetService from '@deepseek-ai/dsh-permission-presets'
 import { AUTO_PRESET } from '@deepseek-ai/dsh-permission-presets'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
-import { omitsGeneratedPage } from '../../../settings/settings/tests/live-config.ts'
+import { liveConfig, omitsGeneratedPage } from '../../../settings/settings/tests/live-config.ts'
 
 async function harness(options: {
   withPermission?: boolean
@@ -207,3 +209,88 @@ it('keeps its own instance off the generated Settings pages', () => omitsGenerat
   await harness({ ctx, withPermission: false })
   return ctx.plugin(PermissionPresetService, {})
 }))
+
+/** The service as a profile entry with a Settings stand-in that writes through to that entry. */
+async function mountedEntry(options: { live?: boolean; failSave?: boolean } = {}) {
+  const ctx = new Context()
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionProjectionRegistry)
+  await ctx.plugin(CommandRuntime)
+  ctx.provide('shell', {
+    sandboxMode: 'workspace-write',
+    resolve() { throw new Error('permission tests do not execute bash') },
+    run() { throw new Error('permission tests do not execute bash') },
+    start() { throw new Error('permission tests do not execute bash') },
+  })
+  await ctx.plugin(ApprovalService)
+  const live = options.live === false ? undefined : await liveConfig(ctx, PermissionPresetService)
+  if (live === undefined) await ctx.plugin(PermissionPresetService, {})
+  const update = vi.fn(async (_entry: string, patch: Record<string, unknown>) => {
+    // A failing save takes a moment, so a second switch can come in before it fails.
+    if (options.failSave === true) await new Promise((_resolve, reject) => { setTimeout(() => { reject(new Error('settings file is read-only')) }, 20) })
+    await live?.update(patch)
+  })
+  ctx.provide('settings', { configure: () => () => {}, update } as never)
+  return { ctx, update }
+}
+
+async function agentOf(ctx: Context, session: Session): Promise<Agent> {
+  return (await agentFor(ctx, session)).agent
+}
+
+async function switchTo(ctx: Context, agent: Agent, preset: string): Promise<void> {
+  await ctx.commands.execute(agent, `/permission ${preset}`, [], new AbortController().signal)
+}
+
+describe('the default of later sessions', () => {
+  it('follows the preset the user switches to, in either direction, and leaves existing sessions alone', async () => {
+    const { ctx } = await mountedEntry()
+    const first = ctx.sessions.create(SessionId('first'))
+    const earlier = ctx.sessions.create(SessionId('earlier'))
+    await switchTo(ctx, await agentOf(ctx, first), 'danger-full-access')
+    await vi.waitFor(() => { expect(ctx.permissionPresets.defaultPreset).toBe('danger-full-access') })
+    expect(ctx.permissionPresets.current(ctx.sessions.create(SessionId('next')))).toBe('danger-full-access')
+    expect(ctx.permissionPresets.current(earlier)).toBe('workspace-write')
+    await switchTo(ctx, await agentOf(ctx, first), 'workspace-write')
+    await vi.waitFor(() => { expect(ctx.permissionPresets.defaultPreset).toBe('workspace-write') })
+    expect(ctx.permissionPresets.current(ctx.sessions.create(SessionId('after')))).toBe('workspace-write')
+  })
+
+  it('ends as the latest of two quick switches', async () => {
+    const { ctx, update } = await mountedEntry()
+    const agent = await agentOf(ctx, ctx.sessions.create(SessionId('quick')))
+    await switchTo(ctx, agent, 'danger-full-access')
+    await switchTo(ctx, agent, 'workspace-write')
+    await vi.waitFor(() => { expect(update).toHaveBeenCalledTimes(2) })
+    await vi.waitFor(() => { expect(ctx.permissionPresets.defaultPreset).toBe('workspace-write') })
+  })
+
+  it('stays for Auto, a programmatic switch, and a switch to the default itself', async () => {
+    const { ctx, update } = await mountedEntry()
+    await ctx.plugin(Object.assign((pluginCtx: Context) => { pluginCtx.permissionPresets.registerAuto(() => {}) }, { inject: ['permissionPresets'] }))
+    const session = ctx.sessions.create(SessionId('s'))
+    await switchTo(ctx, await agentOf(ctx, session), AUTO_PRESET)
+    expect(ctx.permissionPresets.current(session)).toBe(AUTO_PRESET)
+    ctx.permissionPresets.set(ctx.sessions.create(SessionId('task')), 'danger-full-access')
+    await switchTo(ctx, await agentOf(ctx, ctx.sessions.create(SessionId('same'))), 'workspace-write')
+    expect(update).not.toHaveBeenCalled()
+    expect(ctx.permissionPresets.defaultPreset).toBe('workspace-write')
+  })
+
+  it('logs a save that fails and keeps the default', async () => {
+    const { ctx } = await mountedEntry({ failSave: true })
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    const agent = await agentOf(ctx, ctx.sessions.create(SessionId('s')))
+    await switchTo(ctx, agent, 'danger-full-access')
+    await switchTo(ctx, agent, 'workspace-write')
+    await vi.waitFor(() => { expect(warn).toHaveBeenCalledTimes(2) })
+    expect(warn).toHaveBeenCalledWith('permission: could not save the default preset: Error: settings file is read-only')
+    expect(ctx.permissionPresets.defaultPreset).toBe('workspace-write')
+  })
+
+  it('saves nothing without a profile entry to save it in', async () => {
+    const { ctx, update } = await mountedEntry({ live: false })
+    await switchTo(ctx, await agentOf(ctx, ctx.sessions.create(SessionId('s'))), 'danger-full-access')
+    expect(update).not.toHaveBeenCalled()
+  })
+})

@@ -17,7 +17,7 @@ import type { SkillsPageProps } from '../src/client/SkillsPage.tsx'
 export function pageProps(
   installed: Partial<InstalledSnapshot> = {}, market: Partial<MarketSnapshot> = {}, upload: Partial<UploadSnapshot> = {},
 ) {
-  const installedStore = createSnapshotStore<InstalledSnapshot>({ status: 'ready', skills: [], busy: [], failure: null, ...installed })
+  const installedStore = createSnapshotStore<InstalledSnapshot>({ status: 'ready', skills: [], busy: [], failure: null, pinned: [], ...installed })
   const marketStore = createSnapshotStore<MarketSnapshot>({
     status: 'ready', error: null, items: [], total: 0, page: 1, q: '', categoryId: null, categories: [], installing: [], failure: null, detail: null,
     statuses: {}, overwrite: null, ...market,
@@ -31,12 +31,18 @@ export function pageProps(
     useMarket: bindSnapshotSelector(marketStore),
     useUpload: bindSnapshotSelector(uploadStore),
     onRefresh: vi.fn(async () => {}),
+    onSync: vi.fn(async () => {}),
     onToggle: vi.fn(async () => {}),
     onReveal: vi.fn(async () => {}),
     onEdit: vi.fn(async () => {}),
     onUninstall: vi.fn(async () => {}),
     onChat: vi.fn(),
     onDismissFailure: vi.fn(),
+    onTogglePin: vi.fn((key: string, pinned: boolean) => {
+      const current = installedStore.getSnapshot()
+      installedStore.set({ ...current, pinned: pinned ? [...current.pinned, key] : current.pinned.filter(item => item !== key) })
+    }),
+    onBatch: vi.fn(async (_action: string, _names: readonly string[]): Promise<readonly string[]> => []),
     onOpenMarket: vi.fn(async () => {}),
     onSearch: vi.fn(async () => {}),
     onCategory: vi.fn(async () => {}),

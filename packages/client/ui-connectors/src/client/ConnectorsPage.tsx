@@ -11,6 +11,7 @@ import {
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConnectorsInjected } from './connectors-source.ts'
 import type { ConnectorsLocaleKey } from './locales.ts'
+import { ConnectorLogo } from './ConnectorLogo.tsx'
 import css from './ConnectorsPage.module.css'
 
 /** Props the page reads from its `main` registration: the translator and the connectors face. */
@@ -55,7 +56,6 @@ export function ConnectorsPage(props: ConnectorsPageProps) {
     <div className={css.page}>
       <header className={css.header} data-window-drag>
         <h1 className={css.title}>{t('title')}</h1>
-        <p className={css.intro}>{t('intro')}</p>
       </header>
       {failure !== null && (
         <div className={css.alert} role="alert">
@@ -89,13 +89,12 @@ function ConnectorCard({ connector, props, onConfirm }: {
   return (
     <li className={css.card} data-status={connector.status} data-enabled={connector.enabled ? 'true' : 'false'}>
       <div className={css.cardHead}>
-        <span className={css.avatar} aria-hidden="true">{name.slice(0, 1)}</span>
+        <ConnectorLogo id={connector.id} name={name} />
         <span className={css.name}>{name}</span>
         <Corner connector={connector} name={name} props={props} onConfirm={onConfirm} />
       </div>
       <p className={css.description}>{t(`description.${connector.id}`)}</p>
       <Skills connector={connector} t={t} />
-      <AlwaysAllowed connector={connector} props={props} />
       <Footer connector={connector} t={t} />
     </li>
   )
@@ -200,32 +199,6 @@ function Skills({ connector, t }: { connector: ConnectorView; t: T }) {
       <span className={css.skillsLabel}>{t('skills', { count: String(connector.skills.length) })}</span>
       {shown.map(skill => <span key={skill.name} className={css.skill} title={skill.description}>{skill.name}</span>)}
       {rest > 0 && <button type="button" className={css.more} onClick={() => { setAll(true) }}>{t('skillsMore', { count: String(rest) })}</button>}
-    </div>
-  )
-}
-
-/** The write commands the current company always allows through the connector, each with a way to revoke it. */
-function AlwaysAllowed({ connector, props }: { connector: ConnectorView; props: ConnectorsPageProps }) {
-  const { t, useConnectors, onRevokeAlwaysAllowed } = props
-  const busy = useConnectors(snapshot => snapshot.busy.includes(connector.id))
-  if (connector.alwaysAllowed.length === 0) return null
-  return (
-    <div className={css.allowed}>
-      <span className={css.allowedLabel} title={t('alwaysAllowedHint')}>{t('alwaysAllowed')}</span>
-      <ul className={css.allowedList} aria-label={t('alwaysAllowed')}>
-        {connector.alwaysAllowed.map((command) => {
-          const full = `${connector.cli} ${command}`
-          return (
-            <li key={command} className={css.allowedItem}>
-              <code>{full}</code>
-              <button type="button" className={css.more} disabled={busy} aria-label={t('revoke', { command: full })}
-                onClick={() => { void onRevokeAlwaysAllowed(connector.id, command) }}>
-                {t('revokeLabel')}
-              </button>
-            </li>
-          )
-        })}
-      </ul>
     </div>
   )
 }

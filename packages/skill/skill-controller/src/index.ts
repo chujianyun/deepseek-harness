@@ -117,11 +117,15 @@ export class SkillController extends TypertRemoteService {
    * @param name - installed skill name.
    * @param enabled - whether the skill should be invocable.
    * @returns the skill's view after the change.
-   * @throws RemoteError when the skill is not installed or the setting cannot be persisted.
+   * @throws RemoteError when the skill is not installed, is a market Skill the platform withdrew (switching on),
+   *   or the setting cannot be persisted.
    */
   @Remote
   async setEnabled(name: string, enabled: boolean): Promise<InstalledSkillView> {
     const skill = await this.find(name)
+    if (enabled && this.view(skill).withdrawn) {
+      throw new RemoteError('installed-skills/rejected', `skill "${name}" was withdrawn by the platform and cannot be enabled`, { name })
+    }
     try {
       await this.setDisabled(skill, !enabled)
     } catch (error: unknown) {
@@ -158,6 +162,8 @@ export class SkillController extends TypertRemoteService {
 
   /**
    * Move an installed skill's folder (or flat file) to the platform trash and forget its disabled state.
+   * Only this machine's copy goes; the Skill stays on the Skill Hub. A market Skill is also
+   * remembered as uninstalled, so the market's automatic install does not bring it back.
    * @param name - installed skill name.
    * @param signal - caller lifetime; abort terminates the native command.
    * @returns confirmation after the move.
@@ -166,8 +172,24 @@ export class SkillController extends TypertRemoteService {
   @Remote
   async uninstall(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue> {
     const skill = await this.find(name)
-    const result = await this.act(name, () => this.moveToTrash(installedEntry(skill), signal))
-    // The skill is already gone; a failure to forget its disabled state must not report the removal as failed.
+    // Recorded before the move: an automatic install running meanwhile must not bring the Skill back.
+    const market = skill.source === MARKET_SOURCE ? this.ctx.get('skillMarket') : undefined
+    const remembered = await market?.markUninstalled(name).then(() => true, (error: unknown) => {
+      this.ctx.logger.warn(`uninstalled market skill "${name}" is not remembered and may be installed again automatically: ${messageOf(error)}`)
+      return false
+    })
+    let result: InstalledSkillActionValue
+    try {
+      result = await this.act(name, () => this.moveToTrash(installedEntry(skill), signal))
+    } catch (error: unknown) {
+      if (remembered === true && market !== undefined) {
+        await market.markUninstalled(name, false).catch((forgetError: unknown) => {
+          this.ctx.logger.warn(`market skill "${name}" stayed installed but is recorded as uninstalled: ${messageOf(forgetError)}`)
+        })
+      }
+      throw error
+    }
+    // The skill is already gone; a failure to clear its switch must not report the removal as failed.
     if (!this.view(skill).enabled) {
       await this.setDisabled(skill, false).catch((error: unknown) => {
         this.ctx.logger.warn(`uninstalled skill "${name}" stays in disabledSkills: ${messageOf(error)}`)
@@ -237,6 +259,7 @@ export class SkillController extends TypertRemoteService {
       source: skill.source,
       path: skill.path,
       enabled: market ? this.ctx.get('skillMarket')?.isDisabled(skill.name) !== true : skill.disabled !== true,
+      withdrawn: market && this.ctx.get('skillMarket')?.isWithdrawn(skill.name) === true,
     }
   }
 

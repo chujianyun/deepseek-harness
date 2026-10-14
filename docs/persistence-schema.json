@@ -22891,7 +22891,7 @@
       "digest": "2bcf34ac7dc95d34676ac2da19c692bd1fb17a58c54164fb904c8cd1b83c243b",
       "names": [],
       "sources": [
-        "packages/connector/connectors/src/types.ts:18"
+        "packages/connector/connectors/src/types.ts:19"
       ]
     },
     {
@@ -24299,7 +24299,7 @@
       "digest": "8a9c990773f798eac10ca8878e6bcc531ee080bc589cac956730e462cc6a09ad",
       "names": [],
       "sources": [
-        "packages/interaction/permission-presets/src/index.ts:59"
+        "packages/interaction/permission-presets/src/index.ts:60"
       ]
     },
     {

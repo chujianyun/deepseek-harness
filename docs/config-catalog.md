@@ -806,9 +806,9 @@ export interface ToolResultPruneConfig {
 
 ## `@deepseek-ai/dsh-connectors`
 
-- `inject`: `hubAccount` · `skills` · `shellEnv` · `sessionProjections`
+- `inject`: `hubAccount` · `skills` · `shellEnv`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/connector/connectors/src/index.ts:107`](../packages/connector/connectors/src/index.ts)
+- `source`: [`packages/connector/connectors/src/index.ts:104`](../packages/connector/connectors/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -823,8 +823,6 @@ export interface Config {
   checkIntervalMs?: number
   /** Connectors switched off, as `<tenantId>/<id>`; edited live through `setEnabled()`. */
   disabled?: Volatile<readonly string[]>
-  /** Write commands always allowed, as `<tenantId>/<id>/<command words>`; added from an approval, revoked by `revokeAlwaysAllowed()`. */
-  alwaysAllowed?: Volatile<readonly string[]>
 }
 
 /** A connector CLI pinned to one release. */
@@ -2524,7 +2522,7 @@ export interface Config {
 
 - `inject`: `shell` · `approval` · `sessions` · `sessionProjections`
 - `refs`: [`ApprovalPolicy`](subsystems/approval.md) · [`SandboxMode`](subsystems/sandbox.md) · `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/interaction/permission-presets/src/index.ts:159`](../packages/interaction/permission-presets/src/index.ts)
+- `source`: [`packages/interaction/permission-presets/src/index.ts:160`](../packages/interaction/permission-presets/src/index.ts)
 
 ```ts config-catalog
 /** The {@link PermissionPresetService} config: preset table and composition default. */
@@ -3309,7 +3307,7 @@ export interface Config {
 
 - `inject`: `skills` · `hubAccount`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/skill/skill-market/src/index.ts:59`](../packages/skill/skill-market/src/index.ts)
+- `source`: [`packages/skill/skill-market/src/index.ts:86`](../packages/skill/skill-market/src/index.ts)
 
 ```ts config-catalog
 /** Market configuration. */
@@ -3318,6 +3316,15 @@ export interface Config {
   dshHome?: string
   /** Market Skills switched off, as `<tenantId>/<name>`; edited live through `setDisabled()`. */
   disabledSkills?: Volatile<readonly string[]>
+  /** Market Skills the user uninstalled, as `<tenantId>/<name>`; auto-install leaves them out. Edited through `markUninstalled()`. */
+  uninstalledSkills?: Volatile<readonly string[]>
+  /**
+   * Market Skills the platform withdrew from their tenant, as `<tenantId>/<name>`; switched off until
+   * distributed again. Kept by the market.
+   */
+  withdrawnSkills?: Volatile<readonly string[]>
+  /** After each sign-in, install the Skills the Hub marks for automatic install and update them. */
+  autoInstall?: boolean
   /** Watch the tenant directory for changes made outside DSH. */
   watch?: boolean
   /** Largest Skill package accepted for install, in bytes. */

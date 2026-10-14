@@ -99,7 +99,7 @@ describe('the model shell\'s lark-cli', () => {
     await t.until(view => view.status === 'disconnected')
     const [dir] = t.ctx.shellEnv.collectPath(execution)
     expect(dir).toBe(join(t.root, 'bin', 't-a'))
-    await vi.waitFor(async () => { await stat(join(dir!, 'lark-cli')) })
+    await vi.waitFor(async () => { await stat(join(dir!, 'lark-cli')) }, { timeout: 5000 })
     const result = await shell(dir!, ['calendar', '+agenda'])
     expect(result.code).toBe(1)
     expect(result.stderr).toContain('the Feishu connector is not connected for this company. Ask the user to connect Feishu on the DSH Connectors page (连接器)')
@@ -110,7 +110,8 @@ describe('the model shell\'s lark-cli', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {})
     const t = await setup({ files: [] })
     await t.until(view => view.status === 'disconnected')
-    await vi.waitFor(async () => { await stat(join(t.root, 'bin', 't-a', 'lark-cli')) })
+    // Writing the first script takes about half a second, longer while other specs run beside it.
+    await vi.waitFor(async () => { await stat(join(t.root, 'bin', 't-a', 'lark-cli')) }, { timeout: 5000 })
     // A file where the next tenant's script directory belongs.
     await writeFile(join(t.root, 'bin', 't-b'), '')
     t.hub.set('t-b')

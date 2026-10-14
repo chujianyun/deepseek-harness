@@ -10,15 +10,13 @@ export interface TaskFormChoice {
   readonly label: string
 }
 
-/** The assistants, models, permission presets, and connected connectors the form offers. */
+/** The assistants, models, and permission presets the form offers. */
 export interface TaskFormOptions {
   readonly assistants: readonly TaskFormChoice[]
   /** Models as `JSON.stringify([provider, model])` values. */
   readonly models: readonly TaskFormChoice[]
   readonly permissions: readonly TaskFormChoice[]
   readonly defaultPermission: string
-  /** Ids of the connectors connected for the signed-in tenant. */
-  readonly connectors: readonly string[]
 }
 
 /** One provider's models in the model catalog. */
@@ -36,7 +34,6 @@ export interface TaskFormOptionSources {
     readonly options: readonly { readonly value: string; readonly name: string }[]
     readonly defaultPreset: string
   }>>
-  readonly connectors: () => Promise<RemoteResult<{ readonly connectors: readonly { readonly id: string; readonly status: string }[] }>>
 }
 
 /** The face the form receives. */
@@ -58,8 +55,8 @@ export async function loadTaskFormOptions(sources: TaskFormOptionSources): Promi
   const settle = <T>(read: () => Promise<RemoteResult<T>>): Promise<T | undefined> =>
     // A read that throws offers nothing, as a refused one does.
     Promise.resolve().then(read).then(result => (result.ok ? result.value : undefined), () => undefined)
-  const [assistants, models, permissions, connectors] = await Promise.all([
-    settle(sources.assistants), settle(sources.models), settle(sources.permissions), settle(sources.connectors),
+  const [assistants, models, permissions] = await Promise.all([
+    settle(sources.assistants), settle(sources.models), settle(sources.permissions),
   ])
   return {
     assistants: (assistants?.assistants ?? []).map(item => ({ value: item.id, label: item.name })),
@@ -70,6 +67,5 @@ export async function loadTaskFormOptions(sources: TaskFormOptionSources): Promi
     permissions: (permissions?.options ?? []).filter(option => option.value !== 'custom' && option.value !== 'auto')
       .map(option => ({ value: option.value, label: option.name })),
     defaultPermission: permissions?.defaultPreset ?? '',
-    connectors: (connectors?.connectors ?? []).filter(item => item.status === 'connected' || item.status === 'degraded').map(item => item.id),
   }
 }

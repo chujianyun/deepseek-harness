@@ -1,4 +1,5 @@
-// The assembled Skills page over the real `installedSkills` Remote: listing, switching, reload persistence, and "chat with it".
+// The assembled Skills page over the real `installedSkills` Remote: listing, switching, reload persistence, pins,
+// bulk switching, search, and "chat with it".
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -45,6 +46,46 @@ it('lists installed skills, keeps a switched-off skill disabled across reloads, 
       await page.getByRole('button', { name: 'Skills', exact: true }).click()
       await page.getByRole('button', { name: /^Installed \(\d+\)$/ }).click()
       await expect.poll(() => page.getByRole('switch', { name: 'Enable alpha-skill' }).getAttribute('aria-checked')).toBe('false')
+
+      // Pins (Spec #221 T176) go first and survive a reload on this machine.
+      await writeSkill(join(scaffold.harnessHome, 'skills'), 'gamma-skill')
+      await page.reload()
+      await page.getByRole('button', { name: 'Skills', exact: true }).click()
+      await page.getByRole('button', { name: /^Installed \(\d+\)$/ }).click()
+      const custom = page.getByRole('region', { name: /Custom/ })
+      // The pin of an unpinned card shows on hover
+      await custom.getByRole('listitem').filter({ hasText: 'gamma-skill' }).hover()
+      await custom.getByRole('button', { name: 'Pin gamma-skill' }).click()
+      const order = async () => (await custom.getByRole('listitem').allTextContents()).map(text => /alpha-skill|beta-skill|gamma-skill/.exec(text)?.[0]).filter(Boolean)
+      expect(await order()).toEqual(['gamma-skill', 'alpha-skill', 'beta-skill'])
+      await page.reload()
+      await page.getByRole('button', { name: 'Skills', exact: true }).click()
+      await page.getByRole('button', { name: /^Installed \(\d+\)$/ }).click()
+      await expect.poll(() => custom.getByRole('button', { name: 'Pin gamma-skill' }).getAttribute('aria-pressed')).toBe('true')
+      expect(await order()).toEqual(['gamma-skill', 'alpha-skill', 'beta-skill'])
+
+      // Bulk management: select two skills and switch both off, then both on, through the real Remote.
+      await page.getByRole('button', { name: 'Manage in bulk' }).click()
+      const bar = page.getByRole('toolbar', { name: 'Manage in bulk' })
+      await page.getByRole('checkbox', { name: 'Select beta-skill' }).check()
+      await page.getByRole('checkbox', { name: 'Select gamma-skill' }).check()
+      await bar.getByText('2 selected').waitFor()
+      await bar.getByRole('button', { name: 'Disable' }).click()
+      const enabled = async (name: string) => (await controller!.list()).skills.find(skill => skill.name === name)?.enabled
+      await expect.poll(async () => [await enabled('beta-skill'), await enabled('gamma-skill')]).toEqual([false, false])
+      await bar.getByRole('button', { name: 'Enable' }).click()
+      await expect.poll(async () => [await enabled('beta-skill'), await enabled('gamma-skill')]).toEqual([true, true])
+      await bar.getByRole('button', { name: 'Done' }).click()
+      await expect.poll(() => bar.count()).toBe(0)
+
+      // Search (Spec #221 T177) filters as the user types; emptying it shows every skill again.
+      const search = page.getByRole('searchbox', { name: 'Search installed Skills' })
+      await search.fill('GAMMA')
+      await expect.poll(order).toEqual(['gamma-skill'])
+      await search.fill('nothing-like-this')
+      await page.getByRole('status').filter({ hasText: 'No Skills match “nothing-like-this”' }).waitFor()
+      await search.fill('')
+      await expect.poll(order).toEqual(['gamma-skill', 'alpha-skill', 'beta-skill'])
 
       await page.getByRole('button', { name: 'More actions for beta-skill' }).click()
       await page.getByRole('menuitem', { name: 'Chat with it' }).click()

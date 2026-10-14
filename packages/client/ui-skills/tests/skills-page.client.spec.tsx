@@ -9,8 +9,8 @@ import { SkillsPanelIcon } from '../src/client/SkillsPanelIcon.tsx'
 
 afterEach(cleanup)
 
-function skill(name: string, enabled = true, group: InstalledSkillView['group'] = 'custom'): InstalledSkillView {
-  return { name, description: `${name} description`, group, source: group === 'custom' ? 'user-dsh' : 'market', path: `/s/${name}/SKILL.md`, enabled }
+function skill(name: string, enabled = true, group: InstalledSkillView['group'] = 'custom', withdrawn = false): InstalledSkillView {
+  return { name, description: `${name} description`, group, source: group === 'custom' ? 'user-dsh' : 'market', path: `/s/${name}/SKILL.md`, enabled, withdrawn }
 }
 
 function renderPage(initial: Partial<InstalledSnapshot> = {}) {
@@ -148,8 +148,250 @@ describe('Skills page', () => {
     expect(within(screen.getByRole('region', { name: /用户自定义/ })).getByText('alpha')).toBeTruthy()
   })
 
+  it('marks a withdrawn market Skill and locks its switch, while uninstall stays available', () => {
+    const { props } = pageProps({ skills: [skill('hub-pdf', false, 'market', true)] }, {
+      statuses: { 'hub-pdf': { name: 'hub-pdf', displayName: 'hub-pdf', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: null, state: 'withdrawn' } },
+    })
+    render(<InstalledView {...props} onBack={() => {}} />)
+    const market = screen.getByRole('region', { name: /来自市场/ })
+    expect(within(market).getByTestId('skill-withdrawn').textContent).toContain('已被收回')
+    expect(within(market).getByRole<HTMLButtonElement>('switch', { name: '启用 hub-pdf' }).disabled).toBe(true)
+    fireEvent.click(within(market).getByRole('button', { name: 'hub-pdf 的更多操作' }))
+    expect(screen.getByRole('menuitem', { name: '卸载' })).toBeTruthy()
+  })
+
+  it('reads the list again quietly once the Hub check finished', async () => {
+    const { props } = pageProps({ skills: [skill('alpha')] })
+    render(<InstalledView {...props} onBack={() => {}} />)
+    await vi.waitFor(() => { expect(props.onSync).toHaveBeenCalledOnce() })
+  })
+
+  it('drops the withdrawn mark as soon as the Hub check reports the Skill offered again', () => {
+    const { props } = pageProps({ skills: [skill('hub-pdf', false, 'market', true)] }, {
+      statuses: { 'hub-pdf': { name: 'hub-pdf', displayName: 'hub-pdf', hubSkillId: 's-pdf', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' } },
+    })
+    render(<InstalledView {...props} onBack={() => {}} />)
+    expect(screen.queryByTestId('skill-withdrawn')).toBeNull()
+    expect(screen.getByRole<HTMLButtonElement>('switch', { name: '启用 hub-pdf' }).disabled).toBe(false)
+  })
+
   it('says when nothing came from the market yet', () => {
     renderPage({ skills: [skill('alpha')] })
     expect(within(screen.getByRole('region', { name: /来自市场/ })).getByText('还没有从市场安装 Skill')).toBeTruthy()
+  })
+
+  describe('pins and bulk management (Spec #221 T176)', () => {
+    const names = (region: HTMLElement) => within(region).getAllByRole('listitem').map(item => item.textContent ?? '')
+
+    it('puts pinned cards first in their group, most recently pinned first, and unpins', () => {
+      const { props } = renderPage({ skills: [skill('alpha'), skill('beta'), skill('gamma')] })
+      const custom = screen.getByRole('region', { name: /用户自定义/ })
+      fireEvent.click(within(custom).getByRole('button', { name: '置顶 gamma' }))
+      fireEvent.click(within(custom).getByRole('button', { name: '置顶 beta' }))
+      expect(props.onTogglePin).toHaveBeenCalledWith('/s/gamma/SKILL.md', true)
+      expect(names(custom).map(text => /alpha|beta|gamma/.exec(text)?.[0])).toEqual(['beta', 'gamma', 'alpha'])
+      expect(within(custom).getByRole('button', { name: '置顶 beta' }).getAttribute('aria-pressed')).toBe('true')
+      expect(within(custom).getByRole('button', { name: '置顶 alpha' }).getAttribute('aria-pressed')).toBe('false')
+      fireEvent.click(within(custom).getByRole('button', { name: '置顶 beta' }))
+      expect(props.onTogglePin).toHaveBeenLastCalledWith('/s/beta/SKILL.md', false)
+    })
+
+    it('selects skills and enables, disables, or uninstalls them after one confirmation', async () => {
+      const { props } = renderPage({ skills: [skill('alpha'), skill('beta', false), skill('hub', true, 'market')] })
+      expect(screen.queryByRole('checkbox', { name: '选择 alpha' })).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: '批量管理' }))
+      const bar = screen.getByRole('toolbar', { name: '批量管理' })
+      for (const name of ['启用', '停用', '卸载']) expect(within(bar).getByRole<HTMLButtonElement>('button', { name }).disabled).toBe(true)
+      fireEvent.click(screen.getByRole('checkbox', { name: '选择 beta' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: '选择 beta' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: '选择 alpha' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: '选择 hub' }))
+      expect(within(bar).getByText('已选 2 个')).toBeTruthy()
+      fireEvent.click(within(bar).getByRole('button', { name: '停用' }))
+      await vi.waitFor(() => { expect(props.onBatch).toHaveBeenCalledWith('disable', ['alpha', 'hub']) })
+      // The buttons stay locked while a batch runs
+      await vi.waitFor(() => { expect(within(bar).getByRole<HTMLButtonElement>('button', { name: '启用' }).disabled).toBe(false) })
+      fireEvent.click(within(bar).getByRole('button', { name: '启用' }))
+      await vi.waitFor(() => { expect(props.onBatch).toHaveBeenLastCalledWith('enable', ['alpha', 'hub']) })
+      await vi.waitFor(() => { expect(within(bar).getByRole<HTMLButtonElement>('button', { name: '卸载' }).disabled).toBe(false) })
+
+      fireEvent.click(within(bar).getByRole('checkbox', { name: '全选' }))
+      expect(within(bar).getByText('已选 3 个')).toBeTruthy()
+      fireEvent.click(within(bar).getByRole('button', { name: '卸载' }))
+      const dialog = screen.getByRole('dialog', { name: '卸载选中的 3 个 Skill？' })
+      expect(dialog.textContent).toContain('将卸载：alpha、beta、hub。')
+      fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }))
+      expect(screen.queryByRole('dialog')).toBeNull()
+      fireEvent.click(within(bar).getByRole('button', { name: '卸载' }))
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '取消' }))
+      expect(props.onBatch).toHaveBeenCalledTimes(2)
+      fireEvent.click(within(bar).getByRole('button', { name: '卸载' }))
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '卸载' }))
+      await vi.waitFor(() => { expect(props.onBatch).toHaveBeenLastCalledWith('uninstall', ['alpha', 'beta', 'hub']) })
+      await vi.waitFor(() => { expect(within(bar).getByText('已选 0 个')).toBeTruthy() })
+
+      fireEvent.click(within(bar).getByRole('checkbox', { name: '全选' }))
+      fireEvent.click(within(bar).getByRole('checkbox', { name: '全选' }))
+      expect(within(bar).getByText('已选 0 个')).toBeTruthy()
+      fireEvent.click(within(bar).getByRole('button', { name: '完成' }))
+      expect(screen.queryByRole('toolbar')).toBeNull()
+      expect(screen.queryByRole('checkbox', { name: '选择 alpha' })).toBeNull()
+    })
+
+    it('says which skills a batch could not do, keeps them selected, and dismisses the message', async () => {
+      const { props } = renderPage({ skills: [skill('alpha'), skill('beta')] })
+      props.onBatch.mockResolvedValueOnce(['beta'])
+      fireEvent.click(screen.getByRole('button', { name: '批量管理' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: '全选' }))
+      fireEvent.click(screen.getByRole('button', { name: '卸载' }))
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '卸载' }))
+      await vi.waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('1 个没有完成：beta') })
+      expect(screen.getByText('已选 1 个')).toBeTruthy()
+      fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: '关闭' }))
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('leaves withdrawn skills out of a bulk enable, shows the partial selection, and locks the cards while a batch runs', async () => {
+      const { props, installedStore } = pageProps({ skills: [skill('alpha', false), skill('gone', false, 'market', true)] }, {
+        statuses: { gone: { name: 'gone', displayName: '已收回的', hubSkillId: 's-g', installedVersion: '1.0.0', latestVersion: null, state: 'withdrawn' } },
+      })
+      let finish: (refused: readonly string[]) => void = () => {}
+      props.onBatch.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+      render(<InstalledView {...props} onBack={() => {}} />)
+      fireEvent.click(screen.getByRole('button', { name: '批量管理' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: '选择 alpha' }))
+      expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '全选' }).indeterminate).toBe(true)
+      fireEvent.click(screen.getByRole('checkbox', { name: '选择 已收回的' }))
+      fireEvent.click(screen.getByRole('button', { name: '启用' }))
+      expect(props.onBatch).toHaveBeenCalledWith('enable', ['alpha'])
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: '完成' }).disabled).toBe(true)
+      // Bulk mode keeps only the checkbox on each card
+      expect(screen.queryByRole('switch', { name: '启用 alpha' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'alpha 的更多操作' })).toBeNull()
+      expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择 alpha' }).disabled).toBe(true)
+      await act(async () => { finish([]) })
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: '完成' }).disabled).toBe(false)
+
+      // A skill that leaves the list leaves the selection
+      act(() => { installedStore.set({ ...installedStore.getSnapshot(), skills: [skill('alpha', false)] }) })
+      expect(screen.getByText('已选 1 个')).toBeTruthy()
+    })
+
+    it('names refused market skills by their display name, and a failed batch still unlocks', async () => {
+      const { props } = pageProps({ skills: [skill('hub', true, 'market')] }, {
+        statuses: { hub: { name: 'hub', displayName: '天猫发品', hubSkillId: 's-h', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' } },
+      })
+      props.onBatch.mockResolvedValueOnce(['hub'])
+      render(<InstalledView {...props} onBack={() => {}} />)
+      fireEvent.click(screen.getByRole('button', { name: '批量管理' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: '全选' }))
+      fireEvent.click(screen.getByRole('button', { name: '停用' }))
+      await vi.waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('1 个没有完成：天猫发品') })
+      props.onBatch.mockRejectedValueOnce(new Error('lost'))
+      fireEvent.click(screen.getByRole('button', { name: '停用' }))
+      await vi.waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: '完成' }).disabled).toBe(false) })
+      expect(screen.getByRole('alert').textContent).toContain('1 个没有完成：天猫发品')
+    })
+
+    it('stays out of bulk mode when the user left it before an uninstall finished', async () => {
+      const { props } = renderPage({ skills: [skill('alpha')] })
+      fireEvent.click(screen.getByRole('button', { name: '批量管理' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: '全选' }))
+      fireEvent.click(screen.getByRole('button', { name: '卸载' }))
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '卸载' }))
+      await vi.waitFor(() => { expect(props.onBatch).toHaveBeenCalledWith('uninstall', ['alpha']) })
+      await vi.waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: '完成' }).disabled).toBe(false) })
+      fireEvent.click(screen.getByRole('button', { name: '完成' }))
+      expect(screen.queryByRole('toolbar')).toBeNull()
+    })
+
+    it('offers no bulk management when nothing is installed', () => {
+      renderPage({ skills: [] })
+      expect(screen.queryByRole('button', { name: '批量管理' })).toBeNull()
+    })
+  })
+
+  describe('search (Spec #221 T177)', () => {
+    const search = () => screen.getByRole('searchbox', { name: '搜索已安装的 Skill' })
+    const type = (text: string) => { fireEvent.change(search(), { target: { value: text } }) }
+    const statuses = {
+      'tmall-publish': { name: 'tmall-publish', displayName: '天猫发品', hubSkillId: 's-t', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' as const },
+    }
+    const renderMixed = () => {
+      const { props } = pageProps({ skills: [skill('alpha'), { ...skill('beta'), description: 'Writes SQL queries' }, skill('tmall-publish', true, 'market')] }, { statuses })
+      render(<InstalledView {...props} onBack={() => {}} />)
+      return props
+    }
+
+    it('filters as the user types by display name, name, or description, ignoring case, and hides groups without a match', () => {
+      renderMixed()
+      type('天猫')
+      expect(screen.getByText('天猫发品')).toBeTruthy()
+      expect(screen.queryByRole('region', { name: /用户自定义/ })).toBeNull()
+      type('TMALL')
+      expect(within(screen.getByRole('region', { name: /来自市场/ })).getByText('tmall-publish')).toBeTruthy()
+      type('  sql ')
+      expect(screen.getByRole('heading', { name: /^用户自定义\s*1$/ })).toBeTruthy()
+      expect(screen.getByText('beta')).toBeTruthy()
+      expect(screen.queryByText('alpha')).toBeNull()
+      expect(screen.queryByRole('region', { name: /来自市场/ })).toBeNull()
+    })
+
+    it('shows every skill again when the field is emptied', () => {
+      renderMixed()
+      type('alpha')
+      expect(screen.queryByText('beta')).toBeNull()
+      type('')
+      expect(screen.getByText('beta')).toBeTruthy()
+      expect(screen.getByRole('region', { name: /来自市场/ })).toBeTruthy()
+    })
+
+    it('says when nothing matches, in a status region that stays mounted', () => {
+      renderMixed()
+      expect(screen.getByRole('status').textContent).toBe('')
+      type(' zzz ')
+      expect(screen.getByRole('status').textContent).toBe('没有找到和「zzz」匹配的 Skill')
+      expect(screen.queryByRole('region')).toBeNull()
+    })
+
+    it('limits select all and the batch to the matching skills, and starts a new selection with each search', async () => {
+      const props = renderMixed()
+      fireEvent.click(screen.getByRole('button', { name: '批量管理' }))
+      expect(search()).toBeTruthy()
+      fireEvent.click(screen.getByRole('checkbox', { name: '选择 beta' }))
+      type('alpha')
+      expect(screen.getByText('已选 0 个')).toBeTruthy()
+      fireEvent.click(screen.getByRole('checkbox', { name: '全选' }))
+      expect(screen.getByText('已选 1 个')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: '停用' }))
+      await vi.waitFor(() => { expect(props.onBatch).toHaveBeenCalledWith('disable', ['alpha']) })
+      type('')
+      expect(screen.getByText('已选 0 个')).toBeTruthy()
+      type('天猫')
+      fireEvent.click(screen.getByRole('checkbox', { name: '全选' }))
+      fireEvent.click(screen.getByRole('button', { name: '卸载' }))
+      expect(screen.getByRole('dialog').textContent).toContain('将卸载：天猫发品。')
+    })
+
+    it('starts each search at the first page of a group', () => {
+      renderPage({ skills: Array.from({ length: 30 }, (_, index) => skill(`skill-${String(index).padStart(2, '0')}`)) })
+      fireEvent.click(screen.getByRole('button', { name: '加载更多（剩 18 个）' }))
+      expect(screen.getByText('skill-20')).toBeTruthy()
+      type('skill-')
+      expect(screen.getByRole('button', { name: '加载更多（剩 18 个）' })).toBeTruthy()
+      expect(screen.queryByText('skill-20')).toBeNull()
+    })
+
+    it('matches a custom skill by its own name, not a market display name for the same slug', () => {
+      const { props } = pageProps({ skills: [skill('tmall-publish')] }, { statuses })
+      render(<InstalledView {...props} onBack={() => {}} />)
+      type('天猫')
+      expect(screen.getByRole('status').textContent).toBe('没有找到和「天猫」匹配的 Skill')
+    })
+
+    it('offers no search when nothing is installed', () => {
+      renderPage({ skills: [] })
+      expect(screen.queryByRole('searchbox')).toBeNull()
+    })
   })
 })

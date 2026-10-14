@@ -3559,9 +3559,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: workspace:*
         version: link:../ui-slots
-      '@deepseek-ai/dsh-connectors':
-        specifier: workspace:*
-        version: link:../../connector/connectors
       '@deepseek-ai/dsh-schedule':
         specifier: workspace:*
         version: link:../../schedule/schedule
@@ -10626,6 +10623,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:~
+        version: link:../../../vendor/loader
       '@deepseek-ai/dsh-commands':
         specifier: workspace:*
         version: link:../commands
@@ -11909,9 +11909,6 @@ importers:
       '@deepseek-ai/dsh-assistants':
         specifier: workspace:*
         version: link:../../assistant/assistants
-      '@deepseek-ai/dsh-connectors':
-        specifier: workspace:*
-        version: link:../../connector/connectors
       '@deepseek-ai/dsh-permission-presets':
         specifier: workspace:*
         version: link:../../interaction/permission-presets

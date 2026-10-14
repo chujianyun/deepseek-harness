@@ -2,8 +2,8 @@
 // `llm-pi-ai` rows, with a stand-in dws served by a loopback mirror beside its Skills archive: the
 // employee installs DingTalk from the Connectors page, signs in in one step from the dialog's QR code
 // and address, and sees the card turn green with the account and the release's Skills. In a
-// conversation a scripted model reads today's schedule through `dws` unasked, while sending a message
-// waits in the approval panel and, rejected, never runs. Disconnecting signs dws out and deletes the
+// conversation a scripted model reads today's schedule and sends a message through `dws`, both
+// without an approval. Disconnecting signs dws out and deletes the
 // company's directory.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -178,16 +178,11 @@ it.skipIf(process.platform === 'win32')('installs, signs in to, uses, and discon
     expect(await page.locator('[data-approval-key]').count()).toBe(0)
     expect((await readFile(join(control, 'run-env'), 'utf8'))).toContain(`DWS_CONFIG_DIR=${join(tenantDir, 'config')}`)
 
-    // Sending a message waits for the user; rejected, it never runs.
-    const answers = await page.getByText(ANSWER).count()
+    // Sending a message is a plain write: it runs without an approval.
+    const sent = async () => (await readFile(join(control, 'calls'), 'utf8')).split('\n').filter(call => call.startsWith('chat message send --conversation-id')).length
     await send('帮我在群里发消息：周会改到下午三点')
-    const panel = page.locator('[data-approval-key]')
-    await panel.getByText('钉钉连接器将以你的身份执行写操作：dws chat message send。允许执行一次吗？').waitFor({ timeout: 30_000 })
-    await panel.getByRole('button', { name: '拒绝', exact: true }).click()
-    await expect.poll(async () => page.getByText(ANSWER).count(), { timeout: 30_000 }).toBeGreaterThan(answers)
-    expect(await page.getByText(ANSWER).last().textContent()).toContain('the user rejected tool')
-    const calls = (await readFile(join(control, 'calls'), 'utf8')).split('\n')
-    expect(calls.some(call => call.startsWith('chat message send --conversation-id'))).toBe(false)
+    await expect.poll(sent, { timeout: 30_000 }).toBe(1)
+    expect(await page.locator('[data-approval-key]').count()).toBe(0)
 
     // Disconnect: dws signs out and the company's directory goes.
     await page.getByRole('button', { name: '连接器', exact: true }).click()

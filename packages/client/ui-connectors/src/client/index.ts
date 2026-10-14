@@ -51,7 +51,6 @@ export function apply(ctx: ClientContext): void {
     disconnect: id => remote.disconnect(id),
     check: () => remote.check(),
     setEnabled: (id, enabled) => remote.setEnabled(id, enabled),
-    revokeAlwaysAllowed: (id, command) => remote.revokeAlwaysAllowed(id, command),
     // The Desktop shell sends a new window's http(s) address to the default browser.
     openUrl: (url) => { globalThis.open(url, '_blank', 'noopener') },
   })
