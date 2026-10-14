@@ -3559,9 +3559,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: workspace:*
         version: link:../ui-slots
-      '@deepseek-ai/dsh-connectors':
-        specifier: workspace:*
-        version: link:../../connector/connectors
       '@deepseek-ai/dsh-schedule':
         specifier: workspace:*
         version: link:../../schedule/schedule
@@ -11909,9 +11906,6 @@ importers:
       '@deepseek-ai/dsh-assistants':
         specifier: workspace:*
         version: link:../../assistant/assistants
-      '@deepseek-ai/dsh-connectors':
-        specifier: workspace:*
-        version: link:../../connector/connectors
       '@deepseek-ai/dsh-permission-presets':
         specifier: workspace:*
         version: link:../../interaction/permission-presets

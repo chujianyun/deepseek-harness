@@ -680,7 +680,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: '@Remote(\'create\') async create(request: AutomationTaskCreateRequest): Promise<AutomationTaskCreateValue>',
-        description: 'Create one automation task: a new Session in the workspace, named after the task, with the requested assistant, model, permission preset, and connector grant, then the schedule bound to it. The assistant, connectors, and permission presets are optional services; asking for one a deployment lacks is `automation-tasks/unavailable`. A step\'s refusal passes through unchanged, except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.',
+        description: 'Create one automation task: a new Session in the workspace, named after the task, with the requested assistant, model, and permission preset, then the schedule bound to it. The assistant and permission presets are optional services; asking for one a deployment lacks is `automation-tasks/unavailable`. A step\'s refusal passes through unchanged, except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.',
         parameters: [{ name: 'request', description: 'the task as the form submits it.' }],
         returns: 'the new Session and the stored schedule.',
       },
@@ -992,18 +992,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'id', description: 'the connector.' }, { name: 'enabled', description: 'whether the model may use it.' }],
         returns: 'the state once the setting is saved and the model\'s script and Skills follow it.',
         throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
-      },
-      {
-        signature: '@Remote async revokeAlwaysAllowed(id: string, command: string): Promise<ConnectorsState>',
-        description: 'Stop always allowing a write command for the current tenant: it asks again.',
-        parameters: [{ name: 'id', description: 'the connector.' }, { name: 'command', description: 'the command words, as the view lists them.' }],
-        returns: 'the state once the setting is saved.',
-        throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
-      },
-      {
-        signature: 'allowInSession(session: Session, ids: readonly string[]): void',
-        description: 'Let a session\'s plain connector writes through these connectors run without asking while the signed-in tenant stays signed in, as the session of an unattended automation task needs: appends `connectors/session-allowed`, which replaces the session\'s earlier grant and survives a restart with the session log; an unchanged grant appends nothing. High-risk writes, commands the CLI runs only confirmed, and commands of unknown risk still ask.',
-        parameters: [{ name: 'session', description: 'the session to grant.' }, { name: 'ids', description: 'connectors to allow; an empty list withdraws the grant. Refuses an unknown id with `connectors/not-found`, one unsupported here with `connectors/unavailable`, and a signed-out Hub with `hub-account/signed-out`.' }],
       },
       {
         signature: 'restrict(filter: ConnectorFilter): () => void',
@@ -5688,7 +5676,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AutomationTaskCreateRequest',
-    declaration: 'export interface AutomationTaskCreateRequest {\n    readonly title: string;\n    readonly prompt: string;\n    readonly workspaceId: WorkspaceId;\n    readonly assistantId?: string;\n    readonly model?: ModelSelection;\n    readonly permission?: string;\n    readonly connectors?: readonly string[];\n    readonly timing: ScheduleTimingChange;\n    readonly window?: ScheduleWindowInput;\n}',
+    declaration: 'export interface AutomationTaskCreateRequest {\n    readonly title: string;\n    readonly prompt: string;\n    readonly workspaceId: WorkspaceId;\n    readonly assistantId?: string;\n    readonly model?: ModelSelection;\n    readonly permission?: string;\n    readonly timing: ScheduleTimingChange;\n    readonly window?: ScheduleWindowInput;\n}',
   },
   {
     name: 'AutomationTaskCreateValue',
@@ -5936,7 +5924,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectorView',
-    declaration: 'export interface ConnectorView {\n    readonly id: ConnectorId;\n    readonly status: ConnectorStatus;\n    readonly cli: string;\n    readonly version: string;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly error: ConnectorInstallError | null;\n    readonly login: ConnectorLoginView | null;\n    readonly loginError: ConnectorLoginError | null;\n    readonly account: string | null;\n    readonly problem: string | null;\n    readonly enabled: boolean;\n    readonly skills: readonly ConnectorSkillView[];\n    readonly alwaysAllowed: readonly string[];\n}',
+    declaration: 'export interface ConnectorView {\n    readonly id: ConnectorId;\n    readonly status: ConnectorStatus;\n    readonly cli: string;\n    readonly version: string;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly error: ConnectorInstallError | null;\n    readonly login: ConnectorLoginView | null;\n    readonly loginError: ConnectorLoginError | null;\n    readonly account: string | null;\n    readonly problem: string | null;\n    readonly enabled: boolean;\n    readonly skills: readonly ConnectorSkillView[];\n}',
   },
   {
     name: 'ContentBlockMap',

@@ -14,7 +14,7 @@ The connection belongs to the tenant of the current Hub sign-in. Each tenant get
 
 ## Use in conversations
 
-While a connector is installed and switched on for the current tenant, `dsh-shell-env`'s PATH contributor puts a per-tenant script named after each CLI ahead of the model shell's `PATH`: connected, it runs the installed CLI with the tenant's directories; disconnected, it refuses and points to the Connectors page; a failing command triggers a health check. While connected, the Skills the CLI release ships join the skill catalog from the `connectors` provider, ahead of the user's own Skill directories. Switching the connector off keeps the sign-in and takes both away. Before a bash call runs, the connector's `tools/pre-execute` listener classifies its connector commands by what each states in `--help` — lark-cli's `Risk:` line, dws's `Safety:` line: reads run unasked; writes, and commands whose risk cannot be read, wait for the user's approval in the approval panel; a high-risk write carries a ⚠️ warning, and a command the CLI runs only confirmed runs with `--yes` once allowed. A plain write can be **always allowed** for the signed-in tenant: later calls of the same command words run unasked and leave a `connectors/always-allowed` audit event, and the connector card lists and revokes them.
+While a connector is installed and switched on for the current tenant, `dsh-shell-env`'s PATH contributor puts a per-tenant script named after each CLI ahead of the model shell's `PATH`: connected, it runs the installed CLI with the tenant's directories; disconnected, it refuses and points to the Connectors page; a failing command triggers a health check. While connected, the Skills the CLI release ships join the skill catalog from the `connectors` provider, ahead of the user's own Skill directories. Switching the connector off keeps the sign-in and takes both away. Before a bash call runs, the connector's `tools/pre-execute` listener classifies its connector commands by what each states in `--help` — lark-cli's `Risk:` line, dws's `Safety:` line: reads and plain writes run unasked; high-risk writes, commands the CLI runs only confirmed, and commands whose risk cannot be read wait for the user's approval in the approval panel; a high-risk write carries a ⚠️ warning, and a command the CLI runs only confirmed runs with `--yes` once allowed.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -105,29 +105,6 @@ Host owner of the connectors and of the `connectors` Remote namespace.
 @Remote async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState>
 
 /**
- * Stop always allowing a write command for the current tenant: it asks again.
- * @param id - the connector.
- * @param command - the command words, as the view lists them.
- * @returns the state once the setting is saved.
- * @throws RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`;
- *   Error when mounted without Settings or a profile entry.
- */
-@Remote async revokeAlwaysAllowed(id: string, command: string): Promise<ConnectorsState>
-
-/**
- * Let a session's plain connector writes through these connectors run without asking while the
- * signed-in tenant stays signed in, as the session of an unattended automation task needs: appends
- * `connectors/session-allowed`, which replaces the session's earlier grant and survives a restart
- * with the session log; an unchanged grant appends nothing. High-risk writes, commands the CLI
- * runs only confirmed, and commands of unknown risk still ask.
- * @param session - the session to grant.
- * @param ids - connectors to allow; an empty list withdraws the grant. Refuses an unknown id with
- *   `connectors/not-found`, one unsupported here with `connectors/unavailable`, and a signed-out Hub
- *   with `hub-account/signed-out`.
- */
-allowInSession(session: Session, ids: readonly string[]): void
-
-/**
  * Keep sessions from using connectors. Every added filter applies to each model shell call: a
  * connector a filter refuses for the call's agent puts no CLI on that call's `PATH`, gives the
  * session none of its Skills, and a call that names its CLI is denied. Calls without an agent
@@ -137,8 +114,6 @@ allowInSession(session: Session, ids: readonly string[]): void
  */
 restrict(filter: ConnectorFilter): () => void
 ```
-
-Types: [Session](session.md)
 
 Source: [`packages/connector/connectors/src/index.ts`](../../packages/connector/connectors/src/index.ts)
 <!-- END GENERATED cordis-surface -->

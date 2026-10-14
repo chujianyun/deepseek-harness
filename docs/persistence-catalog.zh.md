@@ -513,8 +513,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 /**
  * A bash call ran connector writes without asking, because the user had always allowed each of
  * them for the signed-in tenant, or allowed their connectors for this session — log-only audit,
- * never in the model transcript. `commands`
- * names them as `<cli> <command words>`, such as `lark-cli im +messages-send`.
+ * never in the model transcript. `commands` names them as `<cli> <command words>`, such as
+ * `lark-cli im +messages-send`. No longer appended: plain writes now run without asking; kept so
+ * logs that carry it still load.
  */
 'connectors/always-allowed': {
   callId: ToolCallId
@@ -524,7 +525,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[ToolCallId](subsystems/core.zh.md)
 
-来源：[`packages/connector/connectors/src/types.ts:18`](../packages/connector/connectors/src/types.ts)
+来源：[`packages/connector/connectors/src/types.ts:19`](../packages/connector/connectors/src/types.ts)
 
 <a id="connectorssession-allowed--log-only"></a>
 
@@ -532,10 +533,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ```ts persistence-catalog
 /**
- * The session's plain connector writes run without asking for these connectors from now on,
- * while the granting tenant stays signed in, as granted when an automation task created the
- * session; replaces the earlier grant, and an empty list withdraws it. Log-only, never in the
- * model transcript.
+ * Granted a session's plain connector writes for these connectors on behalf of a tenant, as an
+ * automation task did when it created the session. Log-only, never in the model transcript. No
+ * longer appended: plain writes now run without asking; kept so logs that carry it still load.
  */
 'connectors/session-allowed': {
   connectors: string[]
@@ -5758,7 +5758,7 @@ SHA-256: `000c1c285bf546d38b8d6713d53aad649f6aa8062c03ba23ad9259d7243ee218`
 
 SHA-256: `2bcf34ac7dc95d34676ac2da19c692bd1fb17a58c54164fb904c8cd1b83c243b`
 
-来源：[`packages/connector/connectors/src/types.ts:18`](../packages/connector/connectors/src/types.ts)
+来源：[`packages/connector/connectors/src/types.ts:19`](../packages/connector/connectors/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|

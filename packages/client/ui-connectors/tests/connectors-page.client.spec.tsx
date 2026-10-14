@@ -5,6 +5,7 @@ import type { ConnectorsState, ConnectorView } from '@deepseek-ai/dsh-connectors
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ConnectorsSnapshot } from '../src/client/connectors-source.ts'
+import { ConnectorLogo } from '../src/client/ConnectorLogo.tsx'
 import { ConnectorsPage } from '../src/client/ConnectorsPage.tsx'
 import { en, zh } from '../src/client/locales.ts'
 
@@ -12,11 +13,11 @@ afterEach(() => { cleanup() })
 
 const feishu = (over: Partial<ConnectorView> = {}): ConnectorView => ({
   id: 'feishu', status: 'not-installed', cli: 'lark-cli', version: '1.0.97', receivedBytes: 0, totalBytes: 1000, error: null,
-  login: null, loginError: null, account: null, problem: null, enabled: true, skills: [], alwaysAllowed: [], ...over,
+  login: null, loginError: null, account: null, problem: null, enabled: true, skills: [], ...over,
 })
 const dingtalk = (over: Partial<ConnectorView> = {}): ConnectorView => ({
   id: 'dingtalk', status: 'not-installed', cli: 'dws', version: '1.0.63', receivedBytes: 0, totalBytes: 2000, error: null,
-  login: null, loginError: null, account: null, problem: null, enabled: true, skills: [], alwaysAllowed: [], ...over,
+  login: null, loginError: null, account: null, problem: null, enabled: true, skills: [], ...over,
 })
 const BOTH_STEPS = ['create-app', 'authorize'] as const
 
@@ -28,7 +29,6 @@ function mount(state: ConnectorsState | undefined, extra: Partial<ConnectorsSnap
     onConnect: vi.fn(async (_id: string) => {}), onCancelConnect: vi.fn(async (_id: string) => {}),
     onDisconnect: vi.fn(async (_id: string) => {}), onCheck: vi.fn(async () => {}), onOpenUrl: vi.fn((_url: string) => {}),
     onSetEnabled: vi.fn(async (_id: string, _enabled: boolean) => {}),
-    onRevokeAlwaysAllowed: vi.fn(async (_id: string, _command: string) => {}),
   }
   render(<ConnectorsPage {...props} />)
   return { props, store }
@@ -41,6 +41,18 @@ describe('connectors page', () => {
     mount(undefined)
     expect(screen.getByRole('heading', { name: '连接器' })).toBeTruthy()
     expect(screen.queryByRole('listitem')).toBeNull()
+  })
+
+  it.each([zh, en])('shows each platform\'s logo beside its name, under a header without an intro', (copy) => {
+    mount({ connectors: [feishu(), dingtalk()] }, {}, copy)
+    expect(card(copy['name.feishu']).querySelector('svg[data-logo="feishu"]')?.getAttribute('aria-hidden')).toBe('true')
+    expect(card(copy['name.dingtalk']).querySelector('svg[data-logo="dingtalk"]')?.getAttribute('aria-hidden')).toBe('true')
+    expect(screen.getByRole('banner').textContent).toBe(copy.title)
+  })
+
+  it('marks a connector without a logo by its name\'s first character', () => {
+    render(<ConnectorLogo id="wecom" name="企业微信" />)
+    expect(screen.getByText('企').getAttribute('aria-hidden')).toBe('true')
   })
 
   it.each([zh, en])('offers + on each connector that is not installed, with its pinned CLI', (copy) => {
@@ -207,21 +219,6 @@ describe('connectors page', () => {
     expect(screen.getByRole('alert').textContent).toContain('操作失败：no connector x')
     fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     expect(props.onDismiss).toHaveBeenCalledOnce()
-  })
-
-  it.each([zh, en])('lists the always-allowed write commands, each revocable', (copy) => {
-    const { props } = mount({ connectors: [feishu({ status: 'connected', alwaysAllowed: ['im +messages-send', 'docs +create'] }), dingtalk({ status: 'connected' })] }, {}, copy)
-    const listed = within(card(copy['name.feishu'])).getByRole('list', { name: copy.alwaysAllowed })
-    expect(within(listed).getAllByRole('listitem').map(item => item.querySelector('code')?.textContent)).toEqual(['lark-cli im +messages-send', 'lark-cli docs +create'])
-    fireEvent.click(within(listed).getByRole('button', { name: copy.revoke.replace('{command}', 'lark-cli docs +create') }))
-    expect(props.onRevokeAlwaysAllowed).toHaveBeenCalledWith('feishu', 'docs +create')
-    // Nothing always allowed: no list.
-    expect(within(card(copy['name.dingtalk'])).queryByRole('list', { name: copy.alwaysAllowed })).toBeNull()
-  })
-
-  it('disables revoking while an action on the connector is in flight', () => {
-    mount({ connectors: [feishu({ status: 'connected', alwaysAllowed: ['im +messages-send'] })] }, { busy: ['feishu'] })
-    expect(within(card('飞书')).getByRole('button', { name: '撤销始终允许 lark-cli im +messages-send' })).toHaveProperty('disabled', true)
   })
 
   it('lists the Skills the connector adds, collapsing the rest, and switches it off and on', () => {
