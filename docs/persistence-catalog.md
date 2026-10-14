@@ -511,8 +511,9 @@ Source: [`packages/compaction/compaction/src/types.ts:34`](../packages/compactio
 /**
  * A bash call ran connector writes without asking, because the user had always allowed each of
  * them for the signed-in tenant, or allowed their connectors for this session — log-only audit,
- * never in the model transcript. `commands`
- * names them as `<cli> <command words>`, such as `lark-cli im +messages-send`.
+ * never in the model transcript. `commands` names them as `<cli> <command words>`, such as
+ * `lark-cli im +messages-send`. No longer appended: plain writes now run without asking; kept so
+ * logs that carry it still load.
  */
 'connectors/always-allowed': {
   callId: ToolCallId
@@ -522,7 +523,7 @@ Source: [`packages/compaction/compaction/src/types.ts:34`](../packages/compactio
 
 Types: [ToolCallId](subsystems/core.md)
 
-Source: [`packages/connector/connectors/src/types.ts:18`](../packages/connector/connectors/src/types.ts)
+Source: [`packages/connector/connectors/src/types.ts:19`](../packages/connector/connectors/src/types.ts)
 
 <a id="connectorssession-allowed--log-only"></a>
 
@@ -530,10 +531,9 @@ Source: [`packages/connector/connectors/src/types.ts:18`](../packages/connector/
 
 ```ts persistence-catalog
 /**
- * The session's plain connector writes run without asking for these connectors from now on,
- * while the granting tenant stays signed in, as granted when an automation task created the
- * session; replaces the earlier grant, and an empty list withdraws it. Log-only, never in the
- * model transcript.
+ * Granted a session's plain connector writes for these connectors on behalf of a tenant, as an
+ * automation task did when it created the session. Log-only, never in the model transcript. No
+ * longer appended: plain writes now run without asking; kept so logs that carry it still load.
  */
 'connectors/session-allowed': {
   connectors: string[]
@@ -5756,7 +5756,7 @@ Sources: [`packages/knowledge/knowledge-selection/src/types.ts:53`](../packages/
 
 SHA-256: `2bcf34ac7dc95d34676ac2da19c692bd1fb17a58c54164fb904c8cd1b83c243b`
 
-Sources: [`packages/connector/connectors/src/types.ts:18`](../packages/connector/connectors/src/types.ts)
+Sources: [`packages/connector/connectors/src/types.ts:19`](../packages/connector/connectors/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|

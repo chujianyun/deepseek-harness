@@ -6,8 +6,9 @@
  * waits for `control/user` to say `ok` (signed in to the tenant's configuration) or
  * `fail:<message>`; `auth status --readonly --format json` answers from the tenant's configuration
  * unless `control/status.json` overrides it; `auth logout` signs out; `--help` states the Safety of
- * `calendar event list` (read), `chat message send` (write), and `doc delete` (destructive, which
- * runs only with `--yes` or `-y`); `calendar event list` succeeds and `calendar event fail` fails.
+ * `calendar event list` (read), `chat message send` (write), `chat group dismiss` (a write it runs
+ * only confirmed), `doc archive` (destructive), and `doc delete` (destructive, which runs only with
+ * `--yes` or `-y`); `calendar event list` succeeds and `calendar event fail` fails.
  * `calendar event` takes `.data.lock` in the configuration directory, as the real dws does. Every call is logged to
  * `control/calls`, and a business command records its `DWS_*` variables in `control/run-env`.
  */
@@ -23,6 +24,8 @@ case " $* " in
       "calendar event list") echo "Usage: dws calendar event list"; echo; echo "Safety: effect=read  risk=low  confirmation=not_required  idempotency=idempotent" ;;
       "chat message send") echo "Safety: effect=write  risk=medium  confirmation=not_required  idempotency=unknown" ;;
       "doc delete --help") echo "Safety: effect=destructive  risk=high  confirmation=user_required  idempotency=unknown" ;;
+      "doc archive --help") echo "Safety: effect=destructive  risk=high  confirmation=not_required  idempotency=unknown" ;;
+      "chat group dismiss") echo "Safety: effect=write  risk=medium  confirmation=user_required  idempotency=unknown" ;;
       *) echo "Usage: dws $1" ;;
     esac
     exit 0 ;;

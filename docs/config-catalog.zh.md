@@ -808,9 +808,9 @@ export interface ToolResultPruneConfig {
 
 ## `@deepseek-ai/dsh-connectors`
 
-- `inject`: `hubAccount` · `skills` · `shellEnv` · `sessionProjections`
+- `inject`: `hubAccount` · `skills` · `shellEnv`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/connector/connectors/src/index.ts:107`](../packages/connector/connectors/src/index.ts)
+- `source`: [`packages/connector/connectors/src/index.ts:104`](../packages/connector/connectors/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -825,8 +825,6 @@ export interface Config {
   checkIntervalMs?: number
   /** Connectors switched off, as `<tenantId>/<id>`; edited live through `setEnabled()`. */
   disabled?: Volatile<readonly string[]>
-  /** Write commands always allowed, as `<tenantId>/<id>/<command words>`; added from an approval, revoked by `revokeAlwaysAllowed()`. */
-  alwaysAllowed?: Volatile<readonly string[]>
 }
 
 /** A connector CLI pinned to one release. */

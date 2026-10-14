@@ -684,7 +684,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'automation-tasks',
     title: 'Automation tasks',
     mode: 'core',
-    note: 'Creates a form-made automation task in one call: its named Session with assistant, model, permission, and connector grant, and the schedule bound to it.',
+    note: 'Creates a form-made automation task in one call: its named Session with assistant, model, and permission, and the schedule bound to it.',
   },
   {
     key: 'sessionShare',

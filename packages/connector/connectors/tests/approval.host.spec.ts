@@ -1,17 +1,16 @@
 /**
- * Confirming connector writes: a bash call that runs a writing lark-cli command through a
- * connected connector waits for the user's approval, and an approved high-risk command runs with
- * `--yes`.
+ * Confirming connector commands: a shell call through a connected connector runs reads and plain
+ * writes as its CLI states them; a high-risk command, one the CLI runs only confirmed, or one whose
+ * risk cannot be read waits for the user's approval, and an approved high-risk command runs with `--yes`.
  */
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { PreToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
-import { connectorGrantsProjection } from '../src/index.ts'
 import { cleanups, setup, shell } from './support.ts'
 
 // The stand-in CLI is a POSIX shell script; on Windows windows-wrapper.spec.ts covers the script.
@@ -24,22 +23,15 @@ function bash(command: string, id = 'call-1', agent?: ToolExecution['agent']): T
   }
 }
 
-/** A production agent in a context of its own, and the connector events its session recorded. */
+/** A production agent in a context of its own, and the events its session recorded after it existed. */
 async function auditedAgent() {
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
   await mountAgentLoopTestDependencies(ctx)
   const agent = await (await mountAgentLoopTestHarness(ctx)).create(SessionId(`audited-${String(cleanups.length)}`))
-  // Every event the gate appends after the agent exists, of any type.
   const before = agent.session.ownEvents().length
   const appended = () => agent.session.ownEvents().slice(before).map(event => ({ type: event.type, data: event.data }))
   return { agent, appended }
-}
-
-/** Remember the grant an ask offers. */
-function remember(decision: PreToolDecision): void {
-  if (decision.kind !== 'ask' || decision.onRemember === undefined) throw new Error('the decision offers nothing to remember')
-  decision.onRemember()
 }
 
 async function connected() {
@@ -55,23 +47,29 @@ async function connected() {
   return { ...t, gate }
 }
 
-describe('confirming connector writes', () => {
-  runs('lets reads and other commands run, and asks before a write or a command whose risk is unknown', async () => {
+describe('confirming connector commands', () => {
+  runs('runs reads and plain writes unasked and records nothing, and asks before a command of unknown risk', async () => {
     const t = await connected()
+    const { agent, appended } = await auditedAgent()
     expect(await t.gate(bash('lark-cli calendar +agenda'))).toEqual({ kind: 'allow' })
     expect(await t.gate(bash('ls -la'))).toEqual({ kind: 'allow' })
     expect(await t.gate({ ...bash('lark-cli im +messages-send'), name: 'read' })).toEqual({ kind: 'allow' })
-    expect(await t.gate(bash('lark-cli im +messages-send --text hi'))).toMatchObject({
-      kind: 'ask', reason: 'Feishu connector write command: lark-cli im +messages-send',
-      displayReason: { zh: '飞书连接器将以你的身份执行写操作：lark-cli im +messages-send。允许执行一次吗？' },
+    expect(await t.gate(bash('lark-cli im +messages-send --text hi', 'call-1', agent))).toEqual({ kind: 'allow' })
+    // A variable in a flag value leaves the command readable.
+    expect(await t.gate(bash('lark-cli im +messages-send --text "$MESSAGE"', 'call-2', agent))).toEqual({ kind: 'allow' })
+    expect(appended()).toEqual([])
+    // A command without a stated risk, a variable among the command words, a flag before the last
+    // command word, and a call that hides the CLI all ask.
+    expect(await t.gate(bash('lark-cli calendar list'))).toEqual({
+      kind: 'ask', reason: 'Feishu connector unknown command: lark-cli calendar list',
+      displayReason: {
+        en: 'The risk of this Feishu command cannot be determined, so it is confirmed: lark-cli calendar list. Allow it to run as you once?',
+        zh: '无法确定这条飞书命令的风险，需要确认：lark-cli calendar list。允许以你的身份执行一次吗？',
+      },
     })
-    expect(await t.gate(bash('lark-cli calendar list'))).toMatchObject({
-      kind: 'ask', displayReason: { zh: '无法确定这条飞书命令的风险，按写操作确认：lark-cli calendar list。允许以你的身份执行一次吗？' },
-    })
-    // A long list of commands is cut short.
-    const many = await t.gate(bash(Array.from({ length: 10 }, () => 'lark-cli im +messages-send').join('; ')))
-    expect(many).toMatchObject({ kind: 'ask' })
-    expect((many as { reason: string }).reason).toMatch(/^Feishu connector write command: (lark-cli im \+messages-send; )+lark…$/u)
+    for (const command of ['lark-cli drive "$ACTION" --file-token box_1', 'lark-cli drive --file-token box_1 +delete --yes=true', 'sh -c "lark-cli drive +delete --yes"']) {
+      expect(await t.gate(bash(command))).toMatchObject({ kind: 'ask' })
+    }
     // Another gate's denial stands.
     expect(await t.gate(bash('lark-cli im +messages-send'), { kind: 'deny', reason: 'policy' })).toEqual({ kind: 'deny', reason: 'policy' })
     expect(t.ctx.shellEnv.collect(bash('lark-cli im +messages-send --text hi'))).not.toHaveProperty('DSH_CONNECTOR_CONFIRMED')
@@ -79,10 +77,13 @@ describe('confirming connector writes', () => {
 
   runs('warns before a high-risk command and runs it, once approved, with --yes', async () => {
     const t = await connected()
-    const exec = bash('lark-cli calendar +agenda && lark-cli drive +delete --file-token box_1', 'call-risky')
-    expect(await t.gate(exec)).toMatchObject({
+    const exec = bash('lark-cli calendar +agenda && lark-cli im +messages-send && lark-cli drive +delete --file-token box_1', 'call-risky')
+    expect(await t.gate(exec)).toEqual({
       kind: 'ask', reason: 'Feishu connector high-risk-write command: lark-cli drive +delete',
-      displayReason: { zh: '⚠️ 高风险操作：飞书连接器将以你的身份执行 lark-cli drive +delete，可能删除数据或造成无法撤销的修改。同意后 DSH 会为本次执行加上 --yes。' },
+      displayReason: {
+        en: '⚠️ High-risk operation: the Feishu connector will run lark-cli drive +delete as you. It may delete data or make changes that cannot be undone. If you allow it, DSH confirms it with --yes for this run.',
+        zh: '⚠️ 高风险操作：飞书连接器将以你的身份执行 lark-cli drive +delete，可能删除数据或造成无法撤销的修改。同意后 DSH 会为本次执行加上 --yes。',
+      },
     })
     const { DSH_CONNECTOR_CONFIRMED: confirmed } = t.ctx.shellEnv.collect(exec)
     expect(confirmed).toBe('lark-cli drive +delete')
@@ -102,6 +103,13 @@ describe('confirming connector writes', () => {
     expect(t.ctx.shellEnv.collect(exec)).not.toHaveProperty('DSH_CONNECTOR_CONFIRMED')
   })
 
+  runs('cuts a long list of asked commands short', async () => {
+    const t = await connected()
+    const many = await t.gate(bash(Array.from({ length: 10 }, () => 'lark-cli drive +delete').join('; ')))
+    expect(many).toMatchObject({ kind: 'ask' })
+    expect((many as { reason: string }).reason).toMatch(/^Feishu connector high-risk-write command: (lark-cli drive \+delete; )+[^;]*…$/u)
+  })
+
   runs('reads a PowerShell call of lark-cli.cmd as the same command', async () => {
     const t = await connected()
     const pwsh = (command: string): ToolExecution => ({ ...bash(command, 'call-pwsh'), name: 'pwsh' })
@@ -109,179 +117,18 @@ describe('confirming connector writes', () => {
       kind: 'ask', reason: 'Feishu connector high-risk-write command: lark-cli drive +delete',
     })
     expect(t.ctx.shellEnv.collect(pwsh('lark-cli.cmd drive +delete --file-token box_1'))).toHaveProperty('DSH_CONNECTOR_CONFIRMED', 'lark-cli drive +delete')
-    expect(await t.gate(pwsh('iex "lark-cli drive +delete"'))).toMatchObject({ kind: 'ask' })
+    expect(await t.gate(pwsh('iex "lark-cli drive +delete"'))).toMatchObject({ kind: 'ask', reason: 'Feishu connector unknown command: lark-cli iex "lark-cli drive +delete"' })
+    // A PowerShell variable in a flag value leaves the command readable.
+    expect(await t.gate(pwsh('lark-cli.cmd im +messages-send --text $message'))).toEqual({ kind: 'allow' })
   })
 
   runs('asks nothing while the connector is not connected or switched off', async () => {
     const t = await setup()
     await t.until(view => view.status === 'disconnected')
     const gate = (exec: ToolExecution) => t.ctx.waterfall('tools/pre-execute', exec, () => Promise.resolve<PreToolDecision>({ kind: 'allow' }))
-    expect(await gate(bash('lark-cli im +messages-send'))).toEqual({ kind: 'allow' })
+    expect(await gate(bash('lark-cli drive +delete'))).toEqual({ kind: 'allow' })
     const c = await connected()
     await c.service.setEnabled('feishu', false)
-    expect(await c.gate(bash('lark-cli im +messages-send'))).toEqual({ kind: 'allow' })
-  })
-})
-
-describe('always allowing connector writes', () => {
-  runs('offers to remember a plain write, then runs it unasked for the tenant with an audit record', async () => {
-    const t = await connected()
-    const { agent, appended } = await auditedAgent()
-    const asked = await t.gate(bash('lark-cli im +messages-send --text hi', 'call-1', agent))
-    expect(asked).toMatchObject({ kind: 'ask' })
-    remember(asked)
-    const view = await t.until(item => item.alwaysAllowed.length > 0)
-    expect(view.alwaysAllowed).toEqual(['im +messages-send'])
-    // Other arguments, same command path: no question, and the session records why.
-    expect(await t.gate(bash('lark-cli im +messages-send --text bye --chat-id oc_2', 'call-2', agent))).toEqual({ kind: 'allow' })
-    expect(appended()).toEqual([{ type: 'connectors/always-allowed', data: { callId: 'call-2', commands: ['lark-cli im +messages-send'] } }])
-    // A read beside it changes nothing; a write that is not remembered still asks.
-    expect(await t.gate(bash('lark-cli calendar +agenda && lark-cli im +messages-send', 'call-3', agent))).toEqual({ kind: 'allow' })
-    expect(await t.gate(bash('lark-cli im +messages-send; lark-cli im +messages-reply', 'call-4', agent))).toMatchObject({ kind: 'ask' })
-    // Without a session to record it in, the call asks as before.
-    expect(await t.gate(bash('lark-cli im +messages-send', 'call-5'))).toMatchObject({ kind: 'ask' })
-  })
-
-  runs('keeps asking when a grant cannot be saved, and keeps a grant whose clearing on sign-out cannot be saved', async () => {
-    const t = await connected()
-    const warn = vi.spyOn(t.ctx.logger, 'warn').mockImplementation(() => {})
-    t.failSettings(true)
-    remember(await t.gate(bash('lark-cli im +messages-send')))
-    await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith('connectors: could not save always-allowed commands: Error: settings file is read-only') })
-    expect(await t.saved()).toEqual([])
-    expect(await t.gate(bash('lark-cli im +messages-send', 'call-2'))).toMatchObject({ kind: 'ask' })
-    t.failSettings(false)
-    remember(await t.gate(bash('lark-cli im +messages-send', 'call-3')))
-    await t.until(item => item.alwaysAllowed.length === 1)
-    t.failSettings(true)
-    t.hub.set(null)
-    await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith('connectors: could not clear always-allowed commands: Error: settings file is read-only') })
-    expect(await t.saved()).toEqual(['t-a/feishu/im +messages-send'])
-  })
-
-  runs('never offers to remember a high-risk command, one of unknown risk, or a call that holds one', async () => {
-    const t = await connected()
-    for (const command of ['lark-cli drive +delete --file-token box_1', 'lark-cli calendar list', 'lark-cli im +messages-send && lark-cli drive +delete']) {
-      const decision = await t.gate(bash(command))
-      expect(decision).toMatchObject({ kind: 'ask' })
-      expect(decision).not.toHaveProperty('onRemember')
-    }
-  })
-
-  runs('revokes a grant, keeps grants per tenant, and clears them on disconnect and Hub sign-out', async () => {
-    const t = await connected()
-    const { agent } = await auditedAgent()
-    const send = (id: string) => t.gate(bash('lark-cli im +messages-send', id, agent))
-    remember(await send('call-1'))
-    await t.until(item => item.alwaysAllowed.length === 1)
-    await t.service.revokeAlwaysAllowed('feishu', 'im +messages-send')
-    expect(await send('call-2')).toMatchObject({ kind: 'ask' })
-    remember(await send('call-3'))
-    await t.until(item => item.alwaysAllowed.length === 1)
-    // Another tenant does not inherit it, and the first keeps it.
-    t.hub.set('t-b')
-    await t.until(item => item.alwaysAllowed.length === 0)
-    t.hub.set('t-a')
-    await t.until(item => item.alwaysAllowed.length === 1)
-    await t.service.disconnect('feishu')
-    await t.until(item => item.status === 'disconnected' && item.alwaysAllowed.length === 0)
-    expect(await t.saved()).toEqual([])
-    // Signing out of the Hub clears the tenant's grants too.
-    const again = await connected()
-    remember(await again.gate(bash('lark-cli im +messages-send', 'call-4', agent)))
-    await again.until(item => item.alwaysAllowed.length === 1)
-    again.hub.set(null)
-    await vi.waitFor(async () => { expect(await again.saved()).toEqual([]) })
-  })
-
-  runs('clears every tenant\'s grants when the connector is uninstalled', async () => {
-    const t = await connected()
-    const { agent } = await auditedAgent()
-    remember(await t.gate(bash('lark-cli im +messages-send', 'call-1', agent)))
-    await t.until(item => item.alwaysAllowed.length === 1)
-    await t.service.uninstallConnector('feishu')
-    expect(await t.saved()).toEqual([])
-  })
-
-  runs('refuses to revoke for an unknown connector or while signed out of the Hub', async () => {
-    const t = await connected()
-    await expect(t.service.revokeAlwaysAllowed('nope', 'im +messages-send')).rejects.toMatchObject({ code: 'connectors/not-found' })
-    t.hub.set(null)
-    await t.until(view => view.status === 'disconnected')
-    await expect(t.service.revokeAlwaysAllowed('feishu', 'im +messages-send')).rejects.toMatchObject({ code: 'hub-account/signed-out' })
-  })
-})
-
-describe('allowing connectors for a session', () => {
-  runs('runs the session\'s plain writes unasked with an audit record, and still asks for the rest', async () => {
-    const t = await connected()
-    const { agent, appended } = await auditedAgent()
-    const other = await auditedAgent()
-    t.service.allowInSession(agent.session, ['feishu', 'feishu'])
-    expect(appended()).toEqual([{ type: 'connectors/session-allowed', data: { connectors: ['feishu'], tenantId: 't-a' } }])
-    expect(t.ctx.sessionProjections.stateOf(agent.session, 'connectorGrants')).toEqual({ connectors: ['feishu'], tenantId: 't-a' })
-    // The same grant again appends nothing.
-    t.service.allowInSession(agent.session, ['feishu'])
-    expect(appended()).toHaveLength(1)
-    // A plain write runs unasked and is recorded, whatever its arguments.
-    expect(await t.gate(bash('lark-cli im +messages-send --text hi', 'call-1', agent))).toEqual({ kind: 'allow' })
-    expect(appended().at(-1)).toEqual({ type: 'connectors/always-allowed', data: { callId: 'call-1', commands: ['lark-cli im +messages-send'] } })
-    // A high-risk write and a command of unknown risk still ask.
-    expect(await t.gate(bash('lark-cli drive +delete --file-token box_1', 'call-2', agent))).toMatchObject({ kind: 'ask' })
-    expect(await t.gate(bash('lark-cli calendar list', 'call-3', agent))).toMatchObject({ kind: 'ask' })
-    // Another session, and a call without a session, ask as before.
-    expect(await t.gate(bash('lark-cli im +messages-send', 'call-4', other.agent))).toMatchObject({ kind: 'ask' })
-    expect(await t.gate(bash('lark-cli im +messages-send', 'call-5'))).toMatchObject({ kind: 'ask' })
-    // A later empty grant withdraws it.
-    t.service.allowInSession(agent.session, [])
-    expect(await t.gate(bash('lark-cli im +messages-send', 'call-6', agent))).toMatchObject({ kind: 'ask' })
-  })
-
-  runs('holds only while the granting tenant is signed in', async () => {
-    const t = await connected()
-    const { agent } = await auditedAgent()
-    t.service.allowInSession(agent.session, ['feishu'])
-    t.hub.set('t-b')
-    await t.until(item => item.status === 'disconnected')
-    await t.service.connect('feishu')
-    await t.until(view => view.login?.url != null)
-    await t.answer('app', 'ok')
-    await t.until(view => view.login?.step === 'authorize' && view.login.url !== null)
-    await t.answer('user', 'ok')
-    await t.until(view => view.status === 'connected')
-    expect(await t.gate(bash('lark-cli im +messages-send', 'call-1', agent))).toMatchObject({ kind: 'ask' })
-    t.hub.set(null)
-    await t.until(item => item.status === 'disconnected')
-    expect(() => { t.service.allowInSession(agent.session, ['feishu']) }).toThrow(expect.objectContaining({ code: 'hub-account/signed-out' }))
-  })
-
-  runs('folds the grant from the session log alone', async () => {
-    const { agent } = await auditedAgent()
-    agent.session.append('connectors/session-allowed', { connectors: ['feishu'], tenantId: 't-a' })
-    agent.session.append('connectors/always-allowed', { callId: ToolCallId('x'), commands: [] })
-    const state = agent.session.ownEvents()
-      .reduce<{ connectors: string[]; tenantId: string | null }>(
-        (folded, event) => connectorGrantsProjection.apply(folded, event), connectorGrantsProjection.init())
-    expect(state).toEqual({ connectors: ['feishu'], tenantId: 't-a' })
-    // A restarted service reads the same grant from that log.
-    const t = await connected()
-    expect(await t.gate(bash('lark-cli im +messages-send', 'call-1', agent))).toEqual({ kind: 'allow' })
-  })
-
-  runs('refuses an unknown or unsupported connector and grants nothing', async () => {
-    const t = await connected()
-    const { agent, appended } = await auditedAgent()
-    expect(() => { t.service.allowInSession(agent.session, ['feishu', 'wecom']) }).toThrow(expect.objectContaining({ code: 'connectors/not-found' }))
-    expect(() => { t.service.allowInSession(agent.session, ['dingtalk']) }).toThrow(expect.objectContaining({ code: 'connectors/unavailable' }))
-    expect(appended()).toEqual([])
-  })
-
-  runs('withdraws the projection with the service', async () => {
-    const t = await connected()
-    const { agent } = await auditedAgent()
-    const projections = t.ctx.sessionProjections
-    expect(projections.stateOf(agent.session, 'connectorGrants')).toEqual({ connectors: [], tenantId: null })
-    await t.fiber.dispose()
-    expect(projections.stateOf(agent.session, 'connectorGrants')).toBeUndefined()
+    expect(await c.gate(bash('lark-cli drive +delete'))).toEqual({ kind: 'allow' })
   })
 })
