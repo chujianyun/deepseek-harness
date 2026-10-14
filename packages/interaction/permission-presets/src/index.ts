@@ -14,6 +14,7 @@
 import type {} from '@deepseek-ai/dsh-settings'
 
 import type { Volatile } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 
 import { Context } from '@deepseek-ai/cordis'
 import { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
@@ -203,6 +204,10 @@ export class PermissionPresetService extends TypertRemoteService {
   private readonly presets: Record<string, PresetSpec>
   private autoAdmit: (() => void) | undefined
   private defaultSettings: () => PermissionSettings
+  /** The default the latest `/permission` switch asked Settings to save; a quicker second switch compares against it. */
+  private requestedDefault: string | undefined
+  /** The `defaultPreset` saves, one at a time. */
+  private defaultWrites: Promise<void> = Promise.resolve()
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'permissionPresets')
@@ -270,6 +275,7 @@ export class PermissionPresetService extends TypertRemoteService {
             return { kind: 'error', text: `unknown preset "${name}" (available: ${this.names.join(', ')})` }
           }
           this.apply(agent.session, name, (policy) => { this.ctx.approval.setPolicy(agent, policy) })
+          this.rememberDefault(name)
           return { kind: 'success', text: `preset ${name}` }
         },
       })
@@ -391,12 +397,34 @@ export class PermissionPresetService extends TypertRemoteService {
 
   /**
    * Record a changed preset, then update each changed knob through its own
-   * setter. Selecting the effective preset again appends nothing.
+   * setter. Selecting the effective preset again appends nothing. The default
+   * of later sessions stays; only the user's `/permission` switch changes it.
    * @param session - the session the switch belongs to.
    * @param name - the preset to switch to; unknown names throw.
    */
   set(session: Session, name: string): void {
     this.apply(session, name, (policy) => { setApprovalPolicy(session, policy) })
+  }
+
+  /**
+   * Make a `/permission` switch the default of later sessions: a configured preset picked in a
+   * session becomes `defaultPreset` through the Settings service, while Auto, which reviews only the
+   * current session, does not. Saves run in order, so the latest switch is the default. Without
+   * Settings or a profile entry nothing is saved; a failed save is logged and the default stays.
+   */
+  private rememberDefault(name: string): void {
+    if (name === AUTO_PRESET || name === (this.requestedDefault ?? this.defaultPreset)) return
+    const settings = this.ctx.get('settings')
+    const entry = this.ctx.fiber.entry?.options.id
+    if (settings === undefined || entry === undefined) return
+    this.requestedDefault = name
+    // One save after another, so the default ends as the latest switch even when an earlier save is slower.
+    const save = this.defaultWrites.then(() => settings.update(entry, { defaultPreset: name }))
+    this.defaultWrites = save.catch(() => {})
+    save.catch((error: unknown) => {
+      if (this.requestedDefault === name) this.requestedDefault = undefined
+      this.ctx.logger.warn(`permission: could not save the default preset: ${String(error)}`)
+    })
   }
 
   /** Apply one preset through its durable identity and canonical knob setters. */

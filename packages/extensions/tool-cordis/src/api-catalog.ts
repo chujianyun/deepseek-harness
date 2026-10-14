@@ -2237,7 +2237,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'set(session: Session, name: string): void',
-        description: 'Record a changed preset, then update each changed knob through its own setter. Selecting the effective preset again appends nothing.',
+        description: 'Record a changed preset, then update each changed knob through its own setter. Selecting the effective preset again appends nothing. The default of later sessions stays; only the user\'s `/permission` switch changes it.',
         parameters: [{ name: 'session', description: 'the session the switch belongs to.' }, { name: 'name', description: 'the preset to switch to; unknown names throw.' }],
       },
     ],
