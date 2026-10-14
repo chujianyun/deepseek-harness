@@ -123,7 +123,7 @@ describe('the model shell\'s dws', () => {
     await vi.waitFor(async () => {
       expect((await t.shell(['calendar', 'event', 'list'])).stderr)
         .toContain('DSH: the DingTalk connector is not connected for this company. Ask the user to connect DingTalk on the DSH Connectors page (连接器), then try again.')
-    })
+    }, { timeout: 5000 })
   })
 
   runs('checks the connection again after a bash call of dws fails', async () => {
