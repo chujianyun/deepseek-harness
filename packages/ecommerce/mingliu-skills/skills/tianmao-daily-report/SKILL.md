@@ -23,6 +23,7 @@ A 列指标名去掉空格和括号说明后完全相等才算命中（「外投
 
 都在智能体工作区（当前会话的工作目录）的 `tianmao-daily-report/` 下：
 
+- `sheet.json`（可选，管理员放置）：测试期间指向测试表，`{"spreadsheet_token": "…", "sheet_id": "…"}`；上线时删掉，改读配置文档。
 - `backtest.json`：回测通过的月份，`{"month": "YYYY-MM", "passed_at": "<ISO 时间>", "dates": ["YYYY-MM-DD", …], "note": "…"}`。
 - `YYYYMMDD/`（按要填的日期）：`tmall.json`、`yuntai.json`（采集结果）、`cells-before.json`、`plan.json`、`cells-*.json`（写入内容）、`cells-after.json`。回测日期 D 的采集放在 `backtest-YYYYMMDD/`。
 
@@ -32,7 +33,7 @@ Python 用 `load_workspace_dependencies` 返回的自带解释器；下文 `<pyt
 
 1. **节假日**：`<python> <技能目录>/scripts/holiday.py <今天 YYYY-MM-DD>`。`"holiday": true` → 输出「今日为法定节假日，跳过」并结束（假期里的日期由节后第一次运行补上）；退出码 2（日历没有今年数据）→ 不填，报告「需人工介入」及原因。
 2. **定日期范围**：默认为最近 10 天到昨天（Asia/Shanghai）；用户指定日期时只处理那一天。范围跨两个月时按月份分开，各用当月的表，下面 3~9 步每个月走一遍。
-3. **读配置**：用 `lark-cli docs +fetch`（只读）读云文档《AI巡检固化配置》https://scnntx5zuepg.feishu.cn/docx/E3cXdNjFQoPknUx34NscD0lAnZb 第五节「当月表格映射」，取这个月「天猫一店」的 spreadsheet_token 与「店铺整体」sheet_id。没有这个月的映射 → 这个月不采集、不写表，报告「需人工介入：配置文档缺少 YYYY-MM 天猫日报表映射，请先用 inspection-config-update 更新」。
+3. **读配置**：工作区有 `tianmao-daily-report/sheet.json`（`{"spreadsheet_token": "…", "sheet_id": "…"}`，测试期间由管理员放置、指向测试表）时用它，跳过配置文档；否则用 `lark-cli docs +fetch`（只读）读云文档《AI巡检固化配置》https://scnntx5zuepg.feishu.cn/docx/E3cXdNjFQoPknUx34NscD0lAnZb 第五节「当月表格映射」，取这个月「天猫一店」的 spreadsheet_token 与「店铺整体」sheet_id。没有这个月的映射 → 这个月不采集、不写表，报告「需人工介入：配置文档缺少 YYYY-MM 天猫日报表映射，请先用 inspection-config-update 更新」。
 4. **读表**：先 `lark-cli sheets +workbook-info --as user --spreadsheet-token <token>` 看「店铺整体」的行数、列数，再把整张表的值和公式存成文件（只读）：
    ```bash
    lark-cli sheets +cells-get --as user --spreadsheet-token <token> --sheet-id <sheet_id> --range A1:<末列><末行> --include value,formula > tianmao-daily-report/<YYYYMMDD>/cells-before.json

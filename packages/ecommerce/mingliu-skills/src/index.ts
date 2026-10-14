@@ -1,7 +1,8 @@
 /**
- * 名流's operations skills, which only 名流's Skill Hub hands out, the recommended tasks of its
- * operations assistant, and the step that builds the skills' upload packages: each skill folder —
- * its `SKILL.md` and the reference files beside it — is zipped as `<name>.zip` around `<name>/`.
+ * 名流's operations skills, which only 名流's Skill Hub hands out, its operations assistant (「运营日报助手」)
+ * as an assistant package, and the steps that build their upload packages: each skill folder — its
+ * `SKILL.md` and the files beside it — is zipped as `<name>.zip` around `<name>/`, and the assistant as
+ * `<name>-<version>.zip` around `<name>/` with `agent.json` and the four core files.
  *
  * @module @deepseek-ai/dsh-mingliu-skills
  */
@@ -50,6 +51,29 @@ export async function readTasks(): Promise<unknown[]> {
   const tasks: unknown[] = []
   for (const name of names) tasks.push(JSON.parse(await readFile(join(dir, name), 'utf8')))
   return tasks
+}
+
+/** The assistant's core files, as the assistant package carries them. */
+export const CORE_FILES = ['IDENTITY.md', 'SOUL.md', 'USER.md', 'AGENTS.md'] as const
+
+/**
+ * Build the assistant package: `agent/agent.json` with the recommended tasks of {@link readTasks}
+ * added, and the core files under `agent/`.
+ * @param outDir - where the zip goes; an existing one is replaced.
+ * @returns the zip path.
+ */
+export async function packAgent(outDir: string): Promise<string> {
+  const agent = join(PACKAGE, 'agent')
+  const manifest = JSON.parse(await readFile(join(agent, 'agent.json'), 'utf8')) as { name: string; version: string }
+  const files: Record<string, Uint8Array> = {
+    [`${manifest.name}/agent.json`]: new TextEncoder().encode(`${JSON.stringify({ ...manifest, tasks: await readTasks() }, null, 2)}\n`),
+  }
+  for (const name of CORE_FILES) files[`${manifest.name}/${name}`] = await readFile(join(agent, name))
+  const out = resolve(outDir)
+  await mkdir(out, { recursive: true })
+  const zip = join(out, `${manifest.name}-${manifest.version}.zip`)
+  await writeFile(zip, zipSync(files))
+  return zip
 }
 
 /**

@@ -433,20 +433,31 @@ export class AssistantPackagesService extends TypertRemoteService {
 
   /**
    * Install the Skills a manifest names that are not on this machine yet, from the company's Skill Hub.
-   * A Skill the Hub does not offer, or whose install fails, is reported missing; the others still install.
+   * A Skill the Hub does not offer but a new session already finds, such as one DSH ships, needs
+   * nothing; one the Hub does not offer and no session finds, or whose install fails, is reported
+   * missing; the others still install.
    */
   private async ensureSkills(manifest: AssistantPackageManifest, signal: AbortSignal): Promise<{ installed: string[]; missing: string[] }> {
     const installed: string[] = []
     const missing: string[] = []
     if (manifest.skills === undefined) return { installed, missing }
+    let found: Promise<Set<string>> | undefined
+    const shipped = (name: string): Promise<boolean> => {
+      found ??= this.foundSkills()
+      return found.then(names => names.has(name))
+    }
     const market = this.ctx.get('skillMarket')
-    if (market === undefined) return { installed, missing: [...manifest.skills] }
+    if (market === undefined) {
+      for (const name of manifest.skills) if (!await shipped(name)) missing.push(name)
+      return { installed, missing }
+    }
     const records = await market.records()
     for (const name of manifest.skills) {
       if (records.has(name)) continue
       const card = await this.findSkill(market, name, signal)
       // A Skill the user placed on this machine under the same name already serves the assistant.
       if (card !== undefined && (card.conflict || card.installedVersion !== null)) continue
+      if (card === undefined && await shipped(name)) continue
       try {
         if (card === undefined) throw new Error('not on the Skill Hub')
         await market.installSkill(card.id, {}, signal)
@@ -458,6 +469,17 @@ export class AssistantPackagesService extends TypertRemoteService {
       }
     }
     return { installed, missing }
+  }
+
+  /** The Skills a new session finds, as the assistants service lists them; none when it cannot tell. */
+  private async foundSkills(): Promise<Set<string>> {
+    try {
+      return new Set((await this.ctx.assistants.capabilityOptions()).skills.map(skill => skill.id))
+    } catch (error) {
+      // Without the list, a Skill the Hub does not offer is reported missing.
+      this.ctx.logger.warn(`assistant-packages: cannot list the Skills a session finds: ${String(error)}`)
+      return new Set()
+    }
   }
 
   /** The Skill Hub card named exactly `name`, searching every page of the matches. */

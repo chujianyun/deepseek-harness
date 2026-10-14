@@ -39,7 +39,7 @@ description: "拼多多日会待办同步（上海名流卫生用品）。当用
 7. **截止日期**：条目标注了明确时间（如「本周日」「下周一」）时，按会议日期推算并填写具体日期；无明确时间不填。
 8. **写入**：先用 `lark-cli base +field-list` 确认待办表可写字段；把这场的待办写成 JSON 文件（工作区 `pdd-meeting-todos/batch-YYYYMMDD.json`，`{"fields": [...], "rows": [[...], ...]}`，会议名称字段填「拼多多每日例会MMDD」），再在工作区目录下单独运行（`@` 参数加单引号，bash 和 PowerShell 都按字面传给 lark-cli）：
    ```bash
-   lark-cli base +record-batch-create --base-token <todo.base_token> --table-id <todo.table_id> --json '@pdd-meeting-todos/batch-YYYYMMDD.json'
+   lark-cli base +record-batch-create --as user --base-token <todo.base_token> --table-id <todo.table_id> --json '@pdd-meeting-todos/batch-YYYYMMDD.json'
    ```
    不用管道、不在命令里拼别的命令。只用这一个写入命令，**不用** `+record-upsert`、`+record-batch-update`、`+record-delete`。
 9. **记账**：写入成功后把返回的 `record_id_list` 与对应的待办摘要记进 `synced.json` 该日期下。写入报错时先按第 2 步重查待办表：已经写进去了（例如超时但飞书已处理）→ 补记进 `synced.json`，不重写；确实没写进去 → 不记，报告原因，下次运行在 7 天范围内会再试。

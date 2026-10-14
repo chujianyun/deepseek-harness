@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { manifestSchema } from '@deepseek-ai/dsh-assistant-packages/src/manifest.ts'
 import { readOperations } from '@deepseek-ai/dsh-automation-tasks/operations'
 import { declaredOperations } from '@deepseek-ai/dsh-automation-tasks/src/unattended.ts'
-import { packSkills, readTasks, SKILLS } from '../src/index.ts'
+import { CORE_FILES, packAgent, packSkills, readTasks, SKILLS } from '../src/index.ts'
 
 const SKILLS_DIR = fileURLToPath(new URL('../skills', import.meta.url))
 /** 名流's people named in the handover; who does what is read from the configuration documents or the assistant's workspace. */
@@ -167,9 +167,9 @@ describe('the meeting to-do sync', () => {
     expect(sync!.prompt).toContain('pdd-meeting-todos/config.json')
     // The records go in a file, quoted so PowerShell does not read `@` as splatting.
     expect(skill).toContain(
-      "lark-cli base +record-batch-create --base-token <todo.base_token> --table-id <todo.table_id> --json '@pdd-meeting-todos/batch-YYYYMMDD.json'",
+      "lark-cli base +record-batch-create --as user --base-token <todo.base_token> --table-id <todo.table_id> --json '@pdd-meeting-todos/batch-YYYYMMDD.json'",
     )
-    const write = "lark-cli base +record-batch-create --base-token bascnX --table-id tblX --json '@pdd-meeting-todos/batch-20260907.json'"
+    const write = "lark-cli base +record-batch-create --as user --base-token bascnX --table-id tblX --json '@pdd-meeting-todos/batch-20260907.json'"
     const remove = 'lark-cli base +record-delete --base-token bascnX --table-id tblX --record-id rec1'
     // The scheduled run's check lets the add through and refuses a delete, which the task does not declare.
     for (const dialect of ['bash', 'pwsh'] as const) {
@@ -311,6 +311,8 @@ describe('the Tmall daily report', () => {
     expect(daily!.prompt).toContain('《AI巡检固化配置》第五节')
     const skill = await readFile(join(SKILLS_DIR, 'tianmao-daily-report', 'SKILL.md'), 'utf8')
     expect(skill).toContain("lark-cli sheets +cells-set --as user --spreadsheet-token <token> --sheet-id <sheet_id> --range <range> --cells '@<file>'")
+    // A test points the skill at a test sheet through the workspace, not the shared configuration document.
+    expect(skill).toContain('tianmao-daily-report/sheet.json')
     const write = "lark-cli sheets +cells-set --as user --spreadsheet-token shtX --sheet-id s1 --range L2:L11 --cells '@tianmao-daily-report/20261013/cells-L2-L11.json'"
     const clear = 'lark-cli sheets +cells-clear --as user --spreadsheet-token shtX --sheet-id s1 --range L2:L11'
     for (const dialect of ['bash', 'pwsh'] as const) {
@@ -826,5 +828,24 @@ describe('plan_roi.py', () => {
     const huge = Array.from({ length: 300 }, (_v, i) => plan(String(i), 'x', `账户-${'很长的账户名'.repeat(10)}-${String(i)}`, 800, 100, 0.1))
     const tooBig = await run(data(huge))
     expect([tooBig.code, tooBig.card, tooBig.out]).toEqual([2, undefined, expect.stringContaining('卡片自检不通过：卡片')])
+  })
+})
+
+describe('packAgent', () => {
+  it('builds 「运营日报助手」 as an assistant package naming every 名流 skill, the data skills they run, office, and Feishu', async () => {
+    const zip = await packAgent(out)
+    expect(zip).toBe(join(out, 'mingliu-ops-report-1.0.0.zip'))
+    const entries = unzipSync(await readFile(zip))
+    expect(Object.keys(entries).sort()).toEqual(['agent.json', ...CORE_FILES].map(name => `mingliu-ops-report/${name}`).sort())
+    const manifest = manifestSchema.parse(JSON.parse(strFromU8(entries['mingliu-ops-report/agent.json']!)))
+    expect(manifest).toMatchObject({ name: 'mingliu-ops-report', displayName: '运营日报助手', version: '1.0.0', connectors: ['feishu'] })
+    expect(manifest.skills).toEqual(expect.arrayContaining([...SKILLS, 'tmall-daily-figures', 'yuntai-details', 'pdd-live-figures', 'office-docx', 'office-pptx', 'office-xlsx']))
+    expect(manifest.skills).toHaveLength(SKILLS.length + 6)
+    expect(manifest.tasks.map(task => task.id)).toEqual((await readTasks() as { id: string }[]).map(task => task.id))
+    expect(manifest.tasks).toHaveLength(9)
+    // The disciplines of the handover reach the model through the core files.
+    const soul = strFromU8(entries['mingliu-ops-report/SOUL.md']!)
+    for (const rule of ['只读闸门', '配置与逻辑分离', '数值可追溯', '按名定位，不写死', '回测先于写表', '切换期防重复']) expect(soul).toContain(rule)
+    for (const name of CORE_FILES) expect(strFromU8(entries[`mingliu-ops-report/${name}`]!), name).not.toMatch(PEOPLE)
   })
 })

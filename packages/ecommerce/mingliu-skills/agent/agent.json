@@ -1,0 +1,14 @@
+{
+  "name": "mingliu-ops-report",
+  "displayName": "运营日报助手",
+  "description": "名流市场中心-推广部的运营日报与巡检助手：部门 AI 巡检、投流 ROI 巡检与云台补采、天猫日报采集填报、拼多多直播数据、拼多多日会待办、视频素材绩效日报、计划 ROI 分析。",
+  "version": "1.0.0",
+  "avatar": "teal",
+  "skills": [
+    "ai-inspection", "inspection-config-update", "roi-inspection", "yuntai-collect", "plan-roi-analysis",
+    "tianmao-daily-report", "pdd-live-report", "pdd-meeting-todos", "video-performance-report",
+    "tmall-daily-figures", "yuntai-details", "pdd-live-figures",
+    "office-docx", "office-pptx", "office-xlsx"
+  ],
+  "connectors": ["feishu"]
+}

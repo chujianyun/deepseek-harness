@@ -88,6 +88,8 @@ async function mount(options: { signedIn?: boolean; market?: boolean; tasks?: bo
       return { assistant: a.view, files: { ...a.files } }
     }),
     deleteAssistant: vi.fn(async (id: string) => { assistants.delete(id) }),
+    // The Skills a new session finds without the Hub, such as the office Skills DSH ships.
+    capabilityOptions: vi.fn(async () => ({ skills: [{ id: 'office-docx', name: 'office-docx', description: '' }], connectors: [], knowledgeBases: [] })),
   }
 
   const catalog = [
@@ -467,7 +469,27 @@ describe('review fixes', () => {
     expect(m.market.list).toHaveBeenCalledTimes(1)
   })
 
-  it('reports every named Skill missing in a deployment without the Skill market', async () => {
+  it('needs nothing for a Skill a new session already finds, such as one DSH ships, with or without the Skill market', async () => {
+    const m = await mount()
+    m.publish('pkg-1', manifest('1.0.0', { skills: ['office-docx', 'roi-inspection'] }))
+    expect(await m.service.installPackage('pkg-1', m.signal)).toMatchObject({ installedSkills: ['roi-inspection'], missingSkills: [] })
+    // The Hub is asked first: a Skill it offers installs from it even when a session also finds one.
+    expect(m.market.list).toHaveBeenCalledWith(expect.objectContaining({ q: 'office-docx' }), m.signal)
+    expect(m.assistantsService.capabilityOptions).toHaveBeenCalledTimes(1)
+    const bare = await mount({ market: false })
+    bare.publish('pkg-1', manifest('1.0.0', { skills: ['office-docx', 'roi-inspection'] }))
+    expect((await bare.service.installPackage('pkg-1', bare.signal)).missingSkills).toEqual(['roi-inspection'])
+  })
+
+  it('reports an unoffered Skill missing when the list of Skills a session finds cannot be read', async () => {
+    const m = await mount()
+    m.assistantsService.capabilityOptions.mockRejectedValueOnce(new Error('preset scope unavailable'))
+    m.publish('pkg-1', manifest('1.0.0', { skills: ['office-docx'] }))
+    expect((await m.service.installPackage('pkg-1', m.signal)).missingSkills).toEqual(['office-docx'])
+    expect(m.warn).toHaveBeenCalledWith(expect.stringContaining('cannot list the Skills a session finds'))
+  })
+
+  it('reports every named Skill no session finds missing in a deployment without the Skill market', async () => {
     const m = await mount({ market: false })
     m.publish('pkg-1', manifest())
     expect((await m.service.installPackage('pkg-1', m.signal)).missingSkills).toEqual(['ai-inspection', 'roi-inspection', 'local-skill', 'gone-skill'])
