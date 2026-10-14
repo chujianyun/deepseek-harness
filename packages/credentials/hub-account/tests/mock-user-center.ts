@@ -26,6 +26,8 @@ export interface MockSkill {
   readonly version: string
   /** Files relative to the Skill root; `SKILL.md` is generated from name and description when absent. */
   readonly files?: Readonly<Record<string, string>>
+  /** Platform Skill marked for automatic install (Spec #221); left out, the answers omit both fields as a user center before it does. */
+  readonly autoInstall?: boolean
 }
 
 /** One upload the mock received through the client write API. */
@@ -235,6 +237,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
   })
   const summary = (skill: MockSkill) => ({
     id: skill.id, name: skill.name, ...skill.displayName === undefined ? {} : { displayName: skill.displayName }, category: skill.category,
+    ...skill.autoInstall === undefined ? {} : { platform: true, autoInstall: skill.autoInstall },
     currentVersion: { id: `${skill.id}-v`, version: skill.version, description: skill.description, uploaderName: '韩梅梅',
       uploadedAt: '2026-10-01T08:00:00.000Z', sizeBytes: 100, fileCount: Object.keys(filesOf(skill)).length, downloadCount: 0 },
   })

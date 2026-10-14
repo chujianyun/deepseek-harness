@@ -319,6 +319,8 @@ Host service backing the generated `ctx.remote.installedSkills` namespace. Every
 
 /**
  * Move an installed skill's folder (or flat file) to the platform trash and forget its disabled state.
+ * Only this machine's copy goes; the Skill stays on the Skill Hub. A market Skill is also
+ * remembered as uninstalled, so the market's automatic install does not bring it back.
  * @param name - installed skill name.
  * @param signal - caller lifetime; abort terminates the native command.
  * @returns confirmation after the move.
@@ -359,6 +361,14 @@ isDisabled(name: string): boolean
 setDisabled(name: string, disabled: boolean): Promise<void>
 
 /**
+ * Remember that the user uninstalled a market Skill of the signed-in tenant, so automatic install
+ * leaves it out; installing it by hand forgets this again.
+ * @param name - Skill name.
+ * @throws when signed out, or when mounted without Settings or a profile entry.
+ */
+markUninstalled(name: string): Promise<void>
+
+/**
  * List the market as the signed-in employee sees it on the Skill Hub.
  * @param query - search text, category, and page.
  * @param signal - caller lifetime.
@@ -395,6 +405,17 @@ setDisabled(name: string, disabled: boolean): Promise<void>
  *   an invalid package, or an unreachable Hub.
  */
 @Remote async installSkill(id: string, options: MarketInstallOptions, signal: AbortSignal): Promise<MarketSkillCard>
+
+/**
+ * Install the Skills the Hub marks for automatic install that this employee sees, except those the
+ * user uninstalled, and update installed ones to a newer version. A Skill whose files the user
+ * edited, or whose name a Skill the user placed on this machine already uses, is left alone; one
+ * Skill's failure does not stop the others.
+ * @param tenantId - tenant the run belongs to; the run stops when the sign-in moves on.
+ * @param signal - aborted when the tenant changes or the service stops.
+ * @returns the names installed or updated.
+ */
+async autoInstall(tenantId: string, signal: AbortSignal): Promise<readonly string[]>
 
 /**
  * The Skills the user placed on this machine (`~/.dsh/skills`, `~/.agents/skills`), offered for upload.

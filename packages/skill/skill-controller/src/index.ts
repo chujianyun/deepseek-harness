@@ -158,6 +158,8 @@ export class SkillController extends TypertRemoteService {
 
   /**
    * Move an installed skill's folder (or flat file) to the platform trash and forget its disabled state.
+   * Only this machine's copy goes; the Skill stays on the Skill Hub. A market Skill is also
+   * remembered as uninstalled, so the market's automatic install does not bring it back.
    * @param name - installed skill name.
    * @param signal - caller lifetime; abort terminates the native command.
    * @returns confirmation after the move.
@@ -167,10 +169,15 @@ export class SkillController extends TypertRemoteService {
   async uninstall(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue> {
     const skill = await this.find(name)
     const result = await this.act(name, () => this.moveToTrash(installedEntry(skill), signal))
-    // The skill is already gone; a failure to forget its disabled state must not report the removal as failed.
+    // The skill is already gone; a failure to update the lists below must not report the removal as failed.
     if (!this.view(skill).enabled) {
       await this.setDisabled(skill, false).catch((error: unknown) => {
         this.ctx.logger.warn(`uninstalled skill "${name}" stays in disabledSkills: ${messageOf(error)}`)
+      })
+    }
+    if (skill.source === MARKET_SOURCE) {
+      await this.ctx.get('skillMarket')?.markUninstalled(name).catch((error: unknown) => {
+        this.ctx.logger.warn(`uninstalled market skill "${name}" is not remembered and may be installed again automatically: ${messageOf(error)}`)
       })
     }
     return result

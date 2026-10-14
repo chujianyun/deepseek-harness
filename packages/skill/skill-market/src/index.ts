@@ -43,6 +43,9 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Page size used when automatic install walks the market (the Hub's maximum). */
+const AUTO_INSTALL_PAGE_SIZE = 100
+
 /** Discovery source of Skills installed from the Skill Hub. */
 export const MARKET_SOURCE = 'market'
 /** After the user roots (400, 500) and before bundled Skills (600): project Skills still win in their project. */
@@ -61,6 +64,10 @@ export interface Config {
   dshHome?: string
   /** Market Skills switched off, as `<tenantId>/<name>`; edited live through `setDisabled()`. */
   disabledSkills?: Volatile<readonly string[]>
+  /** Market Skills the user uninstalled, as `<tenantId>/<name>`; auto-install leaves them out. Edited through `markUninstalled()`. */
+  uninstalledSkills?: Volatile<readonly string[]>
+  /** After each sign-in, install the Skills the Hub marks for automatic install and update them. */
+  autoInstall?: boolean
   /** Watch the tenant directory for changes made outside DSH. */
   watch?: boolean
   /** Largest Skill package accepted for install, in bytes. */
@@ -72,6 +79,10 @@ export const Config = Schema.object({
   dshHome: Schema.string(),
   disabledSkills: Schema.array(Schema.string()).default([]).volatile()
     .description('Market Skills switched off, as `<tenantId>/<name>`. A switched-off Skill stays installed, but neither the model nor the user can invoke it.'),
+  uninstalledSkills: Schema.array(Schema.string()).default([]).volatile()
+    .description('Market Skills the user uninstalled, as `<tenantId>/<name>`. Automatic install does not bring them back; installing one by hand removes it from the list.'),
+  autoInstall: Schema.boolean().default(true)
+    .description('After each sign-in, install the Skills the Skill Hub marks for automatic install, and update them when the local files are unedited.'),
   watch: Schema.boolean().default(true),
   maxPackageBytes: Schema.number().min(1).default(64 * 1024 * 1024),
 })
@@ -79,7 +90,11 @@ export const Config = Schema.object({
 const versionInfo = z.object({ version: z.string(), uploadedAt: z.string() })
 const category = z.object({ id: z.string(), name: z.string() }).nullable()
 // displayName: a Hub before T93 sends none, and the slug stands in for it
-const summary = z.object({ id: z.string(), name: z.string(), displayName: z.string().optional(), category, currentVersion: versionInfo })
+// autoInstall: a Hub before Spec #221 sends none, and nothing installs automatically
+const summary = z.object({
+  id: z.string(), name: z.string(), displayName: z.string().optional(), category, currentVersion: versionInfo,
+  autoInstall: z.boolean().optional(),
+})
 const page = z.object({ items: z.array(summary), total: z.number(), page: z.number(), pageSize: z.number() })
 const detail = summary.extend({
   description: z.string(),
@@ -298,9 +313,13 @@ export class SkillMarket extends TypertRemoteService {
   private readonly root: string
   private readonly maxPackageBytes: number
   private readonly disabledSkills: Volatile<readonly string[]> | undefined
+  private readonly uninstalledSkills: Volatile<readonly string[]> | undefined
+  private readonly autoInstallEnabled: boolean
   private readonly entryId: string | undefined
   private provider: MarketProvider | undefined
-  private disabledWrites: Promise<void> = Promise.resolve()
+  private settingsWrites: Promise<void> = Promise.resolve()
+  /** The running automatic install, aborted when the tenant changes or the service stops. */
+  private sync: AbortController | undefined
   private readonly lifetime = new AbortController()
 
   /** @param ctx - Host with the skill registry and Hub sign-in. @param config - market options. */
@@ -310,13 +329,15 @@ export class SkillMarket extends TypertRemoteService {
     this.watch = config.watch ?? true
     this.maxPackageBytes = config.maxPackageBytes ?? 64 * 1024 * 1024
     this.disabledSkills = config.disabledSkills
+    this.uninstalledSkills = config.uninstalledSkills
+    this.autoInstallEnabled = config.autoInstall ?? true
     this.entryId = ctx.fiber.entry?.options.id
     ctx.skills.registerProvider((control) => {
       this.provider = new MarketProvider(ctx, this, control)
       return this.provider
     })
     ctx.on('loader/volatile-update', () => { this.provider?.invalidate() })
-    ctx.effect(() => () => { this.lifetime.abort() }, 'skill-market: tenant watch')
+    ctx.effect(() => () => { this.lifetime.abort(); this.sync?.abort() }, 'skill-market: tenant watch')
   }
 
   async [Service.init](): Promise<void> {
@@ -324,6 +345,7 @@ export class SkillMarket extends TypertRemoteService {
     await followTenant(this.ctx.hubAccount, this.lifetime.signal, () => this.tenantId ?? null, (tenantId) => {
       this.tenantId = tenantId ?? undefined
       this.provider?.invalidate()
+      this.startAutoInstall()
       return Promise.resolve()
     }, this.ctx.logger, 'skill-market')
   }
@@ -343,7 +365,7 @@ export class SkillMarket extends TypertRemoteService {
    * @returns true when switched off.
    */
   isDisabled(name: string): boolean {
-    return this.tenantId !== undefined && (this.disabledSkills?.get() ?? []).includes(`${this.tenantId}/${name}`)
+    return this.tenantId !== undefined && listed(this.disabledSkills, `${this.tenantId}/${name}`)
   }
 
   /**
@@ -353,17 +375,35 @@ export class SkillMarket extends TypertRemoteService {
    * @throws when signed out, or when mounted without Settings or a profile entry.
    */
   setDisabled(name: string, disabled: boolean): Promise<void> {
+    return this.editTenantList('disabledSkills', this.disabledSkills, name, disabled)
+  }
+
+  /**
+   * Remember that the user uninstalled a market Skill of the signed-in tenant, so automatic install
+   * leaves it out; installing it by hand forgets this again.
+   * @param name - Skill name.
+   * @throws when signed out, or when mounted without Settings or a profile entry.
+   */
+  markUninstalled(name: string): Promise<void> {
+    return this.editTenantList('uninstalledSkills', this.uninstalledSkills, name, true)
+  }
+
+  /**
+   * Add or remove `<tenantId>/<name>` in one of the profile's per-tenant lists. Writes are queued so
+   * concurrent edits of either list never overwrite each other.
+   */
+  private editTenantList(field: 'disabledSkills' | 'uninstalledSkills', list: Volatile<readonly string[]> | undefined, name: string, include: boolean): Promise<void> {
     const tenantId = this.tenantId
     if (tenantId === undefined) return Promise.reject(new RemoteError('hub-account/signed-out', 'sign in to the Skill Hub first', {}))
     const key = `${tenantId}/${name}`
-    const write = this.disabledWrites.then(async () => {
-      const current = this.disabledSkills?.get() ?? []
-      if (current.includes(key) === disabled) return
+    const write = this.settingsWrites.then(async () => {
+      const current = list?.get() ?? []
+      if (current.includes(key) === include) return
       const settings = this.ctx.get('settings')
-      if (settings === undefined || this.entryId === undefined) throw new Error('switching market Skills requires the settings service and a profile entry')
-      await settings.update(this.entryId, { disabledSkills: disabled ? [...current, key].sort() : current.filter(item => item !== key) })
+      if (settings === undefined || this.entryId === undefined) throw new Error('editing market Skill lists requires the settings service and a profile entry')
+      await settings.update(this.entryId, { [field]: include ? [...current, key].sort() : current.filter(item => item !== key) })
     })
-    this.disabledWrites = write.catch(() => {})
+    this.settingsWrites = write.catch(() => {})
     return write
   }
 
@@ -471,7 +511,65 @@ export class SkillMarket extends TypertRemoteService {
       await rm(staging, { recursive: true, force: true })
     }
     this.provider?.invalidate()
+    if (listed(this.uninstalledSkills, `${tenantId}/${value.name}`)) {
+      // Installed by hand again: automatic install and update apply to it from now on.
+      await this.editTenantList('uninstalledSkills', this.uninstalledSkills, value.name, false)
+    }
     return card(value, value.description, value.updatedAt, await this.records(), new Set())
+  }
+
+  /** Run the automatic install for the tenant just signed in to, replacing a run for an earlier tenant. */
+  private startAutoInstall(): void {
+    this.sync?.abort()
+    this.sync = undefined
+    if (!this.autoInstallEnabled || this.tenantId === undefined) return
+    const sync = new AbortController()
+    this.sync = sync
+    const tenantId = this.tenantId
+    void this.autoInstall(tenantId, sync.signal).catch((error: unknown) => {
+      // The next sign-in or start tries again; nothing here blocks using DSH.
+      this.ctx.logger.warn(`skill-market: automatic install for tenant ${tenantId} stopped: ${String(error)}`)
+    })
+  }
+
+  /**
+   * Install the Skills the Hub marks for automatic install that this employee sees, except those the
+   * user uninstalled, and update installed ones to a newer version. A Skill whose files the user
+   * edited, or whose name a Skill the user placed on this machine already uses, is left alone; one
+   * Skill's failure does not stop the others.
+   * @param tenantId - tenant the run belongs to; the run stops when the sign-in moves on.
+   * @param signal - aborted when the tenant changes or the service stops.
+   * @returns the names installed or updated.
+   */
+  async autoInstall(tenantId: string, signal: AbortSignal): Promise<readonly string[]> {
+    const marked: z.infer<typeof summary>[] = []
+    for (let pageNo = 1; ; pageNo += 1) {
+      const value = page.parse(await this.hubJson(`/api/client/skills?page=${pageNo}&pageSize=${AUTO_INSTALL_PAGE_SIZE}`, signal))
+      marked.push(...value.items.filter(item => item.autoInstall === true))
+      if (pageNo * value.pageSize >= value.total || value.items.length === 0) break
+    }
+    const done: string[] = []
+    for (const item of marked) {
+      // A tenant switch aborts the run (startAutoInstall), so it never installs into another tenant's directory.
+      signal.throwIfAborted()
+      if (listed(this.uninstalledSkills, `${tenantId}/${item.name}`)) continue
+      const local = (await this.records()).get(item.name)
+      // A different Skill of the same name (not this Hub Skill) stays untouched.
+      const upToDate = local !== undefined
+        && (local.hubSkillId !== item.id || compareVersions(item.currentVersion.version, local.version) <= 0)
+      if (upToDate) continue
+      try {
+        await this.installSkill(item.id, {}, signal)
+        done.push(item.name)
+      } catch (error: unknown) {
+        // Local edits keep the update notice; a user Skill of the same name keeps its name.
+        const code = (error as Partial<RemoteError>).code
+        if (code !== 'skill-market/local-changes' && code !== 'skill-market/name-conflict') {
+          this.ctx.logger.warn(`skill-market: automatic install of "${item.name}" failed: ${String(error)}`)
+        }
+      }
+    }
+    return done
   }
 
   /**
@@ -684,6 +782,11 @@ export class SkillMarket extends TypertRemoteService {
   private async ownSkills(signal: AbortSignal): Promise<z.infer<typeof ownSkill>[]> {
     return z.array(ownSkill).parse(await this.hubJson('/api/client/skills/mine', signal))
   }
+}
+
+/** Whether a per-tenant list from the profile contains `<tenantId>/<name>`. */
+function listed(list: Volatile<readonly string[]> | undefined, key: string): boolean {
+  return (list?.get() ?? []).includes(key)
 }
 
 function card(

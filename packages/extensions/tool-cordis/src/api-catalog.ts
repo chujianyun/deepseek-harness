@@ -3358,7 +3358,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async uninstall(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>',
-        description: 'Move an installed skill\'s folder (or flat file) to the platform trash and forget its disabled state.',
+        description: 'Move an installed skill\'s folder (or flat file) to the platform trash and forget its disabled state. Only this machine\'s copy goes; the Skill stays on the Skill Hub. A market Skill is also remembered as uninstalled, so the market\'s automatic install does not bring it back.',
         parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
         returns: 'confirmation after the move.',
         throws: ['RemoteError when the skill is not installed, the platform has no trash, or the move fails.'],
@@ -3399,6 +3399,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when signed out, or when mounted without Settings or a profile entry.'],
       },
       {
+        signature: 'markUninstalled(name: string): Promise<void>',
+        description: 'Remember that the user uninstalled a market Skill of the signed-in tenant, so automatic install leaves it out; installing it by hand forgets this again.',
+        parameters: [{ name: 'name', description: 'Skill name.' }],
+        throws: ['when signed out, or when mounted without Settings or a profile entry.'],
+      },
+      {
         signature: '@Remote async list(query: MarketSkillQuery, signal: AbortSignal): Promise<MarketSkillPage>',
         description: 'List the market as the signed-in employee sees it on the Skill Hub.',
         parameters: [{ name: 'query', description: 'search text, category, and page.' }, { name: 'signal', description: 'caller lifetime.' }],
@@ -3422,6 +3428,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'id', description: 'Skill Hub Skill id.' }, { name: 'options', description: 'whether local edits of an installed copy may be overwritten.' }, { name: 'signal', description: 'caller lifetime.' }],
         returns: 'the card after install.',
         throws: ['RemoteError on a name conflict with a user Skill, local edits that would be overwritten, an invalid package, or an unreachable Hub.'],
+      },
+      {
+        signature: 'async autoInstall(tenantId: string, signal: AbortSignal): Promise<readonly string[]>',
+        description: 'Install the Skills the Hub marks for automatic install that this employee sees, except those the user uninstalled, and update installed ones to a newer version. A Skill whose files the user edited, or whose name a Skill the user placed on this machine already uses, is left alone; one Skill\'s failure does not stop the others.',
+        parameters: [{ name: 'tenantId', description: 'tenant the run belongs to; the run stops when the sign-in moves on.' }, { name: 'signal', description: 'aborted when the tenant changes or the service stops.' }],
+        returns: 'the names installed or updated.',
       },
       {
         signature: '@Remote async uploadSources(): Promise<readonly MarketUploadSource[]>',

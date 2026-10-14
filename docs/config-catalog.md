@@ -3309,7 +3309,7 @@ export interface Config {
 
 - `inject`: `skills` · `hubAccount`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/skill/skill-market/src/index.ts:59`](../packages/skill/skill-market/src/index.ts)
+- `source`: [`packages/skill/skill-market/src/index.ts:62`](../packages/skill/skill-market/src/index.ts)
 
 ```ts config-catalog
 /** Market configuration. */
@@ -3318,6 +3318,10 @@ export interface Config {
   dshHome?: string
   /** Market Skills switched off, as `<tenantId>/<name>`; edited live through `setDisabled()`. */
   disabledSkills?: Volatile<readonly string[]>
+  /** Market Skills the user uninstalled, as `<tenantId>/<name>`; auto-install leaves them out. Edited through `markUninstalled()`. */
+  uninstalledSkills?: Volatile<readonly string[]>
+  /** After each sign-in, install the Skills the Hub marks for automatic install and update them. */
+  autoInstall?: boolean
   /** Watch the tenant directory for changes made outside DSH. */
   watch?: boolean
   /** Largest Skill package accepted for install, in bytes. */

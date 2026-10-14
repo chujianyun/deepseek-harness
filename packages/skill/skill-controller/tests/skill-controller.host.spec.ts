@@ -212,13 +212,19 @@ describe('installedSkills market group', () => {
       providerName: 'market-fixture', includeDefaultRoots: false, customSkillDirs: [marketDir], customSource: 'market', customRank: 550, watch: false,
     })
     const disabled = new Set<string>()
+    const uninstalled = new Set<string>()
+    let rememberFails = false
     if (withMarket) {
       fixture.ctx.provide('skillMarket', {
         isDisabled: (name: string) => disabled.has(name),
         setDisabled: async (name: string, off: boolean) => { if (off) disabled.add(name); else disabled.delete(name) },
+        markUninstalled: async (name: string) => {
+          if (rememberFails) throw new Error('settings unavailable')
+          uninstalled.add(name)
+        },
       } as never)
     }
-    return { ...fixture, marketDir, disabled }
+    return { ...fixture, marketDir, disabled, uninstalled, failRemember: () => { rememberFails = true } }
   }
 
   it('lists market Skills in their own group with the market switch', async () => {
@@ -239,6 +245,16 @@ describe('installedSkills market group', () => {
     expect(await readdir(marketDir)).toEqual([])
     expect(await readdir(join(home, '.Trash'))).toContain('hub-pdf')
     expect(disabled.size).toBe(0)
+  })
+
+  it('remembers an uninstalled market Skill so automatic install leaves it out; a failure to remember still reports the removal', async () => {
+    const { controller, marketDir, uninstalled, failRemember } = await bootMarket()
+    await controller.uninstall('hub-pdf', new AbortController().signal)
+    expect([...uninstalled]).toEqual(['hub-pdf'])
+    await writeSkill(marketDir, 'hub-pdf', 'From the market')
+    failRemember()
+    expect(await controller.uninstall('hub-pdf', new AbortController().signal)).toEqual({ done: true })
+    expect(await readdir(marketDir)).toEqual([])
   })
 
   it('refuses the market switch when the market is not mounted', async () => {

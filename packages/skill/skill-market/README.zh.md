@@ -33,6 +33,8 @@ provider 通过 `ctx.skills.registerProvider()` 注册，借助文件系统 prov
 
 `setDisabled(name, disabled)` 只对当前登录租户停用某个市场 Skill，在 `disabledSkills` 中记录 `<tenantId>/<name>`；停用的市场 Skill 仍然列出，但 provider 会同时对模型和用户关闭它的调用。[`@deepseek-ai/dsh-skill-controller`](../skill-controller/README.zh.md) 的已安装 Skill Remote 把市场 Skill 列在单独的分组里，并把它们的开关交给这里。
 
+自动安装（Spec #221）：每次登录（含启动）后，市场在后台翻完 Hub 列表的每一页，安装 Hub 标为 `autoInstall`、且员工看得到的 Skill，并把同一 Hub Skill 的已装副本更新到更新的版本。以下情况不动：用户卸载过的（已安装 Skill Remote 卸载时调用 `markUninstalled(name)`，在 `uninstalledSkills` 中记下 `<tenantId>/<name>`；手动再装一次即移除）、用户改过文件的副本（保留可更新提示）、名称已被用户 Skill 占用的、由另一个同名 Hub Skill 装来的副本。单个 Skill 失败不影响其他；Hub 出错时本轮安静结束，下次登录再试。切换租户会中止本轮。
+
 -----
 
 <a id="configuration"></a>
@@ -42,6 +44,8 @@ provider 通过 `ctx.skills.registerProvider()` 注册，借助文件系统 prov
 |---|---|---|
 | `dshHome` | `$DSH_HOME` 或 `~/.dsh` | 其下的 `skills-market` 目录存放市场 Skill。 |
 | `disabledSkills` | `[]` | 停用的市场 Skill，记为 `<tenantId>/<name>`；volatile，通过 `setDisabled()` 修改。 |
+| `uninstalledSkills` | `[]` | 用户卸载过的市场 Skill，记为 `<tenantId>/<name>`；volatile，通过 `markUninstalled()` 与手动安装修改。自动安装会跳过它们。 |
+| `autoInstall` | `true` | 每次登录后安装 Hub 标为自动安装的 Skill 并更新它们。 |
 | `watch` | `true` | 监视租户目录，发现 DSH 之外的改动。 |
 | `maxPackageBytes` | 64 MiB | 可安装的安装包上限。 |
 
@@ -61,7 +65,7 @@ provider 通过 `ctx.skills.registerProvider()` 注册，借助文件系统 prov
 <a id="known-limitations-and-deferred-work"></a>
 
 - **上传读取的是文件夹**——`uploadSkill` 打包本机上的文件夹，不能直接上传现成的 `.zip`。
-- **更新靠拉取而非推送**——`installedStatus()` 在页面打开时询问 Hub；没有后台检查，只有用户要求时才安装更新。
+- **更新靠拉取而非推送**——`installedStatus()` 在页面打开时询问 Hub，自动安装只在登录时运行；DSH 运行期间新标为自动安装的 Skill 要到下次登录或启动才装上，其他 Skill 只有用户要求时才更新。
 - **本地改动检测只比对普通文件**——用户在市场 Skill 目录里新加的符号链接不会被报告为本地修改。
 
 <a id="dev-note"></a>

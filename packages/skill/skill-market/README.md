@@ -33,6 +33,8 @@ Uploading publishes a local folder to the Hub. `uploadSources()` lists the Skill
 
 `setDisabled(name, disabled)` switches a market Skill off for the signed-in tenant only, persisting `<tenantId>/<name>` in `disabledSkills`; a switched-off market Skill stays listed, but the provider closes its invocation for both the model and the user. The installed-skill Remote of [`@deepseek-ai/dsh-skill-controller`](../skill-controller/README.md) lists market Skills in their own group and routes their switch here.
 
+Automatic install (Spec #221): after each sign-in (start included), the market walks every page of the Hub's list and installs, in the background, the Skills the Hub marks `autoInstall` that the employee sees, and updates an installed copy of the same Hub Skill to a newer version. It leaves out a Skill the user uninstalled (`markUninstalled(name)`, called by the installed-skill Remote's uninstall, records `<tenantId>/<name>` in `uninstalledSkills`; installing it by hand removes the entry), a copy whose files the user edited (the update notice stays), a name a user Skill already takes, and a copy installed from another Hub Skill of the same name. One Skill's failure does not stop the others; a Hub failure ends the run quietly, and the next sign-in tries again. A tenant switch aborts the run.
+
 -----
 
 <a id="configuration"></a>
@@ -42,6 +44,8 @@ Uploading publishes a local folder to the Hub. `uploadSources()` lists the Skill
 |---|---|---|
 | `dshHome` | `$DSH_HOME` or `~/.dsh` | Home whose `skills-market` directory holds market Skills. |
 | `disabledSkills` | `[]` | Market Skills switched off, as `<tenantId>/<name>`; volatile, edited through `setDisabled()`. |
+| `uninstalledSkills` | `[]` | Market Skills the user uninstalled, as `<tenantId>/<name>`; volatile, edited through `markUninstalled()` and a manual install. Automatic install leaves them out. |
+| `autoInstall` | `true` | After each sign-in, install the Skills the Hub marks for automatic install and update them. |
 | `watch` | `true` | Watch the tenant directory for changes made outside DSH. |
 | `maxPackageBytes` | 64 MiB | Largest package accepted for install. |
 
@@ -61,7 +65,7 @@ No direct effect; the skill catalog consumer appends a replacement catalog messa
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Uploads read a folder** — `uploadSkill` packs a folder on this machine; a ready-made `.zip` cannot be uploaded directly.
-- **Updates are pulled, not pushed** — `installedStatus()` asks the Hub when the page opens; nothing checks in the background, and an update is installed only when the user asks.
+- **Updates are pulled, not pushed** — `installedStatus()` asks the Hub when the page opens, and automatic install runs only at sign-in; a Skill marked for automatic install while DSH is running arrives at the next sign-in or start, and other Skills update only when the user asks.
 - **Local-edit detection compares regular files** — a symbolic link the user adds inside a market Skill is not reported as a local edit.
 
 <a id="dev-note"></a>
