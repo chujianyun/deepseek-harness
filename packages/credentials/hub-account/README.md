@@ -44,7 +44,7 @@ After each sign-in, and once per startup while signed in, the package reads the 
 |---|---|---|
 | `origin` | required | User-center origin serving `/oauth/*`; HTTPS, or HTTP on loopback with `allowLoopbackHttp`. |
 | `clientId` | required | `client_id` of the public client registered for DSH. |
-| `scope` | `profile skills:read skills:write` | Scopes requested at sign-in. |
+| `scope` | `profile skills:read skills:write connectors:use` | Scopes requested at sign-in. |
 | `allowLoopbackHttp` | `false` | Accept an HTTP origin on loopback, for development and tests. |
 | `requestTimeoutMs` | `15000` | Deadline of each user-center request. |
 | `attemptTimeoutMs` | `600000` | Upper bound of one browser sign-in attempt. |

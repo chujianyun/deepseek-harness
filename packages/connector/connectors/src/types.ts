@@ -40,6 +40,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'connectors/unavailable': { readonly id: string }
     /** The connector's CLI is not installed, so it cannot connect yet. */
     'connectors/not-installed': { readonly id: string }
+    /** The user center gives the signed-in tenant no company tool of this name. */
+    'connectors/no-company-tool': { readonly name: string }
   }
 }
 
@@ -128,7 +130,38 @@ export interface ConnectorSkillView {
   readonly description: string
 }
 
+/**
+ * Where the signed-in tenant's company tools are.
+ * - `signed-out`: no Hub sign-in, so there are none.
+ * - `loading`: the user center has not answered yet.
+ * - `ready`: the list is the user center's.
+ * - `sign-in-again`: the Hub sign-in predates company tools; signing in again grants them.
+ * - `unavailable`: the user center could not be read; the list is the last one read, if any.
+ */
+export type CompanyToolsStatus = 'signed-out' | 'loading' | 'ready' | 'sign-in-again' | 'unavailable'
+
+/** A company tool card: a connector the user center gives the tenant, such as 吉客云 (Jackyun). */
+export interface CompanyToolView {
+  /** The tool's name, which is also the model shell's command, such as `jackyun`. */
+  readonly name: string
+  /** What the tool connects to, such as `jackyun`. */
+  readonly kind: string
+  readonly displayName: string
+  readonly description: string
+  /** The platform methods the company allows the tool to call. */
+  readonly methods: readonly string[]
+  /** Whether the tenant keeps the tool on: its own choice, or else the company's auto-install. */
+  readonly enabled: boolean
+}
+
+/** The company tools of the signed-in tenant. */
+export interface CompanyToolsView {
+  readonly status: CompanyToolsStatus
+  readonly tools: readonly CompanyToolView[]
+}
+
 /** Everything the Connectors page shows, in display order. */
 export interface ConnectorsState {
   readonly connectors: readonly ConnectorView[]
+  readonly company: CompanyToolsView
 }

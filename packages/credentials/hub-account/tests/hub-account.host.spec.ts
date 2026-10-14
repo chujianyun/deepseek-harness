@@ -82,7 +82,7 @@ describe('hubAccount', () => {
     const { waiting, page, settled } = await signIn()
     const query = new URL(waiting.attempt!.authorizeUrl!).searchParams
     expect(Object.fromEntries(query)).toMatchObject({
-      response_type: 'code', client_id: 'dsh-desktop', scope: 'profile skills:read skills:write', code_challenge_method: 'S256',
+      response_type: 'code', client_id: 'dsh-desktop', scope: 'profile skills:read skills:write connectors:use', code_challenge_method: 'S256',
     })
     expect(query.get('redirect_uri')).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/callback$/)
     expect(query.get('code_challenge')).toMatch(/^[\w-]{43}$/)
