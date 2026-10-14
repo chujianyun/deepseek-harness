@@ -168,16 +168,27 @@ export class SkillController extends TypertRemoteService {
   @Remote
   async uninstall(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue> {
     const skill = await this.find(name)
-    const result = await this.act(name, () => this.moveToTrash(installedEntry(skill), signal))
-    // The skill is already gone; a failure to update the lists below must not report the removal as failed.
+    // Recorded before the move: an automatic install running meanwhile must not bring the Skill back.
+    const market = skill.source === MARKET_SOURCE ? this.ctx.get('skillMarket') : undefined
+    const remembered = await market?.markUninstalled(name).then(() => true, (error: unknown) => {
+      this.ctx.logger.warn(`uninstalled market skill "${name}" is not remembered and may be installed again automatically: ${messageOf(error)}`)
+      return false
+    })
+    let result: InstalledSkillActionValue
+    try {
+      result = await this.act(name, () => this.moveToTrash(installedEntry(skill), signal))
+    } catch (error: unknown) {
+      if (remembered === true && market !== undefined) {
+        await market.markUninstalled(name, false).catch((forgetError: unknown) => {
+          this.ctx.logger.warn(`market skill "${name}" stayed installed but is recorded as uninstalled: ${messageOf(forgetError)}`)
+        })
+      }
+      throw error
+    }
+    // The skill is already gone; a failure to clear its switch must not report the removal as failed.
     if (!this.view(skill).enabled) {
       await this.setDisabled(skill, false).catch((error: unknown) => {
         this.ctx.logger.warn(`uninstalled skill "${name}" stays in disabledSkills: ${messageOf(error)}`)
-      })
-    }
-    if (skill.source === MARKET_SOURCE) {
-      await this.ctx.get('skillMarket')?.markUninstalled(name).catch((error: unknown) => {
-        this.ctx.logger.warn(`uninstalled market skill "${name}" is not remembered and may be installed again automatically: ${messageOf(error)}`)
       })
     }
     return result

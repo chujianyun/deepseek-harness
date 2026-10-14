@@ -27,7 +27,7 @@ kind: "package-reference"
 
 从 Skill Hub 市场安装的 Skill（来源 `market`，来自 [`@deepseek-ai/dsh-skill-market`](../skill-market/README.zh.md)）也会列出，`group` 为 `'market'`；它们的开关是市场按租户的设置（`ctx.skillMarket.setDisabled()`），市场未挂载时切换会以 `installed-skills/rejected` 失败。
 
-其余方法都先在同一份列表里解析名称，其他 skill 一律以 `installed-skills/not-found` 失败，因此项目级与随包附带的 skill 无法在这里启停、显示或删除。`setEnabled(name, enabled)` 通过注册表的 `disabledSkills` 设置持久化，profile 无法写入时以 `installed-skills/rejected` 失败。`reveal(name)` 与 `edit(name)` 把指令文件交给 `revealNativePath` 与 `openNativeTextFile`。`uninstall(name)` 在 macOS 上把安装处的条目——其根目录下的 `<name>/` 或扁平的 `<name>.md`；安装的是符号链接时只移动链接本身，绝不移动它指向的目录——移到 `~/.Trash`，像 Finder 一样把重名命名为 `<name> 2`、`<name> 3`……，废纸篓在另一个卷上时改为复制后删除；在 Windows 上通过 PowerShell 移到回收站；随后清除该 skill 的停用状态；市场 Skill 还会通过市场的 `markUninstalled()` 记为已卸载，自动安装不会把它装回来（这两步失败只记日志，卸载仍算成功）；只删除本机的副本，绝不删除 Skill Hub 上的 Skill；其他平台以 `installed-skills/rejected` 失败。
+其余方法都先在同一份列表里解析名称，其他 skill 一律以 `installed-skills/not-found` 失败，因此项目级与随包附带的 skill 无法在这里启停、显示或删除。`setEnabled(name, enabled)` 通过注册表的 `disabledSkills` 设置持久化，profile 无法写入时以 `installed-skills/rejected` 失败。`reveal(name)` 与 `edit(name)` 把指令文件交给 `revealNativePath` 与 `openNativeTextFile`。`uninstall(name)` 在 macOS 上把安装处的条目——其根目录下的 `<name>/` 或扁平的 `<name>.md`；安装的是符号链接时只移动链接本身，绝不移动它指向的目录——移到 `~/.Trash`，像 Finder 一样把重名命名为 `<name> 2`、`<name> 3`……，废纸篓在另一个卷上时改为复制后删除；在 Windows 上通过 PowerShell 移到回收站；随后清除该 skill 的停用状态（这一步失败只记日志，卸载仍算成功）。市场 Skill 会先通过市场的 `markUninstalled()` 记为已卸载，自动安装不会把它装回来，移动失败时再撤销；只删除本机的副本，绝不删除 Skill Hub 上的 Skill；其他平台以 `installed-skills/rejected` 失败。
 
 -----
 

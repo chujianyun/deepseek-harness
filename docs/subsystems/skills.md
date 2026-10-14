@@ -361,12 +361,14 @@ isDisabled(name: string): boolean
 setDisabled(name: string, disabled: boolean): Promise<void>
 
 /**
- * Remember that the user uninstalled a market Skill of the signed-in tenant, so automatic install
- * leaves it out; installing it by hand forgets this again.
+ * Record (or forget) that the user uninstalled a market Skill of the signed-in tenant, so automatic
+ * install leaves it out. The installed-skill Remote records it before moving the folder away, and
+ * forgets it again when the move fails; installing it by hand forgets it too.
  * @param name - Skill name.
+ * @param uninstalled - whether the Skill is uninstalled; defaults to true.
  * @throws when signed out, or when mounted without Settings or a profile entry.
  */
-markUninstalled(name: string): Promise<void>
+markUninstalled(name: string, uninstalled: boolean = true): Promise<void>
 
 /**
  * List the market as the signed-in employee sees it on the Skill Hub.
@@ -405,17 +407,6 @@ markUninstalled(name: string): Promise<void>
  *   an invalid package, or an unreachable Hub.
  */
 @Remote async installSkill(id: string, options: MarketInstallOptions, signal: AbortSignal): Promise<MarketSkillCard>
-
-/**
- * Install the Skills the Hub marks for automatic install that this employee sees, except those the
- * user uninstalled, and update installed ones to a newer version. A Skill whose files the user
- * edited, or whose name a Skill the user placed on this machine already uses, is left alone; one
- * Skill's failure does not stop the others.
- * @param tenantId - tenant the run belongs to; the run stops when the sign-in moves on.
- * @param signal - aborted when the tenant changes or the service stops.
- * @returns the names installed or updated.
- */
-async autoInstall(tenantId: string, signal: AbortSignal): Promise<readonly string[]>
 
 /**
  * The Skills the user placed on this machine (`~/.dsh/skills`, `~/.agents/skills`), offered for upload.
@@ -462,10 +453,11 @@ async autoInstall(tenantId: string, signal: AbortSignal): Promise<readonly strin
 @Remote async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]>
 
 /**
- * Install records of the signed-in tenant's market Skills, keyed by Skill name.
+ * Install records of a tenant's market Skills (the signed-in tenant's by default), keyed by Skill name.
+ * @param tenantId - the tenant whose directory to read.
  * @returns the readable records; a directory without one is not a market install.
  */
-async records(): Promise<Map<string, MarketInstallRecord>>
+async records(tenantId: string | undefined = this.tenantId): Promise<Map<string, MarketInstallRecord>>
 ```
 
 Source: [`packages/skill/skill-market/src/index.ts`](../../packages/skill/skill-market/src/index.ts)

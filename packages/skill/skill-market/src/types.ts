@@ -17,6 +17,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'skill-market/invalid-package': { readonly reason: string }
     /** Installing would overwrite local edits to an installed market Skill; retry with `overwriteLocalChanges`. */
     'skill-market/local-changes': { readonly name: string; readonly files: readonly string[] }
+    /** The Skill Hub sign-in moved to another tenant while installing; nothing was written. */
+    'skill-market/tenant-changed': { readonly tenantId: string }
     /** The Skill Hub refused an upload; the message is the Hub's own reason. */
     'skill-market/upload-rejected': { readonly status: number }
     /** The local folder cannot be uploaded (no SKILL.md, invalid frontmatter, unreadable). */

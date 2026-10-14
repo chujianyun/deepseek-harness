@@ -33,7 +33,7 @@ provider 通过 `ctx.skills.registerProvider()` 注册，借助文件系统 prov
 
 `setDisabled(name, disabled)` 只对当前登录租户停用某个市场 Skill，在 `disabledSkills` 中记录 `<tenantId>/<name>`；停用的市场 Skill 仍然列出，但 provider 会同时对模型和用户关闭它的调用。[`@deepseek-ai/dsh-skill-controller`](../skill-controller/README.zh.md) 的已安装 Skill Remote 把市场 Skill 列在单独的分组里，并把它们的开关交给这里。
 
-自动安装（Spec #221）：每次登录（含启动）后，市场在后台翻完 Hub 列表的每一页，安装 Hub 标为 `autoInstall`、且员工看得到的 Skill，并把同一 Hub Skill 的已装副本更新到更新的版本。以下情况不动：用户卸载过的（已安装 Skill Remote 卸载时调用 `markUninstalled(name)`，在 `uninstalledSkills` 中记下 `<tenantId>/<name>`；手动再装一次即移除）、用户改过文件的副本（保留可更新提示）、名称已被用户 Skill 占用的、由另一个同名 Hub Skill 装来的副本。单个 Skill 失败不影响其他；Hub 出错时本轮安静结束，下次登录再试。切换租户会中止本轮。
+自动安装（Spec #221）：每次登录（含启动）后，市场向 Hub 要员工看得到的、标为 `autoInstall` 的 Skill（`?autoInstall=true`，翻完每一页；Hub 返回的条目没有 `autoInstall` 字段时本轮立即结束），在后台安装它们，并把同一 Hub Skill 的已装副本更新到更新的版本。以下情况不下载、不动：用户卸载过的（`markUninstalled(name)` 在 `uninstalledSkills` 中记下 `<tenantId>/<name>`；已安装 Skill Remote 在移走目录之前记下，移动失败时再撤销；手动再装一次即移除）、用户改过文件的副本（保留可更新提示；`.DS_Store`、`.git`、`node_modules`、`__pycache__` 不算修改）、名称已被用户 Skill 占用的、由另一个同名 Hub Skill 装来的副本。同一个 Hub Skill 的安装一次只跑一个；本轮被中止、或 Hub 登录已不属于该租户时，安装不写入任何文件（`skill-market/tenant-changed`）。单个 Skill 失败不影响其他；Hub 出错时本轮结束，下次登录再试。切换租户会中止本轮。
 
 -----
 

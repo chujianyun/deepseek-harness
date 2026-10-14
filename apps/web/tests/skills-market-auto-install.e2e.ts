@@ -53,10 +53,11 @@ it('installs the marked Skill after sign-in and keeps an uninstalled one out unt
     expect(await fromMarket.getByText('sql-helper').count()).toBe(0)
     await page.getByRole('button', { name: 'Back to Skills' }).click()
 
-    // The user uninstalls it (the installed-skills Remote records it the same way); later sign-ins leave it out.
+    // The user uninstalls it: recorded first, then the folder goes (as the installed-skills Remote does, which
+    // moves it to the real trash and so is driven only in its own spec); later sign-ins leave it out.
     const market = scaffold.ctx.get('skillMarket')!
-    await rm(join(scaffold.harnessHome, 'skills-market', 't-a', 'pdf-tools'), { recursive: true })
     await market.markUninstalled('pdf-tools')
+    await rm(join(scaffold.harnessHome, 'skills-market', 't-a', 'pdf-tools'), { recursive: true })
     const switchTenant = async (tenant: MockTenant) => {
       center.tenant = tenant
       await openSettings(page, 'en')
@@ -68,7 +69,12 @@ it('installs the marked Skill after sign-in and keeps an uninstalled one out unt
     }
     await switchTenant({ tenantId: 't-b', tenantName: '乙公司' })
     await switchTenant({ tenantId: 't-a', tenantName: '甲公司' })
-    await expect.poll(() => center.clientRequests.filter(path => path.startsWith('/api/client/skills?page=1')).length).toBeGreaterThanOrEqual(3)
+    // Three automatic runs (first sign-in, 乙公司, back to 甲公司); the last one lists and must not fetch pdf-tools.
+    const runs = () => center.clientRequests.filter(path => path.startsWith('/api/client/skills?autoInstall=true&page=1')).length
+    await expect.poll(runs).toBe(3)
+    const afterLastList = center.clientRequests.length
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    expect(center.clientRequests.slice(afterLastList).filter(path => path.startsWith('/api/client/skills/s-pdf'))).toEqual([])
     expect((await scaffold.ctx.skills.list()).some(skill => skill.name === 'pdf-tools')).toBe(false)
     expect([...(await market.records()).keys()]).toEqual([])
 

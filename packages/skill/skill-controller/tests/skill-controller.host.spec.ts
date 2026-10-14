@@ -214,17 +214,20 @@ describe('installedSkills market group', () => {
     const disabled = new Set<string>()
     const uninstalled = new Set<string>()
     let rememberFails = false
+    let forgetFails = false
     if (withMarket) {
       fixture.ctx.provide('skillMarket', {
         isDisabled: (name: string) => disabled.has(name),
         setDisabled: async (name: string, off: boolean) => { if (off) disabled.add(name); else disabled.delete(name) },
-        markUninstalled: async (name: string) => {
-          if (rememberFails) throw new Error('settings unavailable')
-          uninstalled.add(name)
+        markUninstalled: async (name: string, on = true) => {
+          if (rememberFails || (!on && forgetFails)) throw new Error('settings unavailable')
+          if (on) uninstalled.add(name); else uninstalled.delete(name)
         },
       } as never)
     }
-    return { ...fixture, marketDir, disabled, uninstalled, failRemember: () => { rememberFails = true } }
+    const failRemember = () => { rememberFails = true }
+    const failForget = () => { forgetFails = true }
+    return { ...fixture, marketDir, disabled, uninstalled, failRemember, failForget }
   }
 
   it('lists market Skills in their own group with the market switch', async () => {
@@ -255,6 +258,22 @@ describe('installedSkills market group', () => {
     failRemember()
     expect(await controller.uninstall('hub-pdf', new AbortController().signal)).toEqual({ done: true })
     expect(await readdir(marketDir)).toEqual([])
+  })
+
+  it('forgets the uninstall record again when the move to the trash fails', async () => {
+    const { controller, uninstalled, home } = await bootMarket()
+    // A file where the trash folder should be: the move cannot happen.
+    await writeFile(join(home, '.Trash'), 'not a folder')
+    expect(remoteErrorOf(await controller.uninstall('hub-pdf', new AbortController().signal).catch((error: unknown) => error))?.code).toBe('installed-skills/rejected')
+    expect([...uninstalled]).toEqual([])
+  })
+
+  it('keeps reporting the failed move when forgetting the record fails too', async () => {
+    const { controller, uninstalled, home, failForget } = await bootMarket()
+    await writeFile(join(home, '.Trash'), 'not a folder')
+    failForget()
+    expect(remoteErrorOf(await controller.uninstall('hub-pdf', new AbortController().signal).catch((error: unknown) => error))?.code).toBe('installed-skills/rejected')
+    expect([...uninstalled]).toEqual(['hub-pdf'])
   })
 
   it('refuses the market switch when the market is not mounted', async () => {
