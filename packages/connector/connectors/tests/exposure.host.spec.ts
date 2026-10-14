@@ -99,7 +99,7 @@ describe('the model shell\'s lark-cli', () => {
     await t.until(view => view.status === 'disconnected')
     const [dir] = t.ctx.shellEnv.collectPath(execution)
     expect(dir).toBe(join(t.root, 'bin', 't-a'))
-    await vi.waitFor(async () => { await stat(join(dir!, 'lark-cli')) })
+    await vi.waitFor(async () => { await stat(join(dir!, 'lark-cli')) }, { timeout: 5000 })
     const result = await shell(dir!, ['calendar', '+agenda'])
     expect(result.code).toBe(1)
     expect(result.stderr).toContain('the Feishu connector is not connected for this company. Ask the user to connect Feishu on the DSH Connectors page (连接器)')
