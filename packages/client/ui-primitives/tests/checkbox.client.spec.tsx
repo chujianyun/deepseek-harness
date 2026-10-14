@@ -34,3 +34,12 @@ it('preserves caller hover text', () => {
   fireEvent.click(input)
   expect(onChange).toHaveBeenLastCalledWith(true)
 })
+
+it('keeps a hidden label as the accessible name and shows the mixed state', () => {
+  const { rerender } = render(<Checkbox label="Select alpha" labelHidden indeterminate checked={false} onChange={() => {}} />)
+  const input = screen.getByRole<HTMLInputElement>('checkbox', { name: 'Select alpha' })
+  expect(input.indeterminate).toBe(true)
+  expect(screen.getByText('Select alpha').className).not.toBe('')
+  rerender(<Checkbox label="Select alpha" checked onChange={() => {}} />)
+  expect(input.indeterminate).toBe(false)
+})

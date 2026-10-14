@@ -160,31 +160,39 @@ describe('installed-skill source', () => {
 
     it('pins and unpins on this machine, and a new source reads the pins back', () => {
       const source = createInstalledSource(deps())
-      source.onTogglePin('custom:alpha', true)
-      source.onTogglePin('market:pdf', true)
-      source.onTogglePin('custom:alpha', false)
-      expect(source.hooks.installed.getSnapshot().pinned).toEqual(['market:pdf'])
-      expect(createInstalledSource(deps()).hooks.installed.getSnapshot().pinned).toEqual(['market:pdf'])
+      source.onTogglePin('/a/SKILL.md', true)
+      source.onTogglePin('/m/pdf/SKILL.md', true)
+      source.onTogglePin('/a/SKILL.md', false)
+      expect(source.hooks.installed.getSnapshot().pinned).toEqual(['/m/pdf/SKILL.md'])
+      expect(createInstalledSource(deps()).hooks.installed.getSnapshot().pinned).toEqual(['/m/pdf/SKILL.md'])
     })
 
-    it('enables and disables several skills, skipping withdrawn ones, and returns the refused names', async () => {
+    it('switches several skills, leaving those already in the requested state alone, and returns the refused names', async () => {
       const setEnabled = vi.fn(async (name: string, enabled: boolean) => (name === 'beta' ? refused('no') : { ok: true as const, value: skill(name, enabled) }))
-      const list = vi.fn(async () => ({ ok: true as const, value: { skills: [skill('alpha', false), skill('beta', false), skill('gone', false, true)] } }))
+      const list = vi.fn(async () => ({ ok: true as const, value: { skills: [skill('alpha', false), skill('beta', false), skill('on', true)] } }))
       const source = createInstalledSource(deps({ setEnabled, list }))
       await source.onRefresh()
-      expect(await source.onBatch('enable', ['alpha', 'beta', 'gone', 'missing'])).toEqual(['beta'])
+      expect(await source.onBatch('enable', ['alpha', 'beta', 'on', 'missing'])).toEqual(['beta'])
       expect(setEnabled.mock.calls.map(([name]) => name)).toEqual(['alpha', 'beta'])
-      expect(source.hooks.installed.getSnapshot()).toMatchObject({ failure: null, skills: [skill('alpha', true), skill('beta', false), skill('gone', false, true)] })
-      expect(await source.onBatch('disable', ['alpha', 'gone'])).toEqual([])
-      expect(setEnabled.mock.calls.slice(2).map(([name, on]) => [name, on])).toEqual([['alpha', false], ['gone', false]])
+      // The refused skill keeps its real (off) state
+      expect(source.hooks.installed.getSnapshot()).toMatchObject({ failure: null, skills: [skill('alpha', true), skill('beta', false), skill('on', true)] })
+      expect(await source.onBatch('disable', ['alpha', 'beta'])).toEqual([])
+      expect(setEnabled.mock.calls.slice(2).map(([name, on]) => [name, on])).toEqual([['alpha', false]])
     })
 
-    it('uninstalls several skills, dropping each once the Host confirms', async () => {
+    it('uninstalls several skills, dropping each and its pin once the Host confirms', async () => {
       const uninstall = vi.fn(async (name: string) => (name === 'beta' ? refused('busy') : done))
       const source = createInstalledSource(deps({ uninstall }))
       await source.onRefresh()
+      source.onTogglePin(skill('alpha').path, true)
+      source.onTogglePin(skill('beta').path, true)
       expect(await source.onBatch('uninstall', ['alpha', 'beta'])).toEqual(['beta'])
       expect(source.hooks.installed.getSnapshot().skills.map(item => item.name)).toEqual(['beta'])
+      expect(source.hooks.installed.getSnapshot().pinned).toEqual([skill('beta').path])
+      // An unpinned skill uninstalls without touching the pins
+      await source.onRefresh()
+      await source.onUninstall('alpha')
+      expect(source.hooks.installed.getSnapshot().pinned).toEqual([skill('beta').path])
     })
   })
 })

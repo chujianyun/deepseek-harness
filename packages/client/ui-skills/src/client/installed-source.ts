@@ -4,7 +4,7 @@ import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { InstalledSkillActionValue, InstalledSkillListValue, InstalledSkillView } from '@deepseek-ai/dsh-skill-controller/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
-import { loadPins, savePin } from './pins.ts'
+import { loadPins, pinKey, savePin } from './pins.ts'
 
 /** Query and action state the page renders. */
 export interface InstalledSnapshot {
@@ -15,7 +15,7 @@ export interface InstalledSnapshot {
   readonly busy: readonly string[]
   /** Message of the last failed action until the next action starts or the user dismisses it. */
   readonly failure: string | null
-  /** Pinned skills as `pinKey(group, name)`, kept on this machine; pinned cards go first in their group. */
+  /** Pinned skills as `pinKey(skill)`, kept on this machine; pinned cards go first in their group. */
   readonly pinned: readonly string[]
 }
 
@@ -51,9 +51,9 @@ export interface InstalledSkillsInjected {
   /** Pin or unpin one skill on this machine. */
   readonly onTogglePin: (key: string, pinned: boolean) => void
   /**
-   * Apply one action to the named skills, one after another. Enabling skips withdrawn skills; an
-   * uninstalled skill leaves the list once the Host confirms its move.
-   * @returns the names the Host refused (withdrawn skills skipped by enabling are not among them).
+   * Apply one action to the named skills, one after another. A skill already in the requested state
+   * is left alone; an uninstalled skill leaves the list (and its pin) once the Host confirms its move.
+   * @returns the names the Host refused.
    */
   readonly onBatch: (action: InstalledBatchAction, names: readonly string[]) => Promise<readonly string[]>
 }
@@ -108,7 +108,14 @@ export function createInstalledSource(deps: InstalledDependencies): InstalledSki
 
   const uninstall = async (name: string): Promise<boolean> => {
     const ok = await act(name, () => deps.uninstall(name))
-    if (ok) patch(({ skills }) => ({ skills: skills.filter(skill => skill.name !== name) }))
+    if (ok) {
+      // A later skill of that name at that place starts unpinned
+      const gone = store.getSnapshot().skills.find(skill => skill.name === name)
+      patch(({ skills, pinned }) => ({
+        skills: skills.filter(skill => skill.name !== name),
+        pinned: gone === undefined || !pinned.includes(pinKey(gone)) ? pinned : savePin(pinned, pinKey(gone), false),
+      }))
+    }
     return ok
   }
   const toggle = async (name: string, enabled: boolean): Promise<boolean> => {
@@ -133,7 +140,7 @@ export function createInstalledSource(deps: InstalledDependencies): InstalledSki
       const refused: string[] = []
       for (const name of names) {
         const skill = store.getSnapshot().skills.find(item => item.name === name)
-        if (skill === undefined || (action === 'enable' && skill.withdrawn)) continue
+        if (skill === undefined || (action !== 'uninstall' && skill.enabled === (action === 'enable'))) continue
         const ok = action === 'uninstall' ? await uninstall(name) : await toggle(name, action === 'enable')
         if (!ok) refused.push(name)
       }

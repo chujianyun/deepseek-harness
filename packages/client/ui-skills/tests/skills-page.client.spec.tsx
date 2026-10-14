@@ -188,11 +188,12 @@ describe('Skills page', () => {
       const custom = screen.getByRole('region', { name: /用户自定义/ })
       fireEvent.click(within(custom).getByRole('button', { name: '置顶 gamma' }))
       fireEvent.click(within(custom).getByRole('button', { name: '置顶 beta' }))
-      expect(props.onTogglePin).toHaveBeenCalledWith('custom:gamma', true)
+      expect(props.onTogglePin).toHaveBeenCalledWith('/s/gamma/SKILL.md', true)
       expect(names(custom).map(text => /alpha|beta|gamma/.exec(text)?.[0])).toEqual(['beta', 'gamma', 'alpha'])
-      expect(within(custom).getByRole('button', { name: '取消置顶 beta' }).getAttribute('aria-pressed')).toBe('true')
-      fireEvent.click(within(custom).getByRole('button', { name: '取消置顶 beta' }))
-      expect(props.onTogglePin).toHaveBeenLastCalledWith('custom:beta', false)
+      expect(within(custom).getByRole('button', { name: '置顶 beta' }).getAttribute('aria-pressed')).toBe('true')
+      expect(within(custom).getByRole('button', { name: '置顶 alpha' }).getAttribute('aria-pressed')).toBe('false')
+      fireEvent.click(within(custom).getByRole('button', { name: '置顶 beta' }))
+      expect(props.onTogglePin).toHaveBeenLastCalledWith('/s/beta/SKILL.md', false)
     })
 
     it('selects skills and enables, disables, or uninstalls them after one confirmation', async () => {
@@ -218,6 +219,7 @@ describe('Skills page', () => {
       expect(within(bar).getByText('已选 3 个')).toBeTruthy()
       fireEvent.click(within(bar).getByRole('button', { name: '卸载' }))
       const dialog = screen.getByRole('dialog', { name: '卸载选中的 3 个 Skill？' })
+      expect(dialog.textContent).toContain('将卸载：alpha、beta、hub。')
       fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }))
       expect(screen.queryByRole('dialog')).toBeNull()
       fireEvent.click(within(bar).getByRole('button', { name: '卸载' }))
@@ -247,6 +249,58 @@ describe('Skills page', () => {
       expect(screen.getByText('已选 1 个')).toBeTruthy()
       fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: '关闭' }))
       expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('leaves withdrawn skills out of a bulk enable, shows the partial selection, and locks the cards while a batch runs', async () => {
+      const { props, installedStore } = pageProps({ skills: [skill('alpha', false), skill('gone', false, 'market', true)] }, {
+        statuses: { gone: { name: 'gone', displayName: '已收回的', hubSkillId: 's-g', installedVersion: '1.0.0', latestVersion: null, state: 'withdrawn' } },
+      })
+      let finish: (refused: readonly string[]) => void = () => {}
+      props.onBatch.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+      render(<InstalledView {...props} onBack={() => {}} />)
+      fireEvent.click(screen.getByRole('button', { name: '批量管理' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: '选择 alpha' }))
+      expect((screen.getByRole('checkbox', { name: '全选' }) as HTMLInputElement).indeterminate).toBe(true)
+      fireEvent.click(screen.getByRole('checkbox', { name: '选择 已收回的' }))
+      fireEvent.click(screen.getByRole('button', { name: '启用' }))
+      expect(props.onBatch).toHaveBeenCalledWith('enable', ['alpha'])
+      expect((screen.getByRole('button', { name: '完成' }) as HTMLButtonElement).disabled).toBe(true)
+      expect((screen.getByRole('switch', { name: '启用 alpha' }) as HTMLButtonElement).disabled).toBe(true)
+      expect((screen.getByRole('checkbox', { name: '选择 alpha' }) as HTMLInputElement).disabled).toBe(true)
+      await act(async () => { finish([]) })
+      expect((screen.getByRole('button', { name: '完成' }) as HTMLButtonElement).disabled).toBe(false)
+
+      // A skill that leaves the list leaves the selection
+      act(() => { installedStore.set({ ...installedStore.getSnapshot(), skills: [skill('alpha', false)] }) })
+      expect(screen.getByText('已选 1 个')).toBeTruthy()
+    })
+
+    it('names refused market skills by their display name, and a failed batch still unlocks', async () => {
+      const { props } = pageProps({ skills: [skill('hub', true, 'market')] }, {
+        statuses: { hub: { name: 'hub', displayName: '天猫发品', hubSkillId: 's-h', installedVersion: '1.0.0', latestVersion: '1.0.0', state: 'current' } },
+      })
+      props.onBatch.mockResolvedValueOnce(['hub'])
+      render(<InstalledView {...props} onBack={() => {}} />)
+      fireEvent.click(screen.getByRole('button', { name: '批量管理' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: '全选' }))
+      fireEvent.click(screen.getByRole('button', { name: '停用' }))
+      await vi.waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('1 个没有完成：天猫发品') })
+      props.onBatch.mockRejectedValueOnce(new Error('lost'))
+      fireEvent.click(screen.getByRole('button', { name: '停用' }))
+      await vi.waitFor(() => { expect((screen.getByRole('button', { name: '完成' }) as HTMLButtonElement).disabled).toBe(false) })
+      expect(screen.getByRole('alert').textContent).toContain('1 个没有完成：天猫发品')
+    })
+
+    it('stays out of bulk mode when the user left it before an uninstall finished', async () => {
+      const { props } = renderPage({ skills: [skill('alpha')] })
+      fireEvent.click(screen.getByRole('button', { name: '批量管理' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: '全选' }))
+      fireEvent.click(screen.getByRole('button', { name: '卸载' }))
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '卸载' }))
+      await vi.waitFor(() => { expect(props.onBatch).toHaveBeenCalledWith('uninstall', ['alpha']) })
+      await vi.waitFor(() => { expect((screen.getByRole('button', { name: '完成' }) as HTMLButtonElement).disabled).toBe(false) })
+      fireEvent.click(screen.getByRole('button', { name: '完成' }))
+      expect(screen.queryByRole('toolbar')).toBeNull()
     })
 
     it('offers no bulk management when nothing is installed', () => {

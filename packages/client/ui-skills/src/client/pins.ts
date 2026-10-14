@@ -5,13 +5,13 @@ const STORAGE_KEY = 'dsh.skills.pinned'
 const LIMIT = 200
 
 /**
- * The pin key of an installed skill: its page group and name, so a user skill and a market skill of
- * the same name are pinned apart.
- * @param group - the page group.
- * @param name - the skill name.
+ * The pin key of an installed skill: its instruction file path, which differs per source and, for a
+ * market Skill, per tenant (`skills-market/<tenantId>/<name>/`), so a pin never follows a name onto
+ * another tenant's or source's skill.
+ * @param skill - the installed skill.
  * @returns the key stored in the pin list.
  */
-export const pinKey = (group: string, name: string): string => `${group}:${name}`
+export const pinKey = (skill: { readonly path: string }): string => skill.path
 
 /**
  * Read the pinned keys, oldest pin first; unreadable or missing storage reads as none.

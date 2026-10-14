@@ -9,7 +9,7 @@ afterEach(() => {
 
 describe('installed-skill pins', () => {
   it('keys a pin by group and name and keeps the newest last, bounded', () => {
-    expect(pinKey('market', 'pdf')).toBe('market:pdf')
+    expect(pinKey({ path: '/h/skills-market/t-a/pdf/SKILL.md' })).toBe('/h/skills-market/t-a/pdf/SKILL.md')
     let pins: readonly string[] = []
     for (let i = 0; i < 205; i += 1) pins = savePin(pins, `custom:s${i}`, true)
     expect(pins).toHaveLength(200)

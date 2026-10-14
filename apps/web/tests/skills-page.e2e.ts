@@ -59,7 +59,7 @@ it('lists installed skills, keeps a switched-off skill disabled across reloads, 
       await page.reload()
       await page.getByRole('button', { name: 'Skills', exact: true }).click()
       await page.getByRole('button', { name: /^Installed \(\d+\)$/ }).click()
-      await custom.getByRole('button', { name: 'Unpin gamma-skill' }).waitFor()
+      await expect.poll(() => custom.getByRole('button', { name: 'Pin gamma-skill' }).getAttribute('aria-pressed')).toBe('true')
       expect(await order()).toEqual(['gamma-skill', 'alpha-skill', 'beta-skill'])
 
       // Bulk management: select two skills and switch both off, then both on, through the real Remote.
