@@ -15,7 +15,7 @@ import { packSkills, readTasks, SKILLS } from '../src/index.ts'
 
 const SKILLS_DIR = fileURLToPath(new URL('../skills', import.meta.url))
 /** 名流's people named in the handover; who does what is read from the configuration documents or the assistant's workspace. */
-const PEOPLE = /邓迦楠|周建平|建平|锁威|程政|王思成|刘玉林|路文龙|史鹏飞|李可豪|尹城琳|丰琳琳/u
+const PEOPLE = /邓迦楠|周建平|建平|锁威|程政|王思成|刘玉林|路文龙|史鹏飞|李可豪|尹城琳|丰琳琳|倪宸/u
 let out: string
 let zips: string[]
 
@@ -43,6 +43,27 @@ async function filesUnder(dir: string, prefix = ''): Promise<string[]> {
   return found
 }
 
+const PYTHON = process.env.DSH_OFFICE_TEST_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3')
+/** The environment skill scripts run in: no proxy, so requests reach local servers, and a code page that cannot write Chinese. */
+const SCRIPT_ENV = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(?:https?|all|no)_proxy$/iu.test(name))),
+  PYTHONIOENCODING: 'cp1252',
+}
+
+/**
+ * Run a skill's Python script. A script killed at the timeout, or one whose interpreter is missing,
+ * ends with code -1, so it is never taken for a success.
+ */
+async function runPython(
+  script: string, args: readonly string[], env: Record<string, string | undefined> = {},
+): Promise<{ code: number; out: string }> {
+  return await new Promise((done) => {
+    execFile(PYTHON, [script, ...args], { env: { ...SCRIPT_ENV, ...env }, timeout: 4000, encoding: 'utf8' }, (error, stdout) => {
+      done({ code: error ? (typeof error.code === 'number' ? error.code : -1) : 0, out: stdout })
+    })
+  })
+}
+
 describe('packSkills', () => {
   it('zips each skill folder whole around <name>/, with a SKILL.md named after the folder', async () => {
     expect(zips).toEqual(SKILLS.map(name => join(out, `${name}.zip`)))
@@ -56,7 +77,8 @@ describe('packSkills', () => {
   it('carries nothing of the Aily environment, no chat or user ids, and no names of 名流\'s people', async () => {
     for (const name of SKILLS) {
       for (const file of await filesUnder(join(SKILLS_DIR, name))) {
-        const text = await readFile(join(SKILLS_DIR, name, file), 'utf8')
+        // The video report's template counts 微博 and 视频号 comments; any other 评论 is Aily's comment delivery.
+        const text = (await readFile(join(SKILLS_DIR, name, file), 'utf8')).replaceAll(/(?:微博|视频号)评论：/gu, '')
         const forbidden = [/aily/iu, /larksuite-cli-guide/u, /\boc_[0-9a-f]{16,}/u, /\bou_[0-9a-f]{16,}/u, /cli_[0-9a-f]{16}/u, /评论/u]
         // Base and table tokens are read from the configuration documents or the assistant's workspace.
         forbidden.push(/OU8JbYF8WahWo3sYEzwcTyBcn8b/u, /DMpmbusTjaZz60sYjFdcMjcRnTc|tbldnCoi0SeSDhWU/u)
@@ -71,7 +93,9 @@ describe('packSkills', () => {
 describe('recommended tasks', () => {
   it('are tasks an assistant package accepts, declaring operations an automation task accepts', async () => {
     const tasks = await readTasks()
-    expect(tasks.map(task => (task as { id: string }).id)).toEqual(['ai-inspection', 'pdd-meeting-todos', 'roi-internal-report', 'roi-provider-reminder'])
+    expect(tasks.map(task => (task as { id: string }).id)).toEqual([
+      'ai-inspection', 'pdd-meeting-todos', 'roi-internal-report', 'roi-provider-reminder', 'video-reminder', 'video-report',
+    ])
     const parsed = manifestSchema.parse({ name: 'mingliu-ops', displayName: '运营日报助手', description: 'x', version: '1.0.0', tasks })
     expect(parsed.tasks[0]).toMatchObject({
       title: '天猫一店+拼多多工作日巡检', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '11:00' }, timeZone: 'Asia/Shanghai',
@@ -90,6 +114,10 @@ describe('recommended tasks', () => {
       title: '投流ROI服务商提醒', timing: { kind: 'weekly', weekdays: [1, 3, 5], time: '10:00' }, connectors: [], permission: 'workspace-write',
     })
     expect([parsed.tasks[2]!.operations, parsed.tasks[3]!.operations]).toEqual([undefined, undefined])
+    // The video report runs at 10:00 about yesterday, its reminder at 17:30 about today; each only sends its message.
+    expect(parsed.tasks[4]).toMatchObject({ title: '视频素材绩效当日提醒', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '17:30' } })
+    expect(parsed.tasks[5]).toMatchObject({ title: '视频素材绩效日报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '10:00' } })
+    for (const task of parsed.tasks.slice(4)) expect(task).toMatchObject({ connectors: [], operations: ['lark-cli im +messages-send'] })
     // Each run declares only the write it makes; other Feishu writes are not granted.
     expect(JSON.stringify(tasks)).not.toMatch(PEOPLE)
     for (const task of parsed.tasks) expect(readOperations(task.operations ?? [])).toEqual({ operations: task.operations ?? [] })
@@ -131,11 +159,60 @@ describe('the meeting to-do sync', () => {
   })
 })
 
+describe('the video performance report', () => {
+  it('sends only to the test group, and its send passes the unattended check in either shell', async () => {
+    const [, , , , reminder, report] = await readTasks() as { prompt: string; operations: string[] }[]
+    expect(report!.prompt).toContain('日期取昨天')
+    expect(reminder!.prompt).toContain('日期取今天')
+    for (const task of [report!, reminder!]) expect(task.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_94a59b1b5e0f87c703bccdc0f6a10daf'])
+    const skill = await readFile(join(SKILLS_DIR, 'video-performance-report', 'SKILL.md'), 'utf8')
+    expect(skill).toContain('距月GMV目标还差：数据待更新（月目标 14000 元）')
+    const send = 'lark-cli im +messages-send --as bot --chat-id oc_x --msg-type text --idempotency-key video-report-日报-20261013 '
+      + '--content \'{"text":"【小红书、微博、视频号素材绩效日报｜10月13日】<at user_id=\\"ou_x\\">x</at>\\n日期：10月13日"}\''
+    for (const dialect of ['bash', 'pwsh'] as const) expect(declaredOperations(send, dialect, report!.operations, false)).toEqual(['lark-cli im +messages-send'])
+  })
+})
+
+describe('holiday.py', () => {
+  const script = join(SKILLS_DIR, 'video-performance-report', 'scripts', 'holiday.py')
+  /** A stand-in chinese_calendar: 10-01 is National Day, 10-11 an ordinary Sunday, and 2030 is past its data. */
+  const STAND_IN = [
+    'import datetime',
+    'def get_holiday_detail(day):',
+    '    if day.year == 2030: raise NotImplementedError("no available data for year 2030")',
+    '    if day == datetime.date(2026, 10, 1): return True, "National Day"',
+    '    return day.weekday() >= 5, None',
+  ].join('\n')
+  /** A chinese_calendar that cannot be imported, as when the interpreter lacks it. */
+  const MISSING = 'raise ImportError("No module named chinese_calendar")'
+
+  async function judge(date: string | undefined, calendar = STAND_IN): Promise<{ code: number; out: string }> {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-holiday-'))
+    try {
+      await writeFile(join(dir, 'chinese_calendar.py'), calendar)
+      const ended = await runPython(script, date === undefined ? [] : [date], { PYTHONPATH: dir })
+      return { code: ended.code, out: ended.out.trim() }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }
+
+  it('counts a named holiday, not an ordinary weekend, and cannot judge without the year\'s calendar', async () => {
+    expect(await judge('2026-10-01')).toEqual({ code: 0, out: '{"date": "2026-10-01", "holiday": true, "name": "National Day"}' })
+    expect(await judge('2026-10-11')).toEqual({ code: 0, out: '{"date": "2026-10-11", "holiday": false, "name": null}' })
+    const unknownYear = await judge('2030-01-01')
+    expect([unknownYear.code, unknownYear.out.startsWith('错误: 判断不了 2030-01-01')]).toEqual([2, true])
+    expect((await judge('2026-10-12', MISSING)).code).toBe(2)
+    for (const notDate of ['10月1日', '20261001', '2026-W40-4']) {
+      const judged = await judge(notDate)
+      expect([judged.code, judged.out]).toEqual([1, '错误: 需要一个 YYYY-MM-DD 日期参数'])
+    }
+    expect((await judge(undefined)).code).toBe(1)
+  })
+})
+
 describe('send_webhook.py', () => {
-  const python = process.env.DSH_OFFICE_TEST_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3')
   const script = join(SKILLS_DIR, 'roi-inspection', 'scripts', 'send_webhook.py')
-  /** The script's environment: no proxy, so its requests reach the local webhook, and a code page that cannot write Chinese. */
-  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(?:https?|all|no)_proxy$/iu.test(name)))
 
   interface Sent { readonly body: Record<string, unknown> | undefined; readonly code: number; readonly out: string }
 
@@ -160,11 +237,7 @@ describe('send_webhook.py', () => {
       const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/hook`
       await writeFile(join(dir, 'message.txt'), '【投流ROI提醒｜测试】\n')
       await writeFile(join(dir, 'map.json'), typeof mapping(url) === 'string' ? mapping(url) as string : JSON.stringify(mapping(url)))
-      const ended = await new Promise<{ code: number; out: string }>((done) => {
-        execFile(python, [script, ...args(url, dir)], { env: { ...env, PYTHONIOENCODING: 'cp1252' }, timeout: 4000, encoding: 'utf8' }, (error, stdout) => {
-          done({ code: error ? Number(error.code) : 0, out: stdout })
-        })
-      })
+      const ended = await runPython(script, args(url, dir))
       return { body, ...ended }
     } finally {
       server.close()

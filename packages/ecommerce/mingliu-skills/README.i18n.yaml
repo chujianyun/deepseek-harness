@@ -3,20 +3,20 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/ecommerce/mingliu-skills/README.md
 /:
-  en: b5a59f6021801fab
-  zh: 7778d625c11d4427
+  en: c48717072e009a75
+  zh: 4de3791d94e5b63a
 /operations-skills:
   en: 77b610312cb99840
   zh: 6e38c17e0b423efb
 /operations-skills/summary:
-  en: cf6d5e5d1cd02b2f
-  zh: dc6d8b7da458a8e9
+  en: 9c82c4e133da295d
+  zh: 4f3cac5ea089ed13
 /operations-skills/table-of-contents:
   en: 4e53164159b5ce41
   zh: 1e7d2e37b6eba4ea
 /operations-skills/use-this-package:
-  en: b5784382d30429da
-  zh: 5f1354961983ea34
+  en: 61b712f60f0c4cb7
+  zh: 2ae3baba92934f87
 /operations-skills/model-experience:
   en: 173d53ea1883e761
   zh: 6467e324beef3bb7
@@ -24,8 +24,8 @@
   en: fab5fb362529e603
   zh: 92877d6ae11d9ac2
 /operations-skills/known-limitations-and-deferred-work:
-  en: 4afd1a7da1b2f2f5
-  zh: bc8030df810d4130
+  en: ebb6df5ac2fa29b8
+  zh: d0ee7987ba95664a
 /operations-skills/known-limitations-and-deferred-work/dev-note:
   en: e12e54a99f16b59a
   zh: f1040ecf89e08c7e

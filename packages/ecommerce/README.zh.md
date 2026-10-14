@@ -25,7 +25,7 @@ ecommerce 家族通过用户在系统 Google Chrome 中登录的账号，把桌�
 | 包 | 角色 | ctx 键 |
 |---|---|---|
 | [`ecommerce-accounts/`](ecommerce-accounts/README.zh.md) | 租户的电商账号及其 Chrome 登录，通过 `ecommerceAccounts` Remote 提供 | `ctx.ecommerceAccounts` |
-| [`mingliu-skills/`](mingliu-skills/README.zh.md) | 只上传到名流 Skill Hub 的名流运营技能（部门 AI 巡检及其月度配置、投流 ROI 巡检、拼多多日会待办同步）、名流运营日报助手的推荐任务，及其打包 | — |
+| [`mingliu-skills/`](mingliu-skills/README.zh.md) | 只上传到名流 Skill Hub 的名流运营技能（部门 AI 巡检及其月度配置、投流 ROI 巡检、拼多多日会待办同步、视频素材绩效日报）、名流运营日报助手的推荐任务，及其打包 | — |
 | [`tmall-skills/`](tmall-skills/README.zh.md) | 上传到 Skill Hub、只下发给需要的租户的天猫技能（商家报表、发品类目与字段规则、买家单品报告、素材整理成商品草稿，以及把草稿发到天猫仓库和拼多多、抖店草稿箱，可一家或多家），及其打包 | — |
 
 -----
