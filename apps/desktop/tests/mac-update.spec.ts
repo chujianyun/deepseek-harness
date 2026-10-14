@@ -9,6 +9,8 @@ import { MAC_INSTALL_SCRIPT, macBundle, macInstaller, macPreparation, macReplace
 
 const run = promisify(execFile)
 const darwin = process.platform === 'darwin'
+// The bundle paths and the replacement script are POSIX; Windows installs through its own installer.
+const posix = process.platform !== 'win32'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'mac-update-')) })
@@ -29,7 +31,7 @@ async function bundle(path: string, identifier: string, version: string): Promis
   return path
 }
 
-describe('mac bundle location', () => {
+describe.runIf(posix)('mac bundle location', () => {
   it('finds the App enclosing the main executable', () => {
     expect(macBundle('/Applications/MO WorkAI.app/Contents/MacOS/MO WorkAI')).toBe('/Applications/MO WorkAI.app')
   })
@@ -76,7 +78,7 @@ describe.runIf(darwin)('mac preparation', () => {
   })
 })
 
-describe('mac replacement script', () => {
+describe.runIf(posix)('mac replacement script', () => {
   async function replace(next: string, prepare?: (current: string) => Promise<void>) {
     const current = await bundle(join(root, 'Apps', 'MO WorkAI.app'), 'vip.example', '1.0.0')
     await prepare?.(current)
@@ -119,7 +121,7 @@ describe('mac replacement script', () => {
   })
 })
 
-describe('mac installer', () => {
+describe.runIf(posix)('mac installer', () => {
   it('runs the script through its log wrapper after the application exits, with spaces and non-ASCII paths', async () => {
     const apps = join(root, 'MO 更新测试')
     const current = await bundle(join(apps, 'MO WorkAI.app'), 'vip.example', '1.0.0')
