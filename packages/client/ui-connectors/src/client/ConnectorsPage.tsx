@@ -11,6 +11,7 @@ import {
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConnectorsInjected } from './connectors-source.ts'
 import type { ConnectorsLocaleKey } from './locales.ts'
+import { ConnectorLogo } from './ConnectorLogo.tsx'
 import css from './ConnectorsPage.module.css'
 
 /** Props the page reads from its `main` registration: the translator and the connectors face. */
@@ -55,7 +56,6 @@ export function ConnectorsPage(props: ConnectorsPageProps) {
     <div className={css.page}>
       <header className={css.header} data-window-drag>
         <h1 className={css.title}>{t('title')}</h1>
-        <p className={css.intro}>{t('intro')}</p>
       </header>
       {failure !== null && (
         <div className={css.alert} role="alert">
@@ -89,7 +89,7 @@ function ConnectorCard({ connector, props, onConfirm }: {
   return (
     <li className={css.card} data-status={connector.status} data-enabled={connector.enabled ? 'true' : 'false'}>
       <div className={css.cardHead}>
-        <span className={css.avatar} aria-hidden="true">{name.slice(0, 1)}</span>
+        <ConnectorLogo id={connector.id} name={name} />
         <span className={css.name}>{name}</span>
         <Corner connector={connector} name={name} props={props} onConfirm={onConfirm} />
       </div>

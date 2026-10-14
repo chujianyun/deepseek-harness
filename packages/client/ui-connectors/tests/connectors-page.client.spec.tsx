@@ -5,6 +5,7 @@ import type { ConnectorsState, ConnectorView } from '@deepseek-ai/dsh-connectors
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ConnectorsSnapshot } from '../src/client/connectors-source.ts'
+import { ConnectorLogo } from '../src/client/ConnectorLogo.tsx'
 import { ConnectorsPage } from '../src/client/ConnectorsPage.tsx'
 import { en, zh } from '../src/client/locales.ts'
 
@@ -41,6 +42,18 @@ describe('connectors page', () => {
     mount(undefined)
     expect(screen.getByRole('heading', { name: '连接器' })).toBeTruthy()
     expect(screen.queryByRole('listitem')).toBeNull()
+  })
+
+  it.each([zh, en])('shows each platform\'s logo beside its name, under a header without an intro', (copy) => {
+    mount({ connectors: [feishu(), dingtalk()] }, {}, copy)
+    expect(card(copy['name.feishu']).querySelector('svg[data-logo="feishu"]')?.getAttribute('aria-hidden')).toBe('true')
+    expect(card(copy['name.dingtalk']).querySelector('svg[data-logo="dingtalk"]')?.getAttribute('aria-hidden')).toBe('true')
+    expect(screen.getByRole('banner').textContent).toBe(copy.title)
+  })
+
+  it('marks a connector without a logo by its name\'s first character', () => {
+    render(<ConnectorLogo id="wecom" name="企业微信" />)
+    expect(screen.getByText('企').getAttribute('aria-hidden')).toBe('true')
   })
 
   it.each([zh, en])('offers + on each connector that is not installed, with its pinned CLI', (copy) => {

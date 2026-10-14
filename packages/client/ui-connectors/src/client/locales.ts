@@ -4,7 +4,6 @@
 export const zh = {
   panel: '连接器',
   title: '连接器',
-  intro: '把 DSH 连到公司使用的办公平台，模型就能以你的身份在平台上查消息、看文档、安排日程。',
   'name.feishu': '飞书',
   'name.dingtalk': '钉钉',
   'description.feishu': '通过飞书官方命令行工具 lark-cli 使用消息、文档、日历、多维表格等。',
@@ -75,7 +74,6 @@ export type ConnectorsLocaleKey = keyof typeof zh
 export const en = {
   panel: 'Connectors',
   title: 'Connectors',
-  intro: 'Connect DSH to the office platforms your company uses, so the model can read messages, open documents, and plan schedules there as you.',
   'name.feishu': 'Feishu',
   'name.dingtalk': 'DingTalk',
   'description.feishu': 'Messages, documents, calendars, Base, and more through lark-cli, the official Feishu command-line tool.',
