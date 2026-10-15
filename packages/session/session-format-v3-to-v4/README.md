@@ -117,7 +117,7 @@ The [message walker](src/sources.ts) visits only these payload positions. It con
 | `session/title-llm-request` | Each `data.messages[]` member |
 | `developer/message` | Native walker only; an unknown ignorable V3 event is namespaced and its payload is not visited |
 
-A plugin source requires a string `plugin`, including the empty string. Conversion removes that property, replaces `kind`, and preserves every other own JSON property. Direct source kinds must be nonempty strings. Conversion does not infer missing metadata from message text, tool arguments, configuration, or current files.
+A plugin source requires a string `plugin`, including the empty string. The exported `releasedV3ProducerKind` applies the same rename to live messages from plugins built for V3 releases. Conversion removes that property, replaces `kind`, and preserves every other own JSON property. Direct source kinds must be nonempty strings. Conversion does not infer missing metadata from message text, tool arguments, configuration, or current files.
 
 | Exact V3 `plugin` | V4 `kind` |
 |---|---|

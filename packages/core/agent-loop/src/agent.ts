@@ -38,6 +38,7 @@ import { RuntimeContextProjection } from './runtime-context.ts'
 import { AssistantStreamAttempt } from './assistant-stream.ts'
 import { SystemPromptProjection } from './runtime-context.ts'
 import { executeToolCalls } from './tool-calls.ts'
+import { adoptLegacyPluginSources } from './legacy-plugin-source.ts'
 
 type Phase =
   | { kind: 'idle'; lastTurn: number }
@@ -282,7 +283,7 @@ export class ReactLoopAgent implements Agent {
     )
     signal.throwIfAborted()
     if (decision.kind === 'reject') return decision
-    return { ...decision, assembly }
+    return { ...decision, messages: adoptLegacyPluginSources(decision.messages), assembly }
   }
 
   /** Whether the assembled tool schemas differ from the logged request header's. */
