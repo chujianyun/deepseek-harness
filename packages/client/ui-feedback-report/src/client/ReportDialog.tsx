@@ -169,9 +169,8 @@ const CORNER_GAP = 8
  * publishes nothing.
  */
 function CornerSeat({ onClick, t }: { onClick: () => void; t: Translate }) {
-  const seat = useRef<HTMLDivElement>(null)
+  const [element, setElement] = useState<HTMLDivElement | null>(null)
   useEffect(() => {
-    const element = seat.current
     if (element === null) return undefined
     const root = document.documentElement.style
     const publish = (): void => {
@@ -189,9 +188,9 @@ function CornerSeat({ onClick, t }: { onClick: () => void; t: Translate }) {
       window.removeEventListener('resize', publish)
       root.removeProperty(CORNER_INSET_PROPERTY)
     }
-  }, [])
+  }, [element])
   return (
-    <div ref={seat} className={css.corner} data-feedback-report-corner="">
+    <div ref={setElement} className={css.corner} data-feedback-report-corner="">
       <Trigger onClick={onClick} t={t} />
     </div>
   )
