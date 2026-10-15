@@ -3,19 +3,17 @@
 // Its manifest declares no version, and its `agent/pre-step` listener adds recalled context under the
 // released V3 `{ kind: 'plugin', plugin }` source. A real `dsh --profile web` process talks to a local
 // DeepSeek Messages stand-in; the turn completes, the model sees the recalled context, the package is left out
-// of `dsh_plugin_packages`, and the persisted Session records the producer-owned kind.
+// of `dsh_plugin_packages`, and the Session log records the producer-owned kind.
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { zstdDecompressSync } from 'node:zlib'
 import { chromium } from 'playwright'
 import { expect, it, onTestFailed, onTestFinished } from 'vitest'
-import { decompressZstdPrefix, scanZstdFrames } from '../../../packages/session/session-persistence-jsonl/src/zstd.ts'
 import { REPO_ROOT, newEnglishPage, saveFailureShot, writeComposerDraft } from './support.ts'
 
 const ANSWER = 'LEGACY_PLUGIN_ANSWER'
@@ -40,6 +38,7 @@ export function apply(ctx) {
 interface MessagesRequest {
   readonly messages: readonly unknown[]
   readonly dsh_plugin_packages?: { readonly packages: readonly { readonly name: string }[] }
+  readonly dsh_session_log?: { readonly events: readonly unknown[] }
 }
 
 async function startModel() {
@@ -75,25 +74,6 @@ async function installLegacyPlugin(home: string): Promise<void> {
   await writeFile(join(modules, 'legacy-memory', 'package.json'), `${JSON.stringify({ name: 'legacy-memory', type: 'module', exports: { '.': './index.mjs' } })}\n`)
   await writeFile(join(modules, 'legacy-memory', 'index.mjs'), PLUGIN)
   await writeFile(join(home, 'cordis.patch.yml'), '- insert:\n    - id: legacy-memory\n      name: legacy-memory\n')
-}
-
-/** Every persisted Session event line under the harness home. */
-async function persistedLines(home: string): Promise<string[]> {
-  const root = join(home, 'sessions')
-  const lines: string[] = []
-  for (const entry of await readdir(root, { recursive: true })) {
-    if (!/session\.v\d+\.jsonl(\.zstd)?$/u.test(entry)) continue
-    const bytes = await readFile(join(root, entry))
-    if (!entry.endsWith('.zstd')) {
-      lines.push(...bytes.toString('utf8').split('\n'))
-      continue
-    }
-    // A live writer flushes its final frame without completing it.
-    const { frames, tornStart } = scanZstdFrames(bytes)
-    for (const { start, end } of frames) lines.push(...zstdDecompressSync(bytes.subarray(start, end)).toString('utf8').split('\n'))
-    if (tornStart !== undefined) lines.push(...(await decompressZstdPrefix(bytes.subarray(tornStart))).toString('utf8').split('\n'))
-  }
-  return lines
 }
 
 it.skipIf(process.platform === 'win32')('completes a turn with a third-party plugin that uses the released V3 source and declares no version', async () => {
@@ -167,7 +147,9 @@ it.skipIf(process.platform === 'win32')('completes a turn with a third-party plu
   const request = model.requests.find(entry => JSON.stringify(entry.messages).includes(RECALL))
   expect(request?.dsh_plugin_packages?.packages.length).toBeGreaterThan(0)
   expect(request?.dsh_plugin_packages?.packages.map(entry => entry.name)).not.toContain('legacy-memory')
-  await expect.poll(async () => (await persistedLines(home)).some(line => line.includes('"kind":"plugin:legacy-memory"'))).toBe(true)
-  expect((await persistedLines(home)).some(line => line.includes('"kind":"plugin","plugin"'))).toBe(false)
+  // Session admission refused the released wrapper before the fix; the uploaded Session log carries the admitted events.
+  const logged = JSON.stringify(model.requests.map(entry => entry.dsh_session_log?.events ?? []))
+  expect(logged).toContain('"kind":"plugin:legacy-memory"')
+  expect(logged).not.toContain('"kind":"plugin","plugin"')
   expect(errors).toEqual([])
 }, 90_000)
