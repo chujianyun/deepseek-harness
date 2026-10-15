@@ -44,7 +44,7 @@ access token 在到期前 `refreshMarginMs` 刷新，同时轮换 refresh token�
 |---|---|---|
 | `origin` | 必填 | 提供 `/oauth/*` 的用户中心地址；HTTPS，或在 `allowLoopbackHttp` 下的回环 HTTP。 |
 | `clientId` | 必填 | 为 DSH 登记的公共客户端的 `client_id`。 |
-| `scope` | `profile skills:read skills:write` | 登录时申请的权限范围。 |
+| `scope` | `profile skills:read skills:write connectors:use` | 登录时申请的权限范围。 |
 | `allowLoopbackHttp` | `false` | 接受回环上的 HTTP 地址，用于开发和测试。 |
 | `requestTimeoutMs` | `15000` | 每个用户中心请求的超时。 |
 | `attemptTimeoutMs` | `600000` | 一次浏览器登录尝试的上限。 |

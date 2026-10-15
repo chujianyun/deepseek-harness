@@ -808,7 +808,7 @@ export interface ToolResultPruneConfig {
 
 - `inject`: `hubAccount` · `skills` · `shellEnv`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/connector/connectors/src/index.ts:104`](../packages/connector/connectors/src/index.ts)
+- `source`: [`packages/connector/connectors/src/index.ts:105`](../packages/connector/connectors/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -823,6 +823,10 @@ export interface Config {
   checkIntervalMs?: number
   /** Connectors switched off, as `<tenantId>/<id>`; edited live through `setEnabled()`. */
   disabled?: Volatile<readonly string[]>
+  /** Company tools switched on, as `<tenantId>/<name>`; edited live through `setCompanyToolEnabled()`. */
+  companyEnabled?: Volatile<readonly string[]>
+  /** Company tools switched off, as `<tenantId>/<name>`; edited live through `setCompanyToolEnabled()`. */
+  companyDisabled?: Volatile<readonly string[]>
 }
 
 /** A connector CLI pinned to one release. */

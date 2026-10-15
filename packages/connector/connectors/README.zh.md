@@ -43,6 +43,8 @@ bash 或 PowerShell 调用运行前，服务的 `tools/pre-execute` 监听器会
 
 `restrict(filter)` 让会话不能使用某些连接器，例如会话的智能体未允许的连接器。对于某个过滤器拒绝其 agent 使用某连接器的模型 shell 调用，该连接器的脚本目录不会加入 `PATH`，其 Skill 通过 skill 视图过滤器离开该会话的目录，按名称或任意路径调用其 CLI 的命令会在运行前被拒绝；隐藏了 CLI 调用方式的命令不在此处拒绝，而是继续进入审批检查。没有 agent 的调用和不属于会话的读取不受过滤。返回的 disposer 移除该过滤器。
 
+[公司工具](../../../docs/glossary.zh.md#company-tool)是用户中心给当前登录租户开通的连接器，例如吉客云。每个视图的 `company` 带有它们的 `status`——`signed-out`、`loading`、`ready`；Hub 登录缺少 `connectors:use` 权限（`/api/client/connectors` 返回 `403 insufficient_scope`）时为 `sign-in-again`；读不到用户中心时为 `unavailable`，并保留上次的列表——以及本版本认识的类型（`jackyun`）的每个工具一项：名称（也是它的命令名）、显示名称、说明、公司允许的方法，以及是否开启。租户开启过的工具（`companyEnabled`）为开，关闭过的（`companyDisabled`）为关，其余按公司的自动安装设置；`setCompanyToolEnabled(name, enabled)` 写入这两个易变列表，对未知名称以 `connectors/no-company-tool` 拒绝。列表在启动、切换租户、每隔 `checkIntervalMs`、调用 `check()`，以及用户中心以 `404` 拒绝一次调用之后读取。工具开启时，模型 shell 在 `<dshHome>/connectors/company/bin/<tenantId>/` 找到它的命令（使用 curl 的 POSIX 脚本；Windows 上为 `<name>.cmd`，用 `DSH_COMPANY_NODE` 中的 Node 运行一个 Node 脚本），只在租户或其工具变化时重写。`<name> api call --method <method> [--json <json> | --file <file>] [--confirm-overwrite]` 发往本 Host 位于 `DSH_COMPANY_URL` 的环回端点，该地址带有仅属于这次 shell 调用的令牌，随其 `tools/result` 失效；Host 以当前员工身份把方法和参数转发到 `POST /api/client/connectors/<name>/call`，并打印平台的回答。用户中心保管凭据，只放行公司允许的方法，并在会覆盖已有货品的调用前返回 `409 would_overwrite`；此时命令以状态 3 退出，并提示模型加上 `--confirm-overwrite` 重新运行。带这个标志运行工具命令的 bash 或 PowerShell 调用——或隐藏了运行方式且含有该标志的调用——会先以 ⚠️ 覆盖警告询问用户，只有获批的调用才会向用户中心发送 `confirmOverwrite: true`。`<name> docs list` 和 `<name> docs get -m <method>` 打印公司允许的方法及随包附带的吉客云接口说明。
+
 `disconnect(id)` 停止进行中的登录，让该租户退出登录（lark-cli 的 `config remove` 清除其应用配置和令牌，包括钥匙串条目；`dws auth logout` 吊销其令牌），并删除该租户的目录；CLI 保留。`uninstallConnector(id)` 停止正在进行的安装或登录，以同样方式让本机每个租户退出登录，并删除 `<dshHome>/connectors/<id>`，包括下载文件。所有方法对未知 id 以 `connectors/not-found` 拒绝，对在本机不受支持的连接器以 `connectors/unavailable` 拒绝；`connect` 还以 `connectors/not-installed` 拒绝未安装的连接器，`connect` 和 `disconnect` 在未登录 Hub 时以 `hub-account/signed-out` 拒绝。
 
 -----
@@ -57,13 +59,15 @@ bash 或 PowerShell 调用运行前，服务的 `tools/pre-execute` 监听器会
 | `dingtalk` | `dws` 1.0.63 | 钉钉 CLI，字段相同，另有 `skills`：发行版的 Skill 压缩包，含 `file`、`size` 和 `sha256`。 |
 | `checkIntervalMs` | `1800000`（30 分钟） | 定期检查连接健康状况的间隔。 |
 | `disabled` | `[]` | 已关闭的连接器，格式为 `<tenantId>/<id>`；易变字段，由 `setEnabled()` 写入。 |
+| `companyEnabled` | `[]` | 已开启的公司工具，格式为 `<tenantId>/<name>`；易变字段，由 `setCompanyToolEnabled()` 写入。 |
+| `companyDisabled` | `[]` | 已关闭的公司工具，格式为 `<tenantId>/<name>`；易变字段，由 `setCompanyToolEnabled()` 写入。 |
 
 -----
 
 <a id="model-experience"></a>
 ## 模型体验
 
-间接通过 skill 注册表和 bash 工具：已连接且开启的连接器的 Skill 会加入模型的 skill 目录，其 CLI 在 bash 中运行；断开或关闭后这些 Skill 会离开目录。脚本会向命令的 stderr 追加两行之一，由 bash 结果带给模型：拒绝时为 `DSH: the Feishu connector is not connected for this company. Ask the user to connect Feishu on the DSH Connectors page (连接器), then try again.`，命令失败后为 `DSH: lark-cli exited with status <n>. If signing in to Feishu or a missing permission is the cause, ask the user to check the Feishu connector on the DSH Connectors page (连接器).`；钉钉脚本的提示相同，只是换成 DingTalk 和 `dws`。CLI 标为高风险、只在确认后运行，或 DSH 读不出风险的连接器命令会先等待用户批准；拒绝会作为工具的拒绝结果 `Error: the user rejected tool "bash"` 送达模型。其他连接器命令按模型写的直接运行。调用会话不能使用的连接器的 CLI 时，命令以 `The Feishu connector (lark-cli) is not available in this session.` 被拒绝，钉钉则换成 DingTalk 和 `dws`。
+间接通过 skill 注册表和 bash 工具：已连接且开启的连接器的 Skill 会加入模型的 skill 目录，其 CLI 在 bash 中运行；断开或关闭后这些 Skill 会离开目录。脚本会向命令的 stderr 追加两行之一，由 bash 结果带给模型：拒绝时为 `DSH: the Feishu connector is not connected for this company. Ask the user to connect Feishu on the DSH Connectors page (连接器), then try again.`，命令失败后为 `DSH: lark-cli exited with status <n>. If signing in to Feishu or a missing permission is the cause, ask the user to check the Feishu connector on the DSH Connectors page (连接器).`；钉钉脚本的提示相同，只是换成 DingTalk 和 `dws`。CLI 标为高风险、只在确认后运行，或 DSH 读不出风险的连接器命令会先等待用户批准；拒绝会作为工具的拒绝结果 `Error: the user rejected tool "bash"` 送达模型。其他连接器命令按模型写的直接运行。公司工具的命令打印平台的 JSON 回答，或以 `<name>: <message>` 打印用户中心的拒绝；会覆盖时打印用户中心的说明和 `Nothing was changed. To overwrite, run the same command again with --confirm-overwrite; DSH asks the user to approve it first.`。调用会话不能使用的连接器的 CLI 时，命令以 `The Feishu connector (lark-cli) is not available in this session.` 被拒绝，钉钉则换成 DingTalk 和 `dws`。
 
 #### KV Cache 影响
 
@@ -84,6 +88,11 @@ bash 或 PowerShell 调用运行前，服务的 `tools/pre-execute` 监听器会
 - **钉钉凭据密钥与数据同处** — `DWS_DISABLE_KEYCHAIN` 让租户加密凭据库的密钥与其放在同一目录，而不是系统钥匙串，静态保护更弱；该目录位于用户自己的主目录下。
 - **钉钉健康检查只看本地** — `auth status --readonly` 不询问服务器，因此在服务器上被吊销的令牌仍显示为已连接；失败命令的提示会把模型引向连接器页面，在那里重新连接即可重新登录。
 - **不能取消安装** — 正在进行的安装只能通过卸载停止。
+- **公司工具不受会话过滤** — `restrict()` 只作用于飞书和钉钉；会话的助手不能排除某个公司工具。
+- **Windows 上用文件传 JSON** — PowerShell 5.1 会去掉传给外部命令参数中的双引号，cmd.exe 会把 `<name>.cmd` 参数中的 `&`、`|`、`^` 和 `%NAME%` 当作特殊字符，因此 `--json` 文本在 Windows 上到达命令时已被改变；`--file` 能原样传递。
+- **调用随 shell 调用结束** — 调用的令牌在其 `tools/result` 时失效，因此在那之后仍在后台任务中运行的命令（例如超时转入后台的前台调用）后续请求会得到 `403`。
+- **每个展示的标志覆盖一次** — 获批的 shell 调用可以覆盖的次数等于用户看到的命令文本中 `--confirm-overwrite` 出现的次数，隐藏运行方式的调用为一次；循环执行覆盖的脚本每次覆盖都需要单独批准。
+- **新权限需要重新登录** — 公司工具出现之前的 Hub 登录缺少 `connectors:use`；页面请用户退出后重新登录，而不是自行重新授权。
 - **每个租户成员一个应用** — 飞书登录会在本机为每个租户创建一个自建应用；禁止员工创建应用的公司，在支持由管理员提供租户应用之前无法连接。
 
 <a id="dev-note"></a>

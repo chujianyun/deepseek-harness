@@ -987,6 +987,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the state once the checks have finished.',
       },
       {
+        signature: '@Remote async setCompanyToolEnabled(name: string, enabled: boolean): Promise<ConnectorsState>',
+        description: 'Switch a company tool on or off for the current tenant, persisting the profile\'s lists; off, the model shell gets no command for it.',
+        parameters: [{ name: 'name', description: 'the tool\'s name.' }, { name: 'enabled', description: 'whether the model may use it.' }],
+        returns: 'the state once the setting is saved and the model shell\'s commands follow it.',
+        throws: ['RemoteError `connectors/no-company-tool` or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
+      },
+      {
         signature: '@Remote async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState>',
         description: 'Switch a connector on or off for the current tenant, persisting the profile\'s list. A switched-off connector stays signed in, but the model gets neither its Skills nor its CLI.',
         parameters: [{ name: 'id', description: 'the connector.' }, { name: 'enabled', description: 'whether the model may use it.' }],
@@ -5815,6 +5822,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CompactionTrigger = \'pressure\' | \'context-overflow\';',
   },
   {
+    name: 'CompanyToolsStatus',
+    declaration: 'export type CompanyToolsStatus = \'signed-out\' | \'loading\' | \'ready\' | \'sign-in-again\' | \'unavailable\';',
+  },
+  {
+    name: 'CompanyToolsView',
+    declaration: 'export interface CompanyToolsView {\n    readonly status: CompanyToolsStatus;\n    readonly tools: readonly CompanyToolView[];\n}',
+  },
+  {
+    name: 'CompanyToolView',
+    declaration: 'export interface CompanyToolView {\n    readonly name: string;\n    readonly kind: string;\n    readonly displayName: string;\n    readonly description: string;\n    readonly methods: readonly string[];\n    readonly enabled: boolean;\n}',
+  },
+  {
     name: 'CompositionRowEnablement',
     declaration: 'export type CompositionRowEnablement = boolean | \'conditional\';',
   },
@@ -5916,7 +5935,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectorsState',
-    declaration: 'export interface ConnectorsState {\n    readonly connectors: readonly ConnectorView[];\n}',
+    declaration: 'export interface ConnectorsState {\n    readonly connectors: readonly ConnectorView[];\n    readonly company: CompanyToolsView;\n}',
   },
   {
     name: 'ConnectorStatus',

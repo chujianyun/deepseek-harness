@@ -94,6 +94,16 @@ Host owner of the connectors and of the `connectors` Remote namespace.
 @Remote async check(): Promise<ConnectorsState>
 
 /**
+ * Switch a company tool on or off for the current tenant, persisting the profile's lists; off, the
+ * model shell gets no command for it.
+ * @param name - the tool's name.
+ * @param enabled - whether the model may use it.
+ * @returns the state once the setting is saved and the model shell's commands follow it.
+ * @throws RemoteError `connectors/no-company-tool` or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.
+ */
+@Remote async setCompanyToolEnabled(name: string, enabled: boolean): Promise<ConnectorsState>
+
+/**
  * Switch a connector on or off for the current tenant, persisting the profile's list. A switched-off
  * connector stays signed in, but the model gets neither its Skills nor its CLI.
  * @param id - the connector.

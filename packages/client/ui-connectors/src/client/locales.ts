@@ -61,6 +61,14 @@ export const zh = {
   'error.busy': '{cli} 的安装文件暂时被其他程序占用（例如杀毒软件正在扫描），请稍等片刻后点 + 重试。',
   'error.launch': '{cli} 安装后无法运行，请点 + 重试。',
   actionFailed: '操作失败：{message}',
+  'group.office': '办公平台',
+  'group.company': '公司提供的工具',
+  'company.available': '可用',
+  'company.description': '由公司管理员开通，账号与密钥保存在用户中心，不会发到你的电脑。',
+  'company.methods': '可调用 {count} 个接口',
+  'company.disabledHint': '已停用：对话中的模型不会使用{name}。',
+  'company.signInAgain': '公司为你开通了新的工具，需要在「设置 → 账户」退出用户中心后重新登录才能使用。',
+  'company.unavailable': '暂时读不到公司提供的工具，请检查网络后点「⋯ → 重新检查」。',
 }
 
 /** Locale key of the Connectors page dictionary. */
@@ -127,4 +135,12 @@ export const en = {
   'error.busy': '{cli}\'s install files are in use by another program, such as a virus scanner. Wait a moment, then select + to retry.',
   'error.launch': '{cli} does not run after installing. Select + to retry.',
   actionFailed: 'Action failed: {message}',
+  'group.office': 'Office platforms',
+  'group.company': 'Company tools',
+  'company.available': 'Available',
+  'company.description': 'Provided by your company admin. The account and keys stay on the user center and never reach this computer.',
+  'company.methods': '{count} methods available',
+  'company.disabledHint': 'Off: the model in conversations does not use {name}.',
+  'company.signInAgain': 'Your company has given you new tools. Sign out of the user center in Settings → Account and sign in again to use them.',
+  'company.unavailable': 'Company tools cannot be read right now. Check the network, then choose ⋯ → Check again.',
 } satisfies Record<ConnectorsLocaleKey, string>

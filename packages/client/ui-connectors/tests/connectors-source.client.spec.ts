@@ -3,19 +3,22 @@ import type { ConnectorsState, ConnectorView } from '@deepseek-ai/dsh-connectors
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { createConnectorsSource, type ConnectorsDependencies } from '../src/client/connectors-source.ts'
 
-const state: ConnectorsState = { connectors: [] }
+const NO_COMPANY: ConnectorsState['company'] = { status: 'ready', tools: [] }
+
+const state: ConnectorsState = { company: NO_COMPANY, connectors: [] }
 const ok = () => Promise.resolve({ ok: true as const, value: state })
 const refused = (message: string) => Promise.resolve({ ok: false as const, error: new RemoteError('connectors/not-found', message, { id: 'x' }) })
 
 function deps(over: Partial<ConnectorsDependencies> = {}): ConnectorsDependencies {
   return {
     install: vi.fn(ok), uninstall: vi.fn(ok), connect: vi.fn(ok), cancelConnect: vi.fn(ok), disconnect: vi.fn(ok),
-    check: vi.fn(ok), setEnabled: vi.fn(ok),
+    check: vi.fn(ok), setEnabled: vi.fn(ok), setCompanyToolEnabled: vi.fn(ok),
     openUrl: vi.fn(), ...over,
   }
 }
 
 const feishu = (over: Partial<ConnectorView>): ConnectorsState => ({
+  company: NO_COMPANY,
   connectors: [{
     id: 'feishu', status: 'connecting', cli: 'lark-cli', version: '1', receivedBytes: 0, totalBytes: 0, error: null,
     login: null, loginError: null, account: null, problem: null, enabled: true, skills: [], ...over,
@@ -26,7 +29,7 @@ describe('connectors source', () => {
   it('takes card state only from the stream, marks a connector busy during its action, and keeps the last refusal until dismissed', async () => {
     let finish!: () => void
     const install = vi.fn(() => new Promise<{ ok: true; value: ConnectorsState }>((resolve) => {
-      finish = () => { resolve({ ok: true, value: { connectors: [] } }) }
+      finish = () => { resolve({ ok: true, value: { company: NO_COMPANY, connectors: [] } }) }
     }))
     const d = deps({ install, uninstall: vi.fn(() => refused('no connector x')) })
     const source = createConnectorsSource(d)
@@ -51,6 +54,8 @@ describe('connectors source', () => {
     await source.onDisconnect('feishu')
     await source.onSetEnabled('feishu', false)
     expect(d.setEnabled).toHaveBeenCalledWith('feishu', false)
+    await source.onSetCompanyEnabled('jackyun', true)
+    expect(d.setCompanyToolEnabled).toHaveBeenCalledWith('jackyun', true)
     await source.onCheck()
     expect(d.cancelConnect).toHaveBeenCalledWith('feishu')
     expect(d.disconnect).toHaveBeenCalledWith('feishu')

@@ -48,6 +48,7 @@ import { dingtalk } from './dingtalk.ts'
 import type { ConnectorDriver } from './driver.ts'
 import { cliInstalled, executableName, installCli, platformKey, type InstallError } from './install.ts'
 import { feishu as feishuDriver } from './lark.ts'
+import { CompanyTools, OVERWRITE_FLAG, type CompanyTool } from './company.ts'
 import { classify, helpRiskReader, invocations, type Invocation, type RiskReader, type ShellDialect } from './risk.ts'
 import { ConnectorSkillProvider, type ConnectorSkill, type SkillSource } from './skills.ts'
 import type {
@@ -112,6 +113,10 @@ export interface Config {
   checkIntervalMs?: number
   /** Connectors switched off, as `<tenantId>/<id>`; edited live through `setEnabled()`. */
   disabled?: Volatile<readonly string[]>
+  /** Company tools switched on, as `<tenantId>/<name>`; edited live through `setCompanyToolEnabled()`. */
+  companyEnabled?: Volatile<readonly string[]>
+  /** Company tools switched off, as `<tenantId>/<name>`; edited live through `setCompanyToolEnabled()`. */
+  companyDisabled?: Volatile<readonly string[]>
 }
 
 const cliSpec = Schema.object({
@@ -140,12 +145,23 @@ export const Config = Schema.object({
   checkIntervalMs: Schema.natural().min(1000).default(30 * 60 * 1000),
   disabled: Schema.array(Schema.string()).default([]).volatile()
     .description('Connectors switched off, as `<tenantId>/<id>`. A switched-off connector stays signed in, but the model gets neither its Skills nor its CLI.'),
+  companyEnabled: Schema.array(Schema.string()).default([]).volatile()
+    .description('Company tools switched on, as `<tenantId>/<name>`, though the user center does not install them automatically.'),
+  companyDisabled: Schema.array(Schema.string()).default([]).volatile()
+    .description('Company tools switched off, as `<tenantId>/<name>`; the model shell gets no command for them.'),
 }) as Schema<Config>
 
 /** The variable that names, one per line, the high-risk commands of a shell call the user approved, such as `drive +delete`. */
 const CONFIRMED_KEY = 'DSH_CONNECTOR_CONFIRMED'
 /** The variable naming the Node that runs a connector's Windows script (`<cli>.cmd`). */
 const NODE_KEY = 'DSH_CONNECTOR_NODE'
+/** The profile lists the service edits. */
+type ListField = 'disabled' | 'companyEnabled' | 'companyDisabled'
+
+/** The variable with the address a company tool's command reaches this Host at, for one shell call. */
+const COMPANY_URL_KEY = 'DSH_COMPANY_URL'
+/** The variable naming the Node that runs a company tool's Windows command. */
+const COMPANY_NODE_KEY = 'DSH_COMPANY_NODE'
 
 /** Longest command text an approval names. */
 const APPROVAL_COMMAND_CHARS = 200
@@ -241,6 +257,25 @@ function approvalAsk(asked: readonly Asked[]): PreToolDecision {
   }
 }
 
+/**
+ * The approval a shell call asks for when it would overwrite existing goods through a company tool.
+ * @param tools - the display names of the tools it calls that way.
+ * @param command - the shell command.
+ * @returns the ask.
+ */
+function overwriteAsk(tools: readonly string[], command: string): PreToolDecision {
+  const shown = command.length > APPROVAL_COMMAND_CHARS ? `${command.slice(0, APPROVAL_COMMAND_CHARS)}…` : command
+  const names = tools.join('、')
+  return {
+    kind: 'ask',
+    reason: `company tool overwrite: ${shown}`,
+    displayReason: {
+      en: `⚠️ Overwrite: ${tools.join(' and ')} will change goods that already exist, as you: ${shown}. Allow it to run once?`,
+      zh: `⚠️ 覆盖已有数据：${names}将以你的身份修改已存在的货品或组合装：${shown}。允许执行一次吗？`,
+    },
+  }
+}
+
 /** A failing command's check waits this long for more failures. */
 const FAILURE_CHECK_DELAY_MS = 500
 
@@ -301,6 +336,9 @@ export class ConnectorsService extends TypertRemoteService {
   private readonly installables = new Map<ConnectorId, Installable>()
   private readonly checkIntervalMs: number
   private readonly disabled: Volatile<readonly string[]> | undefined
+  private readonly companyLists: Readonly<Record<'companyEnabled' | 'companyDisabled', Volatile<readonly string[]> | undefined>>
+  /** The tenant's company tools from the user center, and their commands. */
+  private readonly company: CompanyTools
   private readonly entryId: string | undefined
   private provider: ConnectorSkillProvider | undefined
   /** Calls whose high-risk connector commands wait for, or have, the user's approval, with those commands one per line. */
@@ -325,12 +363,51 @@ export class ConnectorsService extends TypertRemoteService {
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'connectors', { namespace: 'connectors' })
     // The live lists arrive as Volatile handles; the schema validates the rest.
-    const { disabled, ...rest } = config
+    const { disabled, companyEnabled, companyDisabled, ...rest } = config
     const resolved = Config(rest) as Config & { feishu: CliSpec; dingtalk: CliSpec; checkIntervalMs: number }
     this.checkIntervalMs = resolved.checkIntervalMs
     this.disabled = disabled
+    this.companyLists = { companyEnabled, companyDisabled }
     this.entryId = ctx.fiber.entry?.options.id
     const root = join(resolveDshHome(resolved.dshHome), 'connectors')
+    this.company = new CompanyTools({
+      request: (path, init) => ctx.hubAccount.request(path, init),
+      tenant: () => this.tenantId,
+      enabled: tool => this.companyEnabled(tool),
+      changed: () => { this.changed() },
+      logger: ctx.logger,
+    }, join(root, 'company', 'bin'))
+    ctx.shellEnv.registerPath({ name: 'connectors-company', resolve: () => this.company.scriptDir() })
+    ctx.shellEnv.register({
+      name: 'connectors-company',
+      variables: {
+        [COMPANY_URL_KEY]: { description: 'The address a company tool\'s command reaches DSH at, valid for this shell call only.' },
+        [COMPANY_NODE_KEY]: { description: 'The Node that runs a company tool\'s command on Windows.' },
+      },
+      resolve: (exec): Readonly<Partial<Record<typeof COMPANY_URL_KEY | typeof COMPANY_NODE_KEY, string>>> => {
+        const tenant = this.tenantId
+        return tenant === null || this.company.scriptDir() === undefined
+          ? {}
+          : { [COMPANY_URL_KEY]: this.company.urlFor(exec.callId, tenant), [COMPANY_NODE_KEY]: process.execPath }
+      },
+    })
+    // A company tool call that would overwrite existing goods runs only once the user approves its shell call.
+    ctx.on('tools/pre-execute', async (exec, next) => {
+      const decision = await next()
+      const shell = shellCommand(exec)
+      if (decision.kind !== 'allow' || shell === undefined) return decision
+      // Each invocation with the flag the user sees may overwrite once; a call that hides how it runs the command, once.
+      const overwriting = this.company.enabledTools().map((tool) => {
+        const found = invocations(shell.command, tool.name, shell.dialect)
+        const uses = found === 'opaque'
+          ? Number(shell.command.includes(OVERWRITE_FLAG))
+          : found.filter(args => args.some(token => token.text === OVERWRITE_FLAG)).length
+        return { tool, uses }
+      }).filter(item => item.uses > 0)
+      if (overwriting.length === 0) return decision
+      this.company.allowOverwrite(exec.callId, overwriting.reduce((sum, item) => sum + item.uses, 0))
+      return overwriteAsk(overwriting.map(item => item.tool.displayName), shell.command)
+    })
     for (const [driver, spec] of [[feishuDriver, resolved.feishu], [dingtalk, resolved.dingtalk]] as const) {
       this.installables.set(driver.id, {
         id: driver.id, driver, spec, root: join(root, driver.id), install: 'not-installed', error: null, received: 0,
@@ -362,6 +439,7 @@ export class ConnectorsService extends TypertRemoteService {
     // A shell call of a connector's CLI that fails may mean the sign-in broke: check it.
     ctx.on('tools/result', (exec, result) => {
       this.confirmed.delete(exec.callId)
+      this.company.revoke(exec.callId)
       const shell = shellCommand(exec)
       if (shell === undefined) return
       const exitCode = result.isError ? null : (result.value as { exitCode?: unknown }).exitCode
@@ -434,7 +512,10 @@ export class ConnectorsService extends TypertRemoteService {
         void this.listSkills(entry)
       }
     }
+    const stopCompany = await this.company.start()
+    this.ctx.effect(() => () => { void stopCompany() }, 'connectors: company tool endpoint')
     this.tenantId = (await this.ctx.hubAccount.getState()).profile?.tenantId ?? null
+    void this.company.switched()
     void this.checkAll()
     void (async () => {
       for await (const state of this.ctx.hubAccount.watch(this.lifetime.signal)) {
@@ -442,7 +523,7 @@ export class ConnectorsService extends TypertRemoteService {
         if (tenantId !== this.tenantId) await this.switchTenant(tenantId)
       }
     })()
-    const timer = setInterval(() => { void this.checkAll() }, this.checkIntervalMs)
+    const timer = setInterval(() => { void this.checkAll(); void this.company.refresh() }, this.checkIntervalMs)
     timer.unref()
     this.ctx.effect(() => () => { clearInterval(timer) }, 'connectors: periodic check')
   }
@@ -453,7 +534,7 @@ export class ConnectorsService extends TypertRemoteService {
    */
   @Remote
   getState(): Promise<ConnectorsState> {
-    return Promise.resolve({ connectors: [...this.installables.values()].map(entry => this.view(entry)) })
+    return Promise.resolve({ connectors: [...this.installables.values()].map(entry => this.view(entry)), company: this.company.view() })
   }
 
   /**
@@ -569,7 +650,26 @@ export class ConnectorsService extends TypertRemoteService {
    */
   @Remote
   async check(): Promise<ConnectorsState> {
-    await this.checkAll()
+    await Promise.all([this.checkAll(), this.company.refresh()])
+    return this.getState()
+  }
+
+  /**
+   * Switch a company tool on or off for the current tenant, persisting the profile's lists; off, the
+   * model shell gets no command for it.
+   * @param name - the tool's name.
+   * @param enabled - whether the model may use it.
+   * @returns the state once the setting is saved and the model shell's commands follow it.
+   * @throws RemoteError `connectors/no-company-tool` or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.
+   */
+  @Remote
+  async setCompanyToolEnabled(name: string, enabled: boolean): Promise<ConnectorsState> {
+    const key = `${this.requireTenant()}/${name}`
+    if (this.company.find(name) === undefined) throw new RemoteError('connectors/no-company-tool', `no company tool ${name}`, { name })
+    const drop = (current: readonly string[]): readonly string[] => current.filter(item => item !== key)
+    const add = (current: readonly string[]): readonly string[] => [...current, key]
+    await this.updateLists({ companyDisabled: enabled ? drop : add, companyEnabled: enabled ? add : drop })
+    await this.company.sync()
     return this.getState()
   }
 
@@ -586,7 +686,7 @@ export class ConnectorsService extends TypertRemoteService {
   async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState> {
     this.installable(id)
     const key = `${this.requireTenant()}/${id}`
-    await this.updateDisabled(current => enabled ? current.filter(item => item !== key) : [...current, key])
+    await this.updateLists({ disabled: current => enabled ? current.filter(item => item !== key) : [...current, key] })
     // Switched on, its Skills reach the model once its CLI script is in place.
     await this.writes
     return this.getState()
@@ -623,32 +723,44 @@ export class ConnectorsService extends TypertRemoteService {
   }
 
   /**
-   * Save the profile's `disabled` list, sorted and without duplicates, after the writes before it.
-   * @param edit - the new list from the current one.
+   * Save some of the profile's lists in one write, each sorted and without duplicates, after the writes before it.
+   * @param edits - for each list, the new list from the current one.
    */
-  private async updateDisabled(edit: (current: readonly string[]) => readonly string[]): Promise<void> {
+  private async updateLists(edits: Partial<Record<ListField, (current: readonly string[]) => readonly string[]>>): Promise<void> {
     const write = this.settingsWrites.then(async () => {
-      const current = this.disabledList()
-      const next = [...new Set(edit(current))].sort()
-      if (next.length === current.length && next.every((item, index) => item === current[index])) return
+      const patch: Partial<Record<ListField, readonly string[]>> = {}
+      for (const [field, edit] of Object.entries(edits) as [ListField, (current: readonly string[]) => readonly string[]][]) {
+        const current = this.list(field)
+        const next = [...new Set(edit(current))].sort()
+        if (next.length !== current.length || next.some((item, index) => item !== current[index])) patch[field] = next
+      }
+      if (Object.keys(patch).length === 0) return
       const settings = this.ctx.get('settings')
       if (settings === undefined || this.entryId === undefined) throw new Error('changing connector settings requires the settings service and a profile entry')
-      await settings.update(this.entryId, { disabled: next })
+      await settings.update(this.entryId, patch)
     })
     this.settingsWrites = write.catch(() => {})
     await write
     this.changed()
   }
 
-  private disabledList(): readonly string[] {
-    // Every mount passes the Volatile handle; the optional type comes from the Config interface.
+  private list(field: ListField): readonly string[] {
+    const handle = field === 'disabled' ? this.disabled : this.companyLists[field]
+    // Every mount passes the Volatile handles; the optional type comes from the Config interface.
     /* v8 ignore next */
-    return this.disabled?.get() ?? []
+    return handle?.get() ?? []
+  }
+
+  /** Whether the tenant keeps a company tool on: its own choice, or else the company's auto-install. */
+  private companyEnabled(tool: CompanyTool): boolean {
+    const key = `${String(this.tenantId)}/${tool.name}`
+    if (this.list('companyDisabled').includes(key)) return false
+    return this.list('companyEnabled').includes(key) || tool.autoInstall
   }
 
   /** Whether the current tenant leaves the connector on; signed out, nothing is switched off. */
   private enabled(entry: Installable): boolean {
-    return this.tenantId === null || !this.disabledList().includes(`${this.tenantId}/${entry.id}`)
+    return this.tenantId === null || !this.list('disabled').includes(`${this.tenantId}/${entry.id}`)
   }
 
   /** The tenant and script the model shell gets for a connector now: installed, signed in to the Hub, and switched on. */
@@ -784,10 +896,14 @@ export class ConnectorsService extends TypertRemoteService {
   }
 
   private changed(): void {
-    if (!this.lifetime.signal.aborted) this.sync()
-    // Listeners hear of a change once the CLI scripts it calls for are written, so a connector shown as
-    // connected never runs the script that still refuses (publish at the commit point).
-    void this.writes.then(() => { for (const listener of this.listeners) listener() })
+    let commands: Promise<void> = Promise.resolve()
+    if (!this.lifetime.signal.aborted) {
+      this.sync()
+      commands = this.company.sync()
+    }
+    // Listeners hear of a change once the CLI scripts and commands it calls for are written, so a connector
+    // shown as connected never runs the script that still refuses (publish at the commit point).
+    void Promise.all([this.writes, commands]).then(() => { for (const listener of this.listeners) listener() })
   }
 
   private setInstall(entry: Installable, install: Installable['install'], error: ConnectorInstallError | null): void {
@@ -843,7 +959,7 @@ export class ConnectorsService extends TypertRemoteService {
     this.tenantId = tenantId
     for (const entry of this.installables.values()) entry.connection = idle(entry.connection.epoch + 1)
     this.changed()
-    await this.checkAll()
+    await Promise.all([this.checkAll(), this.company.switched()])
   }
 
   private async checkAll(): Promise<void> {

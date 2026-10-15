@@ -90,7 +90,7 @@ it('signs in from Settings, survives a refused refresh without stopping a runnin
     await section.getByText('Not signed in to Skill Hub').waitFor({ timeout: 15_000 })
     const authorize = await signInThroughBrowser(page, section.getByRole('button', { name: 'Sign in to Skill Hub', exact: true }))
     expect(new URL(authorize).pathname).toBe('/callback')
-    expect(Object.fromEntries(center.authorizeRequests[0]!)).toMatchObject({ client_id: 'dsh-desktop', code_challenge_method: 'S256', scope: 'profile skills:read skills:write' })
+    expect(Object.fromEntries(center.authorizeRequests[0]!)).toMatchObject({ client_id: 'dsh-desktop', code_challenge_method: 'S256', scope: 'profile skills:read skills:write connectors:use' })
     await expect.poll(() => section.textContent()).toContain('Tenant：甲公司')
     expect((await scaffold.ctx.hubAccount.getState()).profile).toMatchObject({ nickname: '李雷', tenantName: '甲公司' })
     // No DeepSeek account section; the sidebar launcher shows the employee with Settings and Sign out.
