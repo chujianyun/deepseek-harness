@@ -1284,8 +1284,10 @@ describe('buyer accounts and risk protection', () => {
     const state = await env.settle(s => s.accounts[1]!.status === 'signed-out')
     expect(state.accounts[1]).toMatchObject({ expired: true })
     expect(state.accounts[1]!.signedInAs).toBeUndefined()
-    const ledger = JSON.parse(await readFile(join(env.home, 'ecommerce', 't-a', 'accounts.json'), 'utf8')) as { accounts: { signedIn?: boolean }[] }
-    expect(ledger.accounts.map(account => account.signedIn)).toEqual([undefined, false])
+    // The ledger is written after the state is published, so it is read until it catches up.
+    const ledger = join(env.home, 'ecommerce', 't-a', 'accounts.json')
+    await expect.poll(async () => (JSON.parse(await readFile(ledger, 'utf8')) as { accounts: { signedIn?: boolean }[] }).accounts.map(account => account.signedIn))
+      .toEqual([undefined, false])
     // The next task is told at once, without standing by the earlier answer.
     endCall(env, exec)
     expect((await runCommand(env, varsOf(env, bashCall('c-2')), 'browser', accountId)).stderr).toContain('is signed out')
