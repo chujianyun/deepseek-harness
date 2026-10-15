@@ -1,0 +1,39 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../assistant/assistants"
+    },
+    {
+      "path": "../../attachment/attachment"
+    },
+    {
+      "path": "../../credentials/hub-account"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../session/session-persistence"
+    },
+    {
+      "path": "../session-query"
+    },
+    {
+      "path": "../../util/home-paths"
+    },
+    {
+      "path": "../../session/session-title"
+    }
+  ]
+}

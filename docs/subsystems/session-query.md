@@ -541,4 +541,12 @@ Host owner of Session sharing and of the `sessionShare` Remote namespace.
 ```
 
 Source: [`packages/session-query/session-share/src/index.ts`](../../packages/session-query/session-share/src/index.ts)
+
+<a id="ctxsessionsync--sessionsync"></a>
+
+### `ctx.sessionSync` — `SessionSync`
+
+Host owner of Session sync.
+
+Source: [`packages/session-query/session-sync/src/index.ts`](../../packages/session-query/session-sync/src/index.ts)
 <!-- END GENERATED cordis-surface -->

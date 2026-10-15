@@ -2,8 +2,8 @@
  * A loopback stand-in for the user center's OAuth2 endpoints, enough for Hub sign-in: authorize
  * (redirecting straight back with a code, as a browser with a signed-in session and a recorded
  * consent would), token (authorization_code with PKCE S256, refresh_token with rotation), userinfo,
- * and revoke; the client Skill, login-page branding, Session share, and problem-report APIs. Shared by the package specs and the
- * Desktop web e2e.
+ * and revoke; the client Skill, login-page branding, Session share, Session sync, and problem-report APIs. Shared by
+ * the package specs and the Desktop web e2e.
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { strToU8, unzipSync, zipSync } from 'fflate'
@@ -13,6 +13,8 @@ import { createServer, type IncomingMessage, type Server } from 'node:http'
 export interface MockTenant {
   readonly tenantId: string
   readonly tenantName: string
+  /** Phone number of the employee who signs in; defaults to the mock employee's. */
+  readonly phone?: string
 }
 
 /** One published Skill the mock serves through `/api/client/skills`. */
@@ -64,6 +66,33 @@ export interface MockShare {
   readonly body: unknown
   readonly createdAt: string
   readonly updatedAt: string
+}
+
+/** A raw reply the mock answers with. */
+export interface MockReply {
+  readonly status: number
+  readonly body: string
+}
+
+/** One Session as the mock's Session sync holds it (`/api/client/sync/sessions/:sessionId`). */
+export interface MockSyncedSession {
+  /** The parsed `meta` field of the latest upload; for a deleted Session, its revision only. */
+  readonly meta: {
+    readonly revision: number
+    readonly device?: string
+    readonly attachments?: readonly string[]
+    readonly [field: string]: unknown
+  }
+  /** The latest bundle's bytes; null once deleted. */
+  readonly bundle: Buffer | null
+  readonly deleted: boolean
+}
+
+/** One tenant's Session sync store. */
+export interface MockSync {
+  sessions: Record<string, MockSyncedSession>
+  /** Attachment bytes by sha256 hex. */
+  blobs: Record<string, Buffer>
 }
 
 /** One problem report the mock received. */
@@ -132,6 +161,18 @@ export interface MockUserCenter {
   shares: Record<string, MockShare>
   /** When set, a session-share call is answered with this raw reply, or its connection is dropped. */
   shareReply: { status: number; body: string } | 'drop' | undefined
+  /**
+   * Session sync stores by tenant id, followed by `/<phone>` for a binding that names a phone, as
+   * `/api/client/sync/*` holds them.
+   */
+  sync: Record<string, MockSync>
+  /** When set, a Session sync call is answered with this raw reply, or its connection is dropped. */
+  syncReply: { status: number; body: string } | 'drop' | undefined
+  /**
+   * When set, called with each Session sync call's method and path after its body arrived and before
+   * it is answered; a returned reply answers it instead.
+   */
+  syncHook: ((method: string, path: string) => Promise<MockReply | undefined> | MockReply | undefined) | undefined
   /** Problem reports received through `/api/client/feedback`, in order. */
   readonly feedback: MockFeedback[]
   /** When set, a problem report is answered with this raw reply, or its connection is dropped. */
@@ -217,6 +258,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
         }
         if (url.pathname.startsWith('/api/client/branding')) brandingApi(url, res, json, bound)
         else if (url.pathname.startsWith('/api/client/session-shares/')) await shareApi(url, req, res, json)
+        else if (url.pathname.startsWith('/api/client/sync/')) await syncApi(url, req, res, json, bound)
         else if (url.pathname === '/api/client/feedback' && req.method === 'POST') await feedbackApi(url, req, res, json)
         else await clientApi(url, req, res, json)
       } else if (url.pathname === '/oauth/userinfo' && mock.userinfoReply !== undefined) {
@@ -387,6 +429,60 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
       res.writeHead(204).end()
     } else json(200, link(held))
   }
+  const syncApi = async (url: URL, req: IncomingMessage, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void, bound: MockTenant): Promise<void> => {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) chunks.push(chunk as Buffer)
+    const hooked = await mock.syncHook?.(req.method ?? 'GET', url.pathname)
+    if (hooked !== undefined) {
+      res.writeHead(hooked.status, { 'content-type': 'application/json' }).end(hooked.body)
+      return
+    }
+    if (mock.syncReply === 'drop') { res.destroy(); return }
+    if (mock.syncReply !== undefined) {
+      res.writeHead(mock.syncReply.status, { 'content-type': 'application/json' }).end(mock.syncReply.body)
+      return
+    }
+    const store = mock.sync[bound.phone === undefined ? bound.tenantId : `${bound.tenantId}/${bound.phone}`] ??= { sessions: {}, blobs: {} }
+    const form = async () => new Request(url, { method: 'POST', headers: { 'content-type': req.headers['content-type'] ?? '' }, body: Buffer.concat(chunks) }).formData()
+    const fileOf = async (data: FormData) => Buffer.from(await (data.get('file') as File).arrayBuffer())
+    const sessionPath = /^\/api\/client\/sync\/sessions\/([^/]+)$/u.exec(url.pathname)
+    const blobPath = /^\/api\/client\/sync\/blobs\/([0-9a-f]{64})$/u.exec(url.pathname)
+    if (sessionPath !== null && req.method === 'PUT') {
+      const sessionId = decodeURIComponent(sessionPath[1]!)
+      const data = await form()
+      const meta = JSON.parse(data.get('meta') as string) as MockSyncedSession['meta']
+      const bundle = await fileOf(data)
+      const held = store.sessions[sessionId]
+      if (bundle.byteLength > 50 * 1024 * 1024) json(413, { message: '对话包不能超过 50MB' })
+      else if (held?.deleted === true) json(410, { code: 'session_deleted', message: '这个对话已在其他电脑上删除' })
+      else if (held !== undefined && (meta.revision < held.meta.revision
+        || (meta.revision === held.meta.revision && meta.device !== held.meta.device))) {
+        json(409, { code: 'stale_revision', message: '服务器上已有更新的版本', revision: held.meta.revision })
+      } else {
+        const missing = (meta.attachments ?? []).filter(sha => store.blobs[sha] === undefined)
+        if (missing.length > 0) json(409, { code: 'missing_attachments', message: '有附件还没上传', missing })
+        else {
+          store.sessions = { ...store.sessions, [sessionId]: { meta, bundle, deleted: false } }
+          json(200, { sessionId, revision: meta.revision })
+        }
+      }
+    } else if (sessionPath !== null && req.method === 'DELETE') {
+      const sessionId = decodeURIComponent(sessionPath[1]!)
+      const revision = store.sessions[sessionId]?.meta.revision ?? 0
+      store.sessions = { ...store.sessions, [sessionId]: { meta: { revision }, bundle: null, deleted: true } }
+      res.writeHead(204).end()
+    } else if (url.pathname === '/api/client/sync/blobs/check' && req.method === 'POST') {
+      const { sha256 } = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { sha256: string[] }
+      json(200, { missing: sha256.filter(sha => store.blobs[sha] === undefined) })
+    } else if (blobPath !== null && req.method === 'PUT') {
+      const bytes = await fileOf(await form())
+      if (createHash('sha256').update(bytes).digest('hex') !== blobPath[1]) json(400, { message: '附件内容与 sha256 不一致' })
+      else {
+        store.blobs = { ...store.blobs, [blobPath[1]]: bytes }
+        res.writeHead(204).end()
+      }
+    } else json(404, { message: 'not found' })
+  }
   const feedbackApi = async (url: URL, req: IncomingMessage, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void): Promise<void> => {
     const chunks: Buffer[] = []
     for await (const chunk of req) chunks.push(chunk as Buffer)
@@ -420,6 +516,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     skills: [], withdrawn: new Set(), downloadBody: undefined, clientStatus: undefined, clientRequests: [],
     tenantAdmin: false, owned: [], uploads: [], uploadReply: undefined, uploadHook: undefined, optionsReply: undefined,
     brandings: {}, brandingGate: undefined, logoReply: undefined, shares: {}, shareReply: undefined,
+    sync: {}, syncReply: undefined, syncHook: undefined,
     feedback: [], feedbackReply: undefined, feedbackReplyOnce: undefined,
     authorizeRequests: [], tokenRequests: [], revoked: [],
     close: () => new Promise((resolve) => { server.closeAllConnections(); server.close(() => { resolve() }) }),

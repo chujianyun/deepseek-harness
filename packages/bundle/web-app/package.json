@@ -171,6 +171,7 @@
     "@deepseek-ai/dsh-session-share": "workspace:*",
     "@deepseek-ai/dsh-feedback-report": "workspace:*",
     "@deepseek-ai/dsh-session-stats": "workspace:*",
+    "@deepseek-ai/dsh-session-sync": "workspace:*",
     "@deepseek-ai/dsh-session-turn-outline": "workspace:*",
     "@deepseek-ai/dsh-skill-controller": "workspace:*",
     "@deepseek-ai/dsh-skill-filesystem": "workspace:*",

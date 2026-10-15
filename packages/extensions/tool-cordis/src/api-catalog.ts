@@ -3111,6 +3111,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'sessionSync',
+    summary: 'Host owner of Session sync.',
+    description: 'Host owner of Session sync.',
+    methods: [],
+  },
+  {
     key: 'sessionTelemetry',
     summary: 'Loadable form of the backend contract: one implementation per context — the cordis `Service` registration under the `telemetry` key throws on a duplicate, cordis\' standard behavior.',
     description: 'Loadable form of the backend contract: one implementation per context — the cordis `Service` registration under the `telemetry` key throws on a duplicate, cordis\' standard behavior. A backend composes a SessionTelemetryCoordinator in its constructor to install the capture side.',

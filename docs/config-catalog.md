@@ -3099,6 +3099,33 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-share -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-session-sync -->
+<a id="deepseek-aidsh-session-sync"></a>
+
+## `@deepseek-ai/dsh-session-sync`
+
+- `inject`: `hubAccount` · `sessionQuery` · `sessionPersistence`
+- `source`: [`packages/session-query/session-sync/src/index.ts:46`](../packages/session-query/session-sync/src/index.ts)
+
+```ts config-catalog
+/** Deployment configuration. */
+export interface Config {
+  /** Deadline of each user-center request, in milliseconds. */
+  requestTimeoutMs?: number
+  /** DeepSeek Harness home; the sync record lives at `<dshHome>/session-sync.json`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** Name of this machine as other machines show it. Defaults to the host name without `.local`. */
+  deviceName?: string
+  /** Wait after a turn ends before uploading, so turns in quick succession upload once, in milliseconds. */
+  debounceMs?: number
+  /** Interval of the scan that uploads Sessions changed without a turn ending, in milliseconds. */
+  scanIntervalMs?: number
+  /** Wait before retrying after the user center could not be reached, in milliseconds. */
+  retryMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-sync -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-session-telemetry-otel -->
 <a id="deepseek-aidsh-session-telemetry-otel"></a>
 

@@ -116,6 +116,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   sessionPersistence: 'persistence.md',
   sessionQuery: 'session-query.md',
   sessionShare: 'session-query.md',
+  sessionSync: 'session-query.md',
   sessionFileReferences: 'session-reference.md',
   sessionReferenceResolver: 'session-reference.md',
   sessionProjectionCache: 'session-projection.md',

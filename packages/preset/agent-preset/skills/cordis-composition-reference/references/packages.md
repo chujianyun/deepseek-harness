@@ -408,6 +408,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-session-log-export` | yes | Web Session-log export command and shared download dialog |
 | `@deepseek-ai/dsh-session-query-sqlite` | yes | Concrete ctx.sessionQuery backend with SQLite FTS5 search |
 | `@deepseek-ai/dsh-session-share` | yes | Share a Session with the user's company: a conversation snapshot uploaded to the user center, its link, and its withdrawal |
+| `@deepseek-ai/dsh-session-sync` | yes | Sync Sessions to the user center of the Hub sign-in: each conversation with its subagent Sessions and attachments, uploads after each turn, and deletions |
 | `@deepseek-ai/dsh-tool-session-query` | yes | Workspace-authorized model-facing session history search, trace, and event read tools |
 
 ## settings

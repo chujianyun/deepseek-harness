@@ -480,6 +480,7 @@
       "@deepseek-ai/dsh-session-share": ["./packages/session-query/session-share/src"],
       "@deepseek-ai/dsh-session-snapshot": ["./packages/test-support/session-snapshot/src"],
       "@deepseek-ai/dsh-session-stats": ["./packages/session/session-stats/src"],
+      "@deepseek-ai/dsh-session-sync": ["./packages/session-query/session-sync/src"],
       "@deepseek-ai/dsh-session-telemetry": ["./packages/session/session-telemetry/src"],
       "@deepseek-ai/dsh-session-telemetry-otel": ["./packages/session/session-telemetry-otel/src"],
       "@deepseek-ai/dsh-session-title": ["./packages/session/session-title/src"],
