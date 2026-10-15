@@ -119,6 +119,23 @@ export interface MockFeedback {
 }
 
 /** Control and observation surface of the mock user center. */
+/** A company tool the mock lists through `/api/client/connectors`. */
+export interface MockCompanyTool {
+  id: string
+  kind: string
+  name: string
+  displayName: string
+  description: string
+  autoInstall: boolean
+  allowedMethods: string[]
+}
+
+/** A call a company tool forwarded through `/api/client/connectors/:name/call`. */
+export interface MockCompanyCall {
+  name: string
+  body: { method: string; params: unknown; confirmOverwrite: boolean }
+}
+
 export interface MockUserCenter {
   readonly origin: string
   readonly clientId: string
@@ -194,6 +211,14 @@ export interface MockUserCenter {
   feedbackReply: { status: number; body: string } | 'drop' | undefined
   /** When set, the next problem report only is answered with this raw reply. */
   feedbackReplyOnce: { status: number; body: string } | undefined
+  /** Company tools `/api/client/connectors` lists. */
+  companyTools: MockCompanyTool[]
+  /** When set, `/api/client/connectors` is answered with this raw reply. */
+  companyListReply: { status: number; body: string } | undefined
+  /** Company tool calls received, in order. */
+  readonly companyCalls: MockCompanyCall[]
+  /** The answer to a company tool call; the default answers code 200 with an empty list. */
+  companyReply: (call: MockCompanyCall) => { status: number; body: unknown }
   close(): Promise<void>
 }
 
@@ -219,7 +244,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     const refreshToken = `rt-${randomBytes(8).toString('hex')}`
     access.set(accessToken, bound)
     refresh.set(refreshToken, bound)
-    return { access_token: accessToken, token_type: 'Bearer', expires_in: mock.expiresIn, refresh_token: refreshToken, scope: 'profile skills:read skills:write' }
+    return { access_token: accessToken, token_type: 'Bearer', expires_in: mock.expiresIn, refresh_token: refreshToken, scope: 'profile skills:read skills:write connectors:use' }
   }
   const server: Server = createServer((req, res) => {
     void (async () => {
@@ -275,6 +300,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
         else if (url.pathname.startsWith('/api/client/session-shares/')) await shareApi(url, req, res, json)
         else if (url.pathname.startsWith('/api/client/sync/')) await syncApi(url, req, res, json, bound)
         else if (url.pathname === '/api/client/feedback' && req.method === 'POST') await feedbackApi(url, req, res, json)
+        else if (url.pathname.startsWith('/api/client/connectors')) await companyApi(url, req, res, json)
         else await clientApi(url, req, res, json)
       } else if (url.pathname === '/oauth/userinfo' && mock.userinfoReply !== undefined) {
         res.writeHead(mock.userinfoReply.status, { 'content-type': 'application/json' }).end(mock.userinfoReply.body)
@@ -638,6 +664,24 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     })
     json(201, { id: `fb-${String(mock.feedback.length)}`, createdAt: new Date().toISOString() })
   }
+  const companyApi = async (url: URL, req: IncomingMessage, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void): Promise<void> => {
+    if (url.pathname === '/api/client/connectors') {
+      if (mock.companyListReply !== undefined) {
+        res.writeHead(mock.companyListReply.status, { 'content-type': 'application/json' }).end(mock.companyListReply.body)
+        return
+      }
+      json(200, mock.companyTools)
+      return
+    }
+    const name = decodeURIComponent(url.pathname.slice('/api/client/connectors/'.length).replace(/\/call$/, ''))
+    if (!mock.companyTools.some(tool => tool.name === name)) { json(404, { statusCode: 404, message: '连接器不存在，或你没有使用权限' }); return }
+    let text = ''
+    for await (const chunk of req) text += String(chunk)
+    const call: MockCompanyCall = { name, body: JSON.parse(text) as MockCompanyCall['body'] }
+    mock.companyCalls.push(call)
+    const reply = mock.companyReply(call)
+    json(reply.status, reply.body)
+  }
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const mock: MockUserCenter = {
     origin: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
@@ -649,6 +693,8 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     brandings: {}, brandingGate: undefined, logoReply: undefined, shares: {}, shareReply: undefined,
     sync: {}, syncReply: undefined, syncHook: undefined,
     feedback: [], feedbackReply: undefined, feedbackReplyOnce: undefined,
+    companyTools: [], companyListReply: undefined, companyCalls: [],
+    companyReply: () => ({ status: 200, body: { code: 200, msg: '', subCode: '', result: { data: [] } } }),
     authorizeRequests: [], tokenRequests: [], revoked: [],
     close: () => new Promise((resolve) => { server.closeAllConnections(); server.close(() => { resolve() }) }),
   }

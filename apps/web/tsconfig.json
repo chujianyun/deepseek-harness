@@ -144,6 +144,7 @@
     "tests/knowledge-support.ts",
     "tests/connectors.e2e.ts",
     "tests/connectors-chat.e2e.ts",
+    "tests/connectors-company.e2e.ts",
     "tests/connectors-dingtalk.e2e.ts",
     "tests/ecommerce-accounts.e2e.ts",
     "tests/ecommerce-chat.e2e.ts",

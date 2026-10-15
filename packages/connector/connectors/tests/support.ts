@@ -71,8 +71,15 @@ export async function standInCli(dir: string, name: string, script: string): Pro
   return scriptExecutable(join(dir, `${name}.sh`).replaceAll('\\', '/'), dir, 'win32', GIT_BASH)
 }
 
-/** A Hub sign-in stand-in whose tenant the spec switches. */
-export function hubStub(tenantId: string | null) {
+/** A user center without company tools. */
+const NO_CONNECTORS = (): Promise<Response> => Promise.resolve(new Response('{"message":"not found"}', { status: 404 }))
+
+/**
+ * A Hub sign-in stand-in whose tenant the spec switches.
+ * @param tenantId - the signed-in tenant, or null.
+ * @param request - how the stand-in answers user-center client calls.
+ */
+export function hubStub(tenantId: string | null, request: (path: string, init?: RequestInit) => Promise<Response> = NO_CONNECTORS) {
   let current = tenantId
   let version = 0
   const waiting = new Set<() => void>()
@@ -80,6 +87,7 @@ export function hubStub(tenantId: string | null) {
   return {
     set: (next: string | null) => { current = next; version += 1; for (const wake of waiting) wake() },
     service: {
+      request,
       getState: () => Promise.resolve(view()),
       async *watch(signal: AbortSignal) {
         // Every change after the watch starts is seen, even one made while the consumer was busy.
@@ -116,6 +124,8 @@ export async function setup(options: {
   homeParent?: string
   /** The connector the spec drives, with its stand-in CLI; the other has no build for any platform. */
   connector?: 'feishu' | 'dingtalk'
+  /** How the user center answers client calls, such as `/api/client/connectors`. */
+  hubRequest?: (path: string, init?: RequestInit) => Promise<Response>
 } = {}) {
   const id = options.connector ?? 'feishu'
   if (options.homeParent !== undefined) await mkdir(options.homeParent, { recursive: true })
@@ -140,7 +150,7 @@ export async function setup(options: {
   }
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
-  const hub = hubStub(options.tenant === undefined ? 't-a' : options.tenant)
+  const hub = hubStub(options.tenant === undefined ? 't-a' : options.tenant, options.hubRequest)
   ctx.provide('hubAccount', hub.service as never)
   await ctx.plugin(SkillRegistry)
   await ctx.plugin(ShellEnv, { dshHome: home })
@@ -172,7 +182,7 @@ export async function setup(options: {
   const calls = async () => (await readFile(join(control, 'calls'), 'utf8').catch(() => '')).trim().split('\n').filter(line => line !== '')
   const answer = (step: 'app' | 'user', result: string) => writeWhole(join(control, step), result)
   const status = (value: object | string) => writeWhole(join(control, 'status.json'), typeof value === 'string' ? value : JSON.stringify(value))
-  return { ctx, service, fiber: live.fiber, hub, until, root, control, tenantDir, exists, calls, answer, status }
+  return { ctx, service, fiber: live.fiber, hub, home, iterator, until, root, control, tenantDir, exists, calls, answer, status }
 }
 
 /**

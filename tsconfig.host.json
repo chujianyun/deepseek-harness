@@ -136,6 +136,7 @@
     "apps/web/tests/knowledge-support.ts",
     "apps/web/tests/connectors.e2e.ts",
     "apps/web/tests/connectors-chat.e2e.ts",
+    "apps/web/tests/connectors-company.e2e.ts",
     "apps/web/tests/connectors-dingtalk.e2e.ts",
     "apps/web/tests/ecommerce-accounts.e2e.ts",
     "apps/web/tests/ecommerce-chat.e2e.ts",
