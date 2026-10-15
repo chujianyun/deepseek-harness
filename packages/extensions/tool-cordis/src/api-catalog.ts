@@ -537,6 +537,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the durable content-addressed normalized image reference.',
       },
       {
+        signature: 'saveStoredImage(ref: ImageAttachmentRef, data: Uint8Array): Promise<ImageAttachmentRef>',
+        description: 'Durably store an image another store already normalized, byte for byte under its reference, as when a conversation recorded on another computer is copied here. The bytes must match the reference\'s digest and byte length, media type, and dimensions. Backends without verbatim image storage keep this default rejection.',
+        parameters: [{ name: 'ref', description: 'the reference recorded with the image.' }, { name: 'data', description: 'the image\'s stored bytes.' }],
+        returns: 'the reference, once the image is stored.',
+      },
+      {
         signature: 'abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>',
         description: 'Read one image and verify that bytes still match the recorded reference.',
         parameters: [{ name: 'ref', description: 'durable reference from the session log.' }, { name: 'signal', description: 'optional cancellation for backend read and verification work.' }],
@@ -1837,6 +1843,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the current state, then every change.',
       },
       {
+        signature: '@Remote syncNow(): Promise<void>',
+        description: 'Pull the employee\'s other computers\' knowledge base changes and upload this computer\'s now, as when the Knowledge page opens or the window comes back to the front.',
+        parameters: [],
+      },
+      {
         signature: '@Remote createBase(name: string, embeddingModelId: string): Promise<KnowledgeState>',
         description: 'Create a knowledge base for the signed-in tenant.',
         parameters: [{ name: 'name', description: 'display name, unique within the tenant.' }, { name: 'embeddingModelId', description: 'an embedding model Settings → Embedding models offers.' }],
@@ -1928,10 +1939,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote reprocessItem(id: string, itemId: string): Promise<KnowledgeState>',
-        description: 'Process an item again from its stored copy.',
+        description: 'Process an item again from its stored copy; a folder is scanned again, on the computer it was added on only.',
         parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'item id.' }],
         returns: 'the state with the item pending.',
-        throws: ['RemoteError `knowledge/not-found`.'],
+        throws: ['RemoteError `knowledge/not-found`, or `knowledge/folder-elsewhere` for a folder another computer added.'],
       },
       {
         signature: '@Remote deleteItem(id: string, itemId: string): Promise<KnowledgeState>',
@@ -2642,8 +2653,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'fork\') fork(request: SessionForkRequest): Promise<SessionForkValue>',
-        description: 'Fork one cold-readable exact event prefix into a new Session. An omitted boundary selects the latest completed-turn prefix; an open cut receives synthetic fork closers.',
-        parameters: [{ name: 'request', description: 'source Session and optional exact inclusive event boundary.' }],
+        description: 'Fork one cold-readable exact event prefix into a new Session. An omitted boundary selects the latest completed-turn prefix; an open cut receives synthetic fork closers. A requested `cwd` puts the new Session in that directory and its Workspace instead of the source\'s.',
+        parameters: [{ name: 'request', description: 'source Session, optional exact inclusive event boundary, and optional working directory.' }],
         returns: 'the new Session identity.',
       },
       {
@@ -2805,7 +2816,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'coldSnapshot( meta: SessionHeader, inheritedEventCount: SessionLogOffset, events: readonly SessionEvent[], ): ProjectionSnapshot',
-        description: 'Cold-read one session\'s projections from its complete log. Each unit is seeded from the identity-checked cached rows — the registry skips `apply` for the already-folded prefix (events at or below the row\'s `seq`) — and the refreshed checkpoint is written back (fail-soft, fire-and-forget), so the first cold read creates the cache row and later ones seed from it. The caller supplies the complete log in seq order: this service never consults the persistence layer.',
+        description: 'Cold-read one session\'s projections from its complete log. Each unit is seeded from the identity-checked cached rows — the registry skips `apply` for the already-folded prefix (events at or below the row\'s `seq`) — and the refreshed checkpoint is written back (fail-soft, fire-and-forget), so the first cold read creates the cache row and later ones seed from it. The caller supplies the complete log in seq order: this service never consults the persistence layer. A complete log of an id deleted earlier in this process means the session was stored anew under it, so its checkpoint is written again, as after `session/created`.',
         parameters: [{ name: 'meta', description: 'the stored session header (identity witness).' }, { name: 'inheritedEventCount', description: 'exact inherited prefix length for projection initialization and identity.' }, { name: 'events', description: 'the session\'s complete log, in seq order.' }],
         returns: 'the projection cut at the log end.',
       },
@@ -3114,6 +3125,44 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'request', description: 'Session identity whose cwd and preset select the catalog view.' }, { name: 'signal', description: 'caller lifetime carried by the Remote transport; admitted catalog reads retain their existing completion semantics.' }],
         returns: 'user-invocable skill metadata without loading skill bodies.',
         throws: ['RemoteError when the Session cannot be inspected or no registry can serve it.'],
+      },
+    ],
+  },
+  {
+    key: 'sessionSync',
+    summary: 'Host owner of Session sync.',
+    description: 'Host owner of Session sync.',
+    methods: [
+      {
+        signature: '@Remote getState(): Promise<SessionSyncView>',
+        description: 'The conversations pulled from the signed-in employee\'s other machines.',
+        parameters: [],
+        returns: 'whether syncing is possible, and each pulled conversation with its machine.',
+      },
+      {
+        signature: '@Remote async continueInfo(request: { readonly sessionId: SessionId }): Promise<SessionSyncContinueInfo>',
+        description: 'Read where a pulled conversation worked, to offer that directory for continuing it here.',
+        parameters: [{ name: 'request', description: 'the pulled conversation.' }],
+        returns: 'its working directory on the other computer and whether it exists here.',
+        throws: ['RemoteError `session-sync/not-pulled` for any other Session.'],
+      },
+      {
+        signature: '@Remote async continueConversation(request: SessionSyncContinueRequest): Promise<{ readonly sessionId: SessionId }>',
+        description: 'Continue a pulled conversation here: a new conversation of this computer, in the given directory, that starts with the whole pulled conversation. The pulled one stays as it is.',
+        parameters: [{ name: 'request', description: 'the pulled conversation and the directory.' }],
+        returns: 'the new conversation\'s top-level Session.',
+        throws: ['RemoteError `session-sync/not-pulled` for any other Session, and the fork\'s own errors, such as `session/fork-folder-unavailable` for a directory that does not exist here.'],
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) watch(signal: AbortSignal): AsyncIterable<SessionSyncView>',
+        description: 'Stream the pulled conversations.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change.',
+      },
+      {
+        signature: '@Remote refresh(): Promise<void>',
+        description: 'Pull the other machines\' changes and look for changes here now, as when the window comes back to the front.',
+        parameters: [],
       },
     ],
   },
@@ -4782,6 +4831,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'sessionId', description: 'Agent and Session identity.' }, { name: 'running', description: 'whether the Agent is running.' }],
   },
   {
+    name: 'api-session/view-only',
+    mode: 'bail',
+    signature: '\'api-session/view-only\'(sessionId: SessionId): true | undefined',
+    summary: 'A stored Session without an Agent is being opened, or a command needs its Agent.',
+    description: 'A stored Session without an Agent is being opened, or a command needs its Agent. A listener that returns true keeps it view-only: its history is shown, no Agent starts, and commands that need one refuse with `session/view-only`.',
+    parameters: [{ name: 'sessionId', description: 'opened Session identity.' }],
+  },
+  {
     name: 'app-boot/config-reload',
     mode: 'emit',
     signature: '\'app-boot/config-reload\'(): void',
@@ -5439,7 +5496,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ApiSessionAgentError',
-    declaration: 'export type ApiSessionAgentError = RemoteError<\'session/not-found\' | \'session/agent-busy\' | \'session/writer-held\' | \'gateway/internal\'>;',
+    declaration: 'export type ApiSessionAgentError = RemoteError<\'session/not-found\' | \'session/agent-busy\' | \'session/writer-held\' | \'session/view-only\' | \'gateway/internal\'>;',
   },
   {
     name: 'ApiSessionAgentResult',
@@ -6783,7 +6840,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KnowledgeBaseView',
-    declaration: 'export interface KnowledgeBaseView {\n    readonly id: string;\n    readonly name: string;\n    readonly embeddingModelId: string;\n    readonly embeddingModelName: string;\n    readonly dimensions: number | null;\n    readonly status: \'ready\' | \'rebuilding\' | \'unavailable\';\n    readonly settings: KnowledgeBaseSettings;\n    readonly items: readonly KnowledgeItemView[];\n    readonly createdAt: string;\n}',
+    declaration: 'export interface KnowledgeBaseView {\n    readonly id: string;\n    readonly name: string;\n    readonly embeddingModelId: string;\n    readonly embeddingModelName: string;\n    readonly dimensions: number | null;\n    readonly status: \'ready\' | \'rebuilding\' | \'unavailable\';\n    readonly modelMissing: boolean;\n    readonly settings: KnowledgeBaseSettings;\n    readonly items: readonly KnowledgeItemView[];\n    readonly createdAt: string;\n}',
   },
   {
     name: 'KnowledgeChunkStrategy',
@@ -6795,7 +6852,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KnowledgeItemError',
-    declaration: 'export type KnowledgeItemError = \'unreadable\' | \'empty\' | \'embedding\' | \'interrupted\' | \'storage\' | \'folder-missing\' | \'unreachable\' | \'blocked\';',
+    declaration: 'export type KnowledgeItemError = \'unreadable\' | \'empty\' | \'embedding\' | \'interrupted\' | \'storage\' | \'folder-missing\' | \'unreachable\' | \'blocked\' | \'synced\';',
   },
   {
     name: 'KnowledgeItemKind',
@@ -6807,7 +6864,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KnowledgeItemView',
-    declaration: 'export interface KnowledgeItemView {\n    readonly id: string;\n    readonly kind: KnowledgeItemKind;\n    readonly parentId: string | null;\n    readonly name: string;\n    readonly source: string | null;\n    readonly size: number;\n    readonly skipped: readonly KnowledgeSkippedFile[];\n    readonly skippedCount: number;\n    readonly status: KnowledgeItemStatus;\n    readonly error: KnowledgeItemError | null;\n    readonly chunkCount: number;\n    readonly addedAt: string;\n}',
+    declaration: 'export interface KnowledgeItemView {\n    readonly id: string;\n    readonly kind: KnowledgeItemKind;\n    readonly parentId: string | null;\n    readonly name: string;\n    readonly source: string | null;\n    readonly size: number;\n    readonly skipped: readonly KnowledgeSkippedFile[];\n    readonly skippedCount: number;\n    readonly status: KnowledgeItemStatus;\n    readonly error: KnowledgeItemError | null;\n    readonly chunkCount: number;\n    readonly addedAt: string;\n    readonly scannedOn: string | null;\n}',
   },
   {
     name: 'KnowledgeNote',
@@ -8071,7 +8128,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionForkRequest',
-    declaration: 'export interface SessionForkRequest {\n    readonly sessionId: SessionId;\n    readonly atSeq?: number;\n}',
+    declaration: 'export interface SessionForkRequest {\n    readonly sessionId: SessionId;\n    readonly atSeq?: number;\n    readonly cwd?: string;\n}',
   },
   {
     name: 'SessionForkSource',
@@ -8384,6 +8441,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionSurfaceSnapshot',
     declaration: 'export interface SessionSurfaceSnapshot {\n    session: SessionHeader;\n    inheritedEventCount: SessionLogOffset;\n    capturedThroughSeq: OptionalSessionSeq;\n    events: SurfaceEvent[];\n}',
+  },
+  {
+    name: 'SessionSyncContinuation',
+    declaration: 'export interface SessionSyncContinuation {\n    readonly sessionId: SessionId;\n    readonly sourceId: SessionId;\n    readonly title: string | null;\n    readonly device: string;\n}',
+  },
+  {
+    name: 'SessionSyncContinueInfo',
+    declaration: 'export interface SessionSyncContinueInfo {\n    readonly folder: string | null;\n    readonly folderHere: boolean;\n}',
+  },
+  {
+    name: 'SessionSyncContinueRequest',
+    declaration: 'export interface SessionSyncContinueRequest {\n    readonly sessionId: SessionId;\n    readonly cwd: string;\n}',
+  },
+  {
+    name: 'SessionSyncPulled',
+    declaration: 'export interface SessionSyncPulled {\n    readonly sessionId: SessionId;\n    readonly device: string;\n    readonly revision: number;\n}',
+  },
+  {
+    name: 'SessionSyncView',
+    declaration: 'export interface SessionSyncView {\n    readonly signedIn: boolean;\n    readonly changes: number;\n    readonly pulled: readonly SessionSyncPulled[];\n    readonly continuations: readonly SessionSyncContinuation[];\n}',
   },
   {
     name: 'SessionTelemetryRecord',

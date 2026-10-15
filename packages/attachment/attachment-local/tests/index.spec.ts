@@ -75,6 +75,17 @@ describe('local attachment service', () => {
       ))
       const ref = await service.saveImage({ data, mediaType: 'image/png' })
       await expect(service.readImage(ref)).resolves.toEqual({ ref, data })
+      // The same image stored verbatim in another home, as a conversation copied from another computer brings it.
+      const copyHome = await mkdtemp(join(tmpdir(), 'dsh-attachment-copy-'))
+      try {
+        const copy = new LocalAttachmentStore(new Context(), { dshHome: copyHome })
+        await expect(copy.saveStoredImage({ ...ref, width: 2 }, data)).rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
+        await expect(copy.saveStoredImage(ref, Uint8Array.from([...data, 0]))).rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
+        await expect(copy.saveStoredImage(ref, data)).resolves.toEqual(ref)
+        await expect(copy.readImage(ref)).resolves.toEqual({ ref, data })
+      } finally {
+        await rm(copyHome, { recursive: true, force: true })
+      }
       const hostPath = service.imageHostPath(ref)
       expect(hostPath).toBe(join(
         dshHome,

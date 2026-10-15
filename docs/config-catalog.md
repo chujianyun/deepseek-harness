@@ -1821,7 +1821,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-hub-account`
 
 - `inject`: `credentials` · `authorization`
-- `source`: [`packages/credentials/hub-account/src/index.ts:42`](../packages/credentials/hub-account/src/index.ts)
+- `source`: [`packages/credentials/hub-account/src/index.ts:46`](../packages/credentials/hub-account/src/index.ts)
 
 ```ts config-catalog
 /** Deployment configuration: which user center, as which registered client. */
@@ -1883,7 +1883,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-knowledge-base`
 
 - `inject`: `embedding` · `hubAccount`
-- `source`: [`packages/knowledge/knowledge-base/src/index.ts:49`](../packages/knowledge/knowledge-base/src/index.ts)
+- `source`: [`packages/knowledge/knowledge-base/src/index.ts:55`](../packages/knowledge/knowledge-base/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -1908,6 +1908,16 @@ export interface Config {
   maxNoteTitleLength?: number
   /** Longest note body, in characters. */
   maxNoteChars?: number
+  /** Name of this computer as the employee's other computers show it. Defaults to the host name without `.local`. */
+  deviceName?: string
+  /** Wait after a change before uploading, so changes in quick succession upload once, in milliseconds. */
+  syncDebounceMs?: number
+  /** Interval of the pull and upload pass, in milliseconds. */
+  syncIntervalMs?: number
+  /** Wait before retrying after the user center could not be reached, in milliseconds. */
+  syncRetryMs?: number
+  /** Deadline of each user-center request, in milliseconds. */
+  requestTimeoutMs?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-knowledge-base -->
@@ -3102,6 +3112,33 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-share -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-session-sync -->
+<a id="deepseek-aidsh-session-sync"></a>
+
+## `@deepseek-ai/dsh-session-sync`
+
+- `inject`: `hubAccount` · `sessionQuery` · `sessionPersistence` · `sessionController`
+- `source`: [`packages/session-query/session-sync/src/index.ts:57`](../packages/session-query/session-sync/src/index.ts)
+
+```ts config-catalog
+/** Deployment configuration. */
+export interface Config {
+  /** Deadline of each user-center request, in milliseconds. */
+  requestTimeoutMs?: number
+  /** DeepSeek Harness home; the sync record lives at `<dshHome>/session-sync.json`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** Name of this machine as other machines show it. Defaults to the host name without `.local`. */
+  deviceName?: string
+  /** Wait after a turn ends before uploading, so turns in quick succession upload once, in milliseconds. */
+  debounceMs?: number
+  /** Interval of the scan that uploads Sessions changed without a turn ending, in milliseconds. */
+  scanIntervalMs?: number
+  /** Wait before retrying after the user center could not be reached, in milliseconds. */
+  retryMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-sync -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-session-telemetry-otel -->
 <a id="deepseek-aidsh-session-telemetry-otel"></a>
@@ -4833,6 +4870,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-schedule` | — | [`packages/client/ui-schedule/src/index.ts`](../packages/client/ui-schedule/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-session` | — | [`packages/client/ui-session/src/index.ts`](../packages/client/ui-session/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-session-share` | — | [`packages/client/ui-session-share/src/index.ts`](../packages/client/ui-session-share/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-session-sync` | — | [`packages/client/ui-session-sync/src/index.ts`](../packages/client/ui-session-sync/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings` | — | [`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-agent-loop` | — | [`packages/client/ui-settings-agent-loop/src/index.ts`](../packages/client/ui-settings-agent-loop/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-embedding` | — | [`packages/client/ui-settings-embedding/src/index.ts`](../packages/client/ui-settings-embedding/src/index.ts) |

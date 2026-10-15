@@ -69,6 +69,7 @@ kind: "package-group"
 | [`ui-schedule/`](ui-schedule/README.zh.md) | 在只读标题栏目录中列出当前会话中生效的提醒 | — |
 | [`ui-feedback-report/`](ui-feedback-report/README.zh.md) | 会话头部的问题反馈按钮及对话框，发送给用户中心的超管 | — |
 | [`ui-session-share/`](ui-session-share/README.zh.md) | 会话菜单的分享会话行，以及生成、复制、更新和取消分享链接的对话框 | — |
+| [`ui-session-sync/`](ui-session-sync/README.zh.md) | 来自其他电脑的对话：会话行上的标记和悬停说明，以及只读输入区 | — |
 | [`ui-automation-tasks/`](ui-automation-tasks/README.zh.md) | 自动化任务页点「新建」时就地打开的添加自动化任务表单 | — |
 | [`ui-skills/`](ui-skills/README.zh.md) | Desktop Skills 页面：以卡片展示已安装 skill，提供启用开关与去对话、编辑、打开文件夹、卸载操作 | — |
 | [`ui-model-selection/`](ui-model-selection/README.zh.md) | 在对话界面中提供模型选择 | — |

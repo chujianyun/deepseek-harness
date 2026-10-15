@@ -26,6 +26,10 @@ import { changeStream } from '@deepseek-ai/dsh-change-stream'
 
 export type * from './types.ts'
 export { followTenant, type TenantSource } from './follow.ts'
+export {
+  refuseSync, syncAccountOf, syncDeviceName, SyncNotAllowed, SyncPasses, SyncRecordFile, SyncRetryLater, SyncSignIn, withEntry,
+  type SyncHub,
+} from './sync.ts'
 export { userCenterRefusal, type UserCenterRefusal } from './refusal.ts'
 
 declare module '@deepseek-ai/cordis' {

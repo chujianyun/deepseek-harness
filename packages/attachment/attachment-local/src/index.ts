@@ -18,7 +18,7 @@ import type {
 import { dshCachePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { NormalizationPolicy } from './normalization.ts'
 import { CompressionLimiter, compressionFailure } from './compression-limiter.ts'
-import { commitPreparedImageFile, normalizedImagePath, prepareImageFile, readImageFile, validateImageFile } from './store.ts'
+import { commitPreparedImageFile, normalizedImagePath, prepareImageFile, readImageFile, saveStoredImageFile, validateImageFile } from './store.ts'
 import {
   readFileStreamVerbatim, saveFileStreamVerbatim, saveFileVerbatim, storedFilePath,
 } from './file-store.ts'
@@ -223,6 +223,10 @@ export class LocalAttachmentStore extends AttachmentStore {
 
   async readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment> {
     return readImageFile(this.root, ref, signal)
+  }
+
+  override saveStoredImage(ref: ImageAttachmentRef, data: Uint8Array): Promise<ImageAttachmentRef> {
+    return saveStoredImageFile(this.root, ref, data)
   }
 
   override imageHostPath(ref: ImageAttachmentRef): string {

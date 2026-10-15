@@ -19,7 +19,7 @@ type ToolSdkSchema = Parameters<typeof renderToolsSdk>[0][number]
 
 const SETTINGS = { chunkStrategy: 'structured' as const, chunkSeparator: '\\n\\n', chunkSize: 1024, chunkOverlap: 200, threshold: 0 }
 const base = (id: string, name: string, over: Partial<KnowledgeBaseView> = {}): KnowledgeBaseView => ({
-  id, name, embeddingModelId: 'local/q', embeddingModelName: 'Q', status: 'ready', items: [], createdAt: '2026-10-06T00:00:00.000Z',
+  id, name, embeddingModelId: 'local/q', embeddingModelName: 'Q', modelMissing: false, status: 'ready', items: [], createdAt: '2026-10-06T00:00:00.000Z',
   dimensions: 4, settings: { ...SETTINGS, documentCount: 2 }, ...over,
 })
 const hit = (itemId: string, itemName: string, score: number, over: object = {}) => ({

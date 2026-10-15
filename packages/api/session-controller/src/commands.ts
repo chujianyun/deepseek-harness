@@ -2,6 +2,7 @@
 
 import { modelAvailable } from './catalog.ts'
 import { randomUUID } from 'node:crypto'
+import { stat } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
@@ -372,9 +373,21 @@ export class SessionCommandController {
       )
     }
     const seed = buildForkSeed(source.events, boundary)
-    let workspace: Workspace | undefined
+    let target: Workspace | undefined
+    if (request.cwd !== undefined) {
+      const isDirectory = await stat(request.cwd).then(found => found.isDirectory(), () => false)
+      if (!isDirectory) {
+        throw new RemoteError('session/fork-folder-unavailable', `cannot fork into "${request.cwd}": it is not a directory here`, { path: request.cwd })
+      }
+      try {
+        target = await this.ctx.workspaceRegistry.create(request.cwd)
+      } catch (error) {
+        throw new RemoteError('gateway/internal', `failed to register the Workspace for "${request.cwd}": ${String(error)}`, {})
+      }
+    }
+    let workspace = target
     try {
-      workspace = await this.forkWorkspace(source.header)
+      workspace ??= await this.forkWorkspace(source.header)
     } catch (error) {
       throw new RemoteError(
         'gateway/internal',
@@ -391,7 +404,7 @@ export class SessionCommandController {
         seed,
         inheritedEventCount: SessionLogOffset(boundary + 1),
         meta: {
-          ...(source.header.cwd === undefined ? {} : { cwd: source.header.cwd }),
+          ...((target?.path ?? source.header.cwd) === undefined ? {} : { cwd: target?.path ?? source.header.cwd }),
           parentSession: source.header.id,
           isSeeded: true,
           ...(composition.agentPreset === undefined

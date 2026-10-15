@@ -109,6 +109,9 @@
       "path": "../../session-query/session-share"
     },
     {
+      "path": "../../session-query/session-sync"
+    },
+    {
       "path": "../../feedback/feedback-report"
     },
     {

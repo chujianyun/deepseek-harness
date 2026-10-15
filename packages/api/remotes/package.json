@@ -72,6 +72,7 @@
     "@deepseek-ai/dsh-assistants": "workspace:*",
     "@deepseek-ai/dsh-automation-tasks": "workspace:*",
     "@deepseek-ai/dsh-session-share": "workspace:*",
+    "@deepseek-ai/dsh-session-sync": "workspace:*",
     "@deepseek-ai/dsh-feedback-report": "workspace:*",
     "@deepseek-ai/dsh-client-connection": "workspace:*",
     "@deepseek-ai/dsh-client-file-upload": "workspace:*",

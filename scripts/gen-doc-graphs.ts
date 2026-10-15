@@ -694,6 +694,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: "Uploads a snapshot of one Session's conversation to the user center of the Hub sign-in, reads its link, and withdraws it.",
   },
   {
+    key: 'sessionSync',
+    pkg: 'session-sync',
+    title: 'Session sync',
+    mode: 'core',
+    note: 'Uploads every top-level Session with its subagent Sessions and attachments to the user center of the Hub sign-in, and deletes it there when it is deleted here.',
+  },
+  {
     key: 'goals',
     pkg: 'goal',
     title: 'Same-session goal domain',

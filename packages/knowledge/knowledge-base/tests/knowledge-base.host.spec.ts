@@ -21,69 +21,14 @@ import KnowledgeBaseService, { type Config, type KnowledgeState } from '../src/i
 /** Plugin options a test passes. */
 type Options = Pick<Config, 'maxFileBytes' | 'maxFolderFiles' | 'maxNoteChars'>
 import { BaseStore } from '../src/store.ts'
-import { terms } from '../src/terms.ts'
+import { API, embeddingState, fakeEmbedding, fakeWeb, LOCAL, Watched } from './support.ts'
 
 const FIXTURES = join(import.meta.dirname, 'fixtures')
-const LOCAL = 'local/qwen3-embedding-0.6b'
-const API = 'acme/bge-m3'
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
   vi.restoreAllMocks()
 })
-
-/** A pushable state with a Remote-style watch stream. */
-class Watched<T> {
-  private readonly listeners = new Set<() => void>()
-  constructor(public value: T) {}
-  set(next: T): void { this.value = next; for (const listener of this.listeners) listener() }
-  async *watch(signal: AbortSignal): AsyncIterable<T> {
-    let dirty = true
-    let wake: (() => void) | undefined
-    const changed = (): void => { dirty = true; wake?.() }
-    this.listeners.add(changed)
-    signal.addEventListener('abort', changed, { once: true })
-    try {
-      while (!signal.aborted) {
-        if (dirty) { dirty = false; yield this.value; continue }
-        await new Promise<void>((resolve) => { wake = resolve })
-      }
-    } finally { this.listeners.delete(changed) }
-  }
-}
-
-/** A 64-dimension bag of hashed terms: texts sharing words point the same way. */
-function vectorize(text: string): number[] {
-  const vector = new Array<number>(64).fill(0)
-  for (const term of terms(text)) {
-    let hash = 0
-    for (const char of term) hash = (hash * 31 + char.codePointAt(0)!) % 64
-    vector[hash]! += 1
-  }
-  return vector
-}
-
-function embeddingState(localStatus: EmbeddingState['local']['status'] = 'installed'): EmbeddingState {
-  return {
-    local: { id: LOCAL, name: 'Qwen3-Embedding-0.6B', status: localStatus, receivedBytes: 0, totalBytes: 1, dimensions: 64, error: null },
-    apiModels: [{ id: API, provider: 'acme', providerName: 'Acme', model: 'bge-m3', dimensions: 64, available: true }],
-  }
-}
-
-/** A stand-in for `ctx.web`: pages by URL, each a page, a thrown error, or missing (an error too). */
-function fakeWeb() {
-  const pages = new Map<string, { statusCode?: number; kind?: 'html' | 'text'; content: string } | Error>()
-  return {
-    pages,
-    fetched: [] as string[],
-    async fetch(request: { url: string }) {
-      this.fetched.push(request.url)
-      const page = pages.get(request.url) ?? new Error(`could not reach ${request.url}`)
-      if (page instanceof Error) throw page
-      return { url: request.url, statusCode: page.statusCode ?? 200, truncated: false, body: { kind: page.kind ?? 'html', content: page.content } }
-    },
-  }
-}
 
 async function boot(options: {
   tenant?: string | null
@@ -97,29 +42,7 @@ async function boot(options: {
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
   const embeddingWatched = new Watched(embeddingState(options.localStatus))
-  const usages: ((id: string) => Promise<readonly string[]>)[] = []
-  const embedding = {
-    gate: undefined as Promise<unknown> | undefined,
-    entered: undefined as (() => void) | undefined,
-    failure: undefined as Error | undefined,
-    calls: [] as { id: string; texts: readonly string[] }[],
-    getState: () => Promise.resolve(embeddingWatched.value),
-    watch: (signal: AbortSignal) => embeddingWatched.watch(signal),
-    registerUsage: (usage: (id: string) => Promise<readonly string[]>) => { usages.push(usage) },
-    async embed(id: string, texts: readonly string[], signal?: AbortSignal): Promise<number[][]> {
-      embedding.calls.push({ id, texts })
-      // The trial embedding of a model change is never held.
-      if (embedding.gate !== undefined && texts[0]?.includes('probe') !== true) {
-        embedding.entered?.()
-        await Promise.race([embedding.gate, new Promise((_, reject) => {
-          if (signal?.aborted === true) reject(signal.reason as Error)
-          signal?.addEventListener('abort', () => { reject(signal.reason as Error) }, { once: true })
-        })])
-      }
-      if (embedding.failure !== undefined) throw embedding.failure
-      return texts.map(vectorize)
-    },
-  }
+  const embedding = fakeEmbedding(embeddingWatched)
   const hub = new Watched({ status: 'signed-in', profile: options.tenant === null ? null : { tenantId: options.tenant ?? 't-a' } })
   ctx.provide('embedding', embedding as never)
   ctx.provide('hubAccount', { getState: () => Promise.resolve(hub.value), watch: (signal: AbortSignal) => hub.watch(signal) } as never)
@@ -139,7 +62,7 @@ async function boot(options: {
     }
   }
   const switchTenant = (tenantId: string | null) => { hub.set({ status: 'signed-in', profile: tenantId === null ? null : { tenantId } }) }
-  return { ctx, fiber, service, home, embedding, embeddingWatched, usages, until, switchTenant, web }
+  return { ctx, fiber, service, home, embedding, embeddingWatched, usages: embedding.usages, until, switchTenant, web }
 }
 
 const fixture = (name: string) => join(FIXTURES, name)
@@ -160,7 +83,7 @@ describe('knowledge bases', () => {
     const { service } = await boot()
     expect(service.typertRemote.namespace).toBe('knowledgeBases')
     expect(remoteMethods(service).map(method => method.method)).toEqual([
-      'getState', 'watch', 'createBase', 'renameBase', 'updateSettings', 'reprocessAll', 'recall', 'deleteBase', 'addFiles',
+      'getState', 'watch', 'syncNow', 'createBase', 'renameBase', 'updateSettings', 'reprocessAll', 'recall', 'deleteBase', 'addFiles',
       'addFolder', 'addUrl', 'createNote', 'updateNote', 'getNote', 'openItem', 'reprocessItem', 'deleteItem',
     ])
   })
@@ -631,7 +554,7 @@ describe('knowledge bases', () => {
     expect((await until(next => next.bases[0]!.items[0]!.status === 'completed')).bases[0]!.items[0]!.chunkCount).toBe(1)
   })
 
-  it('refuses a file that cannot be copied, and names a model the embedding settings no longer list by its id', async () => {
+  it('refuses a file that cannot be copied, and shows a model the embedding settings no longer list as missing, by its id', async () => {
     const { service, embeddingWatched, until } = await boot()
     const { id } = (await service.createBase('接口', API)).bases[0]!
     const dir = await mkdtemp(join(tmpdir(), 'dsh-knowledge-src-'))
@@ -640,7 +563,7 @@ describe('knowledge bases', () => {
     await unreadable(join(dir, 'secret.txt'))
     expect(await service.addFiles(id, [join(dir, 'secret.txt')])).toEqual({ added: 0, rejected: [{ name: 'secret.txt', reason: 'unreadable' }] })
     embeddingWatched.set({ ...embeddingState(), apiModels: [] })
-    expect((await until(state => state.bases[0]!.embeddingModelName === API)).bases[0]!.status).toBe('ready')
+    expect((await until(state => state.bases[0]!.embeddingModelName === API)).bases[0]).toMatchObject({ status: 'unavailable', modelMissing: true })
   })
 
   it('ends a watch when its subscriber leaves, and when the service is disposed', async () => {

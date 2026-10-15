@@ -406,6 +406,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'factory \'conversation.content\' (client-ui-conversation), so it exists while that definition is registered',
     occupants: [
       'client-ui-approval ApprovalPanel',
+      'client-ui-session-sync PulledComposer',
       'client-ui-subagent SubagentReadOnlyComposer',
       'client-ui-user-questions QuestionComposer',
     ],
@@ -1486,6 +1487,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-agent-preset AgentPresetLabel id \'agent-preset\'',
       'client-ui-jobs JobListAction id \'job-list\'',
+      'client-ui-session-sync ContinuationLabel id \'session-sync-continued\'',
       'client-ui-subagent SubagentCatalogAction id \'subagent-catalog\'',
       'experimental-client-ui-agent-team TeamAction id \'agent-team\'',
     ],
@@ -3059,6 +3061,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-plugin-manager PluginRefreshToast id \'plugin-manager.refresh-toast\'',
       'client-ui-schedule ScheduleDeleteToast id \'schedule.delete-toast\'',
       'client-ui-session-share SessionShareDialog id \'session-share\'',
+      'client-ui-session-sync ContinueDialog id \'session-sync-continue\'',
       'client-ui-settings-account DesktopOnboardingEntry id \'desktop-onboarding\'',
       'client-ui-settings-account AccountPlatformHost id \'account.platform-page\'',
       'client-ui-settings-session-log UploadToast id \'session-log-upload-toast\'',
@@ -3964,6 +3967,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'sidebar.workspaces\' (client-ui-workspace), so it exists while that entry is mounted',
     occupants: [
       'client-ui-assistants SessionAssistantBadge id \'assistant-badge\'',
+      'client-ui-session-sync PulledBadge id \'session-sync-badge\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.session.row.badge\', () => ctx.slots.register(\n      { name: \'sidebar.session.row.badge\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -4017,6 +4021,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-assistants SessionAssistantHover id \'assistant-hover\'',
       'client-ui-schedule SessionScheduleHover id \'schedule-tasks\'',
+      'client-ui-session-sync PulledHover id \'session-sync-hover\'',
+      'client-ui-session-sync ContinuationHover id \'session-sync-continued\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.session.row.hover\', () => ctx.slots.register(\n      { name: \'sidebar.session.row.hover\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',

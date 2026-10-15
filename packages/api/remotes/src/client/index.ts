@@ -17,6 +17,7 @@ import connectorsRemote from '@deepseek-ai/dsh-connectors/remote'
 import assistantsRemote from '@deepseek-ai/dsh-assistants/remote'
 import automationTasksRemote from '@deepseek-ai/dsh-automation-tasks/remote'
 import sessionShareRemote from '@deepseek-ai/dsh-session-share/remote'
+import sessionSyncRemote from '@deepseek-ai/dsh-session-sync/remote'
 import feedbackReportRemote from '@deepseek-ai/dsh-feedback-report/remote'
 import ecommerceAccountsRemote from '@deepseek-ai/dsh-ecommerce-accounts/remote'
 import skillMarketRemote from '@deepseek-ai/dsh-skill-market/remote'
@@ -64,6 +65,7 @@ export type {} from '@deepseek-ai/dsh-connectors/remote'
 export type {} from '@deepseek-ai/dsh-assistants/remote'
 export type {} from '@deepseek-ai/dsh-automation-tasks/remote'
 export type {} from '@deepseek-ai/dsh-session-share/remote'
+export type {} from '@deepseek-ai/dsh-session-sync/remote'
 export type {} from '@deepseek-ai/dsh-feedback-report/remote'
 export type {} from '@deepseek-ai/dsh-ecommerce-accounts/remote'
 export type {} from '@deepseek-ai/dsh-skill-market/remote'
@@ -220,6 +222,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       assistantsRemote,
       automationTasksRemote,
       sessionShareRemote,
+      sessionSyncRemote,
       feedbackReportRemote,
       ecommerceAccountsRemote,
     ]) {

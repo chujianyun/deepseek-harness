@@ -73,7 +73,7 @@ async function bench() {
     reprocessAll: vi.fn(() => ok(knowledgeState)), recall: vi.fn(() => ok({ hits: [], durationMs: 1 })),
     addFolder: vi.fn(() => ok(knowledgeState)), addUrl: vi.fn(() => ok(knowledgeState)), createNote: vi.fn(() => ok(knowledgeState)),
     updateNote: vi.fn(() => ok(knowledgeState)), getNote: vi.fn(() => ok({ title: 't', content: 'c' })),
-    openItem: vi.fn(() => ok(undefined)),
+    openItem: vi.fn(() => ok(undefined)), syncNow: vi.fn(() => ok(undefined)),
     watch: vi.fn(),
   }
   const embedding = { watch: vi.fn() }
@@ -123,6 +123,21 @@ describe('ui-knowledge browser plugin', () => {
     expect(b.slots.entries('sidebar.panellist')).toEqual([])
     expect(b.streams.knowledgeBases.dispose).toHaveBeenCalledOnce()
     expect(b.streams.embedding.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('pulls the other computers\' changes when the window comes back to the front, until the plugin goes', async () => {
+    const b = await bench()
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    window.dispatchEvent(new Event('focus'))
+    expect(b.knowledgeBases.syncNow).not.toHaveBeenCalled()
+    visibility.mockReturnValue('visible')
+    window.dispatchEvent(new Event('focus'))
+    expect(b.knowledgeBases.syncNow).toHaveBeenCalledOnce()
+    await fiber.dispose()
+    window.dispatchEvent(new Event('focus'))
+    expect(b.knowledgeBases.syncNow).toHaveBeenCalledOnce()
   })
 
   it('publishes both Host streams and wires the actions to the knowledgeBases Remote', async () => {

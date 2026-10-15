@@ -204,6 +204,13 @@
       name: '@deepseek-ai/dsh-session-share'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
+    # Session sync for Desktop: every conversation, with its subagent Sessions and
+    # attachments, uploaded to the user center of the Hub sign-in for the employee's
+    # other machines; mounted exactly when hub-account is.
+    - id: session-sync
+      name: '@deepseek-ai/dsh-session-sync'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     # Embedding models for Desktop knowledge bases: the local model downloaded at
     # startup and API embedding models over configured provider routes.
     - id: embedding
@@ -561,6 +568,12 @@
     # Share session row of the Session menu and its dialog, over the session-share row.
     - id: ui-session-share
       name: '@deepseek-ai/dsh-client-ui-session-share'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
+    # Conversations from other computers: their row mark and hover line and the
+    # view-only composer, over the session-sync row.
+    - id: ui-session-sync
+      name: '@deepseek-ai/dsh-client-ui-session-sync'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
     # Report a problem button in the Session header and its dialog, over the feedback-report row.

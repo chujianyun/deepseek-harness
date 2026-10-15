@@ -62,7 +62,7 @@ Three mandatory points always write: session creation persists the seed-derived 
 
 ### Deleted sessions
 
-On `session/deleted` the cache removes the session's checkpoint and writes none for that id afterwards, so the detach write of a session that is being deleted cannot bring its record back. The id caches again once a session with it is created anew.
+On `session/deleted` the cache removes the session's checkpoint and writes none for that id afterwards, so the detach write of a session that is being deleted cannot bring its record back. The id caches again once a session with it is created anew, or once `coldSnapshot` reads a complete log stored anew under it.
 
 ### What the cache guarantees
 

@@ -56,7 +56,9 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 
 面向用户调用的 `skills/list` 元数据包含胜出提供方可选的指令文件 `path`。输入框可据此预览文件，无需加载每个 skill 的正文或激活冷态 Agent。
 
-Fork 复制 `atSeq` 所选的精确事件前缀，包含切点事件，允许在开放轮次内截取。子会话在合成的 fork 结果和结束事件之前记录继承标记。省略 `atSeq` 时选择最近已结束轮次及其独立尾部，在下一轮次或排队输入之前停止；不存在的事件会被拒绝。聊天操作选择已结束轮次。
+Fork 复制 `atSeq` 所选的精确事件前缀，包含切点事件，允许在开放轮次内截取。子会话在合成的 fork 结果和结束事件之前记录继承标记。省略 `atSeq` 时选择最近已结束轮次及其独立尾部，在下一轮次或排队输入之前停止；不存在的事件会被拒绝。聊天操作选择已结束轮次。传入 `cwd` 时，分叉出的会话放在这个已存在的目录及其工作区里（没有时注册），而不是源会话的；在本机不是目录的路径会以 `session/fork-folder-unavailable` 被拒。
+
+`api-session/view-only` 的监听者返回 true 时，会话保持只读：打开它只显示历史、不启动 Agent，所有需要它的 Agent 的操作（例如发消息、重命名）都以 `session/view-only` 被拒。会话同步用它保护从其他电脑拉取来的对话。
 
 `session.delete` 永久删除一个普通会话及其子智能体后代；分叉是独立的会话，会保留。整个删除期间控制器拒绝创建或恢复这些 id。它请回答 `workspace/session-stop` 的各拥有者停止该会话正在运行的工作，卸载它为这些 id 创建、恢复或分叉出的 Agent 并等待其循环退出，再通过 `sessionPersistence.delete` 按子会话优先的顺序删除日志，最多等待三秒让正在卸载的会话关闭写入方。按会话保存数据的各方（Workspace 注册表、调度服务、投影缓存、spill 存储）在 `session/deleted` 上清理；对从未落盘的会话，控制器自己发出该事件。它返回已删除的 id，并为每个 id 发出 `api-session/removed`。子智能体会话以 `gateway/bad-request` 拒绝，未知 id 以 `session/not-found` 拒绝，被其他拥有者（webhook、SDK）保持加载的会话以 `session/agent-busy` 拒绝，始终不释放的写入方以 `session/writer-held` 拒绝。被拒绝时所有日志都保留，但原本在运行的工作已经停止，会话也可能已被卸载；日志删除之后可以重试删除。Client 的 `sessions.delete(sessionId)` 在返回之前把已删除的 id 从列表中移除，被拒绝后会重新读取列表。附件对象按内容存储并可能被共享，因此删除会话不会移除它们。
 
