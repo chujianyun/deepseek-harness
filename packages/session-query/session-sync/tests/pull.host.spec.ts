@@ -146,7 +146,8 @@ describe('sessionSync pulling', () => {
     await pull(a)
     await expect.poll(() => stored(a.ctx, own)).toBeUndefined()
     expect(await stored(a.ctx, 'from-a-child')).toBeUndefined()
-    expect((await record(a.dshHome)).sessions[own]).toBeUndefined()
+    // The record goes right after the logs.
+    await expect.poll(async () => (await record(a.dshHome)).sessions[own]).toBeUndefined()
   })
 
   it('waits while the copy here is open, then catches up', async () => {

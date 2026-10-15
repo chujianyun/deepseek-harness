@@ -2,8 +2,8 @@
  * Knowledge base sync with the user center of the Hub sign-in (`/api/client/sync/knowledge`): each
  * knowledge base's name, embedding model, and settings, and each item with its copy (a file's copy,
  * a fetched page, a note). Vectors are never synced; every computer processes what it pulls. A pass
- * sends the deletions made here, pulls the other computers' changes, and uploads what changed here
- * since its last upload. Passes run after local changes, on an interval, on sign-in, and when asked.
+ * sends the deletions made here, uploads what changed here since its last upload, and then pulls the
+ * other computers' changes. Passes run after local changes, on an interval, on sign-in, and when asked.
  */
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
@@ -226,13 +226,18 @@ export class KnowledgeSync {
       }
       await this.findDeletes(account, tenantId, snapshot.bases)
       await this.sendDeletes(account)
-      if (pull) {
-        const here = new Set(snapshot.bases.flatMap(base => [base.id, ...base.items.map(item => item.row.id)]))
-        await this.pull(account, tenantId, here)
-        snapshot = await this.host.snapshot()
-        if (snapshot.tenantId !== tenantId) return
-      }
+      // Uploads before the pull, so an edit made here is never overwritten by an older one pulled before it was sent.
       failed = await this.upload(account, tenantId, snapshot.bases)
+      if (pull) {
+        snapshot = await this.host.snapshot()
+        if (snapshot.tenantId !== tenantId) {
+          this.pullWanted = true
+          return
+        }
+        const here = new Set(snapshot.bases.flatMap(base => [base.id, ...base.items.map(item => item.row.id)]))
+        // A listing that starts over forgets this computer's records: the next pass uploads them again.
+        if (await this.pull(account, tenantId, here)) this.touched()
+      }
     } catch (error) {
       if (error instanceof NotAllowed) {
         this.notAllowed = true
@@ -284,8 +289,9 @@ export class KnowledgeSync {
    * changes only when all of them applied, so one that could not be applied is listed again.
    * @param here - the knowledge bases and items stored here before the pull; one of them listed
    *   without a record was made here, whatever computer name the listing gives.
+   * @returns whether the listing started over.
    */
-  private async pull(account: string, tenantId: string, here: ReadonlySet<string>): Promise<void> {
+  private async pull(account: string, tenantId: string, here: ReadonlySet<string>): Promise<boolean> {
     let cursor = this.state.account(account).cursor
     let reset = false
     const changes: (ListedBase | ListedItem)[] = []
@@ -318,6 +324,7 @@ export class KnowledgeSync {
     for (const [id, step] of steps) complete = await this.isolated(id, step) && complete
     if (reset) await this.dropUnlisted(account, tenantId, new Set(changes.filter(change => !change.deleted).map(change => (change.type === 'base' ? change.baseId : change.itemId))))
     if (complete) await this.state.setCursor(account, cursor)
+    return reset
   }
 
   /**

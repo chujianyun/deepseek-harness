@@ -130,8 +130,12 @@ describe('knowledge sync passes', () => {
     h.sync.refresh()
     await new Promise(resolve => setTimeout(resolve, 100))
     expect(h.requests).toEqual([])
-    // Matching now; the pull asked for earlier still happens. The tenant switches again after the pull.
+    // Matching now, but switching again before the pull: the pull waits for the next pass.
     h.host.tenants = ['t-a', 't-b']
+    h.sync.touched()
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(h.requests).toEqual([])
+    h.host.tenants = ['t-a']
     h.sync.touched()
     await expect.poll(() => h.requests).toEqual(['GET /api/client/sync/knowledge'])
   })
@@ -252,7 +256,8 @@ describe('knowledge sync passes', () => {
     const h = await harness({ record: { 't-a/139****0002': { bases: { theirs: record() } } } })
     h.host.exists = true
     h.host.bases = [base('mine', [{ row: row('own'), copy: null }])]
-    h.reply('PUT /api/client/sync/knowledge/bases/mine', json(500, {}))
+    // Its upload stops at a conflict, so the pull lists it before this computer has a record of it.
+    h.reply('PUT /api/client/sync/knowledge/bases/mine', json(409, { code: 'unknown' }))
     h.reply('GET /api/client/sync/knowledge', listing([
       listedBase('mine', { device: '另一台' }), listedBase('twin', { device: '前台电脑' }),
       listedItem('own', { baseId: 'mine', device: '另一台' }), listedItem('lost', { deleted: true }), listedBase('old', { deleted: true }),
