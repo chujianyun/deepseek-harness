@@ -57,12 +57,20 @@ const PINNED_CLOCK_STEP_MS = 250
  *
  * The pinned clock advances with real elapsed time, so turn deadlines, session
  * ordering, and durations keep running.
+ *
+ * Playwright runs in this process and stamps its browser clock commands with
+ * `Date.now()` as the real time; its calls keep reading the real clock, or the
+ * page's timers wait out the gap to the fixture day, which past 2^31 ms
+ * (24.8 days) wraps into a timer that never fires.
  * @returns the installed `Date.now` spy, restored by the caller in teardown.
  */
 export function pinHostClock(): MockInstance<typeof Date.now> {
   const startedAt = performance.now()
+  const realNow = Date.now
   return vi.spyOn(Date, 'now').mockImplementation(() =>
-    WEB_FIXTURE_TIME + Math.floor(performance.now() - startedAt))
+    new Error().stack?.includes('playwright-core') === true
+      ? realNow()
+      : WEB_FIXTURE_TIME + Math.floor(performance.now() - startedAt))
 }
 
 /**
