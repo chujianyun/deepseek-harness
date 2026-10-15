@@ -212,6 +212,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     }
     'session/projections-unavailable': Record<string, never>
     'session/writer-held': { readonly sessionId: SessionId }
+    /** A fork's requested working directory is not an existing directory on this computer. */
+    'session/fork-folder-unavailable': { readonly path: string }
     /** The Session is view-only here (an `api-session/view-only` listener said so): no Agent starts for it. */
     'session/view-only': { readonly sessionId: SessionId }
     'session/agent-busy': { readonly reason: string }
@@ -335,6 +337,11 @@ export interface SessionForkRequest {
   readonly sessionId: SessionId
   /** Exact inclusive source event seq; omission selects the latest completed-turn prefix. */
   readonly atSeq?: number
+  /**
+   * Existing directory the new Session works in, in that directory's Workspace (registered when
+   * new); omission keeps the source's working directory and Workspace.
+   */
+  readonly cwd?: string
 }
 
 /** Identity of a newly forked Session. */

@@ -27,7 +27,9 @@ kind: "package-reference"
 
 - `sidebar.session.row.badge` 里的 `session-sync-badge`（order 20）：拉取来的对话所在行上的小电脑标记，标签为 **来自其他电脑：{电脑名}**。
 - `sidebar.session.row.hover` 里的 `session-sync-hover`（order 6）：行悬停卡片里的一行 **来自其他电脑 · {电脑名}**。
-- `conversation.composer` 链上 priority -5 的条目：接管拉取来的对话的输入区，显示 **来自「{电脑名}」的对话**，并说明在这台电脑上只能查看，不能继续对话。
+- `conversation.composer` 链上 priority -5 的条目：接管拉取来的对话的输入区，显示 **来自「{电脑名}」的对话**，说明在这台电脑上只能查看，并提供 **接着聊** 按钮。
+- `shell.overlay` 里的 `session-sync-continue`：接着聊对话框。它读取 `continueInfo`，原工作文件夹在本机存在时直接提供；不存在时提示 **原工作文件夹不在这台电脑上，AI 改过的文件不会带过来**，并通过桌面端的选文件夹窗口（桌面端之外用 Host 的）让用户选择。确认后调用 `continueConversation` 并打开新对话；失败时显示文件夹错误或原因。
+- `conversation.session.header.actions`（order -20）和 `sidebar.session.row.hover`（order 7）里的 `session-sync-continued`：在接续对话上显示 **接续自「{标题}」**，拉取来的对话还在本机时可点回原对话。
 
 它订阅 `sessionSync` 的状态流。状态里的 `changes` 计数增加时，它会重新加载会话列表，因为同步写入和删除日志时不会产生列表事件；并从日志读取每个新拉取或有新版本的对话的投影（标题和智能体），因为 Host 的投影缓存可能还没有它们。窗口重新获得焦点或变为可见时，它调用 `refresh()`，让 Host 立即拉取其他电脑的变化。
 
@@ -47,7 +49,6 @@ kind: "package-reference"
 <a id="known-limitations-and-deferred-work"></a>
 
 - **行菜单不变** —— 拉取来的对话的行菜单保留原有条目；Host 会拒绝重命名它，分叉则在本机生成一份普通副本。
-- **暂无接着聊** —— 把拉取来的对话作为新对话继续是后续功能。
 
 <a id="dev-note"></a>
 ### 开发备注

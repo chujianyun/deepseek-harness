@@ -3106,8 +3106,8 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-session-sync`
 
-- `inject`: `hubAccount` · `sessionQuery` · `sessionPersistence`
-- `source`: [`packages/session-query/session-sync/src/index.ts:55`](../packages/session-query/session-sync/src/index.ts)
+- `inject`: `hubAccount` · `sessionQuery` · `sessionPersistence` · `sessionController`
+- `source`: [`packages/session-query/session-sync/src/index.ts:59`](../packages/session-query/session-sync/src/index.ts)
 
 ```ts config-catalog
 /** Deployment configuration. */

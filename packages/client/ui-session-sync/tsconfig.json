@@ -40,6 +40,12 @@
     },
     {
       "path": "../../session-query/session-sync"
+    },
+    {
+      "path": "../ui-primitives"
+    },
+    {
+      "path": "../ui-layout"
     }
   ]
 }

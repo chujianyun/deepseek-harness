@@ -29,6 +29,9 @@
 /session-sync/use-this-package/pulling-from-other-computers:
   en: 35054a781c29628f
   zh: aa89140b219617cd
+/session-sync/use-this-package/continuing-here:
+  en: a606a2d0980e0afa
+  zh: e2663c96e6e2800f
 /session-sync/use-this-package/accounts-and-deletion:
   en: a639256084294590
   zh: 98a15d5542ca6524
@@ -39,8 +42,8 @@
   en: e277b74f9b721f5e
   zh: 014c91db5c8570d0
 /session-sync/known-limitations-and-deferred-work:
-  en: d37221d8ec9d2bd6
-  zh: 926beaeaa2146588
+  en: 1da1e0ff2f692d7d
+  zh: 2ef38ef515d84569
 /session-sync/known-limitations-and-deferred-work/dev-note:
   en: 6d00ffb01a3ff2ae
   zh: 07992ee4631edf21

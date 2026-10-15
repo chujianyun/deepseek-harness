@@ -38,6 +38,17 @@ export async function decodeBundle(bytes: Uint8Array): Promise<SessionSyncBundle
   return parsed as never
 }
 
+/**
+ * Whether a path is absolute in the given operating system's own form: a drive or share on
+ * Windows, a root slash elsewhere. A path recorded on another system does not count.
+ * @param path - a path recorded on some computer.
+ * @param platform - this computer's `process.platform`.
+ * @returns true when the path names a location on this kind of system.
+ */
+export function isLocalAbsolutePath(path: string, platform: NodeJS.Platform): boolean {
+  return platform === 'win32' ? /^(?:[A-Za-z]:[\\/]|\\\\)/u.test(path) : path.startsWith('/')
+}
+
 /** Whether the file exists. */
 async function exists(path: string): Promise<boolean> {
   try {

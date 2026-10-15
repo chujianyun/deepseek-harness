@@ -63,6 +63,10 @@ A pass pulls at sign-in, every `scanIntervalMs`, and on `refresh()`. It lists th
 
 A pulled conversation is view-only here, its subagent Sessions included. Its prompts are refused with `session-sync/view-only` (through `api-session/prompt-admission`), and it answers `api-session/view-only`, so opening it starts no Agent and commands that need one, such as renaming, are refused. It is never uploaded back. When the sign-in changes to another account, or while signed out, the copies pulled for the previous account are removed; signing in as it again pulls them again. The `changes` count in the state grows with every log the sync writes or removes here, which tells the client to reload its Session list; each pulled item carries its `revision`.
 
+### Continuing here
+
+`continueInfo({ sessionId })` answers where a pulled conversation worked: its folder on the other computer, and whether that folder exists here. `continueConversation({ sessionId, cwd })` carries it on as a conversation of this computer: it forks the pulled conversation through the Session controller into the existing folder `cwd`, so the new conversation starts with the whole history while the pulled one stays as it is, and records what it continues. The state lists these continuations with the pulled conversation, its title at the time, and its computer; deleting a continuation forgets it. A continuation is an ordinary conversation of this computer: it can be prompted and it uploads like any other. Both calls refuse a Session that was not pulled with `session-sync/not-pulled`.
+
 ### Accounts and deletion
 
 An account is the tenant and phone number of a sign-in, which name one employee. Each Session syncs as the account it first uploaded as; another account's sign-in, of another tenant or another employee of the same one, leaves it alone. Deleting a Session that synced records a pending deletion for its account, which is sent while that account is signed in. A Session deleted while it was being read or uploaded records no entry, and its deletion follows. Deleting a pulled copy here deletes the conversation on the user center, and so on its computer. A conversation deleted on another computer is removed here on the next pull: a pulled copy, or this computer's own conversation, subagent Sessions first. While any part of it is open, all of it waits for a later pass. Deleting a Session that never synced sends nothing. Deleting a subagent Session sends nothing either; the next scan uploads its top-level Session again.
@@ -84,7 +88,6 @@ No effect.
 
 - **Pulled copies share this computer's Session storage** — they are marked in the record, not kept apart, so a record that is lost makes them look like this computer's own conversations, which are uploaded again under their ids.
 - **An open conversation lags** — while a pulled copy or a conversation deleted elsewhere is open here, its update or removal waits for a later pass after it closes.
-- **Continuing is not offered yet** — a pulled conversation can be read or forked here; carrying it on as a new conversation is a later feature.
 - **A deletion that cannot be recorded is lost** — when the record cannot be written at the moment of deletion, the Session stays on the user center.
 - **Sign-in switch during a request** — each request checks the account before it is sent; one already sent when the sign-in switches completes under the sign-in it was sent with.
 

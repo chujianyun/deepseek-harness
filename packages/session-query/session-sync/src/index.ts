@@ -9,6 +9,7 @@
  * @module @deepseek-ai/dsh-session-sync
  */
 
+import { stat } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -17,6 +18,7 @@ import type {} from '@deepseek-ai/dsh-attachment'
 import { changeStream } from '@deepseek-ai/dsh-change-stream'
 import type { HubAccountView } from '@deepseek-ai/dsh-hub-account'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import { SessionLogOffset, type SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-session-query'
@@ -29,9 +31,11 @@ import {
   boundAssistant, bundleAttachments, bundleGroups, encodeBundle, lastChange, mapAssistants, rootOf, selectedAssistants,
   type BundleAttachment,
 } from './bundle.ts'
-import { decodeBundle, hasAttachment, removeLogs, storeAttachment, writeLogs } from './pull.ts'
+import { decodeBundle, hasAttachment, isLocalAbsolutePath, removeLogs, storeAttachment, writeLogs } from './pull.ts'
 import { SyncState, type PulledEntry, type SyncedEntry } from './state.ts'
-import type { SessionSyncAssistant, SessionSyncBundle, SessionSyncLog, SessionSyncView } from './types.ts'
+import type {
+  SessionSyncAssistant, SessionSyncBundle, SessionSyncContinueInfo, SessionSyncContinueRequest, SessionSyncLog, SessionSyncView,
+} from './types.ts'
 
 export type * from './types.ts'
 
@@ -116,7 +120,7 @@ function accountOf(state: HubAccountView): string | null {
 
 /** Host owner of Session sync. */
 export class SessionSync extends TypertRemoteService {
-  static inject = ['hubAccount', 'sessionQuery', 'sessionPersistence']
+  static inject = ['hubAccount', 'sessionQuery', 'sessionPersistence', 'sessionController']
   static Config = Config
 
   private readonly config: Required<Omit<Config, 'dshHome' | 'deviceName'>>
@@ -209,7 +213,56 @@ export class SessionSync extends TypertRemoteService {
       changes: this.changes,
       pulled: this.state.pulledSessions()
         .map(([sessionId, entry]) => ({ sessionId: sessionId as SessionId, device: entry.device, revision: entry.revision })),
+      continuations: this.state.continuations()
+        .filter(([, entry]) => entry.account === this.account)
+        .map(([sessionId, entry]) => ({
+          sessionId: sessionId as SessionId, sourceId: entry.sourceId as SessionId, title: entry.title, device: entry.device,
+        })),
     })
+  }
+
+  /**
+   * Read where a pulled conversation worked, to offer that directory for continuing it here.
+   * @param request - the pulled conversation.
+   * @returns its working directory on the other computer and whether it exists here.
+   * @throws RemoteError `session-sync/not-pulled` for any other Session.
+   */
+  @Remote
+  async continueInfo(request: { readonly sessionId: SessionId }): Promise<SessionSyncContinueInfo> {
+    this.requirePulled(request.sessionId)
+    const folder = (await this.ctx.sessionPersistence.stat(request.sessionId))?.header.cwd ?? null
+    // A folder recorded on another operating system can name an unrelated directory here: it counts only in this system's form.
+    return { folder, folderHere: folder !== null && isLocalAbsolutePath(folder, process.platform) && await isDirectory(folder) }
+  }
+
+  /**
+   * Continue a pulled conversation here: a new conversation of this computer, in the given
+   * directory, that starts with the whole pulled conversation. The pulled one stays as it is.
+   * @param request - the pulled conversation and the directory.
+   * @returns the new conversation's top-level Session.
+   * @throws RemoteError `session-sync/not-pulled` for any other Session, and the fork's own errors,
+   *   such as `session/fork-folder-unavailable` for a directory that does not exist here.
+   */
+  @Remote
+  async continueConversation(request: SessionSyncContinueRequest): Promise<{ readonly sessionId: SessionId }> {
+    const pulled = this.requirePulled(request.sessionId)
+    const title = (await this.ctx.sessionQuery.readTitle(request.sessionId))?.title ?? null
+    const forked = await this.ctx.sessionController.fork({ sessionId: request.sessionId, cwd: request.cwd })
+    // The new conversation exists from here on: failing to record what it continues costs only its label.
+    try {
+      const continuation = { account: pulled.account, sourceId: request.sessionId, title, device: pulled.device }
+      await this.state.setContinuation(forked.sessionId, continuation)
+      this.changed()
+    } catch (error) {
+      this.ctx.logger.warn(`session-sync: continuation ${forked.sessionId} not recorded: ${String(error)}`)
+    }
+    return { sessionId: forked.sessionId }
+  }
+
+  private requirePulled(sessionId: SessionId): PulledEntry {
+    const pulled = this.state.pulled(sessionId)
+    if (pulled === undefined) throw new RemoteError('session-sync/not-pulled', 'only a conversation from another computer is continued this way', { sessionId })
+    return pulled
   }
 
   /**
@@ -295,6 +348,8 @@ export class SessionSync extends TypertRemoteService {
       await this.removeDeletedHere(account)
       const snapshots = await this.ctx.sessionPersistence.list()
       const headers = new Map(snapshots.map(snapshot => [snapshot.header.id, snapshot.header]))
+      // A continuation deleted while the sync was not running leaves its record behind; a scan forgets it.
+      if (scan) await this.forgetGoneContinuations(headers)
       const forced = new Set<SessionId>()
       for (const id of dirty) {
         const root = rootOf(id, headers)
@@ -496,6 +551,10 @@ export class SessionSync extends TypertRemoteService {
   /** Record a deleted Session's deletion for the user center; a subagent Session's deletion rescans its parent instead. */
   private async deleted(sessionId: SessionId): Promise<void> {
     if (this.removing.delete(sessionId)) return
+    if (this.state.continuation(sessionId) !== undefined) {
+      await this.state.setContinuation(sessionId, undefined)
+      this.changed()
+    }
     const pulled = this.state.pulled(sessionId)
     if (pulled !== undefined) {
       // Deleting another machine's conversation here deletes it there too.
@@ -699,6 +758,13 @@ export class SessionSync extends TypertRemoteService {
     if (changed) this.changed()
   }
 
+  /** Forget the continuation records whose conversation is no longer stored here. */
+  private async forgetGoneContinuations(headers: ReadonlyMap<SessionId, SessionHeader>): Promise<void> {
+    const gone = this.state.continuations().filter(([sessionId]) => !headers.has(sessionId as SessionId))
+    for (const [sessionId] of gone) await this.state.setContinuation(sessionId, undefined)
+    if (gone.length > 0) this.changed()
+  }
+
   /** Delete stored Sessions without treating it as the user's deletion. */
   private async remove(ids: readonly SessionId[]): Promise<'removed' | 'busy'> {
     for (const id of ids) this.removing.add(id)
@@ -737,6 +803,16 @@ export class SessionSync extends TypertRemoteService {
  */
 function changeToken(members: readonly SessionPersistenceSnapshot[]): string {
   return members.map(member => `${member.header.id}:${String(member.sizeBytes ?? member.revision)}`).join('|')
+}
+
+/** Whether the path names an existing directory here. */
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory()
+  } catch {
+    // Missing or unreadable: not a directory to work in.
+    return false
+  }
 }
 
 async function readAll(chunks: AsyncIterable<Uint8Array>): Promise<Uint8Array> {

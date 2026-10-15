@@ -8,9 +8,13 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionSyncView } from '@deepseek-ai/dsh-session-sync/client'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
-import { PulledBadge, PulledComposer, PulledHover, type PulledRowInjected } from '../src/client/SessionSync.tsx'
+import {
+  ContinuationHover, ContinuationLabel, ContinueDialog, PulledBadge, PulledComposer, PulledHover,
+  type ContinuationInjected, type ContinueDialogInjected, type PulledComposerInjected, type PulledRowInjected,
+} from '../src/client/SessionSync.tsx'
 
-const view = (changes: number, pulled: SessionSyncView['pulled']): SessionSyncView => ({ signedIn: true, changes, pulled })
+const view = (changes: number, pulled: SessionSyncView['pulled'], continuations: SessionSyncView['continuations'] = []): SessionSyncView =>
+  ({ signedIn: true, changes, pulled, continuations })
 const A = 'from-a' as SessionId
 const B = 'from-b' as SessionId
 
@@ -37,7 +41,13 @@ describe('ui-session-sync browser plugin', () => {
     new LocaleHolder(ctx)
     const sessions = { refresh: vi.fn(async () => {}), refreshProjections: vi.fn(async () => {}) }
     ctx.provide('sessions', sessions as never)
-    const sessionSync = { watch: vi.fn(), refresh: vi.fn(async () => ({ ok: true as const, value: undefined })) }
+    const ok = <T,>(value: T) => vi.fn(async () => ({ ok: true as const, value }))
+    const sessionSync = {
+      watch: vi.fn(), refresh: ok(undefined),
+      continueInfo: ok({ folder: '/work', folderHere: true }), continueConversation: ok({ sessionId: 'continued-1' }),
+    }
+    const uiWorkspace = { openSession: vi.fn(), pickDirectory: vi.fn(async () => '/picked') }
+    ctx.provide('uiWorkspace', uiWorkspace as never)
     const remote = new TestRemote(ctx, { sessionSync })
     const frames: SessionSyncView[] = []
     let wake: (() => void) | undefined
@@ -64,6 +74,8 @@ describe('ui-session-sync browser plugin', () => {
         'sidebar.session.row.badge': { kind: 'list', scope: 'root' },
         'sidebar.session.row.hover': { kind: 'list', scope: 'root' },
         'conversation.composer': { kind: 'chain', scope: 'session' },
+        'shell.overlay': { kind: 'list', scope: 'root' },
+        'conversation.session.header.actions': { kind: 'list', scope: 'session' },
       },
     } as never, () => null)
     onTestFinished(removeRoot)
@@ -73,12 +85,36 @@ describe('ui-session-sync browser plugin', () => {
     const [badge] = slots.entries('sidebar.session.row.badge')
     expect(badge?.component).toBe(PulledBadge)
     expect(badge!.options).toMatchObject({ id: 'session-sync-badge' })
-    const [hover] = slots.entries('sidebar.session.row.hover')
+    const [hover, continuedHover] = slots.entries('sidebar.session.row.hover')
     expect(hover?.component).toBe(PulledHover)
+    expect(continuedHover?.component).toBe(ContinuationHover)
+    const [overlay] = slots.entries('shell.overlay')
+    expect(overlay?.component).toBe(ContinueDialog)
+    const [label] = slots.entries('conversation.session.header.actions')
+    expect(label?.component).toBe(ContinuationLabel)
     const [composer] = slots.entries('conversation.composer')
     expect(composer?.component).toBe(PulledComposer)
     const face = badge!.inject!() as object as PulledRowInjected
     expect(hover!.inject!()).toBe(face)
+    const continuationFace = label!.inject!() as object as ContinuationInjected
+    expect(continuedHover!.inject!()).toBe(continuationFace)
+    const dialogFace = overlay!.inject!() as object as ContinueDialogInjected
+    const composerFace = composer!.inject!() as object as PulledComposerInjected
+    // The composer's button asks for the dialog; the dialog's calls reach the Remote, the picker, and navigation.
+    composerFace.requestContinue(A)
+    expect(dialogFace.hooks.continueRequest.getSnapshot()).toBe(A)
+    dialogFace.settleContinue()
+    expect(dialogFace.hooks.continueRequest.getSnapshot()).toBeNull()
+    await dialogFace.continueInfo(A)
+    expect(sessionSync.continueInfo).toHaveBeenCalledWith({ sessionId: A })
+    await dialogFace.continueConversation(A, '/work')
+    expect(sessionSync.continueConversation).toHaveBeenCalledWith({ sessionId: A, cwd: '/work' })
+    expect(await dialogFace.pickFolder()).toBe('/picked')
+    Object.defineProperty(globalThis, '__DSH_DIRECTORY_PICKER__', { value: { pick: async () => '/desktop-picked' }, configurable: true })
+    expect(await dialogFace.pickFolder()).toBe('/desktop-picked')
+    Reflect.deleteProperty(globalThis, '__DSH_DIRECTORY_PICKER__')
+    continuationFace.open(A)
+    expect(uiWorkspace.openSession).toHaveBeenCalledWith(A)
     const select = composer!.select as (owner: object) => unknown
 
     const signal = new AbortController().signal
@@ -90,7 +126,7 @@ describe('ui-session-sync browser plugin', () => {
     wake?.()
     await vi.waitFor(() => { expect(face.hooks.pulled.getSnapshot()).toEqual({ [A]: '前台电脑' }) })
     expect(sessions.refresh).not.toHaveBeenCalled()
-    expect(select({ sessionId: A })).toEqual({ device: '前台电脑' })
+    expect(select({ sessionId: A })).toEqual({ sessionId: A, device: '前台电脑' })
     expect(select({ sessionId: 'own' })).toBeNull()
     expect(select({ sessionId: undefined })).toBeNull()
     // A change with the same rows at the same revisions reloads the list only.
@@ -103,9 +139,10 @@ describe('ui-session-sync browser plugin', () => {
     wake?.()
     await vi.waitFor(() => { expect(sessions.refreshProjections.mock.calls).toEqual([[A], [B]]) })
     // A state without a change reloads nothing.
-    frames.push(view(2, [{ sessionId: A, device: '前台电脑', revision: 2 }]))
+    frames.push(view(2, [{ sessionId: A, device: '前台电脑', revision: 2 }], [{ sessionId: B, sourceId: A, title: null, device: '前台电脑' }]))
     wake?.()
     await vi.waitFor(() => { expect(accepted).toHaveBeenCalledTimes(4) })
+    expect(continuationFace.hooks.continuations.getSnapshot()).toEqual({ [B]: { sessionId: B, sourceId: A, title: null, device: '前台电脑' } })
     expect(sessions.refresh).toHaveBeenCalledTimes(2)
 
     window.dispatchEvent(new Event('focus'))

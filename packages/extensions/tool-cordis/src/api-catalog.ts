@@ -2641,8 +2641,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'fork\') fork(request: SessionForkRequest): Promise<SessionForkValue>',
-        description: 'Fork one cold-readable exact event prefix into a new Session. An omitted boundary selects the latest completed-turn prefix; an open cut receives synthetic fork closers.',
-        parameters: [{ name: 'request', description: 'source Session and optional exact inclusive event boundary.' }],
+        description: 'Fork one cold-readable exact event prefix into a new Session. An omitted boundary selects the latest completed-turn prefix; an open cut receives synthetic fork closers. A requested `cwd` puts the new Session in that directory and its Workspace instead of the source\'s.',
+        parameters: [{ name: 'request', description: 'source Session, optional exact inclusive event boundary, and optional working directory.' }],
         returns: 'the new Session identity.',
       },
       {
@@ -3126,6 +3126,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'The conversations pulled from the signed-in employee\'s other machines.',
         parameters: [],
         returns: 'whether syncing is possible, and each pulled conversation with its machine.',
+      },
+      {
+        signature: '@Remote async continueInfo(request: { readonly sessionId: SessionId }): Promise<SessionSyncContinueInfo>',
+        description: 'Read where a pulled conversation worked, to offer that directory for continuing it here.',
+        parameters: [{ name: 'request', description: 'the pulled conversation.' }],
+        returns: 'its working directory on the other computer and whether it exists here.',
+        throws: ['RemoteError `session-sync/not-pulled` for any other Session.'],
+      },
+      {
+        signature: '@Remote async continueConversation(request: SessionSyncContinueRequest): Promise<{ readonly sessionId: SessionId }>',
+        description: 'Continue a pulled conversation here: a new conversation of this computer, in the given directory, that starts with the whole pulled conversation. The pulled one stays as it is.',
+        parameters: [{ name: 'request', description: 'the pulled conversation and the directory.' }],
+        returns: 'the new conversation\'s top-level Session.',
+        throws: ['RemoteError `session-sync/not-pulled` for any other Session, and the fork\'s own errors, such as `session/fork-folder-unavailable` for a directory that does not exist here.'],
       },
       {
         signature: '@Remote({ mode: \'stream\' }) watch(signal: AbortSignal): AsyncIterable<SessionSyncView>',
@@ -8090,7 +8104,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionForkRequest',
-    declaration: 'export interface SessionForkRequest {\n    readonly sessionId: SessionId;\n    readonly atSeq?: number;\n}',
+    declaration: 'export interface SessionForkRequest {\n    readonly sessionId: SessionId;\n    readonly atSeq?: number;\n    readonly cwd?: string;\n}',
   },
   {
     name: 'SessionForkSource',
@@ -8405,12 +8419,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionSurfaceSnapshot {\n    session: SessionHeader;\n    inheritedEventCount: SessionLogOffset;\n    capturedThroughSeq: OptionalSessionSeq;\n    events: SurfaceEvent[];\n}',
   },
   {
+    name: 'SessionSyncContinuation',
+    declaration: 'export interface SessionSyncContinuation {\n    readonly sessionId: SessionId;\n    readonly sourceId: SessionId;\n    readonly title: string | null;\n    readonly device: string;\n}',
+  },
+  {
+    name: 'SessionSyncContinueInfo',
+    declaration: 'export interface SessionSyncContinueInfo {\n    readonly folder: string | null;\n    readonly folderHere: boolean;\n}',
+  },
+  {
+    name: 'SessionSyncContinueRequest',
+    declaration: 'export interface SessionSyncContinueRequest {\n    readonly sessionId: SessionId;\n    readonly cwd: string;\n}',
+  },
+  {
     name: 'SessionSyncPulled',
     declaration: 'export interface SessionSyncPulled {\n    readonly sessionId: SessionId;\n    readonly device: string;\n    readonly revision: number;\n}',
   },
   {
     name: 'SessionSyncView',
-    declaration: 'export interface SessionSyncView {\n    readonly signedIn: boolean;\n    readonly changes: number;\n    readonly pulled: readonly SessionSyncPulled[];\n}',
+    declaration: 'export interface SessionSyncView {\n    readonly signedIn: boolean;\n    readonly changes: number;\n    readonly pulled: readonly SessionSyncPulled[];\n    readonly continuations: readonly SessionSyncContinuation[];\n}',
   },
   {
     name: 'SessionTelemetryRecord',

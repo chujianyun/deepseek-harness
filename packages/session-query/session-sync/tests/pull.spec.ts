@@ -10,7 +10,7 @@ import { SessionAlreadyOwnedError, SessionPersistenceNotFoundError, type Session
 import { SESSION_FORMAT_VERSION, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { BundleAttachment } from '../src/bundle.ts'
-import { decodeBundle, hasAttachment, removeLogs, storeAttachment, writeLogs } from '../src/pull.ts'
+import { decodeBundle, hasAttachment, isLocalAbsolutePath, removeLogs, storeAttachment, writeLogs } from '../src/pull.ts'
 import type { SessionSyncLog } from '../src/types.ts'
 
 const dirs: string[] = []
@@ -126,5 +126,16 @@ describe('decodeBundle', () => {
     const bundle = { format: 1, sessions: [log('a', 1)] }
     expect(await decodeBundle(gzipSync(JSON.stringify(bundle)))).toEqual(JSON.parse(JSON.stringify(bundle)))
     await expect(decodeBundle(gzipSync(JSON.stringify({ format: 2, sessions: [] })))).rejects.toThrow()
+  })
+})
+
+describe('isLocalAbsolutePath', () => {
+  it('accepts only the given system\'s own absolute form', () => {
+    expect(isLocalAbsolutePath('/Users/frank/project', 'darwin')).toBe(true)
+    expect(isLocalAbsolutePath('C:\\Users\\frank\\project', 'darwin')).toBe(false)
+    expect(isLocalAbsolutePath('C:\\Users\\frank\\project', 'win32')).toBe(true)
+    expect(isLocalAbsolutePath('d:/work', 'win32')).toBe(true)
+    expect(isLocalAbsolutePath('\\\\server\\share\\work', 'win32')).toBe(true)
+    expect(isLocalAbsolutePath('/Users/frank/project', 'win32')).toBe(false)
   })
 })

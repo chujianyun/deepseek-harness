@@ -12,6 +12,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
     /** The conversation came from another computer; it can be read here, not continued. */
     'session-sync/view-only': { readonly sessionId: SessionId }
+    /** The Session is not a conversation pulled from another computer, so it is not continued here. */
+    'session-sync/not-pulled': { readonly sessionId: SessionId }
   }
 }
 
@@ -58,6 +60,33 @@ export interface SessionSyncPulled {
   readonly revision: number
 }
 
+/** A conversation of this computer that carries on a pulled one. */
+export interface SessionSyncContinuation {
+  /** The continuing top-level Session. */
+  readonly sessionId: SessionId
+  /** The pulled conversation it continues; it may since have been deleted. */
+  readonly sourceId: SessionId
+  /** That conversation's title when it was continued, or null. */
+  readonly title: string | null
+  /** Name of the computer that conversation came from. */
+  readonly device: string
+}
+
+/** Where a pulled conversation worked, as `continueInfo` answers. */
+export interface SessionSyncContinueInfo {
+  /** Its working directory on the other computer, or null. */
+  readonly folder: string | null
+  /** Whether that directory exists on this computer. */
+  readonly folderHere: boolean
+}
+
+/** Continue a pulled conversation in a directory of this computer. */
+export interface SessionSyncContinueRequest {
+  readonly sessionId: SessionId
+  /** Existing directory the new conversation works in. */
+  readonly cwd: string
+}
+
 /** The `sessionSync` Remote's state. */
 export interface SessionSyncView {
   /** An employee of a tenant is signed in, so syncing runs. */
@@ -66,4 +95,6 @@ export interface SessionSyncView {
   readonly changes: number
   /** The conversations pulled from other computers; they are view-only here. */
   readonly pulled: readonly SessionSyncPulled[]
+  /** The conversations of this computer that carry on pulled ones. */
+  readonly continuations: readonly SessionSyncContinuation[]
 }

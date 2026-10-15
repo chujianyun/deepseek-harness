@@ -1,4 +1,4 @@
-/* The row mark of a conversation from another computer, its hover line, and the view-only composer. */
+/* The row mark of a conversation from another computer, its hover line, the view-only composer, the continue dialog, and the continuation label. */
 
 .badge {
   display: inline-flex;
@@ -35,4 +35,70 @@
 .frame strong {
   color: var(--dsw-alias-label-primary);
   font-weight: 510;
+}
+
+.continued {
+  display: inline-flex;
+  align-items: center;
+  max-width: 320px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.link {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: underline;
+}
+
+.folderRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.folderLabel {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.folderPath {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.warning,
+.status,
+.error {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.warning {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.status {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.error {
+  color: var(--dsw-alias-state-error-primary);
 }

@@ -50,6 +50,8 @@ export interface BootOptions {
   attachments?: boolean
   compression?: 'none'
   projectionCache?: boolean
+  /** Stand-in for the Session controller's fork. */
+  fork?: (request: { sessionId: SessionId; cwd?: string }) => Promise<{ sessionId: SessionId }>
 }
 
 export async function boot(options: BootOptions = {}): Promise<Booted> {
@@ -79,6 +81,8 @@ export async function boot(options: BootOptions = {}): Promise<Booted> {
   await ctx.plugin(LocalCredentialProvider, { path: join(home, 'credentials.yaml'), watch: false })
   await ctx.plugin(AuthorizationService)
   await ctx.plugin(HubAccount, { origin: center.origin, clientId: center.clientId, allowLoopbackHttp: true, dshHome })
+  // The real controller is composed in the Web e2e; here its fork only names the new conversation.
+  ctx.provide('sessionController', { fork: options.fork ?? (async () => ({ sessionId: SessionId('continued') })) } as never)
   ctx.llm.registerAdapter(['mock'], new MockAdapter(Array.from({ length: options.replies ?? 4 }, (_, index) => textResponse(`答复 ${String(index + 1)}`))))
   return { ctx, center, home, dshHome }
 }

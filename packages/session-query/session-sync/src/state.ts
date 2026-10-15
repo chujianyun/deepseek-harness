@@ -2,8 +2,9 @@
  * What this machine has synced, kept in `<dshHome>/session-sync.json`: for each top-level Session
  * it uploads, the account it syncs as, the revision and content digest of its last upload; the
  * deletions the user center has not acknowledged yet; for each Session it pulled from another
- * machine, its account, device, and revision; and how far it has pulled for each account. The file
- * is read once and rewritten after each change;
+ * machine, its account, device, and revision; how far it has pulled for each account; and the
+ * conversations of this computer that carry on pulled ones. The file is read once and rewritten
+ * after each change;
  * a change that cannot be written is not applied.
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
@@ -52,6 +53,20 @@ const pulledSchema = z.object({
   gone: z.literal(true).optional(),
 })
 
+/** A conversation of this computer that carries on a pulled one. */
+export interface ContinuationEntry {
+  /** Account it was continued under; the state lists it only for that account. */
+  readonly account: string
+  /** The pulled top-level Session it continues. */
+  readonly sourceId: string
+  /** Title of that conversation when it was continued, or null. */
+  readonly title: string | null
+  /** Name of the computer that conversation came from. */
+  readonly device: string
+}
+
+const continuationSchema = z.object({ account: z.string(), sourceId: z.string(), title: z.string().nullable(), device: z.string() })
+
 const entrySchema = z.object({
   account: z.string(),
   revision: z.number().int().nonnegative(),
@@ -68,13 +83,15 @@ const stateFile = z.object({
   pulled: z.record(z.string(), pulledSchema).default({}),
   /** How far each account's changes on the user center have been pulled. */
   cursors: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  /** Conversations of this computer that carry on pulled ones, by their top-level Session. */
+  continuations: z.record(z.string(), continuationSchema).default({}),
 })
 
 type StateData = z.infer<typeof stateFile>
 
 /** The sync record of this machine, loaded once and written through. */
 export class SyncState {
-  private data: StateData = { version: 2, sessions: {}, deletes: {}, pulled: {}, cursors: {} }
+  private data: StateData = { version: 2, sessions: {}, deletes: {}, pulled: {}, cursors: {}, continuations: {} }
   private writes: Promise<void> = Promise.resolve()
 
   /** @param path - the record file. */
@@ -207,6 +224,33 @@ export class SyncState {
       return recorded ? { ...data, pulled: replaced(data.pulled, sessionId, entry) } : data
     })
     return recorded
+  }
+
+  /**
+   * Read what a conversation of this computer carries on.
+   * @param sessionId - a top-level Session.
+   * @returns its continuation entry, or undefined when it continues nothing pulled.
+   */
+  continuation(sessionId: string): ContinuationEntry | undefined {
+    return this.data.continuations[sessionId]
+  }
+
+  /**
+   * List the conversations that carry on pulled ones.
+   * @returns each continuing top-level Session with what it continues.
+   */
+  continuations(): [sessionId: string, entry: ContinuationEntry][] {
+    return Object.entries(this.data.continuations)
+  }
+
+  /**
+   * Record or forget a conversation that carries on a pulled one.
+   * @param sessionId - the continuing top-level Session.
+   * @param entry - what it continues, or undefined to forget it.
+   * @returns once written.
+   */
+  setContinuation(sessionId: string, entry: ContinuationEntry | undefined): Promise<void> {
+    return this.apply(data => ({ ...data, continuations: replaced(data.continuations, sessionId, entry) }))
   }
 
   /**

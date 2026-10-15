@@ -173,7 +173,7 @@ it('shows another computer\'s conversation marked and view-only, and deletes it 
     await row.click()
     const notice = page.locator('[data-session-sync-readonly]')
     await notice.waitFor({ timeout: 15_000 })
-    expect(await notice.textContent()).toBe('来自「前台电脑」的对话在这台电脑上只能查看，不能继续对话。')
+    expect(await notice.textContent()).toBe('来自「前台电脑」的对话在这台电脑上只能查看，不能继续对话。接着聊')
     expect(await page.locator('[data-composer-input]:visible').count()).toBe(0)
     expect(ctx.agents.get(SessionId('from-pc'))).toBeUndefined()
     expect(ctx.agents.get(SessionId('from-pc-2'))).toBeUndefined()
@@ -217,3 +217,99 @@ it('shows another computer\'s conversation marked and view-only, and deletes it 
     Reflect.deleteProperty(process.env, 'DSH_E2E_HUB_ORIGIN')
   }
 }, 120_000)
+
+it('continues another computer\'s conversation here in a chosen folder, with its whole history', async () => {
+  const center = await startMockUserCenter()
+  process.env.DSH_E2E_HUB_ORIGIN = center.origin
+  const scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAYS })
+  const browser = await chromium.launch()
+  try {
+    const { ctx } = scaffold
+    const workspace = await ctx.workspaceRegistry.create(scaffold.workspaceCwd)
+    const fixture = await readFile(SEED, 'utf8')
+    const [firstPrompt] = fixtureUserPrompts(fixture)
+    const source = await seedSession(scaffold, fixture, 'session-sync-continue-source')
+    uploadedElsewhere(center, 'from-pc', await otherComputerBundle(scaffold, source, 'from-pc'))
+    // The same conversation, recorded in a folder that does not exist on this computer.
+    const { session, inheritedEventCount, events } = await ctx.sessionQuery.readSession(source)
+    const away = gzipSync(JSON.stringify({ format: 1, sessions: [{ header: { ...session, id: 'from-pc-away', cwd: '/not/on/this/computer' }, inheritedEventCount, events }] }))
+    uploadedElsewhere(center, 'from-pc-away', away)
+    await ctx.sessionPersistence.delete(source)
+    await ctx.hubAccount.signIn()
+    await expect.poll(async () => (await ctx.hubAccount.getState()).attempt?.authorizeUrl).toBeDefined()
+    await browse((await ctx.hubAccount.getState()).attempt!.authorizeUrl!)
+    await expect.poll(async () => (await ctx.sessionSync.getState()).pulled.length, { timeout: 20_000 }).toBe(2)
+    await workspace.attachSession(SessionId('from-pc'))
+    const before = (await ctx.sessionQuery.readSession(SessionId('from-pc'))).events.length
+
+    const continueIn = async (locale: string, theme: 'light' | 'dark') => {
+      const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, locale, colorScheme: theme })
+      // Desktop exposes its folder chooser; here it answers with this test's workspace.
+      await page.addInitScript((picked: string) => {
+        Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } })
+        Object.defineProperty(globalThis, '__DSH_DIRECTORY_PICKER__', { value: { pick: () => Promise.resolve(picked) } })
+      }, scaffold.workspaceCwd)
+      await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      return page
+    }
+
+    // The original folder exists here: it is offered, and continuing opens the new conversation.
+    const page = await continueIn(ZH_BROWSER_LOCALE, 'light')
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-session-sync-continue'))
+    const pulledRow = page.getByRole('treeitem').filter({ has: page.locator('[data-session-sync-badge]') }).first()
+    await pulledRow.waitFor({ timeout: 15_000 })
+    await pulledRow.click()
+    await page.locator('[data-session-sync-readonly]').waitFor({ timeout: 15_000 })
+    const opened = await page.locator('[data-session-sync-readonly]').textContent()
+    expect(opened).toContain('接着聊')
+    await page.getByRole('button', { name: '接着聊' }).click()
+    const dialog = page.getByRole('dialog', { name: '接着聊' })
+    await expect.poll(() => dialog.locator('[data-session-sync-folder]').textContent(), { timeout: 15_000 }).not.toBe('还没有选择')
+    expect(await dialog.getByRole('note').count()).toBe(0)
+    await dialog.getByRole('button', { name: '接着聊' }).click()
+    await expect.poll(async () => (await ctx.sessionSync.getState()).continuations.length, { timeout: 15_000 }).toBe(1)
+    const continued = (await ctx.sessionSync.getState()).continuations[0]!
+    expect(continued).toMatchObject({ sourceId: 'from-pc', device: '前台电脑' })
+    // The new conversation is this computer's: its composer is back, and it says what it continues.
+    await page.locator('[data-composer-input]:visible').first().waitFor({ timeout: 15_000 })
+    await page.locator('[data-session-sync-continued]').waitFor({ timeout: 15_000 })
+    // What the model sees next turn starts with the whole earlier conversation.
+    const header = (await ctx.sessionPersistence.stat(continued.sessionId))?.header
+    expect(header).toMatchObject({ parentSession: 'from-pc', isSeeded: true })
+    const live = ctx.sessions.get(continued.sessionId)
+    const derived = JSON.stringify(live?.deriveMessages() ?? (await ctx.sessionQuery.readSession(continued.sessionId)).events)
+    expect(derived).toContain(firstPrompt!)
+    // The pulled conversation stays as it was, and the continuation uploads like any conversation here.
+    expect((await ctx.sessionQuery.readSession(SessionId('from-pc'))).events.length).toBe(before)
+    await ctx.sessionSync.refresh()
+    await expect.poll(() => held(center, continued.sessionId)?.meta.revision, { timeout: 15_000 }).toBe(1)
+    await page.close()
+
+    // The original folder is not here: the dialog is told so (its warning and chooser are covered by the
+    // client tests and the Desktop smoke, whose sidebar lists conversations outside any Workspace).
+    expect(await ctx.sessionSync.continueInfo({ sessionId: SessionId('from-pc-away') })).toEqual({ folder: '/not/on/this/computer', folderHere: false })
+
+    if (SHOTS !== undefined) {
+      // The dialog in both languages and themes.
+      for (const [lang, locale] of [['zh', ZH_BROWSER_LOCALE], ['en', 'en-US']] as const) {
+        for (const theme of ['light', 'dark'] as const) {
+          const shot = await continueIn(locale, theme)
+          const row = shot.getByRole('treeitem').filter({ has: shot.locator('[data-session-sync-badge]') }).first()
+          await row.waitFor({ timeout: 15_000 })
+          await row.click()
+          await shot.locator('[data-session-sync-readonly] button').click()
+          const dialog = shot.getByRole('dialog')
+          await expect.poll(() => dialog.locator('[data-session-sync-folder]').textContent(), { timeout: 15_000 }).toBe(scaffold.workspaceCwd)
+          await shot.waitForTimeout(400)
+          await shot.screenshot({ path: `${SHOTS}/${lang}-${theme}-continue.png` })
+          await shot.close()
+        }
+      }
+    }
+  } finally {
+    await browser.close()
+    await scaffold.close()
+    await center.close()
+    Reflect.deleteProperty(process.env, 'DSH_E2E_HUB_ORIGIN')
+  }
+}, 180_000)

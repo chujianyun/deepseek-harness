@@ -2,7 +2,8 @@
  * Pulling the conversations another machine of the same employee uploaded: two machines with their
  * own Session storage and record, signed in as the same account against one mock user center.
  */
-import { stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync, gzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -535,5 +536,95 @@ describe('sessionSync pulling', () => {
     await expect.poll(() => held(center, 'from-a')?.deleted).toBe(true)
     await expect.poll(() => stored(b.ctx, 'from-a')).toBeUndefined()
     expect(await pulledIds(b.ctx)).toEqual([])
+  })
+
+  it('offers the folder a pulled conversation worked in, and continues it here as a new conversation', async () => {
+    const center = await startMockUserCenter()
+    cleanups.push(() => center.close())
+    const forks: { sessionId: string; cwd?: string }[] = []
+    const a = await boot({ center })
+    const b = await boot({ center, fork: async (request) => {
+      forks.push(request)
+      // The real fork stores a new conversation that starts with the pulled one.
+      await storeSession(b.ctx, 'continued-1', text('继续'), { parentSession: request.sessionId })
+      return { sessionId: SessionId('continued-1') }
+    } })
+    await startSync(a, { deviceName: '前台电脑' })
+    await startSync(b, { deviceName: '家里电脑' })
+    await signIn(a)
+    await signIn(b)
+    const here = await mkdtemp(join(tmpdir(), 'dsh-session-sync-folder-'))
+    cleanups.push(() => rm(here, { recursive: true, force: true }))
+    await storeSession(a.ctx, 'from-a', text('复盘'), { cwd: here })
+    await storeSession(a.ctx, 'elsewhere', text('别处'), { cwd: '/not/on/this/computer' })
+    const nowhere = await a.ctx.sessionPersistence.create({ version: SESSION_FORMAT_VERSION, id: SessionId('nowhere'), createdAt: 1_000, isSeeded: false })
+    await nowhere.append([
+      { type: 'user/message', seq: SessionSeq(0), time: 2_000, data: createUserMessage({ content: text('没有文件夹'), source: { kind: 'user' } }), surfaceOp: 'append' },
+    ] as SessionEvent[])
+    await nowhere.close()
+    await pull(a)
+    await expect.poll(() => ['from-a', 'elsewhere', 'nowhere'].map(id => held(center, id)?.meta.revision)).toEqual([1, 1, 1])
+    await pull(b)
+    for (const id of ['from-a', 'elsewhere', 'nowhere']) await written(b, id)
+    expect(await b.ctx.sessionSync.continueInfo({ sessionId: SessionId('nowhere') })).toEqual({ folder: null, folderHere: false })
+
+    expect(await b.ctx.sessionSync.continueInfo({ sessionId: SessionId('from-a') })).toEqual({ folder: here, folderHere: true })
+    expect(await b.ctx.sessionSync.continueInfo({ sessionId: SessionId('elsewhere') })).toEqual({ folder: '/not/on/this/computer', folderHere: false })
+    await expect(b.ctx.sessionSync.continueInfo({ sessionId: SessionId('own') })).rejects.toMatchObject({ code: 'session-sync/not-pulled' })
+    await expect(b.ctx.sessionSync.continueConversation({ sessionId: SessionId('own'), cwd: here })).rejects.toMatchObject({ code: 'session-sync/not-pulled' })
+
+    expect(await b.ctx.sessionSync.continueConversation({ sessionId: SessionId('from-a'), cwd: here })).toEqual({ sessionId: 'continued-1' })
+    expect(forks).toEqual([{ sessionId: 'from-a', cwd: here }])
+    expect((await view(b.ctx)).continuations).toEqual([{ sessionId: 'continued-1', sourceId: 'from-a', title: null, device: '前台电脑' }])
+    // The continuation is this computer's own conversation: writable, and uploaded.
+    expect(b.ctx.bail('api-session/view-only', SessionId('continued-1'))).toBeUndefined()
+    await pull(b)
+    await expect.poll(() => held(center, 'continued-1')?.meta.device).toBe('家里电脑')
+    // The pulled conversation stays as it was.
+    expect(await pulledIds(b.ctx)).toEqual(expect.arrayContaining(['from-a']))
+    await b.ctx.sessionPersistence.delete(SessionId('continued-1'))
+    await expect.poll(async () => (await view(b.ctx)).continuations).toEqual([])
+  })
+
+  it('keeps a continuation even when its record cannot be written, lists continuations per account, and forgets gone ones', async () => {
+    const center = await startMockUserCenter()
+    cleanups.push(() => center.close())
+    const a = await boot({ center })
+    let next = 0
+    const b = await boot({ center, fork: async (request) => {
+      next += 1
+      await storeSession(b.ctx, `continued-${String(next)}`, text('继续'), { parentSession: request.sessionId })
+      return { sessionId: SessionId(`continued-${String(next)}`) }
+    } })
+    await startSync(a, { deviceName: '前台电脑' })
+    await startSync(b, { deviceName: '家里电脑', scanIntervalMs: 300 })
+    await signIn(a)
+    await signIn(b)
+    const here = await mkdtemp(join(tmpdir(), 'dsh-session-sync-folder-'))
+    cleanups.push(() => rm(here, { recursive: true, force: true }))
+    await storeSession(a.ctx, 'from-a', text('复盘'), { cwd: here })
+    await pull(a)
+    await expect.poll(() => held(center, 'from-a')?.meta.revision).toBe(1)
+    await pull(b)
+    await written(b, 'from-a')
+    // A record write that fails still answers with the new conversation; only its label is missing.
+    await chmod(b.dshHome, 0o500)
+    cleanups.push(() => chmod(b.dshHome, 0o700))
+    expect(await b.ctx.sessionSync.continueConversation({ sessionId: SessionId('from-a'), cwd: here })).toEqual({ sessionId: 'continued-1' })
+    await chmod(b.dshHome, 0o700)
+    expect((await view(b.ctx)).continuations).toEqual([])
+    await b.ctx.sessionSync.continueConversation({ sessionId: SessionId('from-a'), cwd: here })
+    expect((await view(b.ctx)).continuations.map(item => item.sessionId)).toEqual(['continued-2'])
+    // Another account does not see it; the record stays for when the account signs in again.
+    await signIn(b, { tenantId: 't-b', tenantName: '乙公司' })
+    await expect.poll(async () => (await view(b.ctx)).continuations).toEqual([])
+    expect(Object.keys((await record(b.dshHome) as never as { continuations: object }).continuations)).toEqual(['continued-2'])
+    // Gone from storage while the sync was not running: its next scan forgets it.
+    await b.ctx.fiber.dispose()
+    const again = await boot({ center, home: b.home })
+    await again.ctx.sessionPersistence.delete(SessionId('continued-2'))
+    await startSync(again, { deviceName: '家里电脑', scanIntervalMs: 300 })
+    const kept = async () => Object.keys((await record(again.dshHome) as never as { continuations: object }).continuations)
+    await expect.poll(kept).toEqual([])
   })
 })
