@@ -9,7 +9,7 @@ import { assistantProjectionDefinition, type AssistantProjectionState } from '@d
 import type { ImageAttachmentRef, FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { SessionSyncBundle } from './types.ts'
+import type { SessionSyncAssistant, SessionSyncBundle, SessionSyncLog } from './types.ts'
 
 const ATTACHMENT_ID = /^sha256:([0-9a-f]{64})$/u
 
@@ -109,6 +109,47 @@ export function lastChange(bundle: SessionSyncBundle): number {
   let latest = bundle.sessions[0].header.createdAt
   for (const log of bundle.sessions) for (const event of log.events) latest = Math.max(latest, event.time)
   return latest
+}
+
+/**
+ * The ids of the assistants a bundle's events select.
+ * @param bundle - the bundle.
+ * @returns the ids, once each.
+ */
+export function selectedAssistants(bundle: SessionSyncBundle): string[] {
+  const ids = new Set<string>()
+  for (const log of bundle.sessions) {
+    for (const event of log.events) if (event.type === 'assistant/selected' && event.data.assistantId !== '') ids.add(event.data.assistantId)
+  }
+  return [...ids]
+}
+
+/**
+ * Point a pulled bundle's assistant selections at this computer's matching assistants: the one with
+ * the same template, or else the one with the same name, when exactly one matches. A selection with
+ * no match keeps the other computer's id, which this computer shows as an unknown assistant.
+ * @param bundle - the pulled bundle.
+ * @param local - this computer's assistants of the tenant.
+ * @returns the bundle with its selections mapped.
+ */
+export function mapAssistants(bundle: SessionSyncBundle, local: readonly SessionSyncAssistant[]): SessionSyncBundle {
+  const mapped = new Map<string, string>()
+  for (const remote of bundle.assistants ?? []) {
+    const byTemplate = remote.templateId === null ? [] : local.filter(item => item.templateId === remote.templateId)
+    const [only, another] = byTemplate.length > 0 ? byTemplate : local.filter(item => item.name === remote.name)
+    if (only !== undefined && another === undefined) mapped.set(remote.id, only.id)
+  }
+  if (mapped.size === 0) return bundle
+  const mapLog = (log: SessionSyncLog): SessionSyncLog => ({
+    ...log,
+    events: log.events.map((event) => {
+      if (event.type !== 'assistant/selected') return event
+      const target = mapped.get(event.data.assistantId)
+      return target === undefined ? event : { ...event, data: { ...event.data, assistantId: target } }
+    }),
+  })
+  const [head, ...below] = bundle.sessions
+  return { ...bundle, sessions: [mapLog(head), ...below.map(mapLog)] }
 }
 
 const compress = promisify(gzip)

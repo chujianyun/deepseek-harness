@@ -34,6 +34,18 @@
     },
     {
       "path": "../../session/session-title"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.host.json"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../util/change-stream"
+    },
+    {
+      "path": "../../session/session-projection-cache"
     }
   ]
 }

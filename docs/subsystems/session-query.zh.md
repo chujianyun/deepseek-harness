@@ -548,5 +548,23 @@ Source: [`packages/session-query/session-share/src/index.ts`](../../packages/ses
 
 Host owner of Session sync.
 
+```ts cordis-catalog
+/**
+ * The conversations pulled from the signed-in employee's other machines.
+ * @returns whether syncing is possible, and each pulled conversation with its machine.
+ */
+@Remote getState(): Promise<SessionSyncView>
+
+/**
+ * Stream the pulled conversations.
+ * @param signal - stream lifetime.
+ * @returns the current state, then every change.
+ */
+@Remote({ mode: 'stream' }) watch(signal: AbortSignal): AsyncIterable<SessionSyncView>
+
+/** Pull the other machines' changes and look for changes here now, as when the window comes back to the front. */
+@Remote refresh(): Promise<void>
+```
+
 Source: [`packages/session-query/session-sync/src/index.ts`](../../packages/session-query/session-sync/src/index.ts)
 <!-- END GENERATED cordis-surface -->

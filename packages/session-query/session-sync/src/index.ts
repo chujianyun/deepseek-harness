@@ -1,9 +1,10 @@
 /**
  * Session sync for Desktop: uploads every top-level Session's conversation, with its subagent
- * Sessions and attachments, to the user center of the current Hub sign-in, so the employee's other
- * machines can read it. A Session uploads after each turn ends and whenever a scan finds it changed;
- * the first scan after sign-in uploads the Sessions already on this machine. Deleting a Session
- * deletes it on the user center. Failed requests are retried later.
+ * Sessions and attachments, to the user center of the current Hub sign-in, and pulls the
+ * conversations the employee's other machines uploaded, which this machine keeps view-only. A
+ * Session uploads after each turn ends and whenever a scan finds it changed; the first scan after
+ * sign-in uploads the Sessions already on this machine. Deleting a Session here deletes it on the
+ * user center, and one deleted elsewhere is deleted here. Failed requests are retried later.
  *
  * @module @deepseek-ai/dsh-session-sync
  */
@@ -11,24 +12,32 @@
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-attachment'
+import { changeStream } from '@deepseek-ai/dsh-change-stream'
 import type { HubAccountView } from '@deepseek-ai/dsh-hub-account'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SessionLogOffset, type SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-session-query'
+import type {} from '@deepseek-ai/dsh-session-projection-cache'
 import { foldSessionTitle } from '@deepseek-ai/dsh-session-title'
+import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import Schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
-import { boundAssistant, bundleAttachments, bundleGroups, encodeBundle, lastChange, rootOf, type BundleAttachment } from './bundle.ts'
-import { SyncState, type SyncedEntry } from './state.ts'
-import type { SessionSyncBundle, SessionSyncLog } from './types.ts'
+import {
+  boundAssistant, bundleAttachments, bundleGroups, encodeBundle, lastChange, mapAssistants, rootOf, selectedAssistants,
+  type BundleAttachment,
+} from './bundle.ts'
+import { decodeBundle, hasAttachment, removeLogs, storeAttachment, writeLogs } from './pull.ts'
+import { SyncState, type PulledEntry, type SyncedEntry } from './state.ts'
+import type { SessionSyncAssistant, SessionSyncBundle, SessionSyncLog, SessionSyncView } from './types.ts'
 
 export type * from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** Session sync over the Hub sign-in. */
+    /** Session sync over the Hub sign-in, and its Remote namespace. */
     sessionSync: SessionSync
   }
 }
@@ -81,6 +90,21 @@ const conflictSchema = z.discriminatedUnion('code', [
 
 const checkSchema = z.object({ missing: z.array(z.string()) })
 
+const listSchema = z.object({
+  items: z.array(z.object({
+    sessionId: z.string(),
+    revision: z.number().int().nonnegative(),
+    device: z.string(),
+    attachments: z.array(z.string()),
+    deleted: z.boolean(),
+  })),
+  cursor: z.number().int().nonnegative(),
+  hasMore: z.boolean(),
+  reset: z.boolean(),
+})
+
+type ListedSession = z.infer<typeof listSchema>['items'][number]
+
 /**
  * The account a sign-in syncs as: its tenant and phone number, which name one employee. Null while
  * signed out or signed in without a tenant.
@@ -91,7 +115,7 @@ function accountOf(state: HubAccountView): string | null {
 }
 
 /** Host owner of Session sync. */
-export class SessionSync extends Service {
+export class SessionSync extends TypertRemoteService {
   static inject = ['hubAccount', 'sessionQuery', 'sessionPersistence']
   static Config = Config
 
@@ -108,9 +132,17 @@ export class SessionSync extends Service {
   private scanWanted = false
   /** Storage tokens of Sessions left out unread or empty, so scans skip them until they change. */
   private readonly skipped = new Map<SessionId, string>()
+  /** The next pass pulls the other machines' changes. */
+  private pullWanted = false
+  /** Sessions this service deletes itself, whose `session/deleted` it ignores. */
+  private readonly removing = new Set<SessionId>()
   /** Session being synced, so a deletion meanwhile is sent after it. */
   private syncing: SessionId | undefined
-  private running = false
+  private readonly listeners = new Set<() => void>()
+  /** Changes to the Sessions stored here that the sync made; the client reloads its list when it grows. */
+  private changes = 0
+  /** The running pass; disposal waits for it, so nothing is written after it. */
+  private running: Promise<void> | undefined
   /** Passes asked for; a pass that ends with more asked for than it saw runs again. */
   private requests = 0
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -118,7 +150,7 @@ export class SessionSync extends Service {
 
   /** @param ctx - Host with the Hub sign-in and Session storage. @param config - timings, home, and device name. */
   constructor(ctx: Context, config: Config = {}) {
-    super(ctx, 'sessionSync')
+    super(ctx, 'sessionSync', { namespace: 'sessionSync' })
     const resolved = Config(config) as Required<Omit<Config, 'dshHome' | 'deviceName'>> & Pick<Config, 'dshHome' | 'deviceName'>
     this.config = resolved
     this.device = (resolved.deviceName ?? hostname().replace(/\.local$/u, '')).trim().slice(0, DEVICE_MAX)
@@ -129,6 +161,11 @@ export class SessionSync extends Service {
       this.dirty.add(session.id)
       this.schedule(this.config.debounceMs)
     })
+    // A conversation from another machine is view-only here: it is never continued or written to.
+    ctx.on('api-session/prompt-admission', sessionId => (this.state.pulledOwner(sessionId) === undefined
+      ? undefined
+      : new RemoteError('session-sync/view-only', 'a conversation from another computer is view-only', { sessionId })))
+    ctx.on('api-session/view-only', sessionId => (this.state.pulledOwner(sessionId) === undefined ? undefined : true))
     ctx.on('session/deleted', (sessionId) => {
       void this.deleted(sessionId).catch((error: unknown) => {
         this.ctx.logger.warn(`session-sync: deletion of ${sessionId} not recorded: ${String(error)}`)
@@ -137,12 +174,15 @@ export class SessionSync extends Service {
     ctx.effect(() => {
       const scan = setInterval(() => {
         this.scanWanted = true
+        this.pullWanted = true
         this.schedule(0)
       }, this.config.scanIntervalMs)
       return () => {
         clearInterval(scan)
         clearTimeout(this.timer)
         this.lifetime.abort()
+        this.changed()
+        return this.running
       }
     }, 'session-sync: schedule')
   }
@@ -158,12 +198,52 @@ export class SessionSync extends Service {
     })()
   }
 
-  /** Sync as another account (or none), starting with a scan. */
+  /**
+   * The conversations pulled from the signed-in employee's other machines.
+   * @returns whether syncing is possible, and each pulled conversation with its machine.
+   */
+  @Remote
+  getState(): Promise<SessionSyncView> {
+    return Promise.resolve({
+      signedIn: this.account !== null,
+      changes: this.changes,
+      pulled: this.state.pulledSessions()
+        .map(([sessionId, entry]) => ({ sessionId: sessionId as SessionId, device: entry.device, revision: entry.revision })),
+    })
+  }
+
+  /**
+   * Stream the pulled conversations.
+   * @param signal - stream lifetime.
+   * @returns the current state, then every change.
+   */
+  @Remote({ mode: 'stream' })
+  watch(signal: AbortSignal): AsyncIterable<SessionSyncView> {
+    return changeStream(this.listeners, () => this.getState(), signal, this.lifetime.signal)
+  }
+
+  /** Pull the other machines' changes and look for changes here now, as when the window comes back to the front. */
+  @Remote
+  refresh(): Promise<void> {
+    this.pullWanted = true
+    this.scanWanted = true
+    this.schedule(0)
+    return Promise.resolve()
+  }
+
+  private changed(): void {
+    this.changes += 1
+    for (const listener of this.listeners) listener()
+  }
+
+  /** Sync as another account (or none), starting with a scan and a pull. */
   private follow(account: string | null): void {
     this.account = account
     this.notAllowed = false
     this.skipped.clear()
     this.scanWanted = true
+    this.pullWanted = true
+    this.changed()
     this.schedule(0)
   }
 
@@ -180,30 +260,39 @@ export class SessionSync extends Service {
   /** One pass at a time; a pass asked for meanwhile runs right after. */
   private async pass(): Promise<void> {
     this.requests += 1
-    if (this.running) return
-    this.running = true
-    try {
+    if (this.running !== undefined) return
+    const run = async () => {
       let seen: number
       do {
         seen = this.requests
         await this.work()
       } while (seen !== this.requests)
-    } finally {
-      this.running = false
     }
+    this.running = run().finally(() => { this.running = undefined })
+    await this.running
   }
 
   /** Send pending deletions, then upload the Sessions that turned or, on a scan, every changed one. */
   private async work(): Promise<void> {
     const account = this.account
-    if (account === null || this.notAllowed || this.lifetime.signal.aborted) return
+    if (this.notAllowed || this.lifetime.signal.aborted) return
     const dirty = [...this.dirty]
     this.dirty.clear()
     const scan = this.scanWanted
     this.scanWanted = false
+    const pull = this.pullWanted
+    this.pullWanted = false
     let failed = false
     try {
+      if (account === null) {
+        // Signed out: the copies pulled for any account go; signing in pulls them again.
+        await this.dropOtherAccounts(null)
+        return
+      }
       await this.sendDeletes(account)
+      await this.dropOtherAccounts(account)
+      if (pull) await this.pullChanges(account)
+      await this.removeDeletedHere(account)
       const snapshots = await this.ctx.sessionPersistence.list()
       const headers = new Map(snapshots.map(snapshot => [snapshot.header.id, snapshot.header]))
       const forced = new Set<SessionId>()
@@ -234,6 +323,7 @@ export class SessionSync extends Service {
       }
       for (const id of dirty) this.dirty.add(id)
       this.scanWanted ||= scan
+      this.pullWanted ||= pull
       if (!(error instanceof RetryLater)) this.ctx.logger.warn(`session-sync: pass failed: ${String(error)}`)
       failed = true
     }
@@ -262,6 +352,7 @@ export class SessionSync extends Service {
     root: SessionId, account: string, members: readonly SessionPersistenceSnapshot[], forced: boolean,
   ): Promise<void> {
     const entry = this.state.entry(root)
+    if (this.state.pulled(root) !== undefined) return
     if ((entry !== undefined && entry.account !== account) || entry?.held === 'deleted') return
     const token = changeToken(members)
     if (!forced && (entry?.token ?? this.skipped.get(root)) === token) return
@@ -346,7 +437,17 @@ export class SessionSync extends Service {
     }
     const [head, ...below] = sessions
     if (head?.events.some(event => event.type === 'user/message') !== true) return undefined
-    return { format: 1, sessions: [head, ...below] }
+    const bundle: SessionSyncBundle = { format: 1, sessions: [head, ...below] }
+    const selected = new Set(selectedAssistants(bundle))
+    const assistants = (await this.localAssistants()).filter(assistant => selected.has(assistant.id))
+    return assistants.length === 0 ? bundle : { ...bundle, assistants }
+  }
+
+  /** The signed-in tenant's assistants on this computer; none where assistants are not composed. */
+  private async localAssistants(): Promise<SessionSyncAssistant[]> {
+    const service = this.ctx.get('assistants')
+    if (service === undefined) return []
+    return (await service.getState()).assistants.map(item => ({ id: item.id, name: item.name, templateId: item.templateId ?? null }))
   }
 
   /**
@@ -394,6 +495,16 @@ export class SessionSync extends Service {
 
   /** Record a deleted Session's deletion for the user center; a subagent Session's deletion rescans its parent instead. */
   private async deleted(sessionId: SessionId): Promise<void> {
+    if (this.removing.delete(sessionId)) return
+    const pulled = this.state.pulled(sessionId)
+    if (pulled !== undefined) {
+      // Deleting another machine's conversation here deletes it there too.
+      await this.state.setDelete(sessionId, pulled.account)
+      await this.state.setPulled(sessionId, undefined)
+      this.changed()
+      this.schedule(0)
+      return
+    }
     const entry = this.state.entry(sessionId)
     const account = entry?.account ?? (this.syncing === sessionId ? this.account : null)
     if (account === null) {
@@ -405,6 +516,197 @@ export class SessionSync extends Service {
     await this.state.setDelete(sessionId, account)
     await this.state.setEntry(sessionId, undefined)
     this.schedule(0)
+  }
+
+  /**
+   * Pull the account's changes since the last pull: conversations other machines uploaded or
+   * changed are written here, and deletions are applied here. Then the conversations whose newer
+   * revision waited because they were open are tried again. A listing that starts over (the user
+   * center was restored from a backup) also removes the copies it no longer names.
+   */
+  private async pullChanges(account: string): Promise<void> {
+    let changed = false
+    const tried = new Set<string>()
+    try {
+      let more = true
+      let listed: Set<string> | undefined
+      while (more) {
+        const res = await this.call(`/api/client/sync/sessions?since=${String(this.state.cursor(account))}`, { method: 'GET' }, account)
+        if (!res.ok) {
+          await res.body?.cancel()
+          this.refuse(res)
+        }
+        const page = listSchema.parse(await res.json())
+        if (page.reset) listed = new Set()
+        for (const item of page.items) {
+          listed?.add(item.sessionId)
+          tried.add(item.sessionId)
+          changed = await this.isolated(item.sessionId, () => this.applyChange(account, item)) || changed
+        }
+        await this.state.setCursor(account, page.cursor)
+        more = page.hasMore
+      }
+      for (const [sessionId, entry] of this.state.pulledSessions()) {
+        if (entry.account !== account) continue
+        if (entry.gone === true || (listed !== undefined && !listed.has(sessionId))) {
+          changed = await this.removePulled(sessionId as SessionId, entry) || changed
+        } else if (entry.behind !== undefined && !tried.has(sessionId)) {
+          const behind = entry.behind
+          changed = await this.isolated(sessionId, () => this.fetch(account, sessionId as SessionId, entry.device, behind)) || changed
+        }
+      }
+    } finally {
+      if (changed) this.changed()
+    }
+  }
+
+  /**
+   * Apply one conversation's change. A failure that is not about reaching the user center (a bundle
+   * this build cannot read or store) is logged and skips the conversation, so it holds up nothing else.
+   */
+  private async isolated(sessionId: string, run: () => Promise<boolean>): Promise<boolean> {
+    try {
+      return await run()
+    } catch (error) {
+      if (error instanceof RetryLater || error instanceof NotAllowed) throw error
+      this.ctx.logger.warn(`session-sync: ${sessionId} not pulled: ${String(error)}`)
+      const entry = this.state.pulled(sessionId)
+      // A revision that cannot be stored is not fetched again until a newer one is listed.
+      if (entry?.behind !== undefined) await this.state.setPulled(sessionId, { ...entry, behind: undefined })
+      return false
+    }
+  }
+
+  /** Apply one listed change; returns whether a pulled conversation was written or removed. */
+  private async applyChange(account: string, item: ListedSession): Promise<boolean> {
+    const sessionId = item.sessionId as SessionId
+    const pulled = this.state.pulled(sessionId)
+    if (item.deleted) {
+      if (pulled !== undefined) return this.removePulled(sessionId, pulled)
+      const entry = this.state.entry(sessionId)
+      if (entry !== undefined && entry.account === account) await this.state.setEntry(sessionId, { ...entry, held: 'deleted' })
+      return false
+    }
+    // This machine's own conversation comes back in the list; it is never pulled.
+    if (this.state.entry(sessionId) !== undefined) return false
+    if (pulled === undefined && await this.ctx.sessionPersistence.stat(sessionId) !== undefined) return false
+    if (pulled !== undefined && pulled.revision >= item.revision) return false
+    return this.fetch(account, sessionId, item.device, item.revision)
+  }
+
+  /**
+   * Remove a pulled copy deleted on the user center. An open copy stays, view-only, and is marked
+   * so a later pass removes it.
+   */
+  private async removePulled(sessionId: SessionId, entry: PulledEntry): Promise<boolean> {
+    if (await this.remove(entry.members as SessionId[]) === 'busy') {
+      if (entry.gone !== true) await this.state.setPulled(sessionId, { ...entry, gone: true })
+      return false
+    }
+    await this.state.setPulled(sessionId, undefined)
+    return true
+  }
+
+  /**
+   * Download one conversation with its attachments and write it here. A copy open here waits:
+   * its entry records the revision to fetch on a later pass. A conversation the user deletes here
+   * meanwhile is left deleted.
+   */
+  private async fetch(account: string, sessionId: SessionId, device: string, revision: number): Promise<boolean> {
+    const res = await this.call(`/api/client/sync/sessions/${encodeURIComponent(sessionId)}/bundle`, { method: 'GET' }, account)
+    // Replaced or deleted meanwhile: the next listing names what happened.
+    if (res.status === 404) {
+      await res.body?.cancel()
+      return false
+    }
+    if (!res.ok) {
+      await res.body?.cancel()
+      this.refuse(res)
+    }
+    const bundle = mapAssistants(await decodeBundle(new Uint8Array(await res.arrayBuffer())), await this.localAssistants())
+    await this.downloadAttachments(account, bundle)
+    const members = bundle.sessions.map(log => log.header.id)
+    const entry: PulledEntry = { account, device, revision, members }
+    // Recorded first, so the logs are view-only from the moment they are stored.
+    const previous = this.state.pulled(sessionId)
+    if (!await this.state.recordPulled(sessionId, { ...previous ?? entry, behind: revision })) return false
+    const written = await writeLogs(this.ctx.sessionPersistence, bundle.sessions, async (id) => { await this.remove([id]) })
+    if (written === 'busy') return false
+    if (!await this.state.recordPulled(sessionId, entry)) {
+      // Deleted here while it was being written: what was written goes too.
+      await this.remove(members)
+      return false
+    }
+    // The sidebar reads a cold Session's title and assistant from the projection cache, which only
+    // Sessions that ran here have; fold the pulled log into it once.
+    const cache = this.ctx.get('sessionProjectionCache')
+    for (const log of bundle.sessions) {
+      try {
+        cache?.coldSnapshot(log.header, SessionLogOffset(log.inheritedEventCount), log.events)
+      } catch (error) {
+        this.ctx.logger.warn(`session-sync: projections of ${log.header.id} not cached: ${String(error)}`)
+      }
+    }
+    return true
+  }
+
+  /** Download the attachments a pulled bundle references that this machine does not hold. */
+  private async downloadAttachments(account: string, bundle: SessionSyncBundle): Promise<void> {
+    const store = this.ctx.get('attachments')
+    if (store === undefined) return
+    for (const attachment of bundleAttachments(bundle)) {
+      if (await hasAttachment(store, attachment)) continue
+      const res = await this.call(`/api/client/sync/blobs/${attachment.sha256}`, { method: 'GET' }, account)
+      // Not uploaded by the other machine: the conversation shows it as missing.
+      if (res.status === 404) {
+        await res.body?.cancel()
+        continue
+      }
+      if (!res.ok) {
+        await res.body?.cancel()
+        this.refuse(res)
+      }
+      if (!await storeAttachment(store, attachment, new Uint8Array(await res.arrayBuffer()))) {
+        this.ctx.logger.warn(`session-sync: attachment ${attachment.sha256} from the user center does not match its digest`)
+      }
+    }
+  }
+
+  /** Remove the copies pulled for other accounts, or all of them while signed out; signing in as it again pulls them again. */
+  private async dropOtherAccounts(account: string | null): Promise<void> {
+    let changed = false
+    for (const [sessionId, entry] of this.state.pulledSessions()) {
+      if (entry.account === account || await this.remove(entry.members as SessionId[]) === 'busy') continue
+      await this.state.setPulled(sessionId, undefined)
+      await this.state.setCursor(entry.account, undefined)
+      changed = true
+    }
+    if (changed) this.changed()
+  }
+
+  /** Delete here this machine's own conversations that were deleted on another machine; an open one waits for a later pass. */
+  private async removeDeletedHere(account: string): Promise<void> {
+    let changed = false
+    for (const [sessionId, entry] of this.state.entries()) {
+      if (entry.account !== account || entry.held !== 'deleted' || await this.ctx.sessionPersistence.stat(sessionId as SessionId) === undefined) continue
+      const snapshots = await this.ctx.sessionPersistence.list()
+      const group = bundleGroups(snapshots).filter(([head]) => head.header.id === sessionId).flat()
+      if (await this.remove(group.map(member => member.header.id)) === 'removed') {
+        await this.state.setEntry(sessionId, undefined)
+        changed = true
+      }
+    }
+    if (changed) this.changed()
+  }
+
+  /** Delete stored Sessions without treating it as the user's deletion. */
+  private async remove(ids: readonly SessionId[]): Promise<'removed' | 'busy'> {
+    for (const id of ids) this.removing.add(id)
+    try {
+      return await removeLogs(this.ctx.sessionPersistence, ids)
+    } finally {
+      for (const id of ids) this.removing.delete(id)
+    }
   }
 
   /** Throw for a refused request: a non-member sign-in stops syncing, anything else is retried later. */

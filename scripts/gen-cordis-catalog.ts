@@ -928,6 +928,7 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   SessionShareRequest: 'the Session-share request is owned by packages/session-query/session-share/README.md and src/types.ts',
   SessionShareStatus: 'the Session-share result is owned by packages/session-query/session-share/README.md and src/types.ts',
   SessionShareLink: 'the Session-share result is owned by packages/session-query/session-share/README.md and src/types.ts',
+  SessionSyncView: 'the Session-sync state is owned by packages/session-query/session-sync/README.md and src/types.ts',
   ProductEvent: 'Desktop event fields are owned by packages/client/product-analytics/README.md and src/events.ts',
   ConnectionFetchHandler: 'shared Fetch dispatch is owned by packages/client/connection/src/rpc.ts',
   ConnectionRequestRejection: 'transport rejection status is owned by packages/client/connection/src/rpc.ts',

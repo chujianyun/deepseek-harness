@@ -234,6 +234,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/schedule/automation-tasks': { kind: 'none', reason: 'Creates a Session and its schedule; the Session and the schedule own everything the model sees.' },
   'packages/connector/connectors': { kind: 'indirect', reason: 'Connected connectors reach the model through the skill catalog and the bash tool.' },
   'packages/client/ui-session-share': { kind: 'none', reason: 'The dialog only calls the Host share service, which reads the Session log.' },
+  'packages/client/ui-session-sync': { kind: 'none', reason: 'Marks rows and replaces the composer from the Host sync service; nothing reaches a model request.' },
   'packages/client/ui-automation-tasks': { kind: 'none', reason: 'The form only collects a task that the Host composer creates.' },
   'packages/client/ui-connectors': { kind: 'none', reason: 'The page only installs and uninstalls connector CLIs.' },
   'packages/ecommerce/ecommerce-accounts': { kind: 'indirect', reason: 'The accounts reach the model through the skill catalog and the dsh-ecommerce command in bash.' },

@@ -537,6 +537,21 @@ describe('ApiSession release', () => {
     expect(dispose).toHaveBeenCalledOnce()
   })
 
+  it('refuses to start an Agent for a Session a view-only listener claims', async () => {
+    const { ctx, agents } = await harness()
+    const meta = header('view-only')
+    providePersistence(ctx, {
+      list: () => Promise.resolve([meta]),
+      inspect: () => Promise.resolve({ meta, events: [] }),
+    })
+    const resume = vi.spyOn(ctx.agents, 'resume')
+    ctx.on('api-session/view-only', id => (id === meta.id ? true : undefined))
+    await expect(agents.resolveAgent(meta.id)).resolves.toMatchObject({
+      error: { code: 'session/view-only', details: { sessionId: meta.id } },
+    })
+    expect(resume).not.toHaveBeenCalled()
+  })
+
   it('refuses to resolve, resume, or create a Session while its deletion holds the block', async () => {
     const { ctx, agents } = await harness()
     const meta = header('deleting')

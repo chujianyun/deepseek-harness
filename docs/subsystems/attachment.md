@@ -234,6 +234,17 @@ isAttachmentError(error: unknown): error is AttachmentError
 abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 
 /**
+ * Durably store an image another store already normalized, byte for byte under its reference, as
+ * when a conversation recorded on another computer is copied here. The bytes must match the
+ * reference's digest and byte length, media type, and dimensions. Backends without verbatim image
+ * storage keep this default rejection.
+ * @param ref - the reference recorded with the image.
+ * @param data - the image's stored bytes.
+ * @returns the reference, once the image is stored.
+ */
+saveStoredImage(ref: ImageAttachmentRef, data: Uint8Array): Promise<ImageAttachmentRef>
+
+/**
  * Read one image and verify that bytes still match the recorded reference.
  * @param ref - durable reference from the session log.
  * @param signal - optional cancellation for backend read and verification work.

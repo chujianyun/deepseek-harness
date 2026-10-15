@@ -425,6 +425,32 @@ describe('SessionHistoryController', () => {
     await ctx.fiber.dispose()
   })
 
+  it('keeps a Session view-only, starting no Agent, when a view-only listener says so', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const sessionId = SessionId('view-only')
+    const meta = { version: SESSION_FORMAT_VERSION, id: sessionId, createdAt: 1, cwd: '/workspace' }
+    const retain = vi.fn()
+    ctx.provide('sessionQuery', {
+      observeSession: () => Promise.resolve({
+        source: 'prepared', header: meta, events: [], cursor: -1,
+        projections: { asOfSeq: -1, values: {} }, retain, [Symbol.dispose]: vi.fn(),
+      } as never as SessionObservation),
+    } as never)
+    ctx.on('api-session/view-only', id => (id === sessionId ? true : undefined))
+    const activate = vi.fn()
+    const history = new SessionHistoryController(ctx, activate)
+    const abort = new AbortController()
+    const iterator = history.follow({ address: { kind: 'session', sessionId } }, abort.signal)[Symbol.asyncIterator]()
+
+    await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'snapshot' } })
+    expect(retain).not.toHaveBeenCalled()
+    expect(activate).not.toHaveBeenCalled()
+    abort.abort()
+    await expect(iterator.next()).resolves.toMatchObject({ done: true })
+    await ctx.fiber.dispose()
+  })
+
   it('requires the durable parent and mode for a direct subagent address', async () => {
     const { ctx, transport } = await setup()
     const parentSessionId = SessionId('parent')

@@ -537,6 +537,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the durable content-addressed normalized image reference.',
       },
       {
+        signature: 'saveStoredImage(ref: ImageAttachmentRef, data: Uint8Array): Promise<ImageAttachmentRef>',
+        description: 'Durably store an image another store already normalized, byte for byte under its reference, as when a conversation recorded on another computer is copied here. The bytes must match the reference\'s digest and byte length, media type, and dimensions. Backends without verbatim image storage keep this default rejection.',
+        parameters: [{ name: 'ref', description: 'the reference recorded with the image.' }, { name: 'data', description: 'the image\'s stored bytes.' }],
+        returns: 'the reference, once the image is stored.',
+      },
+      {
         signature: 'abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>',
         description: 'Read one image and verify that bytes still match the recorded reference.',
         parameters: [{ name: 'ref', description: 'durable reference from the session log.' }, { name: 'signal', description: 'optional cancellation for backend read and verification work.' }],
@@ -2798,7 +2804,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'coldSnapshot( meta: SessionHeader, inheritedEventCount: SessionLogOffset, events: readonly SessionEvent[], ): ProjectionSnapshot',
-        description: 'Cold-read one session\'s projections from its complete log. Each unit is seeded from the identity-checked cached rows — the registry skips `apply` for the already-folded prefix (events at or below the row\'s `seq`) — and the refreshed checkpoint is written back (fail-soft, fire-and-forget), so the first cold read creates the cache row and later ones seed from it. The caller supplies the complete log in seq order: this service never consults the persistence layer.',
+        description: 'Cold-read one session\'s projections from its complete log. Each unit is seeded from the identity-checked cached rows — the registry skips `apply` for the already-folded prefix (events at or below the row\'s `seq`) — and the refreshed checkpoint is written back (fail-soft, fire-and-forget), so the first cold read creates the cache row and later ones seed from it. The caller supplies the complete log in seq order: this service never consults the persistence layer. A complete log of an id deleted earlier in this process means the session was stored anew under it, so its checkpoint is written again, as after `session/created`.',
         parameters: [{ name: 'meta', description: 'the stored session header (identity witness).' }, { name: 'inheritedEventCount', description: 'exact inherited prefix length for projection initialization and identity.' }, { name: 'events', description: 'the session\'s complete log, in seq order.' }],
         returns: 'the projection cut at the log end.',
       },
@@ -3114,7 +3120,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     key: 'sessionSync',
     summary: 'Host owner of Session sync.',
     description: 'Host owner of Session sync.',
-    methods: [],
+    methods: [
+      {
+        signature: '@Remote getState(): Promise<SessionSyncView>',
+        description: 'The conversations pulled from the signed-in employee\'s other machines.',
+        parameters: [],
+        returns: 'whether syncing is possible, and each pulled conversation with its machine.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) watch(signal: AbortSignal): AsyncIterable<SessionSyncView>',
+        description: 'Stream the pulled conversations.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change.',
+      },
+      {
+        signature: '@Remote refresh(): Promise<void>',
+        description: 'Pull the other machines\' changes and look for changes here now, as when the window comes back to the front.',
+        parameters: [],
+      },
+    ],
   },
   {
     key: 'sessionTelemetry',
@@ -4781,6 +4805,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'sessionId', description: 'Agent and Session identity.' }, { name: 'running', description: 'whether the Agent is running.' }],
   },
   {
+    name: 'api-session/view-only',
+    mode: 'bail',
+    signature: '\'api-session/view-only\'(sessionId: SessionId): true | undefined',
+    summary: 'A stored Session without an Agent is being opened, or a command needs its Agent.',
+    description: 'A stored Session without an Agent is being opened, or a command needs its Agent. A listener that returns true keeps it view-only: its history is shown, no Agent starts, and commands that need one refuse with `session/view-only`.',
+    parameters: [{ name: 'sessionId', description: 'opened Session identity.' }],
+  },
+  {
     name: 'app-boot/config-reload',
     mode: 'emit',
     signature: '\'app-boot/config-reload\'(): void',
@@ -5438,7 +5470,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ApiSessionAgentError',
-    declaration: 'export type ApiSessionAgentError = RemoteError<\'session/not-found\' | \'session/agent-busy\' | \'session/writer-held\' | \'gateway/internal\'>;',
+    declaration: 'export type ApiSessionAgentError = RemoteError<\'session/not-found\' | \'session/agent-busy\' | \'session/writer-held\' | \'session/view-only\' | \'gateway/internal\'>;',
   },
   {
     name: 'ApiSessionAgentResult',
@@ -8371,6 +8403,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionSurfaceSnapshot',
     declaration: 'export interface SessionSurfaceSnapshot {\n    session: SessionHeader;\n    inheritedEventCount: SessionLogOffset;\n    capturedThroughSeq: OptionalSessionSeq;\n    events: SurfaceEvent[];\n}',
+  },
+  {
+    name: 'SessionSyncPulled',
+    declaration: 'export interface SessionSyncPulled {\n    readonly sessionId: SessionId;\n    readonly device: string;\n    readonly revision: number;\n}',
+  },
+  {
+    name: 'SessionSyncView',
+    declaration: 'export interface SessionSyncView {\n    readonly signedIn: boolean;\n    readonly changes: number;\n    readonly pulled: readonly SessionSyncPulled[];\n}',
   },
   {
     name: 'SessionTelemetryRecord',

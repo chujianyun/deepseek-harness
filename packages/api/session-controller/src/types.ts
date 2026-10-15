@@ -212,6 +212,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     }
     'session/projections-unavailable': Record<string, never>
     'session/writer-held': { readonly sessionId: SessionId }
+    /** The Session is view-only here (an `api-session/view-only` listener said so): no Agent starts for it. */
+    'session/view-only': { readonly sessionId: SessionId }
     'session/agent-busy': { readonly reason: string }
     'session/invalid-time-zone': { readonly value: string }
     'session/workspace-attach-failed': { readonly sessionId: SessionId; readonly workspaceId: string }
@@ -635,6 +637,15 @@ declare module '@deepseek-ai/cordis' {
      * @returns the refusal, or undefined to admit the prompt.
      */
     'api-session/prompt-admission'(sessionId: SessionId): RemoteError | undefined
+    /**
+     * A stored Session without an Agent is being opened, or a command needs its Agent. A listener
+     * that returns true keeps it view-only: its history is shown, no Agent starts, and commands that
+     * need one refuse with `session/view-only`.
+     * @mode bail
+     * @param sessionId - opened Session identity.
+     * @returns true to keep the Session view-only, or undefined to start its Agent.
+     */
+    'api-session/view-only'(sessionId: SessionId): true | undefined
   }
 }
 

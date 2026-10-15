@@ -104,6 +104,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-client-ui-schedule` | no | Host task management page and Session reminder catalog |
 | `@deepseek-ai/dsh-client-ui-session` | no | Session Controller adapter for React and session-scoped slots |
 | `@deepseek-ai/dsh-client-ui-session-share` | no | Share session action of the dsh Desktop client: a Session row menu item and the dialog that makes, copies, refreshes, and withdraws the Session's share link over the sessionShare Remote |
+| `@deepseek-ai/dsh-client-ui-session-sync` | no | Conversations from other computers in the dsh Desktop client: a mark and a hover line on their Session rows and a view-only composer, over the sessionSync Remote |
 | `@deepseek-ai/dsh-client-ui-settings` | no | Settings domain base plugin: shared configuration forms and the canonical settings slot-type contract |
 | `@deepseek-ai/dsh-client-ui-settings-account` | yes | Manage DeepSeek login and open Platform billing pages |
 | `@deepseek-ai/dsh-client-ui-settings-agent-loop` | no | Settings page of the agent loop on the dsh web client's Plugins page: the parallel tool-call cap of the agent-loop namespace |

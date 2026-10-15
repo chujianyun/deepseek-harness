@@ -3107,7 +3107,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-session-sync`
 
 - `inject`: `hubAccount` · `sessionQuery` · `sessionPersistence`
-- `source`: [`packages/session-query/session-sync/src/index.ts:46`](../packages/session-query/session-sync/src/index.ts)
+- `source`: [`packages/session-query/session-sync/src/index.ts:55`](../packages/session-query/session-sync/src/index.ts)
 
 ```ts config-catalog
 /** Deployment configuration. */
@@ -4858,6 +4858,7 @@ export interface Config {
 | `@deepseek-ai/dsh-client-ui-schedule` | — | [`packages/client/ui-schedule/src/index.ts`](../packages/client/ui-schedule/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-session` | — | [`packages/client/ui-session/src/index.ts`](../packages/client/ui-session/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-session-share` | — | [`packages/client/ui-session-share/src/index.ts`](../packages/client/ui-session-share/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-session-sync` | — | [`packages/client/ui-session-sync/src/index.ts`](../packages/client/ui-session-sync/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings` | — | [`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-agent-loop` | — | [`packages/client/ui-settings-agent-loop/src/index.ts`](../packages/client/ui-settings-agent-loop/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-embedding` | — | [`packages/client/ui-settings-embedding/src/index.ts`](../packages/client/ui-settings-embedding/src/index.ts) |

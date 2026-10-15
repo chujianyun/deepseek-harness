@@ -8,3 +8,5 @@
     debounceMs: 50
     retryMs: 200
     scanIntervalMs: 1000
+- id: ui-session-sync
+  disabled: false

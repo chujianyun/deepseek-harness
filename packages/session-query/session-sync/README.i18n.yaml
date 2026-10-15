@@ -3,32 +3,35 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/session-query/session-sync/README.md
 /:
-  en: ec767ff8bb6ae95d
-  zh: 5c2df40a7350f9e4
+  en: d57368bbf4a16903
+  zh: 40739e00b4857d4e
 /session-sync:
   en: 236ab95befe81450
   zh: 2c13a7d22210eb0b
 /session-sync/summary:
-  en: 966a4b9e885be369
-  zh: 8ede500d7e2581de
+  en: 4002268a128276ab
+  zh: cc80ac013dd910b1
 /session-sync/table-of-contents:
   en: 4e53164159b5ce41
   zh: 89582dc0294d0776
 /session-sync/use-this-package:
-  en: 806bf758cad0eb72
-  zh: 4925e43aa8880847
+  en: a23e17dfb8bacd2f
+  zh: fbd4431f2b870fe9
 /session-sync/use-this-package/what-one-upload-carries:
-  en: da84d3749bf3d66e
-  zh: 8f09f18b0abf16ce
+  en: bce8a6459d15b146
+  zh: 4eadc6b5ee71fd8f
 /session-sync/use-this-package/when-it-uploads:
   en: 079173b193e6b5dd
   zh: 93e42608136fbfe5
 /session-sync/use-this-package/answers-from-the-user-center:
   en: 99d688af9a01c072
   zh: 96e4bb47f7eb7e80
+/session-sync/use-this-package/pulling-from-other-computers:
+  en: 35054a781c29628f
+  zh: aa89140b219617cd
 /session-sync/use-this-package/accounts-and-deletion:
-  en: a8756a9ab16c6db7
-  zh: 149cb4972cc106a0
+  en: a639256084294590
+  zh: 98a15d5542ca6524
 /session-sync/model-experience:
   en: 645f455c3a23730f
   zh: 7e18203c4051524a
@@ -36,8 +39,8 @@
   en: e277b74f9b721f5e
   zh: 014c91db5c8570d0
 /session-sync/known-limitations-and-deferred-work:
-  en: 21dbe52ec112fea1
-  zh: e6e46ab40eaa9c32
+  en: d37221d8ec9d2bd6
+  zh: 926beaeaa2146588
 /session-sync/known-limitations-and-deferred-work/dev-note:
   en: 6d00ffb01a3ff2ae
   zh: 07992ee4631edf21

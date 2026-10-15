@@ -1,0 +1,38 @@
+/* The row mark of a conversation from another computer, its hover line, and the view-only composer. */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.hover {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  /* The row hover card is dark in both themes; the same text color as its relative time line. */
+  color: #cfd3d6;
+}
+
+.frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 24px 20px;
+  min-height: 54px;
+  padding: 10px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.frame strong {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 510;
+}

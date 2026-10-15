@@ -1,7 +1,9 @@
 /**
- * What this machine has synced, kept in `<dshHome>/session-sync.json`: for each top-level Session,
- * the account it syncs as, the revision and content digest of its last upload, and the deletions
- * the user center has not acknowledged yet. The file is read once and rewritten after each change;
+ * What this machine has synced, kept in `<dshHome>/session-sync.json`: for each top-level Session
+ * it uploads, the account it syncs as, the revision and content digest of its last upload; the
+ * deletions the user center has not acknowledged yet; for each Session it pulled from another
+ * machine, its account, device, and revision; and how far it has pulled for each account. The file
+ * is read once and rewritten after each change;
  * a change that cannot be written is not applied.
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
@@ -25,6 +27,31 @@ export interface SyncedEntry {
   readonly held?: 'deleted' | 'refused' | undefined
 }
 
+/** One top-level Session pulled from another machine of the same account. */
+export interface PulledEntry {
+  /** Account it was pulled for; another account's sign-in removes this machine's copy. */
+  readonly account: string
+  /** Name of the machine it comes from. */
+  readonly device: string
+  /** Revision of the copy written here. */
+  readonly revision: number
+  /** Ids of its stored Sessions here: the top-level Session first, then its subagent Sessions. */
+  readonly members: readonly string[]
+  /** Revision waiting on the user center because this copy was open when it arrived. */
+  readonly behind?: number | undefined
+  /** Deleted on the user center while this copy was open; it is removed on a later pass. */
+  readonly gone?: true | undefined
+}
+
+const pulledSchema = z.object({
+  account: z.string(),
+  device: z.string(),
+  revision: z.number().int().nonnegative(),
+  members: z.array(z.string()).readonly(),
+  behind: z.number().int().nonnegative().optional(),
+  gone: z.literal(true).optional(),
+})
+
 const entrySchema = z.object({
   account: z.string(),
   revision: z.number().int().nonnegative(),
@@ -38,13 +65,16 @@ const stateFile = z.object({
   sessions: z.record(z.string(), entrySchema),
   /** Deleted Sessions whose deletion the user center has not acknowledged, with their account. */
   deletes: z.record(z.string(), z.string()),
+  pulled: z.record(z.string(), pulledSchema).default({}),
+  /** How far each account's changes on the user center have been pulled. */
+  cursors: z.record(z.string(), z.number().int().nonnegative()).default({}),
 })
 
 type StateData = z.infer<typeof stateFile>
 
 /** The sync record of this machine, loaded once and written through. */
 export class SyncState {
-  private data: StateData = { version: 2, sessions: {}, deletes: {} }
+  private data: StateData = { version: 2, sessions: {}, deletes: {}, pulled: {}, cursors: {} }
   private writes: Promise<void> = Promise.resolve()
 
   /** @param path - the record file. */
@@ -72,6 +102,7 @@ export class SyncState {
   }
 
   /**
+   * Read an uploaded Session's entry.
    * @param sessionId - a top-level Session.
    * @returns its entry, or undefined when it never synced.
    */
@@ -79,7 +110,18 @@ export class SyncState {
     return this.data.sessions[sessionId]
   }
 
-  /** @returns the pending deletions, as Session id and account. */
+  /**
+   * List the uploaded Sessions.
+   * @returns every uploaded Session, as Session id and entry.
+   */
+  entries(): [sessionId: string, entry: SyncedEntry][] {
+    return Object.entries(this.data.sessions)
+  }
+
+  /**
+   * List the deletions not acknowledged yet.
+   * @returns the pending deletions, as Session id and account.
+   */
   deletes(): [sessionId: string, account: string][] {
     return Object.entries(this.data.deletes)
   }
@@ -113,6 +155,77 @@ export class SyncState {
    */
   setDelete(sessionId: string, account: string | undefined): Promise<void> {
     return this.apply(data => ({ ...data, deletes: replaced(data.deletes, sessionId, account) }))
+  }
+
+  /**
+   * Read a pulled Session's entry.
+   * @param sessionId - a top-level Session.
+   * @returns its pulled entry, or undefined when it was not pulled from another machine.
+   */
+  pulled(sessionId: string): PulledEntry | undefined {
+    return this.data.pulled[sessionId]
+  }
+
+  /**
+   * Find the pulled conversation a stored Session belongs to: the top-level Session or one of its
+   * subagent Sessions.
+   * @param sessionId - a stored Session.
+   * @returns the pulled entry, or undefined when it is not part of a pulled conversation.
+   */
+  pulledOwner(sessionId: string): PulledEntry | undefined {
+    return this.data.pulled[sessionId] ?? Object.values(this.data.pulled).find(entry => entry.members.includes(sessionId))
+  }
+
+  /**
+   * List the pulled Sessions.
+   * @returns every pulled Session, as Session id and entry.
+   */
+  pulledSessions(): [sessionId: string, entry: PulledEntry][] {
+    return Object.entries(this.data.pulled)
+  }
+
+  /**
+   * Record or forget a pulled Session.
+   * @param sessionId - a top-level Session.
+   * @param entry - its entry, or undefined to forget it.
+   * @returns once written.
+   */
+  setPulled(sessionId: string, entry: PulledEntry | undefined): Promise<void> {
+    return this.apply(data => ({ ...data, pulled: replaced(data.pulled, sessionId, entry) }))
+  }
+
+  /**
+   * Record a pulled Session, unless the user deleted it here meanwhile.
+   * @param sessionId - a top-level Session.
+   * @param entry - its entry.
+   * @returns false when it was deleted here, so nothing was recorded.
+   */
+  async recordPulled(sessionId: string, entry: PulledEntry): Promise<boolean> {
+    let recorded = false
+    await this.apply((data) => {
+      recorded = !(sessionId in data.deletes)
+      return recorded ? { ...data, pulled: replaced(data.pulled, sessionId, entry) } : data
+    })
+    return recorded
+  }
+
+  /**
+   * Read how far an account's changes have been pulled.
+   * @param account - an account.
+   * @returns the user center's cursor; 0 before the first pull.
+   */
+  cursor(account: string): number {
+    return this.data.cursors[account] ?? 0
+  }
+
+  /**
+   * Record how far an account's changes have been pulled.
+   * @param account - the account.
+   * @param cursor - the user center's cursor after the last change pulled, or undefined to pull from the start again.
+   * @returns once written.
+   */
+  setCursor(account: string, cursor: number | undefined): Promise<void> {
+    return this.apply(data => ({ ...data, cursors: replaced(data.cursors, account, cursor) }))
   }
 
   /** Apply one change after the earlier ones; the record reads the change only once it is written. */

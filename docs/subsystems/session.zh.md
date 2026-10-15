@@ -1240,6 +1240,28 @@ Types: [SessionId](core.zh.md)
 
 Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
 
+<a id="api-sessionview-only--bail"></a>
+
+#### `api-session/view-only` — bail
+
+A stored Session without an Agent is being opened, or a command needs its Agent. A listener that returns true keeps it view-only: its history is shown, no Agent starts, and commands that need one refuse with `session/view-only`.
+
+```ts cordis-catalog
+/**
+ * A stored Session without an Agent is being opened, or a command needs its Agent. A listener
+ * that returns true keeps it view-only: its history is shown, no Agent starts, and commands that
+ * need one refuse with `session/view-only`.
+ * @mode bail
+ * @param sessionId - opened Session identity.
+ * @returns true to keep the Session view-only, or undefined to start its Agent.
+ */
+'api-session/view-only'(sessionId: SessionId): true | undefined
+```
+
+Types: [SessionId](core.zh.md)
+
+Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
+
 <a id="session-events"></a>
 
 ### `session/*` events

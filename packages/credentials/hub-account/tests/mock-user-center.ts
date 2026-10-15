@@ -86,11 +86,15 @@ export interface MockSyncedSession {
   /** The latest bundle's bytes; null once deleted. */
   readonly bundle: Buffer | null
   readonly deleted: boolean
+  /** Position of its latest change in the store's change order; set by the mock. */
+  readonly seq?: number
 }
 
 /** One tenant's Session sync store. */
 export interface MockSync {
   sessions: Record<string, MockSyncedSession>
+  /** The latest change's position; 0 before the first change. */
+  seq?: number
   /** Attachment bytes by sha256 hex. */
   blobs: Record<string, Buffer>
 }
@@ -445,7 +449,12 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     const store = mock.sync[bound.phone === undefined ? bound.tenantId : `${bound.tenantId}/${bound.phone}`] ??= { sessions: {}, blobs: {} }
     const form = async () => new Request(url, { method: 'POST', headers: { 'content-type': req.headers['content-type'] ?? '' }, body: Buffer.concat(chunks) }).formData()
     const fileOf = async (data: FormData) => Buffer.from(await (data.get('file') as File).arrayBuffer())
+    const changed = (sessionId: string, entry: Omit<MockSyncedSession, 'seq'>) => {
+      store.seq = (store.seq ?? 0) + 1
+      store.sessions = { ...store.sessions, [sessionId]: { ...entry, seq: store.seq } }
+    }
     const sessionPath = /^\/api\/client\/sync\/sessions\/([^/]+)$/u.exec(url.pathname)
+    const bundlePath = /^\/api\/client\/sync\/sessions\/([^/]+)\/bundle$/u.exec(url.pathname)
     const blobPath = /^\/api\/client\/sync\/blobs\/([0-9a-f]{64})$/u.exec(url.pathname)
     if (sessionPath !== null && req.method === 'PUT') {
       const sessionId = decodeURIComponent(sessionPath[1]!)
@@ -462,15 +471,40 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
         const missing = (meta.attachments ?? []).filter(sha => store.blobs[sha] === undefined)
         if (missing.length > 0) json(409, { code: 'missing_attachments', message: '有附件还没上传', missing })
         else {
-          store.sessions = { ...store.sessions, [sessionId]: { meta, bundle, deleted: false } }
+          changed(sessionId, { meta, bundle, deleted: false })
           json(200, { sessionId, revision: meta.revision })
         }
       }
     } else if (sessionPath !== null && req.method === 'DELETE') {
       const sessionId = decodeURIComponent(sessionPath[1]!)
-      const revision = store.sessions[sessionId]?.meta.revision ?? 0
-      store.sessions = { ...store.sessions, [sessionId]: { meta: { revision }, bundle: null, deleted: true } }
+      if (store.sessions[sessionId]?.deleted !== true) {
+        changed(sessionId, { meta: { revision: store.sessions[sessionId]?.meta.revision ?? 0 }, bundle: null, deleted: true })
+      }
       res.writeHead(204).end()
+    } else if (url.pathname === '/api/client/sync/sessions' && req.method === 'GET') {
+      const asked = Number(url.searchParams.get('since') ?? '0')
+      // Like the server: a cursor past the latest change (a restored backup) lists from the start.
+      const reset = asked > (store.seq ?? 0)
+      const since = reset ? 0 : asked
+      const items = Object.entries(store.sessions)
+        .filter(([, entry]) => (entry.seq ?? 0) > since)
+        .sort(([, a], [, b]) => (a.seq ?? 0) - (b.seq ?? 0))
+        .map(([sessionId, entry]) => ({
+          sessionId, revision: entry.meta.revision, device: entry.meta.device ?? '', attachments: entry.meta.attachments ?? [],
+          cwd: entry.meta.cwd ?? null, title: entry.meta.title ?? null, assistantId: entry.meta.assistantId ?? null,
+          sizeBytes: entry.bundle?.byteLength ?? 0, updatedAt: entry.meta.updatedAt ?? new Date(0).toISOString(),
+          deleted: entry.deleted, seq: entry.seq ?? 0,
+        }))
+      json(200, { items, cursor: items.at(-1)?.seq ?? since, hasMore: false, reset })
+    } else if (bundlePath !== null && req.method === 'GET') {
+      const bundle = store.sessions[decodeURIComponent(bundlePath[1]!)]?.bundle
+      if (bundle == null) json(404, { message: '这个对话没有同步记录' })
+      else res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(bundle)
+    } else if (blobPath !== null && req.method === 'GET') {
+      const [, digest = ''] = blobPath
+      const bytes = store.blobs[digest]
+      if (bytes === undefined) json(404, { message: '附件不存在' })
+      else res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(bytes)
     } else if (url.pathname === '/api/client/sync/blobs/check' && req.method === 'POST') {
       const { sha256 } = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { sha256: string[] }
       json(200, { missing: sha256.filter(sha => store.blobs[sha] === undefined) })
