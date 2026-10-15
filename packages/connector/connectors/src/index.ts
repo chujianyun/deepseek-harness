@@ -513,7 +513,7 @@ export class ConnectorsService extends TypertRemoteService {
       }
     }
     const stopCompany = await this.company.start()
-    this.ctx.effect(() => () => { void stopCompany() }, 'connectors: company tool endpoint')
+    this.ctx.effect(() => stopCompany, 'connectors: company tool endpoint')
     this.tenantId = (await this.ctx.hubAccount.getState()).profile?.tenantId ?? null
     void this.company.switched()
     void this.checkAll()

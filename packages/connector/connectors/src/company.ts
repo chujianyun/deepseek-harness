@@ -104,6 +104,8 @@ export class CompanyTools {
     return async () => {
       server.closeAllConnections()
       await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      // A command write still under way would recreate files in a directory its owner is deleting.
+      await this.writes
     }
   }
   /* jscpd:ignore-end */
