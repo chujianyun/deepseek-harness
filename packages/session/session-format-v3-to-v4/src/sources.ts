@@ -55,8 +55,13 @@ const RELEASED_SAME_NAME_PRODUCERS: ReadonlySet<string> = new Set([
   'dsh-session-title-llm',
 ])
 
-/** Resolve the current producer kind for one released V3 plugin string. */
-function producerKind(plugin: string, role: SessionFormatJsonValue | undefined): string {
+/**
+ * Resolve the current producer kind for one released V3 plugin string.
+ * @param plugin - the released wrapper's `plugin` name.
+ * @param role - carried message role for role-sensitive renames.
+ * @returns the producer-owned kind, or `plugin:<plugin>` for an unknown plugin.
+ */
+export function releasedV3ProducerKind(plugin: string, role: SessionFormatJsonValue | undefined): string {
   if (plugin === '@deepseek-ai/dsh-system-prompt' && role === 'system') return 'system-prompt'
   const renamed = Object.hasOwn(RENAMED_PRODUCERS, plugin) ? RENAMED_PRODUCERS[plugin] : undefined
   if (renamed !== undefined) return renamed
@@ -82,7 +87,7 @@ export function rewritePluginSource(
       `plugin source at seq ${seq} is not canonical: plugin requires a string`,
     )
   }
-  const kind = producerKind(plugin, role)
+  const kind = releasedV3ProducerKind(plugin, role)
   if (Object.keys(source).length === 2) return { kind }
   return Object.fromEntries(Object.entries(source)
     .filter(([key]) => key !== 'plugin')

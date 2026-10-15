@@ -193,6 +193,58 @@ describe('agent/pre-step', () => {
     expect(JSON.stringify(adapter.requests[0]!.messages)).not.toContain('original')
   })
 
+  it('records legacy plugin source wrappers under the kinds the V3-to-V4 migration assigns', async () => {
+    const adapter = new MockAdapter([textResponse('ok')])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('legacy-plugin-source'), { provider: 'mock', model: 'mock' })
+    // Third-party plugins written for released V3 builds still produce this wrapper; it is outside the typed source union.
+    const legacy = (json: string) => JSON.parse(json) as UserMessage['source']
+    const recall = createUserMessage({ content: [{ type: 'text', text: 'recalled memory' }], source: legacy('{"kind":"plugin","plugin":"memmy-memory","form":"recall"}') })
+    const checkpoint = createUserMessage({ content: [{ type: 'text', text: 'checkpoint' }], source: legacy('{"kind":"plugin","plugin":"compact"}') })
+    ctx.on('agent/pre-step', async (_payload, next) => {
+      const decision = await next()
+      if (decision.kind === 'reject') return decision
+      return { ...decision, messages: [...decision.messages, recall] }
+    })
+
+    agent.followup(checkpoint)
+    send(agent, 'hello')
+    await waitForIdle(ctx, agent)
+
+    const recorded = events(agent).flatMap(event => event.type === 'user/message' ? [event.data] : [])
+    // Each followup runs its own turn, and the listener adds recalled context to both.
+    expect(recorded.map(message => message.source)).toEqual([
+      { kind: 'compact-checkpoint' },
+      { kind: 'plugin:memmy-memory', form: 'recall' },
+      { kind: 'user' },
+      { kind: 'plugin:memmy-memory', form: 'recall' },
+    ])
+    expect(recorded[1]).toMatchObject({ id: recall.id, role: 'user', content: recall.content })
+    expect(Object.isFrozen(recorded[1]!.source)).toBe(true)
+  })
+
+  it('refuses a plugin source wrapper without a plugin name before it reaches the model', async () => {
+    const adapter = new MockAdapter([textResponse('ok')])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('unnamed-plugin-source'), { provider: 'mock', model: 'mock' })
+    const unnamed = createUserMessage({ content: [{ type: 'text', text: 'unnamed' }], source: JSON.parse('{"kind":"plugin","form":"recall"}') as UserMessage['source'] })
+    expect(() => { agent.followup(unnamed) }).toThrow('agent-loop: a message source of kind "plugin" requires a string plugin name')
+    ctx.on('agent/pre-step', async (_payload, next) => {
+      const decision = await next()
+      if (decision.kind === 'reject') return decision
+      return { ...decision, messages: [...decision.messages, unnamed] }
+    })
+
+    send(agent, 'hello')
+    await waitForIdle(ctx, agent)
+
+    expect(adapter.requests).toHaveLength(0)
+    const end = events(agent).find(event => event.type === 'turn/end')
+    expect(end?.type === 'turn/end' && end.data.reason).toMatchObject({
+      kind: 'error', error: { message: 'agent-loop: a message source of kind "plugin" requires a string plugin name' },
+    })
+  })
+
   it('enter with additional messages records separately sourced context in the turn', async () => {
     const adapter = new MockAdapter([textResponse('ok')])
     const ctx = await harness(adapter)
