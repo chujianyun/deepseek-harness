@@ -152,9 +152,46 @@ export function ReportCorner({ usePanelInfo, useSignedIn, useHeaderButtons, requ
   // A page keeps the Conversation mounted underneath, header button included.
   const headerShows = useHeaderButtons(count => count > 0) && !panelOpen
   if (!signedIn || headerShows) return null
+  return <CornerSeat onClick={() => { requestReport({ sessionId: null }) }} t={t} />
+}
+
+/**
+ * The custom property on the document root that carries, while the corner button shows, how far
+ * from the window's right edge a control must stay to clear it: the span up to its left edge plus a gap.
+ */
+export const CORNER_INSET_PROPERTY = '--dsh-feedback-corner-inset'
+/** Room kept between the corner button and the controls left of it. */
+const CORNER_GAP = 8
+
+/**
+ * The corner button, which publishes its inset on the document root so a page whose own controls sit
+ * under the window's top-right corner can keep them left of it. A hidden corner (an open right panel)
+ * publishes nothing.
+ */
+function CornerSeat({ onClick, t }: { onClick: () => void; t: Translate }) {
+  const [element, setElement] = useState<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (element === null) return undefined
+    const root = document.documentElement.style
+    const publish = (): void => {
+      const box = element.getBoundingClientRect()
+      if (box.width > 0) root.setProperty(CORNER_INSET_PROPERTY, `${String(Math.ceil(window.innerWidth - box.left + CORNER_GAP))}px`)
+      else root.removeProperty(CORNER_INSET_PROPERTY)
+    }
+    publish()
+    // The corner hides through CSS (display: none) while a right panel is open, which resizes it to 0.
+    const observer = new ResizeObserver(publish)
+    observer.observe(element)
+    window.addEventListener('resize', publish)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', publish)
+      root.removeProperty(CORNER_INSET_PROPERTY)
+    }
+  }, [element])
   return (
-    <div className={css.corner} data-feedback-report-corner="">
-      <Trigger onClick={() => { requestReport({ sessionId: null }) }} t={t} />
+    <div ref={setElement} className={css.corner} data-feedback-report-corner="">
+      <Trigger onClick={onClick} t={t} />
     </div>
   )
 }

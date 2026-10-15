@@ -112,11 +112,11 @@ describe('DeepSeek plugin package inventory', () => {
       await expect(ctx.deepseekLlmApiExtensions.prepare({ body: { messages: [] }, signal: SIGNAL }))
         .resolves.toMatchObject({ fields: { dsh_plugin_packages: { version: 1, packages: [{ name: 'good', version: '1.0.0' }] } } })
     }
-    const warnings = warn.mock.calls.map(([message]) => String(message))
-    expect(warnings).toHaveLength(3)
-    for (const [index, dir] of ['absent', 'empty', 'numeric'].entries()) {
-      expect(warnings[index]).toBe(`plugin-package-inventory-deepseek: ${join(root, dir, 'package.json')} declares no version; omitted from dsh_plugin_packages`)
-    }
+    // Manifests are read concurrently, so the warnings arrive in no fixed order.
+    const warnings = warn.mock.calls.map(([message]) => String(message)).sort()
+    expect(warnings).toEqual(['absent', 'empty', 'numeric'].map(dir => (
+      `plugin-package-inventory-deepseek: ${join(root, dir, 'package.json')} declares no version; omitted from dsh_plugin_packages`
+    )))
   })
 
   it('fails request preparation for an active bare package without a name', async () => {
