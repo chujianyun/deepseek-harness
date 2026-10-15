@@ -37,6 +37,8 @@ Knowledge bases belong to the tenant of the current Hub sign-in: signed out ther
 
 Every state carries a `revision` that grows with each change, across Host restarts too, so a page keeps the newer of an action's answer and a streamed state when they arrive out of order.
 
+Knowledge bases sync with the user center of the Hub sign-in, for the signed-in employee (tenant and phone): a pass sends the deletions made here, pulls the employee's other computers' changes from `/api/client/sync/knowledge`, and uploads each knowledge base (name, embedding model, settings) and item (kind, folder, name, source, and its copy's bytes through `/api/client/sync/blobs`) that changed since its last upload, a knowledge base before its items and a folder before its files. Passes run `syncDebounceMs` after a change here, every `syncIntervalMs`, on sign-in, and on `syncNow()`, which the Knowledge page calls when the window comes back to the front; a failed pass is retried after `syncRetryMs`, and a sign-in the user center does not let sync (not a company member) stops syncing until the sign-in changes. Vectors are never synced: a pulled item is processed here again — on its own for the local model, while one pulled for an API model fails as `synced` until the user processes it, so nothing is billed without the user asking. A pulled page is indexed from its pulled copy rather than fetched again, and a pulled item whose fields and bytes match the stored one keeps its chunks and status. Changes that cannot be applied (a knowledge base or folder missing here, unreadable settings) are listed again on the next pull. Whether something was made on this computer is told by what is stored here, not by the computer name another computer reports. A pulled knowledge base whose embedding model is neither this computer's local model nor one Settings offers reads `unavailable` with `modelMissing`. A folder pulled from another computer names it in `scannedOn`, and `reprocessItem()` on it refuses with `knowledge/folder-elsewhere`: only that computer scans it again. Deleting a knowledge base or item here deletes it on the user center, and one deleted elsewhere is deleted here, also when an upload finds it deleted before this computer pulled the deletion; a knowledge base whose index does not open here is not deleted. Of two edits made before either computer pulled, the later upload wins. What was synced is recorded in `<dshHome>/knowledge-sync.json`; a damaged record reads as empty, and the next pass records the user center's copies again.
+
 A knowledge base on the local embedding model is `unavailable` while that model is not installed; its items wait as `pending` and are processed once it is. When a tenant becomes the signed-in one — at startup or on sign-in — items an earlier run left `pending` or `processing` resume for the local model, which costs nothing, and fail as `interrupted` for API models, so nothing is billed without the user asking. Signing in to another tenant stops the item being processed; it is settled the same way on return. A knowledge base whose `index.sqlite` cannot be opened is left out of the list, with a warning in the log, and the tenant's other knowledge bases still open.
 
 Each knowledge base keeps its own settings in `base.json`, modeled on Cherry Studio's knowledge base settings without a rerank model; knowledge bases saved before they existed read with the defaults. `updateSettings(id, patch)` changes any of them and refuses an out-of-range value with `knowledge/invalid-settings`, naming the field:
@@ -79,6 +81,11 @@ The package registers a usage with `embedding.registerUsage()`: an embedding mod
 | `maxFolderFiles` | `1000` | Most files a folder contributes; the rest are skipped. |
 | `maxNoteTitleLength` | `100` | Longest note title. |
 | `maxNoteChars` | `1000000` | Longest note body, in characters. |
+| `deviceName` | the host name without `.local` | Name of this computer as the employee's other computers show it. |
+| `syncDebounceMs` | `2000` | Wait after a change before uploading, so changes in quick succession upload once, in milliseconds. |
+| `syncIntervalMs` | `300000` | Interval of the pull and upload pass, in milliseconds. |
+| `syncRetryMs` | `60000` | Wait before retrying after the user center could not be reached, in milliseconds. |
+| `requestTimeoutMs` | `300000` | Deadline of each user-center request, in milliseconds. |
 
 -----
 
@@ -102,6 +109,9 @@ No effect.
 - **Estimated tokens** — chunk sizes are estimated (one token per Han character, one per four other characters), not counted with the embedding model's tokenizer.
 - **Text layers only** — a scanned PDF has no text layer and fails as `empty`; OCR is deferred.
 - **Whole workbooks in memory** — ExcelJS loads a workbook whole before `maxWorkbookRows` applies, and a read in progress cannot be stopped, so a workbook near `maxFileBytes` uses much memory; a workbook row longer than `chunkSize` is split, and its later part loses the sheet and row prefix.
+- **Sync leaves out skipped-file lists** — a pulled folder shows no skipped files, and a folder file's modification time is not synced.
+- **Knowledge bases are kept per tenant on a computer** — on a computer shared by employees of one tenant, a knowledge base no employee's sync record holds yet uploads under the first employee who syncs there.
+- **A restored user center is noticed by its listing** — after the user center is restored from a backup, a computer whose last pull is not past the restored changes does not notice and does not upload its knowledge bases again until they change.
 - **Whole-index similarity** — search compares the query with every chunk vector in SQLite; very large knowledge bases would need a vector index such as sqlite-vec.
 
 <a id="dev-note"></a>

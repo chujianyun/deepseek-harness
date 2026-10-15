@@ -199,7 +199,8 @@ describe('sessionSync pulling', () => {
     await expect.poll(() => pulledIds(b.ctx)).toEqual([own])
     await signIn(b, { tenantId: 't-b', tenantName: '乙公司' })
     await expect.poll(() => stored(b.ctx, own)).toBeUndefined()
-    expect(await view(b.ctx)).toMatchObject({ signedIn: true, pulled: [] })
+    // The record of the copy goes right after its logs.
+    await expect.poll(() => view(b.ctx)).toMatchObject({ signedIn: true, pulled: [] })
     expect(held(center, own)?.deleted).toBe(false)
     await signIn(b, { tenantId: 't-a', tenantName: '甲公司' })
     await expect.poll(() => pulledIds(b.ctx)).toEqual([own])

@@ -85,6 +85,12 @@ export function apply(ctx: ClientContext): void {
   })().catch(() => {
     // As above.
   })
+  ctx.effect(() => {
+    // The employee's other computers' changes, pulled when the window comes back to the front.
+    const pullNow = () => { if (document.visibilityState === 'visible') void remote.syncNow() }
+    window.addEventListener('focus', pullNow)
+    return () => { window.removeEventListener('focus', pullNow) }
+  }, 'ui-knowledge: pull on focus')
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID, locale: NS, inject: () => source }, KnowledgePage))
   ctx.effect(() => ctx.uiConversation.events.register(citationsDefinition), 'ui-knowledge: citations')
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register({

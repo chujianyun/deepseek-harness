@@ -7,8 +7,7 @@
  * after each change;
  * a change that cannot be written is not applied.
  */
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { SyncRecordFile, withEntry } from '@deepseek-ai/dsh-hub-account'
 import { z } from 'zod'
 
 /** One top-level Session as this machine last synced it. */
@@ -91,31 +90,24 @@ type StateData = z.infer<typeof stateFile>
 
 /** The sync record of this machine, loaded once and written through. */
 export class SyncState {
-  private data: StateData = { version: 2, sessions: {}, deletes: {}, pulled: {}, cursors: {}, continuations: {} }
-  private writes: Promise<void> = Promise.resolve()
+  private readonly file: SyncRecordFile<StateData>
 
   /** @param path - the record file. */
-  constructor(private readonly path: string) {}
+  constructor(path: string) {
+    this.file = new SyncRecordFile(path, stateFile, { version: 2, sessions: {}, deletes: {}, pulled: {}, cursors: {}, continuations: {} })
+  }
+
+  private get data(): StateData {
+    return this.file.data
+  }
 
   /**
    * Read the record file; a missing, unreadable, or damaged one reads as empty and is replaced on the
    * next write, so every Session is read and compared again.
    * @param warn - told about a damaged file.
    */
-  async load(warn: (message: string) => void): Promise<void> {
-    // Missing on first start.
-    const text = await readFile(this.path, 'utf8').catch(() => undefined)
-    if (text === undefined) return
-    let raw: unknown
-    try {
-      raw = JSON.parse(text)
-    } catch {
-      // Damaged JSON records nothing; the schema check below reports it.
-      raw = undefined
-    }
-    const parsed = stateFile.safeParse(raw)
-    if (parsed.success) this.data = parsed.data
-    else warn(`session-sync: unreadable sync record ${this.path} ignored`)
+  load(warn: (message: string) => void): Promise<void> {
+    return this.file.load(warn, 'session-sync')
   }
 
   /**
@@ -150,7 +142,7 @@ export class SyncState {
    * @returns once written.
    */
   setEntry(sessionId: string, entry: SyncedEntry | undefined): Promise<void> {
-    return this.apply(data => ({ ...data, sessions: replaced(data.sessions, sessionId, entry) }))
+    return this.apply(data => ({ ...data, sessions: withEntry(data.sessions, sessionId, entry) }))
   }
 
   /**
@@ -161,7 +153,7 @@ export class SyncState {
    * @returns once written.
    */
   recordEntry(sessionId: string, entry: SyncedEntry): Promise<void> {
-    return this.apply(data => (sessionId in data.deletes ? data : { ...data, sessions: replaced(data.sessions, sessionId, entry) }))
+    return this.apply(data => (sessionId in data.deletes ? data : { ...data, sessions: withEntry(data.sessions, sessionId, entry) }))
   }
 
   /**
@@ -171,7 +163,7 @@ export class SyncState {
    * @returns once written.
    */
   setDelete(sessionId: string, account: string | undefined): Promise<void> {
-    return this.apply(data => ({ ...data, deletes: replaced(data.deletes, sessionId, account) }))
+    return this.apply(data => ({ ...data, deletes: withEntry(data.deletes, sessionId, account) }))
   }
 
   /**
@@ -208,7 +200,7 @@ export class SyncState {
    * @returns once written.
    */
   setPulled(sessionId: string, entry: PulledEntry | undefined): Promise<void> {
-    return this.apply(data => ({ ...data, pulled: replaced(data.pulled, sessionId, entry) }))
+    return this.apply(data => ({ ...data, pulled: withEntry(data.pulled, sessionId, entry) }))
   }
 
   /**
@@ -221,7 +213,7 @@ export class SyncState {
     let recorded = false
     await this.apply((data) => {
       recorded = !(sessionId in data.deletes)
-      return recorded ? { ...data, pulled: replaced(data.pulled, sessionId, entry) } : data
+      return recorded ? { ...data, pulled: withEntry(data.pulled, sessionId, entry) } : data
     })
     return recorded
   }
@@ -250,7 +242,7 @@ export class SyncState {
    * @returns once written.
    */
   setContinuation(sessionId: string, entry: ContinuationEntry | undefined): Promise<void> {
-    return this.apply(data => ({ ...data, continuations: replaced(data.continuations, sessionId, entry) }))
+    return this.apply(data => ({ ...data, continuations: withEntry(data.continuations, sessionId, entry) }))
   }
 
   /**
@@ -269,27 +261,11 @@ export class SyncState {
    * @returns once written.
    */
   setCursor(account: string, cursor: number | undefined): Promise<void> {
-    return this.apply(data => ({ ...data, cursors: replaced(data.cursors, account, cursor) }))
+    return this.apply(data => ({ ...data, cursors: withEntry(data.cursors, account, cursor) }))
   }
 
   /** Apply one change after the earlier ones; the record reads the change only once it is written. */
   private apply(change: (data: StateData) => StateData): Promise<void> {
-    const write = this.writes.then(async () => {
-      const next = change(this.data)
-      if (next === this.data) return
-      await mkdir(dirname(this.path), { recursive: true })
-      const temporary = `${this.path}.${String(process.pid)}.tmp`
-      await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`)
-      await rename(temporary, this.path)
-      this.data = next
-    })
-    this.writes = write.catch(() => undefined)
-    return write
+    return this.file.write(change)
   }
-}
-
-/** The record with `key` set to `value`, or without `key` for undefined. */
-function replaced<T>(record: Readonly<Record<string, T>>, key: string, value: T | undefined): Record<string, T> {
-  const { [key]: _previous, ...rest } = record
-  return value === undefined ? rest : { ...rest, [key]: value }
 }

@@ -10,13 +10,12 @@
  */
 
 import { stat } from 'node:fs/promises'
-import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-attachment'
 import { changeStream } from '@deepseek-ai/dsh-change-stream'
-import type { HubAccountView } from '@deepseek-ai/dsh-hub-account'
+import { refuseSync, SyncNotAllowed as NotAllowed, SyncPasses, SyncRetryLater as RetryLater, SyncSignIn, syncDeviceName } from '@deepseek-ai/dsh-hub-account'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import { SessionLogOffset, type SessionId } from '@deepseek-ai/dsh-session/types'
@@ -51,7 +50,6 @@ const BLOB_MAX_BYTES = 100 * 1024 * 1024
 const ATTACHMENTS_MAX = 1000
 const TITLE_MAX = 200
 const CWD_MAX = 1000
-const DEVICE_MAX = 100
 /** Uploads of one Session within one pass, before leaving it to the next pass. */
 const PUT_ATTEMPTS = 3
 
@@ -81,12 +79,6 @@ export const Config: Schema<Config> = Schema.object({
   retryMs: Schema.number().min(100).max(86_400_000).default(60_000).description('Wait before retrying after the user center could not be reached, in milliseconds.'),
 })
 
-/** The user center could not take the request now, or the sign-in changed; the pass stops and is retried later. */
-class RetryLater extends Error {}
-
-/** The sign-in may not sync (not a company member); syncing stops until the sign-in changes. */
-class NotAllowed extends Error {}
-
 const conflictSchema = z.discriminatedUnion('code', [
   z.object({ code: z.literal('stale_revision'), revision: z.number().int().nonnegative() }),
   z.object({ code: z.literal('missing_attachments') }),
@@ -109,15 +101,6 @@ const listSchema = z.object({
 
 type ListedSession = z.infer<typeof listSchema>['items'][number]
 
-/**
- * The account a sign-in syncs as: its tenant and phone number, which name one employee. Null while
- * signed out or signed in without a tenant.
- */
-function accountOf(state: HubAccountView): string | null {
-  const profile = state.profile
-  return state.status === 'signed-in' && profile?.tenantId != null ? `${profile.tenantId}/${profile.phone}` : null
-}
-
 /** Host owner of Session sync. */
 export class SessionSync extends TypertRemoteService {
   static inject = ['hubAccount', 'sessionQuery', 'sessionPersistence', 'sessionController']
@@ -126,8 +109,8 @@ export class SessionSync extends TypertRemoteService {
   private readonly config: Required<Omit<Config, 'dshHome' | 'deviceName'>>
   private readonly device: string
   private readonly state: SyncState
-  /** Account of the current sign-in, or null while there is none to sync as. */
-  private account: string | null = null
+  /** The account of the current sign-in, and the user-center calls as it. */
+  private readonly signIn: SyncSignIn
   /** The current sign-in was refused as a non-member; reset when the sign-in changes. */
   private notAllowed = false
   /** Sessions whose turn ended since the last pass. */
@@ -145,21 +128,18 @@ export class SessionSync extends TypertRemoteService {
   private readonly listeners = new Set<() => void>()
   /** Changes to the Sessions stored here that the sync made; the client reloads its list when it grows. */
   private changes = 0
-  /** The running pass; disposal waits for it, so nothing is written after it. */
-  private running: Promise<void> | undefined
-  /** Passes asked for; a pass that ends with more asked for than it saw runs again. */
-  private requests = 0
-  private timer: ReturnType<typeof setTimeout> | undefined
   private readonly lifetime = new AbortController()
+  /** One pass at a time; disposal waits for the running one, so nothing is written after it. */
+  private readonly passes = new SyncPasses(() => this.work(), this.lifetime.signal)
 
   /** @param ctx - Host with the Hub sign-in and Session storage. @param config - timings, home, and device name. */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'sessionSync', { namespace: 'sessionSync' })
     const resolved = Config(config) as Required<Omit<Config, 'dshHome' | 'deviceName'>> & Pick<Config, 'dshHome' | 'deviceName'>
     this.config = resolved
-    this.device = (resolved.deviceName ?? hostname().replace(/\.local$/u, '')).trim().slice(0, DEVICE_MAX)
-    if (this.device === '') throw new Error('session-sync: the device name is empty; set deviceName')
+    this.device = syncDeviceName(resolved.deviceName, 'session-sync')
     this.state = new SyncState(join(resolveDshHome(resolved.dshHome), 'session-sync.json'))
+    this.signIn = new SyncSignIn(ctx.hubAccount, this.lifetime.signal, resolved.requestTimeoutMs)
     ctx.on('session/event', (session, event) => {
       if (event.type !== 'turn/end') return
       this.dirty.add(session.id)
@@ -183,23 +163,16 @@ export class SessionSync extends TypertRemoteService {
       }, this.config.scanIntervalMs)
       return () => {
         clearInterval(scan)
-        clearTimeout(this.timer)
         this.lifetime.abort()
         this.changed()
-        return this.running
+        return this.passes.stop()
       }
     }, 'session-sync: schedule')
   }
 
   async [Service.init](): Promise<void> {
     await this.state.load((message) => { this.ctx.logger.warn(message) })
-    const hub = this.ctx.hubAccount
-    this.follow(accountOf(await hub.getState()))
-    void (async () => {
-      for await (const state of hub.watch(this.lifetime.signal)) {
-        if (accountOf(state) !== this.account) this.follow(accountOf(state))
-      }
-    })()
+    await this.signIn.follow(() => { this.follow() })
   }
 
   /**
@@ -209,12 +182,12 @@ export class SessionSync extends TypertRemoteService {
   @Remote
   getState(): Promise<SessionSyncView> {
     return Promise.resolve({
-      signedIn: this.account !== null,
+      signedIn: this.signIn.account !== null,
       changes: this.changes,
       pulled: this.state.pulledSessions()
         .map(([sessionId, entry]) => ({ sessionId: sessionId as SessionId, device: entry.device, revision: entry.revision })),
       continuations: this.state.continuations()
-        .filter(([, entry]) => entry.account === this.account)
+        .filter(([, entry]) => entry.account === this.signIn.account)
         .map(([sessionId, entry]) => ({
           sessionId: sessionId as SessionId, sourceId: entry.sourceId as SessionId, title: entry.title, device: entry.device,
         })),
@@ -290,8 +263,7 @@ export class SessionSync extends TypertRemoteService {
   }
 
   /** Sync as another account (or none), starting with a scan and a pull. */
-  private follow(account: string | null): void {
-    this.account = account
+  private follow(): void {
     this.notAllowed = false
     this.skipped.clear()
     this.scanWanted = true
@@ -302,32 +274,12 @@ export class SessionSync extends TypertRemoteService {
 
   /** Run a pass after `delay`, replacing a pass already waiting. */
   private schedule(delay: number): void {
-    if (this.lifetime.signal.aborted) return
-    clearTimeout(this.timer)
-    this.timer = setTimeout(() => {
-      this.timer = undefined
-      void this.pass()
-    }, delay)
-  }
-
-  /** One pass at a time; a pass asked for meanwhile runs right after. */
-  private async pass(): Promise<void> {
-    this.requests += 1
-    if (this.running !== undefined) return
-    const run = async () => {
-      let seen: number
-      do {
-        seen = this.requests
-        await this.work()
-      } while (seen !== this.requests)
-    }
-    this.running = run().finally(() => { this.running = undefined })
-    await this.running
+    this.passes.schedule(delay)
   }
 
   /** Send pending deletions, then upload the Sessions that turned or, on a scan, every changed one. */
   private async work(): Promise<void> {
-    const account = this.account
+    const account = this.signIn.account
     if (this.notAllowed || this.lifetime.signal.aborted) return
     const dirty = [...this.dirty]
     this.dirty.clear()
@@ -392,10 +344,10 @@ export class SessionSync extends TypertRemoteService {
   private async sendDeletes(account: string): Promise<void> {
     for (const [sessionId, owner] of this.state.deletes()) {
       if (owner !== account) continue
-      const res = await this.call(`/api/client/sync/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }, account)
+      const res = await this.signIn.call(`/api/client/sync/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }, account)
       await res.body?.cancel()
       if (res.ok || res.status === 404) await this.state.setDelete(sessionId, undefined)
-      else this.refuse(res)
+      else refuseSync(res)
     }
   }
 
@@ -446,7 +398,7 @@ export class SessionSync extends TypertRemoteService {
       const form = new FormData()
       form.set('meta', JSON.stringify(meta))
       form.set('file', new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/gzip' }), 'bundle.json.gz')
-      const res = await this.call(`/api/client/sync/sessions/${encodeURIComponent(root)}`, { method: 'PUT', body: form }, account)
+      const res = await this.signIn.call(`/api/client/sync/sessions/${encodeURIComponent(root)}`, { method: 'PUT', body: form }, account)
       if (res.ok) {
         await res.body?.cancel()
         await this.state.recordEntry(root, { ...base, revision })
@@ -470,7 +422,7 @@ export class SessionSync extends TypertRemoteService {
         return
       }
       await res.body?.cancel()
-      this.refuse(res)
+      refuseSync(res)
     }
     throw new Error(`the user center kept answering conflicts after ${String(PUT_ATTEMPTS)} uploads`)
   }
@@ -513,13 +465,13 @@ export class SessionSync extends TypertRemoteService {
     const store = this.ctx.get('attachments')
     const candidates = found.filter(attachment => attachment.ref.bytes <= BLOB_MAX_BYTES).slice(0, ATTACHMENTS_MAX)
     if (store === undefined || candidates.length === 0) return []
-    const res = await this.call('/api/client/sync/blobs/check', {
+    const res = await this.signIn.call('/api/client/sync/blobs/check', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ sha256: candidates.map(attachment => attachment.sha256) }),
     }, account)
     if (!res.ok) {
       await res.body?.cancel()
-      this.refuse(res)
+      refuseSync(res)
     }
     const missing = new Set(checkSchema.parse(await res.json()).missing)
     const failed = new Set<string>()
@@ -538,12 +490,12 @@ export class SessionSync extends TypertRemoteService {
       }
       const form = new FormData()
       form.set('file', new Blob([bytes as Uint8Array<ArrayBuffer>]), attachment.sha256)
-      const put = await this.call(`/api/client/sync/blobs/${attachment.sha256}`, { method: 'PUT', body: form }, account)
+      const put = await this.signIn.call(`/api/client/sync/blobs/${attachment.sha256}`, { method: 'PUT', body: form }, account)
       await put.body?.cancel()
       if (put.status === 400 || put.status === 413) {
         this.ctx.logger.warn(`session-sync: attachment ${attachment.sha256} refused by the user center (${String(put.status)})`)
         failed.add(attachment.sha256)
-      } else if (!put.ok) this.refuse(put)
+      } else if (!put.ok) refuseSync(put)
     }
     return candidates.filter(attachment => !failed.has(attachment.sha256))
   }
@@ -565,7 +517,7 @@ export class SessionSync extends TypertRemoteService {
       return
     }
     const entry = this.state.entry(sessionId)
-    const account = entry?.account ?? (this.syncing === sessionId ? this.account : null)
+    const account = entry?.account ?? (this.syncing === sessionId ? this.signIn.account : null)
     if (account === null) {
       this.scanWanted = true
       this.schedule(this.config.debounceMs)
@@ -590,10 +542,10 @@ export class SessionSync extends TypertRemoteService {
       let more = true
       let listed: Set<string> | undefined
       while (more) {
-        const res = await this.call(`/api/client/sync/sessions?since=${String(this.state.cursor(account))}`, { method: 'GET' }, account)
+        const res = await this.signIn.call(`/api/client/sync/sessions?since=${String(this.state.cursor(account))}`, { method: 'GET' }, account)
         if (!res.ok) {
           await res.body?.cancel()
-          this.refuse(res)
+          refuseSync(res)
         }
         const page = listSchema.parse(await res.json())
         if (page.reset) listed = new Set()
@@ -672,7 +624,7 @@ export class SessionSync extends TypertRemoteService {
    * meanwhile is left deleted.
    */
   private async fetch(account: string, sessionId: SessionId, device: string, revision: number): Promise<boolean> {
-    const res = await this.call(`/api/client/sync/sessions/${encodeURIComponent(sessionId)}/bundle`, { method: 'GET' }, account)
+    const res = await this.signIn.call(`/api/client/sync/sessions/${encodeURIComponent(sessionId)}/bundle`, { method: 'GET' }, account)
     // Replaced or deleted meanwhile: the next listing names what happened.
     if (res.status === 404) {
       await res.body?.cancel()
@@ -680,7 +632,7 @@ export class SessionSync extends TypertRemoteService {
     }
     if (!res.ok) {
       await res.body?.cancel()
-      this.refuse(res)
+      refuseSync(res)
     }
     const bundle = mapAssistants(await decodeBundle(new Uint8Array(await res.arrayBuffer())), await this.localAssistants())
     await this.downloadAttachments(account, bundle)
@@ -715,7 +667,7 @@ export class SessionSync extends TypertRemoteService {
     if (store === undefined) return
     for (const attachment of bundleAttachments(bundle)) {
       if (await hasAttachment(store, attachment)) continue
-      const res = await this.call(`/api/client/sync/blobs/${attachment.sha256}`, { method: 'GET' }, account)
+      const res = await this.signIn.call(`/api/client/sync/blobs/${attachment.sha256}`, { method: 'GET' }, account)
       // Not uploaded by the other machine: the conversation shows it as missing.
       if (res.status === 404) {
         await res.body?.cancel()
@@ -723,7 +675,7 @@ export class SessionSync extends TypertRemoteService {
       }
       if (!res.ok) {
         await res.body?.cancel()
-        this.refuse(res)
+        refuseSync(res)
       }
       if (!await storeAttachment(store, attachment, new Uint8Array(await res.arrayBuffer()))) {
         this.ctx.logger.warn(`session-sync: attachment ${attachment.sha256} from the user center does not match its digest`)
@@ -775,26 +727,6 @@ export class SessionSync extends TypertRemoteService {
     }
   }
 
-  /** Throw for a refused request: a non-member sign-in stops syncing, anything else is retried later. */
-  private refuse(res: Response): never {
-    if (res.status === 403) throw new NotAllowed(`the user center answered ${String(res.status)}`)
-    throw new RetryLater(`the user center answered ${String(res.status)}`)
-  }
-
-  /**
-   * One user-center call as `account`; a changed sign-in, signed out, unreachable, or past the
-   * deadline reads as retry later.
-   */
-  private async call(path: string, init: RequestInit, account: string): Promise<Response> {
-    if (this.account !== account) throw new RetryLater('the sign-in changed')
-    try {
-      return await this.ctx.hubAccount.request(path, {
-        ...init, signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(this.config.requestTimeoutMs)]),
-      })
-    } catch (error: unknown) {
-      throw new RetryLater(`the user center cannot be reached: ${String(error)}`, { cause: error })
-    }
-  }
 }
 
 /**

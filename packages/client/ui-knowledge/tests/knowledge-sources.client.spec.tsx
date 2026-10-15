@@ -16,7 +16,7 @@ const embedding: EmbeddingState = {
   apiModels: [],
 }
 const item = (over: Partial<KnowledgeItemView> & Pick<KnowledgeItemView, 'id' | 'kind' | 'name'>): KnowledgeItemView => ({
-  parentId: null, source: null, size: 100, skipped: [], skippedCount: 0, status: 'completed', error: null, chunkCount: 1, addedAt: '2026-10-05T00:00:00.000Z', ...over,
+  parentId: null, source: null, size: 100, skipped: [], skippedCount: 0, scannedOn: null, status: 'completed', error: null, chunkCount: 1, addedAt: '2026-10-05T00:00:00.000Z', ...over,
 })
 const ITEMS: KnowledgeItemView[] = [
   item({ id: 'f1', kind: 'file', name: '年假制度.docx' }),
@@ -32,7 +32,7 @@ const ITEMS: KnowledgeItemView[] = [
   item({ id: 'n1', kind: 'note', name: '报销提醒', size: 42 }),
 ]
 const base = (items = ITEMS): KnowledgeBaseView => ({
-  id: 'b1', name: '公司制度', embeddingModelId: 'local/qwen', embeddingModelName: 'Qwen3-Embedding-0.6B', status: 'ready',
+  id: 'b1', name: '公司制度', embeddingModelId: 'local/qwen', embeddingModelName: 'Qwen3-Embedding-0.6B', modelMissing: false, status: 'ready',
   createdAt: '2026-10-05T00:00:00.000Z', dimensions: 1024, items,
   settings: { chunkStrategy: 'structured', chunkSeparator: '\\n\\n', chunkSize: 1024, chunkOverlap: 200, documentCount: 6, threshold: 0 },
 })
@@ -198,5 +198,22 @@ describe('knowledge sources', () => {
     fireEvent.click(within(pane()).getByRole('button', { name: zh.newNote }))
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh.cancel }))
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('leaves a folder another computer added to that computer to scan, and words a file pulled for an API model', () => {
+    mount([
+      item({ id: 'd9', kind: 'folder', name: '共享资料', source: '/Users/other/共享资料', scannedOn: '前台电脑' }),
+      item({ id: 'f9', kind: 'file', name: '同步来的.pdf', status: 'failed', error: 'synced', chunkCount: 0 }),
+    ])
+    source('文件夹')
+    const folder = within(pane()).getByRole('region', { name: '共享资料' })
+    expect(folder.textContent).toContain(zh.scannedOn.replace('{device}', '前台电脑'))
+    expect(within(folder).queryByRole('button', { name: zh.reprocess })).toBeNull()
+    source('文件 ')
+    const row = within(pane()).getAllByRole('row').find(entry => entry.textContent?.includes('同步来的.pdf'))!
+    expect(row.textContent).toContain(zh['error.synced'])
+    expect(row.textContent).toContain(zh['status.pending'])
+    expect(row.textContent).not.toContain(zh['status.failed'])
+    expect(within(row).getByRole('button', { name: zh.reprocess })).toBeTruthy()
   })
 })

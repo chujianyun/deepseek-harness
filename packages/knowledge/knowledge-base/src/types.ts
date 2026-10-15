@@ -29,6 +29,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'knowledge/credentials-in-url': Record<string, never>
     /** The item has no copy to open (a folder, or a page never fetched), or this Host cannot open files. */
     'knowledge/cannot-open': { readonly id: string }
+    /** The folder was added on another computer, which alone can scan it again. */
+    'knowledge/folder-elsewhere': { readonly id: string; readonly device: string }
     /** A note needs a title of 1 to `maxNoteTitleLength` characters and a body of at most `max` characters. */
     'knowledge/invalid-note': { readonly field: 'title' | 'content'; readonly max: number }
   }
@@ -54,8 +56,10 @@ export type KnowledgeItemStatus = 'pending' | 'processing' | 'completed' | 'fail
  * - `unreachable`: a page could not be fetched; the last fetched content stays.
  * - `blocked`: the web service refused the page's address by policy (`WEB_BLOCKED_URL`): it resolved to an intranet,
  *   loopback, or other non-public address, or carried credentials; the last fetched content stays.
+ * - `synced`: pulled from another computer for an API embedding model, which runs only when the user processes it.
  */
-export type KnowledgeItemError = 'unreadable' | 'empty' | 'embedding' | 'interrupted' | 'storage' | 'folder-missing' | 'unreachable' | 'blocked'
+export type KnowledgeItemError =
+  | 'unreadable' | 'empty' | 'embedding' | 'interrupted' | 'storage' | 'folder-missing' | 'unreachable' | 'blocked' | 'synced'
 
 /**
  * What a knowledge item is.
@@ -95,6 +99,8 @@ export interface KnowledgeItemView {
   readonly chunkCount: number
   /** ISO time it was added. */
   readonly addedAt: string
+  /** For a folder another computer added: that computer, the only one that scans it again; null otherwise. */
+  readonly scannedOn: string | null
 }
 
 /**
@@ -164,6 +170,11 @@ export interface KnowledgeBaseView {
    * damaged, or downloading), when pending items wait for it.
    */
   readonly status: 'ready' | 'rebuilding' | 'unavailable'
+  /**
+   * The embedding model is neither this computer's local model nor one Settings offers, as for a
+   * knowledge base pulled from another computer; it is `unavailable` until Settings offers it.
+   */
+  readonly modelMissing: boolean
   readonly settings: KnowledgeBaseSettings
   readonly items: readonly KnowledgeItemView[]
   /** ISO creation time. */

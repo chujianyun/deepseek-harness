@@ -16,13 +16,13 @@ const embedding = (localStatus: EmbeddingState['local']['status'] = 'installed')
   apiModels: [{ id: 'acme/bge-m3', provider: 'acme', providerName: 'Acme 网关', model: 'bge-m3', dimensions: 1024, available: true }],
 })
 const base = (over: Partial<KnowledgeBaseView> = {}): KnowledgeBaseView => ({
-  id: 'b1', name: '公司制度', embeddingModelId: 'local/qwen', embeddingModelName: 'Qwen3-Embedding-0.6B', status: 'ready', createdAt: '2026-10-05T00:00:00.000Z',
+  id: 'b1', name: '公司制度', embeddingModelId: 'local/qwen', embeddingModelName: 'Qwen3-Embedding-0.6B', modelMissing: false, status: 'ready', createdAt: '2026-10-05T00:00:00.000Z',
   dimensions: 1024,
   settings: { chunkStrategy: 'structured', chunkSeparator: '\\n\\n', chunkSize: 1024, chunkOverlap: 200, documentCount: 6, threshold: 0 },
   items: [
-    { id: 'i1', kind: 'file', parentId: null, source: null, skipped: [], skippedCount: 0, name: '年假制度.docx', size: 36_947, status: 'completed', error: null, chunkCount: 3, addedAt: '2026-10-05T00:00:01.000Z' },
-    { id: 'i2', kind: 'file', parentId: null, source: null, skipped: [], skippedCount: 0, name: '扫描件.pdf', size: 2048, status: 'failed', error: 'empty', chunkCount: 0, addedAt: '2026-10-05T00:00:02.000Z' },
-    { id: 'i3', kind: 'file', parentId: null, source: null, skipped: [], skippedCount: 0, name: '会议纪要.txt', size: 100, status: 'processing', error: null, chunkCount: 0, addedAt: '2026-10-05T00:00:03.000Z' },
+    { id: 'i1', kind: 'file', parentId: null, source: null, skipped: [], skippedCount: 0, scannedOn: null, name: '年假制度.docx', size: 36_947, status: 'completed', error: null, chunkCount: 3, addedAt: '2026-10-05T00:00:01.000Z' },
+    { id: 'i2', kind: 'file', parentId: null, source: null, skipped: [], skippedCount: 0, scannedOn: null, name: '扫描件.pdf', size: 2048, status: 'failed', error: 'empty', chunkCount: 0, addedAt: '2026-10-05T00:00:02.000Z' },
+    { id: 'i3', kind: 'file', parentId: null, source: null, skipped: [], skippedCount: 0, scannedOn: null, name: '会议纪要.txt', size: 100, status: 'processing', error: null, chunkCount: 0, addedAt: '2026-10-05T00:00:03.000Z' },
   ],
   ...over,
 })
@@ -351,5 +351,11 @@ describe('knowledge page', () => {
     expect(screen.getByRole('alert').textContent).toContain('新的嵌入模型试用失败，未更换：HTTP 401')
     fireEvent.click(screen.getByRole('tab', { name: zh['tab.settings'] }))
     expect(within(screen.getByRole('tabpanel')).getByRole('alert').textContent).toBe('新的嵌入模型试用失败，未更换：HTTP 401')
+  })
+
+  it.each([zh, en])('asks for an embedding model this computer lacks by its name', (copy) => {
+    mount({ revision: 1, tenantId: 't-a', bases: [base({ status: 'unavailable', modelMissing: true, embeddingModelId: 'acme/bge-m3', embeddingModelName: 'acme/bge-m3' })] }, {}, copy)
+    expect(screen.getByRole('region', { name: '公司制度' }).textContent).toContain(copy.modelMissing.replace('{model}', 'acme/bge-m3'))
+    expect(screen.getByRole('region', { name: '公司制度' }).textContent).not.toContain(copy.unavailable)
   })
 })

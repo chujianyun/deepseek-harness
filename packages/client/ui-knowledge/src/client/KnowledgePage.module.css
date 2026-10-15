@@ -62,6 +62,7 @@
 .table td { padding: 8px; border-top: 0.5px solid var(--dsw-alias-border-l2); vertical-align: middle; }
 .itemName { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .itemError { display: block; margin-top: 2px; color: var(--dsw-alias-state-error-primary); font-size: 12px; }
+.itemNote { display: block; margin-top: 2px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
 .rowActions { white-space: nowrap; text-align: right; }
 .form { display: flex; flex-direction: column; gap: 12px; }
 .field { display: flex; flex-direction: column; gap: 4px; }

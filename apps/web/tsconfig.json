@@ -114,6 +114,7 @@
     "tests/session-delete.e2e.ts",
     "tests/session-share.e2e.ts",
     "tests/session-sync.e2e.ts",
+    "tests/knowledge-sync.e2e.ts",
     "tests/feedback-report.e2e.ts",
     "tests/session-group-limit.e2e.ts",
     "tests/session-unarchive.e2e.ts",

@@ -90,9 +90,20 @@ export interface MockSyncedSession {
   readonly seq?: number
 }
 
+/** One knowledge base or item as the mock's knowledge sync holds it (`/api/client/sync/knowledge`): the latest accepted upload. */
+export interface MockSyncedKnowledge {
+  /** The upload's JSON body, with `baseId` for an item; for a deletion before any upload, absent fields. */
+  readonly meta: { readonly revision: number; readonly device?: string; readonly [field: string]: unknown }
+  readonly deleted: boolean
+  /** Position of its latest change in the store's change order; set by the mock. */
+  readonly seq?: number
+}
+
 /** One tenant's Session sync store. */
 export interface MockSync {
   sessions: Record<string, MockSyncedSession>
+  /** Knowledge bases and items by id; deleting one keeps it, marked deleted, as the user center does. */
+  knowledge?: { bases: Record<string, MockSyncedKnowledge>; items: Record<string, MockSyncedKnowledge> }
   /** The latest change's position; 0 before the first change. */
   seq?: number
   /** Attachment bytes by sha256 hex. */
@@ -453,6 +464,10 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
       store.seq = (store.seq ?? 0) + 1
       store.sessions = { ...store.sessions, [sessionId]: { ...entry, seq: store.seq } }
     }
+    if (url.pathname.startsWith('/api/client/sync/knowledge')) {
+      knowledgeApi(url, req, res, json, store, chunks)
+      return
+    }
     const sessionPath = /^\/api\/client\/sync\/sessions\/([^/]+)$/u.exec(url.pathname)
     const bundlePath = /^\/api\/client\/sync\/sessions\/([^/]+)\/bundle$/u.exec(url.pathname)
     const blobPath = /^\/api\/client\/sync\/blobs\/([0-9a-f]{64})$/u.exec(url.pathname)
@@ -515,6 +530,88 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
         store.blobs = { ...store.blobs, [blobPath[1]]: bytes }
         res.writeHead(204).end()
       }
+    } else json(404, { message: 'not found' })
+  }
+  /** The knowledge sync endpoints, with the user center's checks of revisions, references, and deletions. */
+  const knowledgeApi = (
+    url: URL, req: IncomingMessage, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void, store: MockSync, chunks: Buffer[],
+  ): void => {
+    const held = store.knowledge ??= { bases: {}, items: {} }
+    const mark = (table: 'bases' | 'items', id: string, entry: Omit<MockSyncedKnowledge, 'seq'>) => {
+      store.seq = (store.seq ?? 0) + 1
+      held[table] = { ...held[table], [id]: { ...entry, seq: store.seq } }
+    }
+    const stale = (existing: MockSyncedKnowledge | undefined, meta: { revision: number; device?: string }) => existing !== undefined
+      && (meta.revision < existing.meta.revision || (meta.revision === existing.meta.revision && meta.device !== existing.meta.device))
+    const deleteItems = (match: (item: MockSyncedKnowledge) => boolean) => {
+      for (const [id, item] of Object.entries(held.items)) if (!item.deleted && match(item)) mark('items', id, { ...item, deleted: true })
+    }
+    const basePath = /^\/api\/client\/sync\/knowledge\/bases\/([^/]+)$/u.exec(url.pathname)
+    const itemPath = /^\/api\/client\/sync\/knowledge\/items\/([^/]+)$/u.exec(url.pathname)
+    const contentPath = /^\/api\/client\/sync\/knowledge\/items\/([^/]+)\/content$/u.exec(url.pathname)
+    const body = () => JSON.parse(Buffer.concat(chunks).toString('utf8')) as { revision: number; device: string; [field: string]: unknown }
+    if (url.pathname === '/api/client/sync/knowledge' && req.method === 'GET') {
+      const asked = Number(url.searchParams.get('since') ?? '0')
+      const reset = asked > (store.seq ?? 0)
+      const since = reset ? 0 : asked
+      const entry = (type: 'base' | 'item', id: string, value: MockSyncedKnowledge) => ({
+        type, ...(type === 'base' ? { baseId: id } : { itemId: id }), ...value.meta, deleted: value.deleted, seq: value.seq ?? 0,
+        ...(value.deleted ? { name: '', sha256: null, sizeBytes: 0, settings: {}, embeddingModelId: '' } : {}),
+      })
+      const changes = [
+        ...Object.entries(held.bases).map(([id, value]) => entry('base', id, value)),
+        ...Object.entries(held.items).map(([id, value]) => entry('item', id, value)),
+      ].filter(change => change.seq > since).sort((a, b) => a.seq - b.seq)
+      json(200, { changes, cursor: changes.at(-1)?.seq ?? since, hasMore: false, reset })
+    } else if (basePath !== null && req.method === 'PUT') {
+      const id = decodeURIComponent(basePath[1]!)
+      const meta = body()
+      const existing = held.bases[id]
+      if (existing?.deleted === true) json(410, { code: 'base_deleted', message: '这个知识库已在其他电脑上删除' })
+      else if (stale(existing, meta)) json(409, { code: 'stale_revision', message: '服务器上已有更新的版本', revision: existing!.meta.revision })
+      else {
+        mark('bases', id, { meta, deleted: false })
+        json(200, { type: 'base', baseId: id, ...meta })
+      }
+    } else if (basePath !== null && req.method === 'DELETE') {
+      const id = decodeURIComponent(basePath[1]!)
+      const existing = held.bases[id]
+      if (existing !== undefined && !existing.deleted) {
+        deleteItems(item => item.meta.baseId === id)
+        mark('bases', id, { ...existing, deleted: true })
+      }
+      res.writeHead(204).end()
+    } else if (itemPath !== null && req.method === 'PUT') {
+      const id = decodeURIComponent(itemPath[1]!)
+      const meta = body()
+      const base = held.bases[String(meta.baseId)]
+      const existing = held.items[id]
+      const parent = meta.parentId == null ? undefined : held.items[meta.parentId as string]
+      if (base === undefined) json(409, { code: 'base_missing', message: '知识库还没上传' })
+      else if (base.deleted) json(410, { code: 'base_deleted', message: '这个知识库已在其他电脑上删除' })
+      else if (existing?.deleted === true) json(410, { code: 'item_deleted', message: '这个条目已在其他电脑上删除' })
+      else if (stale(existing, meta)) json(409, { code: 'stale_revision', message: '服务器上已有更新的版本', revision: existing!.meta.revision })
+      else if (meta.parentId != null && parent === undefined) json(409, { code: 'parent_missing', message: '所属文件夹还没上传' })
+      else if (parent?.deleted === true) json(410, { code: 'parent_deleted', message: '所属文件夹已在其他电脑上删除' })
+      else if (meta.sha256 != null && store.blobs[meta.sha256 as string] === undefined) json(409, { code: 'missing_content', message: '条目内容还没上传' })
+      else {
+        mark('items', id, { meta, deleted: false })
+        json(200, { type: 'item', itemId: id, ...meta })
+      }
+    } else if (itemPath !== null && req.method === 'DELETE') {
+      const id = decodeURIComponent(itemPath[1]!)
+      const existing = held.items[id]
+      if (existing !== undefined && !existing.deleted) {
+        deleteItems(item => item.meta.parentId === id)
+        mark('items', id, { ...existing, deleted: true })
+      }
+      res.writeHead(204).end()
+    } else if (contentPath !== null && req.method === 'GET') {
+      const item = held.items[decodeURIComponent(contentPath[1]!)]
+      const bytes = item?.meta.sha256 == null ? undefined : store.blobs[item.meta.sha256 as string]
+      if (item?.deleted === true) json(410, { code: 'item_deleted', message: '这个条目已删除' })
+      else if (bytes === undefined) json(404, { message: '这个条目没有内容' })
+      else res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(bytes)
     } else json(404, { message: 'not found' })
   }
   const feedbackApi = async (url: URL, req: IncomingMessage, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void): Promise<void> => {

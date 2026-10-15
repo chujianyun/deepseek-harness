@@ -1819,7 +1819,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-hub-account`
 
 - `inject`: `credentials` · `authorization`
-- `source`: [`packages/credentials/hub-account/src/index.ts:42`](../packages/credentials/hub-account/src/index.ts)
+- `source`: [`packages/credentials/hub-account/src/index.ts:46`](../packages/credentials/hub-account/src/index.ts)
 
 ```ts config-catalog
 /** Deployment configuration: which user center, as which registered client. */
@@ -1881,7 +1881,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-knowledge-base`
 
 - `inject`: `embedding` · `hubAccount`
-- `source`: [`packages/knowledge/knowledge-base/src/index.ts:49`](../packages/knowledge/knowledge-base/src/index.ts)
+- `source`: [`packages/knowledge/knowledge-base/src/index.ts:55`](../packages/knowledge/knowledge-base/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -1906,6 +1906,16 @@ export interface Config {
   maxNoteTitleLength?: number
   /** Longest note body, in characters. */
   maxNoteChars?: number
+  /** Name of this computer as the employee's other computers show it. Defaults to the host name without `.local`. */
+  deviceName?: string
+  /** Wait after a change before uploading, so changes in quick succession upload once, in milliseconds. */
+  syncDebounceMs?: number
+  /** Interval of the pull and upload pass, in milliseconds. */
+  syncIntervalMs?: number
+  /** Wait before retrying after the user center could not be reached, in milliseconds. */
+  syncRetryMs?: number
+  /** Deadline of each user-center request, in milliseconds. */
+  requestTimeoutMs?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-knowledge-base -->
@@ -3107,7 +3117,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-session-sync`
 
 - `inject`: `hubAccount` · `sessionQuery` · `sessionPersistence` · `sessionController`
-- `source`: [`packages/session-query/session-sync/src/index.ts:59`](../packages/session-query/session-sync/src/index.ts)
+- `source`: [`packages/session-query/session-sync/src/index.ts:57`](../packages/session-query/session-sync/src/index.ts)
 
 ```ts config-catalog
 /** Deployment configuration. */

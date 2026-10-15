@@ -1836,6 +1836,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the current state, then every change.',
       },
       {
+        signature: '@Remote syncNow(): Promise<void>',
+        description: 'Pull the employee\'s other computers\' knowledge base changes and upload this computer\'s now, as when the Knowledge page opens or the window comes back to the front.',
+        parameters: [],
+      },
+      {
         signature: '@Remote createBase(name: string, embeddingModelId: string): Promise<KnowledgeState>',
         description: 'Create a knowledge base for the signed-in tenant.',
         parameters: [{ name: 'name', description: 'display name, unique within the tenant.' }, { name: 'embeddingModelId', description: 'an embedding model Settings → Embedding models offers.' }],
@@ -1927,10 +1932,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote reprocessItem(id: string, itemId: string): Promise<KnowledgeState>',
-        description: 'Process an item again from its stored copy.',
+        description: 'Process an item again from its stored copy; a folder is scanned again, on the computer it was added on only.',
         parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'item id.' }],
         returns: 'the state with the item pending.',
-        throws: ['RemoteError `knowledge/not-found`.'],
+        throws: ['RemoteError `knowledge/not-found`, or `knowledge/folder-elsewhere` for a folder another computer added.'],
       },
       {
         signature: '@Remote deleteItem(id: string, itemId: string): Promise<KnowledgeState>',
@@ -6816,7 +6821,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KnowledgeBaseView',
-    declaration: 'export interface KnowledgeBaseView {\n    readonly id: string;\n    readonly name: string;\n    readonly embeddingModelId: string;\n    readonly embeddingModelName: string;\n    readonly dimensions: number | null;\n    readonly status: \'ready\' | \'rebuilding\' | \'unavailable\';\n    readonly settings: KnowledgeBaseSettings;\n    readonly items: readonly KnowledgeItemView[];\n    readonly createdAt: string;\n}',
+    declaration: 'export interface KnowledgeBaseView {\n    readonly id: string;\n    readonly name: string;\n    readonly embeddingModelId: string;\n    readonly embeddingModelName: string;\n    readonly dimensions: number | null;\n    readonly status: \'ready\' | \'rebuilding\' | \'unavailable\';\n    readonly modelMissing: boolean;\n    readonly settings: KnowledgeBaseSettings;\n    readonly items: readonly KnowledgeItemView[];\n    readonly createdAt: string;\n}',
   },
   {
     name: 'KnowledgeChunkStrategy',
@@ -6828,7 +6833,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KnowledgeItemError',
-    declaration: 'export type KnowledgeItemError = \'unreadable\' | \'empty\' | \'embedding\' | \'interrupted\' | \'storage\' | \'folder-missing\' | \'unreachable\' | \'blocked\';',
+    declaration: 'export type KnowledgeItemError = \'unreadable\' | \'empty\' | \'embedding\' | \'interrupted\' | \'storage\' | \'folder-missing\' | \'unreachable\' | \'blocked\' | \'synced\';',
   },
   {
     name: 'KnowledgeItemKind',
@@ -6840,7 +6845,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KnowledgeItemView',
-    declaration: 'export interface KnowledgeItemView {\n    readonly id: string;\n    readonly kind: KnowledgeItemKind;\n    readonly parentId: string | null;\n    readonly name: string;\n    readonly source: string | null;\n    readonly size: number;\n    readonly skipped: readonly KnowledgeSkippedFile[];\n    readonly skippedCount: number;\n    readonly status: KnowledgeItemStatus;\n    readonly error: KnowledgeItemError | null;\n    readonly chunkCount: number;\n    readonly addedAt: string;\n}',
+    declaration: 'export interface KnowledgeItemView {\n    readonly id: string;\n    readonly kind: KnowledgeItemKind;\n    readonly parentId: string | null;\n    readonly name: string;\n    readonly source: string | null;\n    readonly size: number;\n    readonly skipped: readonly KnowledgeSkippedFile[];\n    readonly skippedCount: number;\n    readonly status: KnowledgeItemStatus;\n    readonly error: KnowledgeItemError | null;\n    readonly chunkCount: number;\n    readonly addedAt: string;\n    readonly scannedOn: string | null;\n}',
   },
   {
     name: 'KnowledgeNote',

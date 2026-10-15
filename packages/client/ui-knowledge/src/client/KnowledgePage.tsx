@@ -127,7 +127,7 @@ function Detail(props: KnowledgePageProps & { base: KnowledgeBaseView; openRenam
           <Button variant="ghost" disabled={busy} onClick={openDelete}>{t('deleteBase')}</Button>
         </div>
       </div>
-      {base.status === 'unavailable' && <p className={css.warning}>{t('unavailable')}</p>}
+      {base.status === 'unavailable' && <p className={css.warning}>{base.modelMissing ? t('modelMissing', { model: base.embeddingModelName }) : t('unavailable')}</p>}
       {base.status === 'rebuilding' && <Rebuilding t={t} base={base} />}
       <div id={`knowledge-panel-${view}`} role="tabpanel" aria-labelledby={`knowledge-tab-${view}`} className={css.panel}>
         {view === 'files' && <KnowledgeSources {...props} />}
