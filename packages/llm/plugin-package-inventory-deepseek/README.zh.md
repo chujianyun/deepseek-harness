@@ -37,7 +37,7 @@ kind: "package-reference"
 
 插件在激活时读取一次可选的 `ctx.pluginPackages` 服务。随附 app boot 会在 profile Loader 配置项之前挂载该服务，因此裸包和包子路径的身份使用与其 import 相同的权威 runtime resolution，包括它未命中的情况，并且无需包导出 `./package.json`。若该服务不存在，插件会在整个生命周期中保留 Node 原生包搜索，之后再挂载 resolver 也不会切换既有清单。因此，希望使用 runtime resolution 身份的底层嵌入方必须先挂载 `PluginPackages`，再挂载 Loader 配置项和本插件。
 
-每个普通配置项使用其所属 Loader 树的基址。standing preset 的根配置项使用宿主基址，与 preset Loader 对裸包的显式覆写保持一致；嵌套 include 仍使用自身基址。相对与绝对模块会向上查找最近的 manifest（元数据清单）；没有 `name` 的 manifest 只标记松散模块，不贡献包身份。具名包 manifest 还必须声明非空 `version`，格式错误的包元数据会使请求准备失败。系统使用与 locale 无关的比较按确切名称／版本对去重并排序，同时存活的不同版本仍会分开保留。
+每个普通配置项使用其所属 Loader 树的基址。standing preset 的根配置项使用宿主基址，与 preset Loader 对裸包的显式覆写保持一致；嵌套 include 仍使用自身基址。相对与绝对模块会向上查找最近的 manifest（元数据清单）；没有 `name` 的 manifest 只标记松散模块，不贡献包身份。具名包 manifest 若未声明非空字符串 `version`，该包会被排除，且每个 manifest 只记录一次警告，避免为旧版本编写的第三方包让每次请求都失败（这是对「错误配置须显式失败」的有意例外：该包不受产品控制）；没有名称的裸包仍会使请求准备失败。系统使用与 locale 无关的比较按确切名称／版本对去重并排序，同时存活的不同版本仍会分开保留。
 
 版本 1 的 `dsh_plugin_packages` 字段只包含 `{ name, version }` 对。系统会排除禁用、pending、failed、disposed、unloading 状态，结构性 `cordis:` 配置项，普通依赖，没有所属包身份的松散文件，以编程方式挂载的子 fiber，以及内存动态插件。
 

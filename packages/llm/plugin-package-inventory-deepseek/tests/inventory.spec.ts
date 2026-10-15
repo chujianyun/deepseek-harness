@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -98,12 +98,34 @@ describe('DeepSeek plugin package inventory', () => {
     })
   })
 
-  it('fails request preparation for an active package with malformed identity metadata', async () => {
+  it('omits an active package without a version and warns once per manifest', async () => {
     const { ctx, root } = await harness()
-    const bad = await packagePlugin(root, 'bad', { name: 'bad' })
-    await ctx.loader.create({ name: bad })
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    for (const [dir, manifest] of [['absent', { name: 'absent' }], ['empty', { name: 'empty', version: '' }], ['numeric', { name: 'numeric', version: 1 }]] as const) {
+      await ctx.loader.create({ name: await packagePlugin(root, dir, manifest) })
+    }
+    // A second module of the same version-less package reaches the same manifest under another cache key.
+    await writeFile(join(root, 'absent', 'other.mjs'), 'export default () => {}\n')
+    await ctx.loader.create({ name: './absent/other.mjs' })
+    await ctx.loader.create({ name: await packagePlugin(root, 'good', { name: 'good', version: '1.0.0' }) })
+    for (let request = 0; request < 2; request++) {
+      await expect(ctx.deepseekLlmApiExtensions.prepare({ body: { messages: [] }, signal: SIGNAL }))
+        .resolves.toMatchObject({ fields: { dsh_plugin_packages: { version: 1, packages: [{ name: 'good', version: '1.0.0' }] } } })
+    }
+    // Manifests are read concurrently, so the warnings arrive in no fixed order.
+    const warnings = warn.mock.calls.map(([message]) => String(message)).sort()
+    expect(warnings).toEqual(['absent', 'empty', 'numeric'].map(dir => (
+      `plugin-package-inventory-deepseek: ${join(root, dir, 'package.json')} declares no version; omitted from dsh_plugin_packages`
+    )))
+  })
+
+  it('fails request preparation for an active bare package without a name', async () => {
+    const { ctx, root } = await harness()
+    await packagePlugin(root, 'node_modules/nameless', { version: '1.0.0' }, 'export default () => {}\n')
+    await writeFile(join(root, 'node_modules/nameless/package.json'), `${JSON.stringify({ type: 'module', version: '1.0.0', main: 'plugin.mjs' })}\n`)
+    await ctx.loader.create({ name: 'nameless' })
     await expect(ctx.deepseekLlmApiExtensions.prepare({ body: { messages: [] }, signal: SIGNAL }))
-      .rejects.toThrow(/must declare non-empty name and version/)
+      .rejects.toThrow(/must declare a non-empty name/)
   })
 
   it('omits a loose ESM module whose nearest manifest only marks the module type', async () => {

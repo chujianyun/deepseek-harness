@@ -25,7 +25,7 @@ kind: "package-reference"
 
 将浏览器行与 Host 的 `feedback-report` 行一起挂载，使用相同的 `disabled` 条件；web-app bundle 在配置了用户中心的 `desktop` profile 下同时启用两者。和 ui-hub-account 一样，它在桌面窗口之外不添加任何内容。插件注入 `slots`、`locale`，以及 `hubAccount` 和 `feedbackReport` Remote。在插件生命周期内，它在 `conversation.session.header.utilities` 注册 `feedback-report` 条目（order -8，位于定时任务目录左侧），并在 `shell.overlay` 注册 `feedback-report.corner`、`feedback-report` 与 `feedback-report.notice` 条目。企业版桌面端组合不挂载头部的更多操作菜单（[session-log-export](../../session-query/session-log-export/README.zh.md)），所以这个按钮就是那里的反馈入口。
 
-按钮只在 `hubAccount` 状态流报告已登录时显示。在有对话的会话上，它位于会话头部，点击后为该会话打开对话框。空白新会话会隐藏头部工具区，插件、设置等页面会盖住会话，所以在这些地方由一个角落副本占据同一位置：固定在侧栏开关左侧、Windows 标题栏下方，它打开的对话框没有可附上的对话。右侧面板打开时角落副本隐藏，因为窗口右上方由该面板占据。
+按钮只在 `hubAccount` 状态流报告已登录时显示。在有对话的会话上，它位于会话头部，点击后为该会话打开对话框。空白新会话会隐藏头部工具区，插件、设置等页面会盖住会话，所以在这些地方由一个角落副本占据同一位置：固定在侧栏开关左侧、Windows 标题栏下方，它打开的对话框没有可附上的对话。右侧面板打开时角落副本隐藏，因为窗口右上方由该面板占据。角落副本显示时，会在文档根节点上公布 `--dsh-feedback-corner-inset`，即从窗口右边缘到它左边缘的距离再加 8px 间隔，隐藏或移除后撤掉，让自身控件位于这个角落下方的页面能把控件留在它左侧；[ui-schedule](../ui-schedule/README.zh.md) 的自动化任务详情条带就是这样做的。
 
 ### 对话框
 
