@@ -91,6 +91,7 @@ export class CompanyTools {
    * Listen on a free loopback port.
    * @returns a function that stops listening.
    */
+  /* jscpd:ignore-start -- the same loopback endpoint shape as the e-commerce accounts bridge, in an unrelated package. */
   async start(): Promise<() => Promise<void>> {
     const server = createServer((request, response) => {
       void readBody(request)
@@ -105,6 +106,7 @@ export class CompanyTools {
       await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
     }
   }
+  /* jscpd:ignore-end */
 
   /**
    * The cards of the tenant's company tools.
@@ -353,6 +355,7 @@ function docs(tool: CompanyTool, method: string | null): Reply {
   return { status: 200, body: JSON.stringify({ method, ...doc }, null, 2) }
 }
 
+/* jscpd:ignore-start -- read like the e-commerce accounts bridge: the whole body, so the refusal still reaches the caller. */
 async function readBody(request: AsyncIterable<Buffer>): Promise<string | undefined> {
   const chunks: Buffer[] = []
   let size = 0
@@ -362,6 +365,7 @@ async function readBody(request: AsyncIterable<Buffer>): Promise<string | undefi
   }
   return size > MAX_BODY ? undefined : Buffer.concat(chunks).toString('utf8')
 }
+/* jscpd:ignore-end */
 
 /**
  * The command for macOS and Linux: POSIX shell and curl, as the model shell has them.
