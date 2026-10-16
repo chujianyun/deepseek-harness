@@ -1,7 +1,7 @@
 {
   "id": "video-report",
   "title": "视频素材绩效日报",
-  "prompt": "执行 video-performance-report 技能的日报：日期取昨天。\n1. 先用技能的 holiday.py 判断昨天和今天是否为法定节假日：任一天是就不发送任何消息、静默结束；判断不了也不发送，报告原因。\n2. @ 对象读工作区 video-performance-report/config.json，只 @ 这一个人；缺少配置就不发送，报告缺少配置。\n3. 按技能的三平台模板生成，所有数据项一律「数据待更新」，月目标固定 14000 元，不编数。\n4. 以智能体自身的飞书身份（lark-cli im +messages-send --as bot）发送一次，idempotency-key 用运行类型加日期；工作区 sent.json 里已有这一天的记录就不再发，发送成功后记进去。名流测试期间只发到测试群 chat_id=oc_94a59b1b5e0f87c703bccdc0f6a10daf，不发正式绩效群。",
+  "prompt": "执行 video-performance-report 技能的日报：日期取昨天。\n1. 先用技能的 holiday.py 判断昨天和今天是否为法定节假日：任一天是就不发送任何消息、静默结束；判断不了也不发送，报告原因。\n2. @ 对象读工作区 video-performance-report/config.json，只 @ 这一个人；缺少配置就不发送，报告缺少配置。\n3. 按技能的三平台模板生成，所有数据项一律「数据待更新」，月目标固定 14000 元，不编数。\n4. 以智能体自身的飞书身份（lark-cli im +messages-send --as bot）发送一次，idempotency-key 用运行类型加日期；工作区 sent.json 里已有这一天的记录就不再发，发送成功后记进去。名流测试期间只发到测试群 chat_id=oc_492528df63e4be9cd8b7dcb2eeed26ce，不发正式绩效群。",
   "timing": {
     "kind": "weekly",
     "weekdays": [

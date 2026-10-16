@@ -145,14 +145,14 @@ describe('recommended tasks', () => {
 
   it('send the inspection only to the test group while it is in development', async () => {
     const [inspection] = await readTasks() as { prompt: string }[]
-    expect(inspection!.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_94a59b1b5e0f87c703bccdc0f6a10daf'])
+    expect(inspection!.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_492528df63e4be9cd8b7dcb2eeed26ce'])
     // No month or table token is fixed in the instruction: the month's mapping is read from the configuration document.
     expect(inspection!.prompt).not.toMatch(/OPEN_ID|\bou_|20\d\d-\d\d(?!-\d)|BdO2sx|KGJzsl|B6KNbU/u)
   })
 
   it('send the ROI report only to the test group, and the provider reminders only to the test group webhook', async () => {
     const [, , , report, reminder] = await readTasks() as { prompt: string }[]
-    expect(report!.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_94a59b1b5e0f87c703bccdc0f6a10daf'])
+    expect(report!.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_492528df63e4be9cd8b7dcb2eeed26ce'])
     expect(reminder!.prompt).not.toMatch(/\boc_|https:\/\/open\.feishu\.cn|\bou_/u)
     expect(reminder!.prompt).toContain('只发到 webhook 映射里的「测试群」')
     for (const prompt of [report!.prompt, reminder!.prompt]) expect(prompt).toContain('本次运行只出预览')
@@ -184,7 +184,7 @@ describe('the video performance report', () => {
     const [, , , , , , reminder, report] = await readTasks() as { prompt: string; operations: string[] }[]
     expect(report!.prompt).toContain('日期取昨天')
     expect(reminder!.prompt).toContain('日期取今天')
-    for (const task of [report!, reminder!]) expect(task.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_94a59b1b5e0f87c703bccdc0f6a10daf'])
+    for (const task of [report!, reminder!]) expect(task.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_492528df63e4be9cd8b7dcb2eeed26ce'])
     const skill = await readFile(join(SKILLS_DIR, 'video-performance-report', 'SKILL.md'), 'utf8')
     expect(skill).toContain('距月GMV目标还差：数据待更新（月目标 14000 元）')
     const send = 'lark-cli im +messages-send --as bot --chat-id oc_x --msg-type text --idempotency-key video-report-日报-20261013 '
