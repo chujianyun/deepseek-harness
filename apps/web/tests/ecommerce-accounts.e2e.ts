@@ -134,7 +134,7 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     // A JD POP shop signs in the same way; its backend names both the account and the store.
     await section.getByRole('button', { name: '新增账号' }).click()
     await add.getByRole('combobox', { name: '平台' }).selectOption('jd')
-    expect(await add.getByRole('combobox', { name: '账号类型' }).locator('option').allTextContents()).toEqual(['商家账号'])
+    expect(await add.getByRole('combobox', { name: '账号类型' }).locator('option').allTextContents()).toEqual(['商家账号', '买家账号'])
     await add.getByPlaceholder('例如：名流旗舰店', { exact: true }).fill('京东店')
     await add.getByPlaceholder('例如：名流旗舰店:运营').fill('jd:运营')
     if (SHOTS !== undefined) {
@@ -245,10 +245,11 @@ async function openPages(cdpUrl: string, ...urls: string[]): Promise<string[]> {
   }
 }
 
-it.skipIf(process.platform === 'win32')('adds a Tmall buyer account, shows its pages today against the limit set in Settings, and its rest after risk control', async () => {
+it.skipIf(process.platform === 'win32')('adds Tmall and JD buyer accounts, shows their pages today against the limit set in Settings, and their rest after risk control', async () => {
   const center = await startMockUserCenter()
   Object.assign(process.env, { DSH_E2E_HUB_ORIGIN: center.origin })
   const harnessHome = await mkdtemp(join(tmpdir(), 'dsh-ecommerce-buyer-home-'))
+  let jdDir: string | undefined
   await mkdir(join(harnessHome, 'profiles', 'scaffold'), { recursive: true })
   await writeFile(join(harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), JSON.stringify([{
     id: 'ecommerce-accounts', config: { dshHome: harnessHome, chromePath: FAKE_CHROME, signInPollMs: 200, chromeTimeoutMs: 5000, checkTimeoutMs: 3000 },
@@ -325,14 +326,56 @@ it.skipIf(process.platform === 'win32')('adds a Tmall buyer account, shows its p
     await expect.poll(() => row.textContent()).toContain('风控冷却中，剩 72 小时')
     await row.click()
     await section.getByText('风控冷却', { exact: true }).waitFor()
+    await section.getByRole('button', { name: '返回账号列表', exact: false }).click()
+
+    // A JD buyer signs in through the JD home page; JD's block page for too many visits rests it the same way.
+    await section.getByRole('button', { name: '新增账号' }).click()
+    await add.getByRole('combobox', { name: '平台' }).selectOption('jd')
+    await add.getByRole('combobox', { name: '账号类型' }).selectOption('buyer')
+    await add.getByPlaceholder('例如：名流旗舰店:运营').fill('京东买家')
+    await add.getByRole('button', { name: '去登录' }).click()
+    const jdSignIn = page.getByRole('dialog', { name: '登录京东' })
+    await jdSignIn.waitFor()
+    jdDir = join(harnessHome, 'ecommerce', tenantId, 'browsers', (await scaffold.ctx.ecommerceAccounts.getState()).accounts[1]!.id)
+    await expect.poll(() => access(join(jdDir!, 'user-data', 'fake-args.json')).then(() => true, () => false), { timeout: 10_000 }).toBe(true)
+    await writeFile(join(jdDir, 'user-data', 'fake-signed-in'), '京东买家')
+    await jdSignIn.getByText('登录成功，平台显示的账号是「京东买家」', { exact: false }).waitFor({ timeout: 15_000 })
+    await expect.poll(async () => {
+      await jdSignIn.getByRole('button', { name: '完成' }).click({ timeout: 2000 }).catch(() => undefined)
+      return jdSignIn.count()
+    }, { timeout: 15_000 }).toBe(0)
+    const jdRow = section.getByRole('button', { name: '查看 京东买家 的详情' })
+    await expect.poll(() => jdRow.textContent(), { timeout: 15_000 }).toContain('已登录')
+    const fourth = bashCall('buyer-4')
+    const jd = JSON.parse(await (await fetch(`${scaffold.ctx.shellEnv.collect(fourth).DSH_ECOMMERCE_URL!}/buyer?platform=jd`)).text()) as { cdpUrl: string; platform: string }
+    expect(jd.platform).toBe('jd')
+    expect(await openPages(jd.cdpUrl, 'https://item.jd.com/100012043978.html', 'https://pc-frequent-pro.pf.jd.com/?from=pc_item&reason=403', 'https://search.jd.com/Search?keyword=x'))
+      .toEqual(['ok', 'net::ERR_BLOCKED_BY_CLIENT', 'net::ERR_BLOCKED_BY_CLIENT'])
+    scaffold.ctx.emit('tools/result', fourth, { isError: false, value: { exitCode: 0 } } as object as ToolExecutionResult)
+    await expect.poll(() => jdRow.textContent()).toContain('风控冷却中，剩 72 小时')
+    if (SHOTS !== undefined) {
+      for (const [locale, name] of [[ZH_BROWSER_LOCALE, 'zh'], ['en-US', 'en']] as const) {
+        for (const colorScheme of ['light', 'dark'] as const) {
+          const shot = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale, colorScheme })
+          await shot.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+          await shot.goto(scaffold.authenticatedUrl)
+          await openSettings(shot, name)
+          const shotSettings = shot.getByRole('dialog', { name: name === 'zh' ? '设置' : 'Settings' })
+          await shotSettings.getByRole('button', { name: name === 'zh' ? '电商账号' : 'E-commerce accounts', exact: true }).click()
+          await shotSettings.getByRole('button', { name: name === 'zh' ? '查看 京东买家 的详情' : 'Open 京东买家' }).waitFor()
+          await shot.screenshot({ path: join(SHOTS, `${name}-${colorScheme}-buyers.png`) })
+          await shot.close()
+        }
+      }
+    }
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
     if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-ecommerce-buyer')
     throw error
   } finally {
     await browser.close()
-    if (accountDir !== undefined) {
-      await killRecordedChrome(accountDir)
+    for (const dir of [accountDir, jdDir]) {
+      if (dir !== undefined) await killRecordedChrome(dir)
     }
     await scaffold.close()
     await center.close()

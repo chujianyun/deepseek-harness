@@ -96,6 +96,7 @@ const LOGINS = [
   ['https://mms.pinduoduo.com/login', 'https://mms.pinduoduo.com/home/'],
   ['https://fxg.jinritemai.com/login', 'https://fxg.jinritemai.com/ffa/mshop/homepage/index'],
   ['https://passport.shop.jd.com/login', 'https://shop.jd.com/jdm/home'],
+  ['https://passport.jd.com/new/login', 'https://www.jd.com/'],
 ]
 const urlOf = (target) => {
   const home = LOGINS.find(([login]) => target.url.startsWith(login))?.[1]
@@ -127,6 +128,10 @@ const pageLoad = (url, nick) => {
         ...store({ url: 'https://mms.pinduoduo.com/earth/api/mallInfo/querySimpleCredential', body: JSON.stringify({ success: true, result: { merchantMainSimpleVO: { mallName: `${nick}店` } } }) }),
         { url: 'https://mms.pinduoduo.com/janus/api/checkLogin', body: JSON.stringify({ success: true, result: { login: true } }) },
       ] }
+  }
+  if (url.startsWith('https://www.jd.com/')) {
+    const identity = nick === undefined ? { IsAuthenticated: false, Unick: '', Name: '' } : { IsAuthenticated: true, Unick: nick, Name: 'jd_fake' }
+    return { responses: [{ url: 'https://passport.jd.com/loginservice.aspx?method=Login&callback=jsonpLogin', body: `jsonpLogin(${JSON.stringify({ Identity: identity })})` }] }
   }
   if (url.startsWith('https://shop.jd.com/')) {
     // Every backend call shares one path; only its `api` query names what it asks.

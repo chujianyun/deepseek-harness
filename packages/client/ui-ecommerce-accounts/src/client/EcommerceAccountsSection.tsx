@@ -23,7 +23,7 @@ const PLATFORM_KEYS = {
   tmall: 'platformTmall', taobao: 'platformTaobao', pinduoduo: 'platformPinduoduo', doudian: 'platformDoudian', jd: 'platformJd',
 } as const satisfies Record<EcommercePlatform, EcommerceLocaleKey>
 /** Platforms a buyer account can be on. */
-const BUYER_PLATFORMS: ReadonlySet<EcommercePlatform> = new Set(['tmall', 'taobao'])
+const BUYER_PLATFORMS: ReadonlySet<EcommercePlatform> = new Set(['tmall', 'taobao', 'jd'])
 /** Platforms in the order the add form offers them. */
 const PLATFORM_ORDER = Object.keys(PLATFORM_KEYS) as EcommercePlatform[]
 const PROBLEM_KEYS = {

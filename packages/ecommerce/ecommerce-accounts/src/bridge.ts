@@ -133,7 +133,7 @@ async function readBody(request: AsyncIterable<Buffer>): Promise<string | undefi
 /** The `dsh-ecommerce` command: POSIX shell and curl, so it needs nothing DSH ships. */
 export const SCRIPT = `#!/bin/sh
 # dsh-ecommerce: the e-commerce accounts DSH keeps signed in, for this DSH shell call.
-usage='usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id> | dsh-ecommerce signed-out <account-id> | dsh-ecommerce memory | dsh-ecommerce remember <json-file>'
+usage='usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao|jd] | dsh-ecommerce risk <account-id> | dsh-ecommerce signed-out <account-id> | dsh-ecommerce memory | dsh-ecommerce remember <json-file>'
 if [ -z "$DSH_ECOMMERCE_URL" ]; then
   echo "dsh-ecommerce: e-commerce accounts are only available in a DSH shell call while DSH is signed in to the user center." >&2
   exit 2
@@ -173,7 +173,7 @@ exit 1
  */
 export const NODE_SCRIPT = `// dsh-ecommerce: the e-commerce accounts DSH keeps signed in, for this DSH shell call.
 import { readFileSync, statSync } from 'node:fs'
-const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id> | dsh-ecommerce signed-out <account-id> | dsh-ecommerce memory | dsh-ecommerce remember <json-file>'
+const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao|jd] | dsh-ecommerce risk <account-id> | dsh-ecommerce signed-out <account-id> | dsh-ecommerce memory | dsh-ecommerce remember <json-file>'
 const base = process.env.DSH_ECOMMERCE_URL
 const [command, argument] = process.argv.slice(2)
 const isFile = (path) => { try { return statSync(path).isFile() } catch { return false } }

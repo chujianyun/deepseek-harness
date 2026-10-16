@@ -13,7 +13,8 @@ import { writeJsonAtomic } from '../src/files.ts'
 import { applyUpdate, DamagedMemory, EMPTY_MEMORY, readMemory } from '../src/memory.ts'
 import { SKILL_CONTENT } from '../src/skill.ts'
 import EcommerceAccountsService, {
-  DOUDIAN, JD, matchesCheckApi, mtopUserNick, parseJsonOrJsonp, PINDUODUO, PUBLIC_PAGE, RISK_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL,
+  DOUDIAN, JD, JD_BUYER, matchesCheckApi, mtopUserNick, parseJsonOrJsonp, PINDUODUO, PUBLIC_PAGE, RISK_PAGE, specOf,
+  TAOBAO, TAOBAO_BUYER, TMALL,
 } from '../src/index.ts'
 import { alive, backgroundBundle, browserPid, closeChrome, ensureTab, findChrome, launchChrome, readRecord } from '../src/chrome.ts'
 import { Cdp, pageTabs } from '../src/cdp.ts'
@@ -1019,7 +1020,7 @@ describe('e-commerce accounts for the model', () => {
       { id: expect.any(String) as string, platform: 'pinduoduo', store: '名流旗舰店', account: 'pdd', kind: 'merchant', status: 'signed-out' },
     ])
     expect(listed.stdout).not.toMatch(/cookie|user-data|ecommerce\//iu)
-    const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id>'
+    const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao|jd] | dsh-ecommerce risk <account-id>'
       + ' | dsh-ecommerce signed-out <account-id> | dsh-ecommerce memory | dsh-ecommerce remember <json-file>\n'
     expect(await runCommand(env, varsOf(env, exec))).toMatchObject({ code: 2, stderr: usage })
     expect(await runCommand(env, varsOf(env, exec), 'browser')).toMatchObject({ code: 2, stderr: usage })
@@ -1260,6 +1261,27 @@ describe('buyer accounts and risk protection', () => {
     expect(PUBLIC_PAGE.test('https://item.m.jd.com/product/100012043978.html')).toBe(true)
     expect(PUBLIC_PAGE.test('https://shop.jd.com/jdm/home')).toBe(false)
     expect(RISK_PAGE.test('https://h5api.m.taobao.com/_____tmd_____/punish?x5secdata=1')).toBe(true)
+  })
+
+  it('signs in a JD buyer through the JD home page, and knows JD\'s risk-control pages', async () => {
+    const env = await setup()
+    const jd = await signedInBuyer(env, { platform: 'jd', kind: 'buyer', account: '京东买家' })
+    expect((await env.service.getState()).accounts.find(account => account.id === jd)).toMatchObject({ status: 'signed-in', signedInAs: '京东买家' })
+    expect(specOf('jd', 'buyer')).toBe(JD_BUYER)
+    expect(specOf('jd', 'merchant')).toBe(JD)
+    // The JD home page asks passport's loginservice, which names the signed-in user.
+    expect(JD_BUYER.read('jsonpLogin({"Identity":{"IsAuthenticated":true,"Unick":"京东买家","Name":"jd_123"}})')).toEqual({ signedIn: true, name: '京东买家' })
+    expect(JD_BUYER.read('jsonpLogin({"Identity":{"IsAuthenticated":true,"Unick":"","Name":"jd_123"}})')).toEqual({ signedIn: true, name: 'jd_123' })
+    expect(JD_BUYER.read('jsonpLogin({"Identity":{"IsAuthenticated":true}})')).toEqual({ signedIn: true })
+    expect(JD_BUYER.read('jsonpLogin({"Identity":{"IsAuthenticated":false,"Unick":"","Name":""}})')).toEqual({ signedIn: false })
+    expect(JD_BUYER.read('jsonpLogin({})')).toEqual({ signedIn: false })
+    expect(JD_BUYER.isLoginPage('https://passport.jd.com/new/login.aspx?ReturnUrl=x')).toBe(true)
+    expect(JD_BUYER.isLoginPage('https://passport.jd.com/uc/login?ltype=logout')).toBe(true)
+    expect(JD_BUYER.isLoginPage('https://www.jd.com/')).toBe(false)
+    // JD's block page for too many visits, and its risk handler, are risk control.
+    expect(RISK_PAGE.test('https://pc-frequent-pro.pf.jd.com/?from=pc_item&reason=403')).toBe(true)
+    expect(RISK_PAGE.test('https://cfe.m.jd.com/privatedomain/risk_handler/03101900/?returnurl=x')).toBe(true)
+    expect(RISK_PAGE.test('https://item.jd.com/100012043978.html')).toBe(false)
   })
 
   it('keeps a merchant account off public product and search pages', async () => {
@@ -1546,8 +1568,10 @@ describe('buyer accounts and risk protection', () => {
       code: 1, stderr: 'DSH: there is no buyer account for this. Stop, and ask the user to add one in DSH Settings → E-commerce accounts (设置 → 电商账号).\n',
     })
     expect(await runCommand(env, varsOf(env, bashCall('c-4')), 'buyer', 'pinduoduo')).toMatchObject({
-      code: 1, stderr: 'DSH: buyer accounts are on tmall and taobao, not "pinduoduo".\n',
+      code: 1, stderr: 'DSH: buyer accounts are on tmall, taobao, and jd, not "pinduoduo".\n',
     })
+    // JD takes buyer accounts too: without one, it says so rather than refusing the platform.
+    expect((await runCommand(env, varsOf(env, bashCall('c-4b')), 'buyer', 'jd')).stderr).toContain('there is no buyer account for this')
     const started = varsOf(env, bashCall('c-5'))
     expect(await (await fetch(`${started.DSH_ECOMMERCE_URL!}/buyer`)).text()).toContain('"kind": "buyer"')
     env.hub.set(null)

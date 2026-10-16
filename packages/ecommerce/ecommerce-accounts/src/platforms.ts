@@ -189,6 +189,24 @@ export const JD: PlatformSpec = {
   },
 }
 
+/**
+ * JD buyers: the JD home page asks passport's `loginservice`, which says `Identity.IsAuthenticated`
+ * and names the user by nickname, or by account name when there is no nickname.
+ */
+export const JD_BUYER: PlatformSpec = {
+  id: 'jd',
+  loginUrl: 'https://passport.jd.com/new/login.aspx?ReturnUrl=https%3A%2F%2Fwww.jd.com%2F',
+  isLoginPage: url => /^https:\/\/(?:passport\.jd\.com\/(?:new|uc)\/login|aq\.jd\.com\/)/u.test(url),
+  pageUrl: 'https://www.jd.com/',
+  checkApi: 'https://passport.jd.com/loginservice.aspx?method=Login',
+  read: (body) => {
+    const identity = objectOf(body)?.Identity as { IsAuthenticated?: unknown; Unick?: unknown; Name?: unknown } | null | undefined
+    if (identity?.IsAuthenticated !== true) return { signedIn: false }
+    const name = text(identity.Unick) ?? text(identity.Name)
+    return name === undefined ? { signedIn: true } : { signedIn: true, name }
+  },
+}
+
 /** Taobao buyers: the Taobao home page asks `mtop.user.getusersimple`, which names the signed-in user. */
 export const TAOBAO_BUYER: PlatformSpec = {
   id: 'taobao',
@@ -209,14 +227,15 @@ export const PUBLIC_PAGE = new RegExp(String.raw`^https?://(?:item\.taobao\.com/
   + String.raw`|(?:item\.jd\.com|item\.jd\.hk|npcitem\.jd\.hk)/\d+\.html|item\.m\.jd\.com/product/\d+\.html|search\.jd\.com/Search)`, 'u')
 
 /**
- * How DSH signs in to and checks an account: Taobao buyers through the Taobao home page, everyone
+ * How DSH signs in to and checks an account: Taobao and JD buyers through their home pages, everyone
  * else through their platform's page.
  * @param platform - the account's platform.
  * @param kind - the account's kind.
  * @returns the platform spec to use.
  */
 export function specOf(platform: EcommercePlatform, kind: EcommerceAccountKind): PlatformSpec {
-  return platform === 'taobao' && kind === 'buyer' ? TAOBAO_BUYER : PLATFORMS[platform]
+  if (kind === 'buyer' && platform === 'taobao') return TAOBAO_BUYER
+  return kind === 'buyer' && platform === 'jd' ? JD_BUYER : PLATFORMS[platform]
 }
 
 /** Every platform by id. */

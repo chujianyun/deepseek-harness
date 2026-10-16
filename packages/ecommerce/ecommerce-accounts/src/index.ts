@@ -56,7 +56,8 @@ import type {
 
 export type * from './types.ts'
 export {
-  DOUDIAN, JD, mtopUserNick, matchesCheckApi, parseJsonOrJsonp, PINDUODUO, PLATFORMS, PUBLIC_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL,
+  DOUDIAN, JD, JD_BUYER, mtopUserNick, matchesCheckApi, parseJsonOrJsonp, PINDUODUO, PLATFORMS, PUBLIC_PAGE, specOf,
+  TAOBAO, TAOBAO_BUYER, TMALL,
   type CheckAnswer, type PlatformSpec,
 } from './platforms.ts'
 import { changeStream } from '@deepseek-ai/dsh-change-stream'
@@ -125,7 +126,9 @@ export const Config: Schema<Config> = Schema.object({
 export const CHROME_DOWNLOAD_URL = 'https://www.google.com/chrome/'
 
 /** Which platforms and kinds can be added now, as `<platform>/<kind>`. */
-const ADDABLE: ReadonlySet<string> = new Set(['tmall/merchant', 'taobao/merchant', 'pinduoduo/merchant', 'doudian/merchant', 'jd/merchant', 'tmall/buyer', 'taobao/buyer'])
+const ADDABLE: ReadonlySet<string> = new Set(['tmall/merchant', 'taobao/merchant', 'pinduoduo/merchant', 'doudian/merchant', 'jd/merchant', 'tmall/buyer', 'taobao/buyer', 'jd/buyer'])
+/** The platforms a buyer account can be on. */
+const BUYER_PLATFORMS: readonly string[] = ECOMMERCE_PLATFORMS.filter(platform => ADDABLE.has(`${platform}/buyer`))
 
 /** What asking about an account found: the platform's answer, or its browser data held by another Chrome. */
 type AccountAnswer = ProbeResult | { readonly kind: 'busy' }
@@ -804,8 +807,8 @@ export class EcommerceAccountsService extends TypertRemoteService {
    */
   private async modelBuyer(grant: Grant, platform: string): Promise<BridgeReply> {
     if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
-    if (platform !== '' && platform !== 'tmall' && platform !== 'taobao') {
-      return refused(`DSH: buyer accounts are on tmall and taobao, not "${platform}".`)
+    if (platform !== '' && !BUYER_PLATFORMS.includes(platform)) {
+      return refused(`DSH: buyer accounts are on ${BUYER_PLATFORMS.slice(0, -1).join(', ')}, and ${String(BUYER_PLATFORMS.at(-1))}, not "${platform}".`)
     }
     const buyers = this.entries
       .filter(entry => entry.kind === 'buyer' && (platform === '' || entry.platform === platform))

@@ -9,8 +9,12 @@
 
 import { Cdp } from './cdp.ts'
 
-/** Whether an address belongs to the platform's risk control: its verification or block page. */
-export const RISK_PAGE = /_____tmd_____|\/punish\b/u
+/**
+ * Whether an address belongs to the platform's risk control: its verification or block page. JD's are
+ * its block page for too many visits and its risk handler.
+ */
+export const RISK_PAGE = new RegExp(String.raw`_____tmd_____|\/punish\b`
+  + String.raw`|^https:\/\/pc-frequent[\w-]*\.pf\.jd\.com\/|^https:\/\/cfe\.m\.jd\.com\/privatedomain\/risk_handler\/`, 'u')
 
 /** What the watch asks about the task's pages. */
 export interface GuardRules {
