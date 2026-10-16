@@ -86,7 +86,18 @@ describe('readLive', () => {
       creator.href = url === CREATOR_URL ? 'https://live.pinduoduo.com/login?redirect=x' : url
       return Promise.resolve()
     })
-    await expect(readLive(creator, '2026-10-13', 0)).rejects.toThrow('多多直播需要重新登录')
+    await expect(readLive(creator, '2026-10-13', 0, 0)).rejects.toThrow('多多直播需要重新登录')
+    // Without its own session the creator center signs in through the backend first, and lands after a few hops.
+    const hopping = livePage()
+    vi.spyOn(hopping, 'goto').mockImplementation((url) => {
+      hopping.href = url === CREATOR_URL ? 'https://live.pinduoduo.com/login/checker?from=mms' : url
+      if (url === CREATOR_URL) {
+        setTimeout(() => { hopping.href = 'https://mms.pinduoduo.com/login/sso?platform=live&accessType=auto' }, 100)
+        setTimeout(() => { hopping.href = CREATOR_URL }, 700)
+      }
+      return Promise.resolve()
+    })
+    expect(await readLive(hopping, '2026-10-13', 0, 5000)).toMatchObject({ metrics: { 千次进人成交: 120.29 } })
     const login = livePage()
     vi.spyOn(login, 'goto').mockImplementation(() => { login.href = 'https://mms.pinduoduo.com/login/?redirectUrl=x'; return Promise.resolve() })
     await expect(readLive(login, '2026-10-13', 0)).rejects.toThrow(expect.objectContaining({ exitCode: EXIT.signedOut }) as Error)

@@ -26,6 +26,30 @@ export const CREATOR_URL = 'https://live.pinduoduo.com/n-creator/live/data-cente
 /** The pause between the two pages, which keeps the run from reaching Pinduoduo's rate limit. */
 const PAUSE_MS = 5000
 
+/**
+ * How long the creator center gets to sign in through the merchant backend: without its own session it loads
+ * `live.pinduoduo.com/login/checker`, then the backend's `login/sso`, before landing on the data page.
+ */
+const SIGN_IN_MS = 15_000
+
+/** How often the address is checked while the creator center signs in. */
+const SIGN_IN_POLL_MS = 500
+
+/**
+ * Wait for the creator center to leave its sign-in pages.
+ * @param page - the tab, just sent to the creator center.
+ * @param waitMs - how long to wait.
+ * @returns the address where it stopped: the data page, or a sign-in page when it did not get through.
+ */
+async function creatorLanding(page: Page, waitMs: number): Promise<URL> {
+  const end = Date.now() + waitMs
+  for (;;) {
+    const at = new URL(await page.evaluate<string>('location.href'))
+    if ((at.hostname === 'live.pinduoduo.com' && !/login/iu.test(at.pathname)) || Date.now() >= end) return at
+    await sleep(SIGN_IN_POLL_MS)
+  }
+}
+
 /** The answer every Pinduoduo API here gives. */
 interface PddAnswer<T> {
   readonly success?: boolean
@@ -72,11 +96,13 @@ async function ask<T>(page: Page, url: string, body: object | undefined, name: s
  * @param page - the tab.
  * @param date - the day.
  * @param pauseMs - the pause between the two pages.
+ * @param signInMs - how long the creator center gets to sign in through the merchant backend.
  * @returns 直播GMV, 直播支付订单, 直播支付转化率 (a ratio), 人均观看时长 (minutes), 累计观看量, 千次进人成交, 直播间涨粉数;
  *   an overview figure the API leaves out is null with the reason.
- * @throws SkillError signed-out on either page's sign-in page, not-ready when either page has no figures for the day yet.
+ * @throws SkillError signed-out on either page's sign-in page (the creator center's once its sign-in through the
+ *   backend has had its time), not-ready when either page has no figures for the day yet.
  */
-export async function readLive(page: Page, date: string, pauseMs = PAUSE_MS): Promise<PlatformFigures> {
+export async function readLive(page: Page, date: string, pauseMs = PAUSE_MS, signInMs = SIGN_IN_MS): Promise<PlatformFigures> {
   await page.goto(liveDataUrl(date))
   if (PINDUODUO.isLoginPage(await page.evaluate<string>('location.href'))) signedOut('拼多多')
   const ready = await ask<string>(page, 'https://mms.pinduoduo.com/sydney/api/mallFlow/queryLiveOverViewReadyTime', {}, '直播数据就绪时间')
@@ -87,7 +113,7 @@ export async function readLive(page: Page, date: string, pauseMs = PAUSE_MS): Pr
   if (overview?.statDate !== date) throw new SkillError(`拼多多直播数据返回的日期是 ${String(overview?.statDate)}，不是 ${date}，没有取数。`)
   await sleep(pauseMs)
   await page.goto(CREATOR_URL)
-  if (/login/iu.test(new URL(await page.evaluate<string>('location.href')).pathname)) signedOut('多多直播')
+  if (/login/iu.test((await creatorLanding(page, signInMs)).pathname)) signedOut('多多直播')
   const room = await ask<{ name?: string }>(page, 'https://live.pinduoduo.com/kiwi/obs/anchor/info', undefined, '直播间信息')
   const line = async (key: string): Promise<number> => {
     const points = (await ask<{ lineChartPointVOList?: LinePoint[] }>(page, 'https://live.pinduoduo.com/kiwi/obs/statistic/line', { key }, '直播数据趋势'))
