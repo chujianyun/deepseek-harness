@@ -12,7 +12,7 @@
 <采集.json> 是 tmall-daily-figures 两个脚本各自输出的那一行 JSON。
 
 plan: 在 --out 下写 plan.json 和每段连续单元格的 cells-<起>-<止>.json（+cells-set --cells 用），并打印计划。
-backtest: 不写任何东西，打印回测报告；全部通过退出 0，否则 1。
+backtest: 不写任何东西，打印回测报告；全部通过退出 0，否则 1。成交类指标采集值偏低且在 3% 以内视为其后退款，判通过并注明。
 candidates: 打印可用来回测的日期（店铺gmv、外投成交、自投成交、推广成交的实际完成都有值），最近的在前。
 pending: 打印 --from 到 --to 之间、这张表里有「实际完成」列、且映射指标里还有空着的非公式格的日期，早的在前。
 plan 只写空着的格；已有值的格（人工填过或改过）不覆盖，列在 skipped 里。
@@ -43,6 +43,10 @@ SOURCES = {
 TOLERANCE = {"外投成交": 0.02}
 DEFAULT_TOLERANCE = 0.01
 ROUNDING = 0.005 + 1e-9
+
+#: 成交类指标采集值比表中值低、且在这个比例以内时判通过：回测的日子早于取数日，成交含其后的退款，比人工次日填报时低是正常的。
+REFUND_LAG = 0.03
+REFUND_METRICS = {"店铺gmv", "外投成交", "自投成交", "推广成交"}
 
 #: 回测日期必须已有人工填报的指标。
 BACKTEST_KEYS = ["店铺gmv", "外投成交", "自投成交", "推广成交"]
@@ -280,8 +284,12 @@ def backtest(args):
             limit = TOLERANCE.get(metric, DEFAULT_TOLERANCE)
             # 表里的数保留 2 位万元，差在 0.005 万元以内是舍入。
             ok = diff <= limit or abs(exact - current) <= ROUNDING
-            passed = passed and ok
-            verdict = f"{'通过' if ok else '不通过'}（差异 {diff:.2%}，允许 {limit:.0%}）"
+            refund = not ok and metric in REFUND_METRICS and exact < current and diff <= REFUND_LAG
+            passed = passed and (ok or refund)
+            if refund:
+                verdict = f"通过（采集值低 {diff:.2%}，在 {REFUND_LAG:.0%} 以内：取数晚于填报，成交含其后退款）"
+            else:
+                verdict = f"{'通过' if ok else '不通过'}（差异 {diff:.2%}，允许 {limit:.0%}）"
         lines.append(f"| {metric} | {fmt(current)} | {fmt(computed)} | {verdict} |")
     print(f"# 天猫日报回测 {args.date}（{col} 列）\n")
     print("| 指标 | 表中现值 | 采集推算值 | 结论 |\n|---|---:|---:|---|")

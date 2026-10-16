@@ -41,7 +41,7 @@ Python 用 `load_workspace_dependencies` 返回的自带解释器；下文 `<pyt
    `<YYYYMMDD>` 用这次要填的那一天。`has_more` 为 true 时缩小行范围（指标行都在表的前几十行）再读，不要拿截断的文件计算。
 5. **回测闸门**：读 `backtest.json`。`month` 等于这个月 → 跳到第 6 步。否则这个月本轮**只回测、不写表**：
    1. `<python> <技能目录>/scripts/daily_report.py candidates --cells <cells-before.json>`，列出店铺gmv、外投成交、自投成交、推广成交都已有人工填报值的日期，最近的在前。没有 → 报告「本月暂无可回测日期：请负责人先手工填报至少 1 天的店铺gmv/外投/自投/推广实际完成，下一轮自动回测」并结束这个月。
-   2. 取最近的 1~2 个日期 D，按第 7 步对每个 D 采集（存到 `backtest-YYYYMMDD/`），再运行 `<python> <技能目录>/scripts/daily_report.py backtest --cells <cells-before.json> --date <D> --figures <tmall.json> --figures <yuntai.json>`。金额差异 ≤1%（外投成交 ≤2%）或在 0.005 万元的舍入以内判通过，投产随花费与成交判定。
+   2. 取最近的 1~2 个日期 D，按第 7 步对每个 D 采集（存到 `backtest-YYYYMMDD/`），再运行 `<python> <技能目录>/scripts/daily_report.py backtest --cells <cells-before.json> --date <D> --figures <tmall.json> --figures <yuntai.json>`。金额差异 ≤1%（外投成交 ≤2%）或在 0.005 万元的舍入以内判通过；店铺gmv、外投成交、自投成交、推广成交的采集值**比表中值低**且在 3% 以内也判通过——回测日早于取数日，成交含其后的退款，脚本会注明；投产随花费与成交判定。
    3. 全部通过 → 写 `backtest.json`（month 为这个月），报告「回测通过，下一轮起按此口径填报」并附回测表；任一不通过 → 不写 `backtest.json`，报告差异项，交用户判断映射是否要调整。
    4. 用户看过上月回测结论后明确指示「本月沿用上月口径」时，可直接把 `backtest.json` 的 month 改为当月，并在 `note` 写明「接手人指示沿用 YYYY-MM 口径」。
 6. **要填的日期**：`<python> <技能目录>/scripts/daily_report.py pending --cells <cells-before.json> --from <范围起> --to <范围止>`，列出这个月范围内映射指标还有空格的日期，早的在前。没有 → 这个月不用填。下面 7~9 步按日期从早到晚逐天做，每天都重新读一次表（第 4 步）作为这一天的 `cells-before.json`。
@@ -57,7 +57,7 @@ Python 用 `load_workspace_dependencies` 返回的自带解释器；下文 `<pyt
    ```
    不用管道、不在命令里拼别的命令；不写 `files` 以外的任何单元格。某条报错 → 不重试，继续回读核对，报告哪段没写上。
 9. **回读**：按第 4 步同样的范围再读一次存为 `cells-after.json`，运行 `<python> <技能目录>/scripts/daily_report.py verify --plan tianmao-daily-report/<YYYYMMDD>/plan.json --before tianmao-daily-report/<YYYYMMDD>/cells-before.json --after tianmao-daily-report/<YYYYMMDD>/cells-after.json`；退出码 1 → 报告「需人工介入」及不一致的单元格。
-10. **报告**：逐天写日期、各指标元值与写入值（万元）、写入单元格清单、跳过项及原因（含「已有值，未覆盖」）、回读结论；采集文件 `notes` 里的口径与自检结果（如云台媒体合计与总计不一致、某场景当天没有数据按 0 计）一并列出。异常时首行写「需人工介入」及原因。
+10. **报告**：逐天写日期、各指标元值与写入值（万元）、写入单元格清单、跳过项及原因（含「已有值，未覆盖」）、回读结论；采集文件 `notes` 里的口径与自检结果（如云台媒体合计与总计不一致、某场景当天没有数据按 0 计）一并列出。补填的日期早于昨天时，在这一天下注明「补采日期晚，成交含其后退款，可能比次日取数略低」——照实际取到的数填，不调整。异常时首行写「需人工介入」及原因。
 
 ## 纪律
 
