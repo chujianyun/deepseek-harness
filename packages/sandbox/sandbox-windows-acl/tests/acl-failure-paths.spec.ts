@@ -8,13 +8,15 @@
  * the real-FFI round-trip lives in acl.spec.ts (win32 only).
  */
 
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Win32Error } from '@deepseek-ai/dsh-win32-process'
 import { describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import koffi from 'koffi'
 
-import { grantWrite, revokeWrite, withPathLock } from '../src/acl.ts'
+import { grantWrite, revokeWrite, unreachedDirectory, withPathLock } from '../src/acl.ts'
 import { allocBytes, ptrAddress } from '../src/ffi.ts'
 import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
 import * as abi from '../src/win32-abi.ts'
@@ -969,5 +971,44 @@ describe('revokeWrite no-DACL path', () => {
     }
     expect(caught).toBeInstanceOf(Win32Error)
     expect((caught as Win32Error).api).toBe('LocalFree')
+  })
+})
+
+describe('unreachedDirectory edge cases', () => {
+  /** A security read that finds no DACL, no label, and no descriptor. */
+  const noDacl = () => vi.fn((
+    _path: unknown, _type: unknown, _info: unknown, _owner: unknown, _group: unknown,
+    dacl: NativePtr, sacl: NativePtr, descriptor: NativePtr,
+  ) => {
+    koffi.encode(dacl, PVOID, 0n)
+    koffi.encode(sacl, PVOID, 0n)
+    koffi.encode(descriptor, PVOID, 0n)
+    return 0
+  })
+
+  it('passes over what it cannot list or read, trusts a directory without a DACL, and stops at the limit', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-acl-scan-'))
+    try {
+      mkdirSync(join(root, 'a', 'b'), { recursive: true })
+      const sid = craftWorldSid()
+      // A missing root lists nothing.
+      expect(unreachedDirectory(aclApi(), join(root, 'missing'), sid)).toBeUndefined()
+      // No DACL and no descriptor: nothing to free, and nothing the grant could add.
+      const bareRead = noDacl()
+      const bareFree = vi.fn(() => 0n as NativePtr)
+      expect(unreachedDirectory(aclApi({ getNamedSecurityInfoW: bareRead, localFree: bareFree }), root, sid)).toBeUndefined()
+      expect(bareRead).toHaveBeenCalledTimes(2)
+      expect(bareFree).not.toHaveBeenCalled()
+      // Security that cannot be read is passed over, deeper folders still visited.
+      const refused = vi.fn(() => 5)
+      expect(unreachedDirectory(aclApi({ getNamedSecurityInfoW: refused }), root, sid)).toBeUndefined()
+      expect(refused).toHaveBeenCalledTimes(2)
+      // The limit counts the root: a limit of two reads only the first level.
+      const limitedRead = noDacl()
+      expect(unreachedDirectory(aclApi({ getNamedSecurityInfoW: limitedRead }), root, sid, 2)).toBeUndefined()
+      expect(limitedRead).toHaveBeenCalledTimes(1)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

@@ -6,7 +6,7 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -164,6 +164,30 @@ describe.skipIf(!isWin32 || !pwshAvailable())('windows-acl runner', () => {
     expect(existsSync(victimFile)).toBe(false)
     expect(existsSync(renamedDir)).toBe(true)
   }, 30_000)
+
+  it('a folder moved into the workspace after its grant is writable once the workspace is granted again', () => {
+    const workspace = join(scratchRoot, 'moved-into')
+    mkdirSync(workspace)
+    const probe = (target: string) => [
+      "$ErrorActionPreference='SilentlyContinue';",
+      `try{New-Item -ItemType Directory -Path '${join(target, 'made')}' -ErrorAction Stop|Out-Null;`,
+      `Set-Content -LiteralPath '${join(target, 'made', 'f.txt')}' -Value x -ErrorAction Stop;`,
+      `Remove-Item -LiteralPath '${join(target, 'made')}' -Recurse -ErrorAction Stop;'MOVED-WRITE: OK'}catch{'MOVED-WRITE: DENIED'}`,
+    ].join('')
+    const run = (target: string) => runRunner([
+      '--workspace', workspace, '--temp', isolatedTemp, '--mode', 'workspace-write',
+      '--', 'pwsh', '/NoLogo', '/NonInteractive', '/NoProfile', '/Command', probe(target),
+    ])
+    // The first run grants the workspace; then a folder from outside is moved in with the permissions it had.
+    expect(run(workspace).stdout).toContain('MOVED-WRITE: OK')
+    const outside = join(scratchRoot, 'outside-folder')
+    mkdirSync(outside)
+    renameSync(outside, join(workspace, 'moved'))
+    // The next run grants the workspace again, finds the folder without the grant, and applies the root again.
+    const result = run(join(workspace, 'moved'))
+    expect(result.status, `stderr: ${result.stderr}`).toBe(0)
+    expect(result.stdout).toContain('MOVED-WRITE: OK')
+  }, 60_000)
 
   it('paired SIDs: the runner trusts caller-owned private-temp grants and materializes nothing itself', () => {
     const seamWorkspace = join(scratchRoot, 'seam-workspace')

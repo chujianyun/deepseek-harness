@@ -22,7 +22,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readdirSync, type Dirent } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { allocOverlapped, allocPtrSlot, decodePtr, freeBytes, decodeUint8At, decodeUint16At, decodeUint32At, getTempPath, isInvalidHandle, isNullPtr, ptrAddress, sameSidAt, throwLastError, throwWin32 } from './ffi.ts'
@@ -285,7 +285,7 @@ function mergeAndApply(
  * @param sidPtr - the trustee SID to match.
  * @returns whether the exact entry is already present.
  */
-function hasExactEntry(acl: NativePtr, aceType: number, inheritance: number, mask: number, sidPtr: NativePtr): boolean {
+function hasExactEntry(acl: NativePtr, aceType: number, inheritance: number | undefined, mask: number, sidPtr: NativePtr): boolean {
   const aclSize = decodeUint16At(acl, 2)
   const aceCount = decodeUint16At(acl, 4)
   if (aclSize < 8 || aclSize > 1_048_576) return false // implausible: fall back to the merge path
@@ -295,7 +295,7 @@ function hasExactEntry(acl: NativePtr, aceType: number, inheritance: number, mas
     const aceSize = decodeUint16At(acl, offset + 2)
     if (aceSize < 8 || offset + aceSize > aclSize) return false // implausible: fall back to the merge path
     const exact = decodeUint8At(acl, offset) === aceType
-      && decodeUint8At(acl, offset + 1) === inheritance
+      && (inheritance === undefined || decodeUint8At(acl, offset + 1) === inheritance)
       && decodeUint32At(acl, offset + 4) === mask
     if (exact && sameSidAt(acl, offset + 8, sidPtr, 0)) return true
     offset += aceSize
@@ -326,6 +326,51 @@ function hasExactGrant(oldAcl: NativePtr, sidPtr: NativePtr): boolean {
  */
 function hasExactDeny(oldAcl: NativePtr, worldSidPtr: NativePtr): boolean {
   return hasExactEntry(oldAcl, abi.ACCESS_DENIED_ACE_TYPE, abi.CONTAINER_INHERIT_ACE, abi.FILE_DELETE_CHILD, worldSidPtr)
+}
+
+/** The most directories {@link unreachedDirectory} visits under a granted root before it trusts the rest. */
+export const INHERITANCE_SCAN_LIMIT = 4096
+
+/**
+ * The first directory under `root`, breadth first, whose DACL carries no write grant for the capability SID,
+ * explicit or inherited. A folder moved in from elsewhere on the same volume keeps the permissions it had, so it
+ * lacks the grant and the Low label until the root's inheritable entries are applied again. Links and junctions
+ * are not followed, a directory whose listing or security cannot be read is passed over, and after `limit`
+ * directories the rest are trusted, so a huge workspace costs a bounded read.
+ * @param api - the binding table.
+ * @param root - the granted directory.
+ * @param sidPtr - the capability SID the grant names.
+ * @param limit - the most directories to visit.
+ * @returns the path of a directory without the grant, or undefined when every visited one has it.
+ */
+export function unreachedDirectory(
+  api: Win32Bindings, root: string, sidPtr: NativePtr, limit = INHERITANCE_SCAN_LIMIT,
+): string | undefined {
+  const queue = [root]
+  for (let visited = 0; visited < queue.length && visited < limit; visited++) {
+    const dir = queue[visited] as string
+    let entries: Dirent[]
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      // An unlistable directory is the diagnosis skill's case, not a missing inheritance.
+      continue
+    }
+    for (const entry of entries) if (entry.isDirectory()) queue.push(join(dir, entry.name))
+    if (dir === root) continue
+    let security: ReturnType<typeof readCurrentSecurity>
+    try {
+      security = readCurrentSecurity(api, dir)
+    } catch {
+      // Security this user cannot read cannot be repaired by the grant either.
+      continue
+    }
+    const { oldAcl, descriptor } = security
+    const carries = oldAcl === null || hasExactEntry(oldAcl, abi.ACCESS_ALLOWED_ACE_TYPE, undefined, abi.GRANT_MASK, sidPtr)
+    if (descriptor !== null) api.localFree(descriptor)
+    if (!carries) return dir
+  }
+  return undefined
 }
 
 /**
@@ -365,7 +410,9 @@ function hasForeignGrant(oldAcl: NativePtr, sidPtr: NativePtr): boolean {
  * Idempotent: the exact ACE, deny, and label together SKIP the
  * SetNamedSecurityInfoW apply, which would otherwise re-propagate the
  * identical descriptor across the whole tree (eager inheritance; minutes on
- * large workspaces). Otherwise read-merge-write, so pre-existing explicit ACEs
+ * large workspaces) — unless {@link unreachedDirectory} finds a directory
+ * below without the grant, as a folder moved in after the last apply; then
+ * the apply runs again and its propagation reaches that folder. Otherwise read-merge-write, so pre-existing explicit ACEs
  * survive (same shape as {@link revokeWrite}). Runs under the per-path lock.
  * The directory must be owned by the caller AND grant WRITE_OWNER (the label
  * lives in the SACL; owner-implicit rights cover only READ_CONTROL and
@@ -445,7 +492,8 @@ function applyGrant(api: Win32Bindings, path: string, sidPtr: NativePtr, lowLabe
   const { oldAcl, labelAcl, descriptor } = readCurrentSecurity(api, path)
   if (oldAcl !== null && labelAcl !== null
     && hasExactGrant(oldAcl, sidPtr) && hasExactDeny(oldAcl, worldSidPtr)
-    && hasExactLabel(labelAcl, lowLabelSidPtr)) {
+    && hasExactLabel(labelAcl, lowLabelSidPtr)
+    && unreachedDirectory(api, path, sidPtr) === undefined) {
     // The exact ACE, deny, and label stand: releasing the descriptor is the whole operation.
     if (descriptor !== null) {
       const freed = api.localFree(descriptor)
