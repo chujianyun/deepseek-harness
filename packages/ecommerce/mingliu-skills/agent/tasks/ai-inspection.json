@@ -1,7 +1,7 @@
 {
   "id": "ai-inspection",
   "title": "天猫一店+拼多多工作日巡检",
-  "prompt": "执行天猫一店和拼多多今日巡检：日期取昨日，月份取昨日所在月份。\n1. 唯一运行配置源：云文档《AI巡检固化配置》https://scnntx5zuepg.feishu.cn/docx/E3cXdNjFQoPknUx34NscD0lAnZb 第五节当月表格映射——天猫一店目标/实际表 token、分表、指标行，拼多多目标表与实际表 token、分表，全部按昨日所在月份从第五节现读，不写死。若第五节没有该月份映射，停止巡检、不推送，只向接手人报告「配置文档缺少 YYYY-MM 映射，请用 inspection-config-update 更新」。\n2. 达成率与分级：>=100% 正常；90-100% 轻微偏移；70-90% 明显偏移；<70% 严重。空实际=数据待更新不按 0；店铺费比反向；花费行辅助项不进需优先关注。\n3. 输出严格按精简六章节：标题 / 巡检日期 / 整体建议 / 需优先关注 / 轻微偏移观察 / 结尾说明（详见云文档第三节）。\n4. 不再走手动确认闸门（2026-10-10 用户指示调整）。日报产完后立即自动推送到下列目标：\n   - AI工作群（测试群） chat_id=oc_492528df63e4be9cd8b7dcb2eeed26ce（im +messages-send，目标 chat_id）\n   每个目标分别发一次，不汇总，发送身份为当前智能体自身（lark-cli --as bot，不以任何个人名义）。msg_type 用 interactive，按精简六章节卡片渲染。",
+  "prompt": "执行天猫一店和拼多多今日巡检：日期取昨日，月份取昨日所在月份。\n1. 唯一运行配置源：云文档《AI巡检固化配置》https://scnntx5zuepg.feishu.cn/docx/E3cXdNjFQoPknUx34NscD0lAnZb 第五节当月表格映射——天猫一店目标/实际表 token、分表、指标行，拼多多目标表与实际表 token、分表，全部按昨日所在月份从第五节现读，不写死。若第五节没有该月份映射，停止巡检、不推送，只向接手人报告「配置文档缺少 YYYY-MM 映射，请用 inspection-config-update 更新」。\n2. 达成率与分级：>=100% 正常；90-100% 轻微偏移；70-90% 明显偏移；<70% 严重。空实际=数据待更新不按 0；店铺费比反向；花费行辅助项不进需优先关注。\n3. 输出严格按精简六章节：标题 / 巡检日期 / 整体建议 / 需优先关注 / 轻微偏移观察 / 结尾说明（详见云文档第三节）；每个平台用 ai-inspection 技能的 scripts/inspection_card.py 分级并生成卡片 card.json，分级与卡片内容只取脚本输出。\n4. 不再走手动确认闸门（2026-10-10 用户指示调整）。日报产完后立即自动推送到下列目标：\n   - AI工作群（测试群） chat_id=oc_492528df63e4be9cd8b7dcb2eeed26ce（im +messages-send，目标 chat_id）\n   每个目标分别发一次，不汇总，发送身份为当前智能体自身（lark-cli --as bot，不以任何个人名义）。msg_type 用 interactive，--content 为该平台 card.json 的全部内容（原巡检卡片格式的卡片），不用富文本。",
   "timing": {
     "kind": "weekly",
     "weekdays": [

@@ -753,6 +753,108 @@ describe('collect_plan.py', () => {
   })
 })
 
+describe('inspection_card.py', () => {
+  const script = join(SKILLS_DIR, 'ai-inspection', 'scripts', 'inspection_card.py')
+  interface Card {
+    schema: string
+    config: { summary: { content: string } }
+    header: { title: { content: string }; subtitle: { content: string }; template: string }
+    body: { elements: { tag: string; content?: string }[] }
+  }
+  async function run(input: unknown) {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-inspection-card-'))
+    try {
+      await writeFile(join(dir, 'items.json'), JSON.stringify(input))
+      const ended = await runPython(script, ['--items', join(dir, 'items.json'), '--out', join(dir, 'out')])
+      const text = await readFile(join(dir, 'out', 'card.json'), 'utf8').catch(() => undefined)
+      return { ...ended, text, card: text === undefined ? undefined : JSON.parse(text) as Card }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }
+  const sections = (card: Card) => card.body.elements.filter(element => element.tag === 'markdown').map(element => element.content!)
+  /** 拼多多 of 2026-10-15, as the first test run read it, with an owner-less 店铺 renamed. */
+  const PDD = {
+    platform: '拼多多', date: '2026-10-15', items: [
+      { owner: '店长甲', name: '名流计生用品官方旗舰店', target: 10, actual: 9.42 },
+      { owner: '店长乙', name: '名流保健官方旗舰店', target: 1.91, actual: 1.67 },
+      { owner: '店长乙', name: '名流男性用品官方旗舰店', target: 9.8, actual: 9.1 },
+      { owner: '店长丙', name: '名流成人保健品官方旗舰店', target: 0.78, actual: 0.7 },
+      { owner: '店长甲', name: '名流成人保健品旗舰店', target: 3.31, actual: 2.79 },
+      { owner: '店长丁', name: '名流保健情趣旗舰店', target: 2, actual: 2.174 },
+    ],
+  }
+
+  it('grades each row once, and builds the card in the format of the inspection cards before it', async () => {
+    const ran = await run(PDD)
+    expect([ran.code, ran.out]).toEqual([0, expect.stringContaining('拼多多 2026-10-15：需优先关注 3、轻微偏移 2、达标 1、待更新 0、目标为空 0、辅助项 0；本次提醒完整性：完整。')])
+    const card = ran.card!
+    expect([card.schema, card.header.template, card.header.title.content, card.header.subtitle.content]).toEqual(['2.0', 'blue', '【部门群巡检提醒｜拼多多】', '巡检日期：10月15日'])
+    expect(card.config.summary.content).toBe('拼多多10月15日巡检：名流保健官方旗舰店87.4%、名流成人保健品官方旗舰店89.7%、名流成人保健品旗舰店84.3%低于90%')
+    // Five sections divided by lines, each opening with its bold name.
+    expect(card.body.elements.map(element => element.tag)).toEqual(['markdown', 'hr', 'markdown', 'hr', 'markdown', 'hr', 'markdown', 'hr', 'markdown'])
+    const [date, advice, focus, mild, ending] = sections(card)
+    expect(date).toBe('**巡检日期**\n10月15日')
+    expect(advice).toBe('**整体建议**\n- 本日 3 家店铺达成率低于 90%，建议相关负责人复查货品/投放/流量/转化链路。\n- AI只做数据解读和提醒，不替代负责人判断。')
+    expect(focus).toBe([
+      '**需优先关注**', '**店长乙**', '- 名流保健官方旗舰店：目标 1.91，实际 1.67，达成率 87.4%，暂无环比数据。',
+      '**店长丙**', '- 名流成人保健品官方旗舰店：目标 0.78，实际 0.70，达成率 89.7%，暂无环比数据。',
+      '**店长甲**', '- 名流成人保健品旗舰店：目标 3.31，实际 2.79，达成率 84.3%，暂无环比数据。',
+    ].join('\n'))
+    // A row at or over its target is in neither list; a row in 90%~100% only under the slight shifts.
+    expect(mild).toBe('**轻微偏移观察**\n**店长甲**\n- 名流计生用品官方旗舰店：94.2%\n**店长乙**\n- 名流男性用品官方旗舰店：92.9%')
+    expect(ran.text).not.toContain('名流保健情趣旗舰店')
+    expect(ending).toContain('机器人只发送提醒，不接收回复。')
+    expect(ran.out).toContain('【部门群巡检提醒｜拼多多】\n巡检日期：10月15日\n\n巡检日期\n10月15日')
+  })
+
+  it('keeps pending, target-less, reverse, and spending rows out of the wrong lists', async () => {
+    const ran = await run({
+      platform: '天猫一店', date: '2026-10-12', items: [
+        { owner: '甲', name: '自投成交', target: 3, actual: 2.26, suggestion: '核实自投渠道货品/投放/流量/转化链路。', note: '原因：素材未过审。' },
+        { owner: '乙', name: '外投成交', target: 10, actual: 9.831 },
+        { owner: '乙', name: '外投花费', target: 5, actual: 2, direction: 'auxiliary' },
+        { owner: '丙', name: '店铺费比', target: 0.2, actual: 0.25, direction: 'reverse' },
+        { owner: '丙', name: '排名', target: 3, actual: 0, direction: 'reverse' },
+        { owner: '丁', name: '会员', target: 1, actual: null },
+        { owner: '丁', name: '直播', target: 0, actual: 1 },
+      ],
+    })
+    expect([ran.code, ran.out]).toEqual([0, expect.stringContaining('需优先关注 2、轻微偏移 1、达标 0、待更新 1、目标为空 2、辅助项 1；本次提醒完整性：不完整。')])
+    const [, advice, focus, mild] = sections(ran.card!)
+    expect(advice).toBe([
+      '**整体建议**', '- 本日 2 项指标达成率低于 90%，建议相关负责人复查货品/投放/流量/转化链路。', '- 1 项实际待更新（会员），建议补齐后复核。',
+      '- 2 项目标为空，不判断（排名、直播）。', '- 花费类（外投花费）为投放辅助项，不计入偏移统计与达成率判断，仅作参考。', '- AI只做数据解读和提醒，不替代负责人判断。',
+    ].join('\n'))
+    // 天猫一店 rates keep two decimals, as its cards did.
+    expect(focus).toContain('- 自投成交：目标 3.00，实际 2.26，达成率 75.33%，暂无环比数据。原因：素材未过审。建议：核实自投渠道货品/投放/流量/转化链路。')
+    expect(focus).toContain('- 店铺费比：目标 0.20，实际 0.25，达成率 80.00%')
+    expect(mild).toBe('**轻微偏移观察**\n**乙**\n- 外投成交：98.31%')
+    const calm = await run({ platform: '天猫一店', date: '2026-10-12', items: [{ owner: '甲', name: '店铺gmv', target: 1, actual: 1 }, { owner: '甲', name: "'s", target: 1, actual: null }] })
+    expect(sections(calm.card!).slice(2, 4)).toEqual(['**需优先关注**\n本日无达成率低于 90% 的项。', '**轻微偏移观察**\n本日无落在 90%–100% 区间的项。'])
+    expect(calm.card!.config.summary.content).toBe('天猫一店10月12日巡检：无低于90%的项')
+    // A quote that would end a single-quoted shell string is a JSON escape in the file.
+    expect(calm.text).toContain('\\u0027s')
+  })
+
+  it('refuses what it cannot read', async () => {
+    const item = { owner: '甲', name: '店铺gmv', target: 1, actual: 1 }
+    for (const [input, message] of [
+      [{ ...PDD, platform: '北美TTS' }, 'platform 只能是 天猫一店 / 拼多多'],
+      [{ ...PDD, date: '10月15日' }, 'date 要写成 YYYY-MM-DD'],
+      [{ ...PDD, items: [] }, 'items 不能为空'],
+      [{ ...PDD, items: [{ ...item, owner: '' }] }, '第 1 项缺少 owner 或 name'],
+      [{ ...PDD, items: [{ ...item, direction: 'up' }] }, '第 1 项 direction 只能是'],
+      [{ ...PDD, items: [{ ...item, actual: '1.2' }] }, '第 1 项 actual 要是数字或 null'],
+    ] as const) {
+      const ran = await run(input)
+      expect([ran.code, ran.card, ran.out]).toEqual([2, undefined, expect.stringContaining(message)])
+    }
+    const huge = await run({ ...PDD, items: Array.from({ length: 400 }, (_v, i) => ({ ...item, name: `店铺-${'很长的名字'.repeat(10)}-${String(i)}`, actual: 0.5 })) })
+    expect([huge.code, huge.out]).toEqual([2, expect.stringContaining('卡片自检不通过：卡片')])
+  })
+})
+
 describe('plan_roi.py', () => {
   const script = join(SKILLS_DIR, 'plan-roi-analysis', 'scripts', 'plan_roi.py')
   const plan = (id: string, name: string, account: string, cost: number, gmv: number, roi: number) => ({
