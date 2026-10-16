@@ -213,7 +213,7 @@ describe('always allowing connector writes', () => {
 })
 
 describe('connector writes under full access', () => {
-  runs('runs a plain write unasked with an audit record, and refuses with the reason what needs a per-call approval', async () => {
+  runs('runs a plain write unasked with an audit record, and still asks for what needs the user each time', async () => {
     const t = await connected()
     const { agent, appended } = await auditedAgent()
     agent.session.append('sandbox/mode', { mode: 'danger-full-access' })
@@ -221,20 +221,18 @@ describe('connector writes under full access', () => {
     expect(appended().filter(event => event.type.startsWith('connectors/'))).toEqual([
       { type: 'connectors/always-allowed', data: { callId: 'call-1', commands: ['lark-cli im +messages-send'] } },
     ])
-    // A high-risk command, one of unknown risk, or a call holding one still needs the user each time,
-    // which full access never asks: it is refused with that reason instead of a silent rejection.
-    for (const [id, command, named] of [
-      ['call-2', 'lark-cli drive +delete --file-token box_1', 'lark-cli drive +delete'],
-      ['call-3', 'lark-cli im +messages-send && lark-cli drive +delete', 'lark-cli im +messages-send, lark-cli drive +delete'],
+    // A high-risk command, one of unknown risk, or a call holding one still asks, without an always-allow:
+    // an unattended automation task's gate answers it from its declared operations.
+    for (const [id, command] of [
+      ['call-2', 'lark-cli drive +delete --file-token box_1'],
+      ['call-3', 'lark-cli im +messages-send && lark-cli drive +delete'],
+      ['call-4', 'lark-cli calendar list'],
     ] as const) {
-      expect(await t.gate(bash(command, id, agent))).toEqual({
-        kind: 'deny',
-        reason: `${named}: a connector command that is high-risk or of unknown risk needs the user's approval for each call, `
-          + 'and this session runs with full access, which asks for none. Ask the user to switch the session to workspace-write to approve it.',
-      })
+      const decision = await t.gate(bash(command, id, agent))
+      expect(decision).toMatchObject({ kind: 'ask' })
+      expect(decision).not.toHaveProperty('onRemember')
     }
-    expect(await t.gate(bash('lark-cli calendar list', 'call-4', agent))).toMatchObject({ kind: 'deny' })
-    // Reads run as before, and a session under workspace-write still asks.
+    // Reads run as before, and a session under workspace-write still asks for the plain write.
     expect(await t.gate(bash('lark-cli calendar +agenda', 'call-5', agent))).toEqual({ kind: 'allow' })
     const other = await auditedAgent()
     expect(await t.gate(bash('lark-cli im +messages-send', 'call-6', other.agent))).toMatchObject({ kind: 'ask' })

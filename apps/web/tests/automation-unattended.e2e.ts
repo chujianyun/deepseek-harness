@@ -5,7 +5,8 @@
 // unknown risk that would ask for approval — runs a Skill script, and then tries a high-risk delete it
 // did not declare. The sheet write runs without asking, the script runs as usual, the delete is
 // refused without waiting, and the run ends on its own with each answer recorded in the Session log;
-// opened in the browser, the run's turn ends with the record of what ran and what was refused.
+// opened in the browser, the run's turn ends with the record of what ran and what was refused. A second
+// task with full access runs its declared high-risk delete, confirmed, and refuses the undeclared write.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
@@ -156,6 +157,25 @@ it.skipIf(process.platform === 'win32')('runs declared operations unattended, re
     expect(JSON.stringify(chats.at(-1)?.messages.at(-1)?.content)).toContain('unattended')
     const ended = events().find(event => event.type === 'turn/end')
     expect(ended?.data).toMatchObject({ reason: { kind: 'completed' } })
+
+    // A task with full access, whose approval policy asks nothing: its declared high-risk delete still
+    // runs, confirmed with --yes, and the undeclared write of unknown risk is refused, with nobody asked.
+    const full = await ctx.automationTasks.create({
+      title: '运营日报（完全权限）', prompt: '跑运营日报', workspaceId: workspace.id, model: { provider: 'acme-gateway', model: 'acme-chat' },
+      permission: 'danger-full-access', connectors: ['feishu'], operations: ['lark-cli drive +delete'],
+      timing: { kind: 'at', at: new Date(Date.now() + 15_000).toISOString() },
+    })
+    const fullRun = await ctx.sessionController.resolveAgent(full.sessionId)
+    if ('error' in fullRun) throw fullRun.error
+    const fullEvents = () => fullRun.agent.session.ownEvents()
+    await expect.poll(() => fullEvents().some(event => event.type === 'turn/end'), { timeout: 60_000, interval: 250 }).toBe(true)
+    const fullCalls = (await readFile(join(control, 'calls'), 'utf8')).split('\n').filter(call => call.startsWith('drive ') && !call.includes('--help'))
+    expect(fullCalls).toEqual(['drive +delete --file-token box_old --yes'])
+    expect(fullEvents().filter(event => event.type === 'automation-tasks/unattended').map(event => event.data)).toMatchObject([
+      { command: expect.stringContaining('lark-cli sheets +write') as string, allowed: false, operations: [] },
+      { command: 'lark-cli drive +delete --file-token box_old', allowed: true, operations: ['lark-cli drive +delete'] },
+    ])
+    expect(fullEvents().filter(event => event.type === 'approval/asked')).toEqual([])
 
     // The task's Session shows the run's record beneath its closing reply.
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })

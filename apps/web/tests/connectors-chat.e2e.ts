@@ -6,7 +6,8 @@
 // model's write waits in the approval panel and the rejection reaches it as a denial; always allowed,
 // the same write then runs unasked until the Connectors page revokes it; asked to delete a file, the
 // high-risk command shows a warning, offers no always-allow and, once allowed, runs with `--yes`. Under full access
-// the write runs without an approval and the high-risk command is refused with the reason. Switched off on the
+// the write runs without an approval, and the high-risk command, which full access never asks about, is rejected
+// without running. Switched off on the
 // Connectors page, the session's next request carries a catalog without the Skills. A stale copy of a
 // connector Skill in the user's own Skill directory never replaces the one the installed CLI embeds.
 import { execFileSync } from 'node:child_process'
@@ -55,7 +56,7 @@ const COMMANDS: readonly (readonly [RegExp, string])[] = [
 /** The text of the employee's latest message; a change of access mode adds a user-role policy note after it. */
 function latestAsk(request: ChatRequest): string {
   return JSON.stringify(request.messages.filter(message => message.role === 'user'
-    && !JSON.stringify(message.content ?? '').includes('Current DSH file policy')).at(-1)?.content ?? '')
+    && !JSON.stringify(message.content ?? '').includes('Current DSH file policy:')).at(-1)?.content ?? '')
 }
 
 /**
@@ -240,8 +241,8 @@ it.skipIf(process.platform === 'win32')('gives the model the connected connector
     await panel.getByRole('button', { name: '拒绝', exact: true }).click()
     await panel.waitFor({ state: 'detached' })
 
-    // Full access asks nothing: the plain write runs without an approval, and the high-risk one is
-    // refused with the reason instead of a silent rejection.
+    // Full access asks nothing: the plain write runs without an approval, and the high-risk one, which
+    // needs the user each time, is rejected without running.
     await page.locator('button[aria-label^="访问模式"]').first().click()
     await page.getByRole('menuitem', { name: '完全权限' }).click()
     const fullAccess = page.getByRole('dialog', { name: '确认启用完全权限？' })
@@ -255,7 +256,7 @@ it.skipIf(process.platform === 'win32')('gives the model the connected connector
     const deletes = (await calls()).filter(call => call.startsWith('drive +delete')).length
     await send('删除旧的周报文件')
     await expect.poll(() => JSON.stringify(chat.chats.at(-1)?.messages.at(-1)?.content ?? ''), { timeout: 30_000 })
-      .toContain('this session runs with full access, which asks for none')
+      .toContain('the user rejected tool')
     expect(await panel.count()).toBe(0)
     expect((await calls()).filter(call => call.startsWith('drive +delete')).length).toBe(deletes)
 
