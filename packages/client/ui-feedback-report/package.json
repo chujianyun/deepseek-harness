@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-feedback-report",
   "description": "Problem report of the dsh Desktop client: the header's Report a problem button and its dialog, which send the category, description, screenshots, and optionally the Session to the user center's super administrators",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

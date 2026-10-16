@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-automation-tasks",
   "description": "Create an automation task in one call: a named Session with its assistant, model, and permission, and the Host schedule bound to it",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "publishConfig": {
     "access": "public"
   },
