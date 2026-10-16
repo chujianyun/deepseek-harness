@@ -1,4 +1,6 @@
-import { chmod, readFile, writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { readPublishMemory, reportRisk, reportSignedOut, runDshEcommerce, takeOverBuyer, takeOverMerchant, type EcommerceCommandResult } from '../src/account.ts'
@@ -114,25 +116,53 @@ describe('takeOverMerchant', () => {
     await expect(readPublishMemory(ran({ code: 127, stderr: 'ENOENT' }))).rejects.toThrow('找不到 dsh-ecommerce 命令')
   })
 
-  it('runs the dsh-ecommerce on PATH and reports how it ended', async () => {
+  it('asks DSH at the address of the shell call, with no child process, and reports how it ended', async () => {
+    const seen: string[] = []
+    const server = createServer((request, response) => {
+      let body = ''
+      request.on('data', (chunk: Buffer) => { body += chunk.toString() })
+      request.on('end', () => {
+        seen.push(`${request.method ?? ''} ${request.url ?? ''} ${request.headers['content-type'] ?? ''} ${body}`)
+        if (request.url?.includes('/browser?id=gone') === true) {
+          response.writeHead(409).end('account "gone" is signed out\n\n')
+          return
+        }
+        response.writeHead(200).end('{"ok":true}')
+      })
+    })
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    cleanups.push(() => new Promise((resolve) => { server.close(() => { resolve() }) }))
+    const base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}/token`
+    const env = { DSH_ECOMMERCE_URL: base }
     const dir = await outDir()
-    const fake = '#!/usr/bin/env node\nif (process.argv[2] === "ok") console.log("{}")\nelse { console.error("no: " + process.argv[2]); process.exitCode = 3 }\n'
-    // Windows: the Node script found on PATH runs with this Node.
-    await writeFile(join(dir, 'dsh-ecommerce.mjs'), fake)
-    const windows = { ...process.env, PATH: `;${join(dir, 'none')};${dir}` }
-    expect(await runDshEcommerce(['ok'], 'win32', windows)).toEqual({ code: 0, stdout: '{}\n', stderr: '' })
-    expect(await runDshEcommerce(['x'], 'win32', windows)).toEqual({ code: 3, stdout: '', stderr: 'no: x\n' })
-    expect(await runDshEcommerce(['ok'], 'win32', { path: dir })).toEqual({ code: 0, stdout: '{}\n', stderr: '' })
-    expect((await runDshEcommerce(['ok'], 'win32', { Path: join(dir, 'none') })).code).toBe(127)
-    expect((await runDshEcommerce(['ok'], 'win32', {})).code).toBe(127)
-    if (process.platform !== 'win32') {
-      await writeFile(join(dir, 'dsh-ecommerce'), fake)
-      await chmod(join(dir, 'dsh-ecommerce'), 0o755)
-      const posix = { ...process.env, PATH: `${dir}:${process.env.PATH ?? ''}` }
-      expect(await runDshEcommerce(['ok'], 'linux', posix)).toEqual({ code: 0, stdout: '{}\n', stderr: '' })
-      expect(await runDshEcommerce(['x'], 'linux', posix)).toEqual({ code: 3, stdout: '', stderr: 'no: x\n' })
+    await writeFile(join(dir, 'memory.json'), '{"stores":{}}')
+    expect(await runDshEcommerce(['accounts'], env)).toEqual({ code: 0, stdout: '{"ok":true}\n', stderr: '' })
+    expect(await runDshEcommerce(['memory'], env)).toEqual({ code: 0, stdout: '{"ok":true}\n', stderr: '' })
+    expect(await runDshEcommerce(['browser', 'a 1'], env)).toMatchObject({ code: 0 })
+    expect(await runDshEcommerce(['risk', 'a1'], env)).toMatchObject({ code: 0 })
+    expect(await runDshEcommerce(['signed-out', 'a1'], env)).toMatchObject({ code: 0 })
+    expect(await runDshEcommerce(['buyer', 'tmall'], env)).toMatchObject({ code: 0 })
+    expect(await runDshEcommerce(['buyer'], env)).toMatchObject({ code: 0 })
+    expect(await runDshEcommerce(['remember', join(dir, 'memory.json')], env)).toMatchObject({ code: 0 })
+    expect(seen).toEqual([
+      'GET /token/accounts  ', 'GET /token/memory  ', 'GET /token/browser?id=a%201  ', 'GET /token/risk?id=a1  ',
+      'GET /token/signed-out?id=a1  ', 'GET /token/buyer?platform=tmall  ', 'GET /token/buyer?platform=  ',
+      'POST /token/remember application/json {"stores":{}}',
+    ])
+    // What DSH refuses comes back as the command's error output, ending in one line break.
+    expect(await runDshEcommerce(['browser', 'gone'], env)).toEqual({ code: 1, stdout: '', stderr: 'account "gone" is signed out\n' })
+    await expect(takeOverMerchant('gone', args => runDshEcommerce(args, env))).rejects.toMatchObject({ exitCode: EXIT.signedOut })
+    // Wrong arguments are a usage error, as the command gives.
+    for (const args of [['browser'], ['remember', join(dir, 'none.json')], ['nothing'], []]) {
+      expect(await runDshEcommerce(args, env)).toMatchObject({ code: 2, stderr: expect.stringContaining('usage: dsh-ecommerce accounts') as string })
     }
-    expect((await runDshEcommerce(['ok'], 'linux', { PATH: join(dir, 'nowhere') })).code).toBe(127)
+    // Outside a DSH shell call there is no address: the same as the command missing.
+    expect(await runDshEcommerce(['accounts'], {})).toEqual({
+      code: 127, stdout: '', stderr: 'dsh-ecommerce: e-commerce accounts are only available in a DSH shell call while DSH is signed in to the user center.\n',
+    })
+    expect(await runDshEcommerce(['accounts'], { DSH_ECOMMERCE_URL: 'http://127.0.0.1:1/token' })).toMatchObject({
+      code: 1, stderr: expect.stringMatching(/^dsh-ecommerce: /u) as string,
+    })
   })
 })
 

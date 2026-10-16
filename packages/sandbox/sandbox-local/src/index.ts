@@ -209,8 +209,9 @@ const DENIAL_SIGNATURES = {
   landlock: ['permission denied'],
   seatbelt: ['operation not permitted'],
   // pwsh/.NET: "Access to the path '...' is denied."; cmd: "Access is denied.";
-  // Node EACCES: "permission denied"; EPERM: "operation not permitted".
-  'windows-acl': ['access is denied', 'access to the path', 'permission denied', 'operation not permitted'],
+  // Node EACCES: "permission denied"; EPERM: "operation not permitted"; a confined Node child that
+  // spawns with piped stdio cannot open the named pipes and prints only "spawn EPERM".
+  'windows-acl': ['access is denied', 'access to the path', 'permission denied', 'operation not permitted', 'spawn eperm'],
   runnerCommand: ['read-only file system', 'permission denied'],
 } as const satisfies Record<SelectedRunner['runner'] | 'runnerCommand', readonly string[]>
 

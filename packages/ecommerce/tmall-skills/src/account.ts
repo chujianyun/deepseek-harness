@@ -1,11 +1,9 @@
 /**
  * Take over a merchant account's signed-in Chrome, and read the company's publishing memory,
- * through DSH's `dsh-ecommerce` command.
+ * by asking DSH what its `dsh-ecommerce` command asks.
  */
 
-import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import type { CategoryMemory, PublishMemory } from '@deepseek-ai/dsh-ecommerce-accounts/src/memory.ts'
 import type { EcommercePlatform, PublishPlatform } from '@deepseek-ai/dsh-ecommerce-accounts/src/types.ts'
 import { EXIT, SkillError } from './errors.ts'
@@ -27,33 +25,47 @@ export interface EcommerceCommandResult {
   readonly stderr: string
 }
 
-/**
- * Run `dsh-ecommerce` with arguments. On Windows the command is a `.cmd` running a Node script,
- * which a program cannot start without a shell, so the script on PATH is run with this Node.
- * @param args - its arguments.
- * @param platform - the platform the skill runs on.
- * @param env - the variables that hold PATH.
- * @returns how it ended and what it printed.
- */
-export function runDshEcommerce(
-  args: readonly string[], platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env,
-): Promise<EcommerceCommandResult> {
-  const script = platform === 'win32' ? windowsScript(env) : undefined
-  const [file, argv] = script === undefined ? ['dsh-ecommerce', args] : [process.execPath, [script, ...args]]
-  return new Promise((resolve) => {
-    execFile(file, argv, { encoding: 'utf8', env }, (error, stdout, stderr) => {
-      if (error === null) resolve({ code: 0, stdout, stderr })
-      else if (typeof error.code === 'number') resolve({ code: error.code, stdout, stderr })
-      else resolve({ code: 127, stdout, stderr: `${stderr}${error.message}` })
-    })
-  })
+const USAGE = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] '
+  + '| dsh-ecommerce risk <account-id> | dsh-ecommerce signed-out <account-id> | dsh-ecommerce memory | dsh-ecommerce remember <json-file>'
+
+const OUTSIDE_DSH = 'dsh-ecommerce: e-commerce accounts are only available in a DSH shell call while DSH is signed in to the user center.'
+
+/** The request a `dsh-ecommerce` command makes, or the usage error it prints. */
+function requestOf(base: string, args: readonly string[]): { url: string; init?: RequestInit } | undefined {
+  const [command, argument] = args
+  switch (command) {
+    case 'accounts': case 'memory': return { url: `${base}/${command}` }
+    case 'browser': case 'risk': case 'signed-out':
+      return argument === undefined ? undefined : { url: `${base}/${command}?id=${encodeURIComponent(argument)}` }
+    case 'buyer': return { url: `${base}/buyer?platform=${encodeURIComponent(argument ?? '')}` }
+    case 'remember':
+      return argument === undefined || !existsSync(argument) || !statSync(argument).isFile() ? undefined
+        : { url: `${base}/remember`, init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: readFileSync(argument) } }
+    default: return undefined
+  }
 }
 
-/** The Windows `dsh-ecommerce` Node script on PATH, if any. */
-function windowsScript(env: NodeJS.ProcessEnv): string | undefined {
-  // Windows names the variable in any case (Path, PATH); a plain object keeps the caller's spelling.
-  const path = Object.entries(env).find(([key]) => key.toUpperCase() === 'PATH')?.[1] ?? ''
-  return path.split(';').filter(dir => dir !== '').map(dir => join(dir, 'dsh-ecommerce.mjs')).find(file => existsSync(file))
+/**
+ * Do what the `dsh-ecommerce` command with these arguments does, in this process: ask DSH at the
+ * address it gave this bash call. No child process is started, so the Windows sandbox, which cannot
+ * give a confined child the named pipes of piped stdio, does not stop it.
+ * @param args - the command's arguments.
+ * @param env - the variables that hold `DSH_ECOMMERCE_URL`.
+ * @returns how the command would have ended and what it would have printed: 127 outside a DSH shell
+ *   call, 2 for wrong arguments, 1 when DSH refuses or cannot be reached.
+ */
+export async function runDshEcommerce(args: readonly string[], env: NodeJS.ProcessEnv = process.env): Promise<EcommerceCommandResult> {
+  const base = env.DSH_ECOMMERCE_URL
+  if (base === undefined || base === '') return { code: 127, stdout: '', stderr: `${OUTSIDE_DSH}\n` }
+  const asked = requestOf(base, args)
+  if (asked === undefined) return { code: 2, stdout: '', stderr: `${USAGE}\n` }
+  try {
+    const response = await fetch(asked.url, asked.init)
+    const body = `${(await response.text()).replace(/\n+$/u, '')}\n`
+    return response.status === 200 ? { code: 0, stdout: body, stderr: '' } : { code: 1, stdout: '', stderr: body }
+  } catch (error) {
+    return { code: 1, stdout: '', stderr: `dsh-ecommerce: ${(error as Error).message}\n` }
+  }
 }
 
 /** The platforms a merchant skill works with, and their names for the user. */
