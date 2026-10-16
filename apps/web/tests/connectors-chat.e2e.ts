@@ -5,7 +5,8 @@
 // CLI with the company's own directories — and answers from its output. Asked to send a message, the
 // model's write waits in the approval panel and the rejection reaches it as a denial; always allowed,
 // the same write then runs unasked until the Connectors page revokes it; asked to delete a file, the
-// high-risk command shows a warning, offers no always-allow and, once allowed, runs with `--yes`. Switched off on the
+// high-risk command shows a warning, offers no always-allow and, once allowed, runs with `--yes`. Under full access
+// the write runs without an approval and the high-risk command is refused with the reason. Switched off on the
 // Connectors page, the session's next request carries a catalog without the Skills. A stale copy of a
 // connector Skill in the user's own Skill directory never replaces the one the installed CLI embeds.
 import { execFileSync } from 'node:child_process'
@@ -51,9 +52,10 @@ const COMMANDS: readonly (readonly [RegExp, string])[] = [
   [/日程/u, 'lark-cli calendar +agenda'],
 ]
 
-/** The text of the latest user message. */
+/** The text of the employee's latest message; a change of access mode adds a user-role policy note after it. */
 function latestAsk(request: ChatRequest): string {
-  return JSON.stringify(request.messages.filter(message => message.role === 'user').at(-1)?.content ?? '')
+  return JSON.stringify(request.messages.filter(message => message.role === 'user'
+    && !JSON.stringify(message.content ?? '').includes('Current DSH file policy')).at(-1)?.content ?? '')
 }
 
 /**
@@ -237,6 +239,25 @@ it.skipIf(process.platform === 'win32')('gives the model the connected connector
     await panel.getByText('飞书连接器将以你的身份执行写操作：lark-cli im +messages-send。允许执行一次吗？').waitFor({ timeout: 30_000 })
     await panel.getByRole('button', { name: '拒绝', exact: true }).click()
     await panel.waitFor({ state: 'detached' })
+
+    // Full access asks nothing: the plain write runs without an approval, and the high-risk one is
+    // refused with the reason instead of a silent rejection.
+    await page.locator('button[aria-label^="访问模式"]').first().click()
+    await page.getByRole('menuitem', { name: '完全权限' }).click()
+    const fullAccess = page.getByRole('dialog', { name: '确认启用完全权限？' })
+    await fullAccess.getByRole('checkbox', { name: '我已了解风险，并愿意继续' }).check()
+    await fullAccess.getByRole('button', { name: '启用完全权限' }).click()
+    await page.locator('button[aria-label="访问模式，当前：完全权限"]').first().waitFor()
+    const before = await sends()
+    await send('帮我在群里发消息：周会改到下午三点')
+    await expect.poll(sends, { timeout: 30_000 }).toBe(before + 1)
+    expect(await panel.count()).toBe(0)
+    const deletes = (await calls()).filter(call => call.startsWith('drive +delete')).length
+    await send('删除旧的周报文件')
+    await expect.poll(() => JSON.stringify(chat.chats.at(-1)?.messages.at(-1)?.content ?? ''), { timeout: 30_000 })
+      .toContain('this session runs with full access, which asks for none')
+    expect(await panel.count()).toBe(0)
+    expect((await calls()).filter(call => call.startsWith('drive +delete')).length).toBe(deletes)
 
     // Switched off on the Connectors page: the next request's catalog no longer lists them.
     await page.getByRole('button', { name: '连接器', exact: true }).click()
