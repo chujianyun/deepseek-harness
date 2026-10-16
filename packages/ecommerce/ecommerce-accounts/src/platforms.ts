@@ -206,7 +206,7 @@ export const TAOBAO_BUYER: PlatformSpec = {
  */
 export const PUBLIC_PAGE = new RegExp(String.raw`^https?://(?:item\.taobao\.com/item\.htm|detail\.tmall\.(?:com|hk)/item\.htm`
   + String.raw`|s\.taobao\.com/search|list\.tmall\.com/search_product\.htm`
-  + String.raw`|(?:item\.jd\.com|item\.jd\.hk|npcitem\.jd\.hk)/\d+\.html|search\.jd\.com/Search)`, 'u')
+  + String.raw`|(?:item\.jd\.com|item\.jd\.hk|npcitem\.jd\.hk)/\d+\.html|item\.m\.jd\.com/product/\d+\.html|search\.jd\.com/Search)`, 'u')
 
 /**
  * How DSH signs in to and checks an account: Taobao buyers through the Taobao home page, everyone

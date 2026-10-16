@@ -82,6 +82,7 @@ No direct effect; the skill catalog consumer appends a replacement catalog messa
 - **No JD or 1688** — and buyer accounts only on Tmall and Taobao.
 - **Risk control seen only as a page** — DSH notices the platform's risk control by its verification or block page (`_____tmd_____`, `/punish`); a degraded answer such as `pcIdentityRisk` does not rest the account.
 - **Pages counted while a task uses the account** — pages opened by hand in the account's Chrome, or by DSH's own checks, do not count toward the daily limit.
+- **JD security checks** — JD's security verification (`aq.jd.com`) counts as its sign-in page, also when it appears outside signing in, so such an account shows signed out until the user signs in again.
 - **Names the platforms report** — Tmall names the signed-in account and JD names both the account and the store; Pinduoduo and Douyin shops name the store instead, which the Settings section compares with the store name entered, and Taobao names neither.
 - **Checks follow the platforms' pages** — each check depends on one page and API of its platform; when a platform changes them, its accounts read `timeout` or `signed-out` until the check is updated.
 - **Bash only, POSIX only** — `dsh-ecommerce` is a POSIX shell script that needs `curl`; PowerShell and Windows get no command.

@@ -28,7 +28,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   }
 }
 
-/** An e-commerce platform DSH supports: Tmall, Taobao, Pinduoduo, and Douyin shops (抖店). */
+/** An e-commerce platform DSH supports: Tmall, Taobao, Pinduoduo, Douyin shops (抖店), and JD POP stores (京东). */
 export type EcommercePlatform = 'tmall' | 'taobao' | 'pinduoduo' | 'doudian' | 'jd'
 
 /** What an account is used for: a store's back office, or public pages as an ordinary buyer. */

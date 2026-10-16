@@ -746,6 +746,7 @@ describe('e-commerce account edge cases', () => {
     // JD's merchant backend names both the signed-in account and the store in one response.
     expect(JD.read('{"msg":"成功","code":200,"data":{"shopName":"名流京东店","account":"名流:小美","logoUrl":""}}')).toEqual({ signedIn: true, name: '名流:小美', store: '名流京东店' })
     expect(JD.read('{"code":200,"data":{"shopName":"","account":"名流:小美"}}')).toEqual({ signedIn: true, name: '名流:小美' })
+    // Every signed-in backend reply seen names the account, so one without it is not taken as signed in.
     expect(JD.read('{"code":200,"data":{"shopName":"名流京东店","account":""}}')).toEqual({ signedIn: false })
     expect(JD.read('{"code":401,"msg":"未登录","data":null}')).toEqual({ signedIn: false })
     expect(JD.read('oops')).toEqual({ signedIn: false })
@@ -1256,6 +1257,7 @@ describe('buyer accounts and risk protection', () => {
     expect(PUBLIC_PAGE.test('https://item.jd.com/100012043978.html')).toBe(true)
     expect(PUBLIC_PAGE.test('https://npcitem.jd.hk/100012043978.html')).toBe(true)
     expect(PUBLIC_PAGE.test('https://search.jd.com/Search?keyword=x')).toBe(true)
+    expect(PUBLIC_PAGE.test('https://item.m.jd.com/product/100012043978.html')).toBe(true)
     expect(PUBLIC_PAGE.test('https://shop.jd.com/jdm/home')).toBe(false)
     expect(RISK_PAGE.test('https://h5api.m.taobao.com/_____tmd_____/punish?x5secdata=1')).toBe(true)
   })
