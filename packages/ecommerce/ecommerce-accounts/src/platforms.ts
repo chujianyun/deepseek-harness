@@ -7,13 +7,13 @@
 import type { EcommerceAccountKind, EcommercePlatform } from './types.ts'
 
 /** Every platform an account can be on. */
-export const ECOMMERCE_PLATFORMS = ['tmall', 'taobao', 'pinduoduo', 'doudian'] as const satisfies readonly EcommercePlatform[]
+export const ECOMMERCE_PLATFORMS = ['tmall', 'taobao', 'pinduoduo', 'doudian', 'jd'] as const satisfies readonly EcommercePlatform[]
 
 /** What the platform's check response says. */
 export type CheckAnswer =
   | { readonly signedIn: false }
-  /** `name` is the account name the platform reports, when its response carries one. */
-  | { readonly signedIn: true; readonly name?: string }
+  /** `name` and `store` are the account and store names the platform reports, when its response carries them. */
+  | { readonly signedIn: true; readonly name?: string; readonly store?: string }
 
 /** How DSH signs in to and checks one platform. */
 export interface PlatformSpec {
@@ -24,7 +24,10 @@ export interface PlatformSpec {
   readonly isLoginPage: (url: string) => boolean
   /** Business page whose loading calls {@link checkApi}; it may be the check API itself. */
   readonly pageUrl: string
-  /** Address prefix of the platform's own response that tells whether the account is signed in; queries are ignored. */
+  /**
+   * Address prefix of the platform's own response that tells whether the account is signed in. Its
+   * query, when it has one, names values the response must carry; any other query is ignored.
+   */
   readonly checkApi: string
   /**
    * Read the check response.
@@ -162,6 +165,30 @@ export const DOUDIAN: PlatformSpec = {
   },
 }
 
+/** The JD merchant sign-in, and the security verification it may pass through, are still signing in. */
+const JD_LOGIN = /^https:\/\/(?:passport\.shop\.jd\.com\/login|aq\.jd\.com\/)/u
+
+/**
+ * JD POP merchants: the backend home page asks `NavigationFacade.findShopInfo`, which names the
+ * signed-in account and its store; signed out, it sends the page to sign in. Every backend call shares
+ * one path, so the check names its `api`.
+ */
+export const JD: PlatformSpec = {
+  id: 'jd',
+  loginUrl: 'https://passport.shop.jd.com/login/index.action/jdm?ReturnUrl=https%3A%2F%2Fshop.jd.com%2Fjdm%2Fhome',
+  isLoginPage: url => JD_LOGIN.test(url),
+  pageUrl: 'https://shop.jd.com/jdm/home',
+  checkApi: 'https://sff.jd.com/api?api=dsm.shop.center.pageframe.navigation.NavigationFacade.findShopInfo',
+  read: (body) => {
+    const value = objectOf(body)
+    const data = value?.code === 200 ? value.data as { account?: unknown; shopName?: unknown } | null | undefined : undefined
+    const name = text(data?.account)
+    if (name === undefined) return { signedIn: false }
+    const store = text(data?.shopName)
+    return { signedIn: true, name, ...store === undefined ? {} : { store } }
+  },
+}
+
 /** Taobao buyers: the Taobao home page asks `mtop.user.getusersimple`, which names the signed-in user. */
 export const TAOBAO_BUYER: PlatformSpec = {
   id: 'taobao',
@@ -173,12 +200,13 @@ export const TAOBAO_BUYER: PlatformSpec = {
 }
 
 /**
- * Public pages anyone may browse: Taobao and Tmall product pages and search results. Buyer accounts
+ * Public pages anyone may browse: Taobao, Tmall, and JD product pages and search results. Buyer accounts
  * open them; merchant accounts never do, so a store's back-office account is not exposed to the
  * platforms' risk control.
  */
 export const PUBLIC_PAGE = new RegExp(String.raw`^https?://(?:item\.taobao\.com/item\.htm|detail\.tmall\.(?:com|hk)/item\.htm`
-  + String.raw`|s\.taobao\.com/search|list\.tmall\.com/search_product\.htm)`, 'u')
+  + String.raw`|s\.taobao\.com/search|list\.tmall\.com/search_product\.htm`
+  + String.raw`|(?:item\.jd\.com|item\.jd\.hk|npcitem\.jd\.hk)/\d+\.html|search\.jd\.com/Search)`, 'u')
 
 /**
  * How DSH signs in to and checks an account: Taobao buyers through the Taobao home page, everyone
@@ -193,12 +221,13 @@ export function specOf(platform: EcommercePlatform, kind: EcommerceAccountKind):
 
 /** Every platform by id. */
 export const PLATFORMS: Readonly<Record<EcommercePlatform, PlatformSpec>> = {
-  tmall: TMALL, taobao: TAOBAO, pinduoduo: PINDUODUO, doudian: DOUDIAN,
+  tmall: TMALL, taobao: TAOBAO, pinduoduo: PINDUODUO, doudian: DOUDIAN, jd: JD,
 }
 
 /**
- * Whether a response address is the check API: same origin and a path that starts with the check
- * path, ignoring the query, whose signature and time change on every call.
+ * Whether a response address is the check API: same origin, a path that starts with the check path,
+ * and every query value the check API names; the rest of the query, whose signature and time change
+ * on every call, is ignored.
  * @param url - the response address.
  * @param checkApi - the platform's check API.
  * @returns true when it matches.
@@ -209,6 +238,7 @@ export function matchesCheckApi(url: string, checkApi: string): boolean {
     const wanted = new URL(checkApi)
     const path = (value: string): string => value.length > 1 ? value.replace(/\/+$/u, '') : value
     return actual.origin === wanted.origin && path(actual.pathname).startsWith(path(wanted.pathname))
+      && [...wanted.searchParams].every(([key, value]) => actual.searchParams.get(key) === value)
   } catch {
     // An address that is not a URL, such as a data URL, is never the check API.
     return false

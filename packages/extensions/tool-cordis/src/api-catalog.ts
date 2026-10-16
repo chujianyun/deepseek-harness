@@ -6320,7 +6320,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EcommercePlatform',
-    declaration: 'export type EcommercePlatform = \'tmall\' | \'taobao\' | \'pinduoduo\' | \'doudian\';',
+    declaration: 'export type EcommercePlatform = \'tmall\' | \'taobao\' | \'pinduoduo\' | \'doudian\' | \'jd\';',
   },
   {
     name: 'EditGoalRequest',

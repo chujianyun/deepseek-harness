@@ -20,7 +20,7 @@ export type EcommerceAccountsSectionProps = PropsLocale<'ecommerce-accounts'> & 
 type T = TranslateNS<'ecommerce-accounts'>
 
 const PLATFORM_KEYS = {
-  tmall: 'platformTmall', taobao: 'platformTaobao', pinduoduo: 'platformPinduoduo', doudian: 'platformDoudian',
+  tmall: 'platformTmall', taobao: 'platformTaobao', pinduoduo: 'platformPinduoduo', doudian: 'platformDoudian', jd: 'platformJd',
 } as const satisfies Record<EcommercePlatform, EcommerceLocaleKey>
 /** Platforms a buyer account can be on. */
 const BUYER_PLATFORMS: ReadonlySet<EcommercePlatform> = new Set(['tmall', 'taobao'])

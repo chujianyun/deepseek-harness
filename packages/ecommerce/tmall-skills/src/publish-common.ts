@@ -220,7 +220,7 @@ export function categoriesText(categories: readonly CandidateCategory[], reason:
 }
 
 /** The platforms' names for the user. */
-const PLATFORM_NAMES: Readonly<Record<string, string>> = { ...MERCHANT_PLATFORMS, taobao: '淘宝' } satisfies Record<EcommercePlatform, string>
+const PLATFORM_NAMES: Readonly<Record<string, string>> = { ...MERCHANT_PLATFORMS, taobao: '淘宝', jd: '京东' } satisfies Record<EcommercePlatform, string>
 
 /**
  * The category the company remembered for a product line on one platform. A line remembered only on
