@@ -12,6 +12,10 @@
 
 详情页通过 `assistants` Remote 编辑智能体的字段和四份核心文件。保存后的核心文件和新名称会在下一步到达所有绑定该智能体的会话，进行中的会话也一样；新的模型或 preset 对之后绑定的会话生效。副本带着配置和核心文件，名称为 `<名称> 副本`，不带会话。删除智能体会保留它的会话，这些会话继续进行但不再带它的核心文件：由于之前的轮次仍留在对话中，下一轮会告诉模型那些核心文件不再适用；绑定它的空白会话改为不绑定智能体。
 
+## 企业智能体包
+
+企业管理员可以在用户中心把一个智能体作为智能体包发给全公司：`agent.json` 写明名称、版本、头像、Agent preset、技能与连接器子集和推荐定时任务，另加四份核心文件。智能体页列出公司的智能体包；安装后得到一个普通智能体，并从公司的 Skill Hub 安装它引用的技能，推荐任务默认停用，由用户逐条启用为自动化任务。[`@deepseek-ai/dsh-assistant-packages`](../../packages/assistant/assistant-packages/README.zh.md) 负责安装、在不覆盖用户修改的前提下更新，以及推荐任务。
+
 ## 会话与智能体
 
 侧边栏每个会话行显示所属智能体的头像，悬停和行的悬浮卡片中显示名称；智能体属于本机其他公司的会话显示「其他公司的智能体」标识，不透露它的任何内容；智能体已删除的会话显示「已删除的智能体」标识，未绑定智能体的会话不显示。智能体详情页按时间倒序列出它的最近会话，点击即可打开。
@@ -31,6 +35,75 @@
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxassistantpackages--assistantpackagesservice"></a>
+
+### `ctx.assistantPackages` — `AssistantPackagesService`
+
+Host owner of company assistant packages and of the `assistantPackages` Remote namespace.
+
+```ts cordis-catalog
+/**
+ * Read the packages the company offers and the assistants installed from packages here. A
+ * switched-on task whose schedule was deleted elsewhere reads as switched off.
+ * @param signal - caller lifetime.
+ * @returns the offered packages (null while signed out or unreachable) and the installs.
+ */
+@Remote getState(signal: AbortSignal): Promise<AssistantPackagesState>
+
+/**
+ * Install a package: install the Skills it names from the company's Skill Hub, create its
+ * assistant, and record the install with every recommended task switched off. Installing a
+ * package already installed here updates that assistant instead.
+ * @param packageId - user center package id.
+ * @param signal - caller lifetime.
+ * @returns what was installed and the state after it.
+ * @throws RemoteError `hub-account/signed-out`, `assistant-packages/not-found`, `assistant-packages/invalid`,
+ *   `assistant-packages/unavailable`, or an `assistants/*` refusal of the package's fields.
+ */
+@Remote installPackage(packageId: string, signal: AbortSignal): Promise<AssistantPackageInstallResult>
+
+/**
+ * Update an installed assistant to its package's current version. Core files and profile fields
+ * the user has not changed since the package wrote them take the new version's; changed ones are
+ * kept. Skills the new version names are installed. Already current, nothing changes.
+ * @param assistantId - the assistant installed from a package.
+ * @param signal - caller lifetime.
+ * @returns what was updated, the files kept, and the state after it.
+ * @throws RemoteError `hub-account/signed-out`, `assistant-packages/not-installed`, `assistant-packages/not-found`,
+ *   `assistant-packages/invalid`, or `assistant-packages/unavailable`.
+ */
+@Remote updatePackage(assistantId: string, signal: AbortSignal): Promise<AssistantPackageInstallResult>
+
+/**
+ * Switch a recommended task on: create an automation task in the workspace, bound to the
+ * assistant, with the task's timing, instruction, permission preset, and connector grant.
+ * Already on, nothing changes.
+ * @param assistantId - the assistant installed from a package.
+ * @param taskId - the package's task id.
+ * @param workspaceId - workspace the task's Session is filed under.
+ * @param signal - caller lifetime.
+ * @returns the state after it.
+ * @throws RemoteError `hub-account/signed-out`, `assistant-packages/not-installed`, `assistant-packages/task-not-found`,
+ *   or an `automation-tasks/*` refusal.
+ */
+@Remote enableTask(assistantId: string, taskId: string, workspaceId: WorkspaceId, signal: AbortSignal): Promise<AssistantPackagesState>
+
+/**
+ * Switch a recommended task off: delete its schedule. Its Session and history stay.
+ * Already off, nothing changes.
+ * @param assistantId - the assistant installed from a package.
+ * @param taskId - the package's task id.
+ * @param signal - caller lifetime.
+ * @returns the state after it.
+ * @throws RemoteError `hub-account/signed-out`, `assistant-packages/not-installed`, or `assistant-packages/task-not-found`.
+ */
+@Remote disableTask(assistantId: string, taskId: string, signal: AbortSignal): Promise<AssistantPackagesState>
+```
+
+Types: [WorkspaceId](workspace.zh.md)
+
+Source: [`packages/assistant/assistant-packages/src/index.ts`](../../packages/assistant/assistant-packages/src/index.ts)
 
 <a id="ctxassistants--assistantsservice"></a>
 

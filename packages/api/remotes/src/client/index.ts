@@ -15,6 +15,7 @@ import knowledgeBasesRemote from '@deepseek-ai/dsh-knowledge-base/remote'
 import knowledgeSelectionRemote from '@deepseek-ai/dsh-knowledge-selection/remote'
 import connectorsRemote from '@deepseek-ai/dsh-connectors/remote'
 import assistantsRemote from '@deepseek-ai/dsh-assistants/remote'
+import assistantPackagesRemote from '@deepseek-ai/dsh-assistant-packages/remote'
 import automationTasksRemote from '@deepseek-ai/dsh-automation-tasks/remote'
 import sessionShareRemote from '@deepseek-ai/dsh-session-share/remote'
 import sessionSyncRemote from '@deepseek-ai/dsh-session-sync/remote'
@@ -63,6 +64,7 @@ export type {} from '@deepseek-ai/dsh-knowledge-base/remote'
 export type {} from '@deepseek-ai/dsh-knowledge-selection/remote'
 export type {} from '@deepseek-ai/dsh-connectors/remote'
 export type {} from '@deepseek-ai/dsh-assistants/remote'
+export type {} from '@deepseek-ai/dsh-assistant-packages/remote'
 export type {} from '@deepseek-ai/dsh-automation-tasks/remote'
 export type {} from '@deepseek-ai/dsh-session-share/remote'
 export type {} from '@deepseek-ai/dsh-session-sync/remote'
@@ -220,6 +222,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       knowledgeSelectionRemote,
       connectorsRemote,
       assistantsRemote,
+      assistantPackagesRemote,
       automationTasksRemote,
       sessionShareRemote,
       sessionSyncRemote,

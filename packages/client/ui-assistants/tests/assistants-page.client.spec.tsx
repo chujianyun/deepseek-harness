@@ -6,6 +6,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { AssistantsSnapshot } from '../src/client/assistants-source.ts'
+import type { PackagesSnapshot } from '../src/client/packages-source.ts'
 import { AssistantsPage } from '../src/client/AssistantsPage.tsx'
 import { en, zh } from '../src/client/locales.ts'
 
@@ -25,7 +26,12 @@ function mount(value: AssistantsState | undefined, extra: Partial<AssistantsSnap
   }
   const store = createSnapshotStore<AssistantsSnapshot>({ ...initial, ...extra })
   const sessions = createSnapshotStore<SessionListState>({ ids: [], byId: {}, phase: 'ready', projectionsBySession: {} } as never)
+  const packages = createSnapshotStore<PackagesSnapshot>({ state: undefined, running: null })
+  const workspaces = createSnapshotStore({ items: [] } as never)
   const props = {
+    usePackages: bindSnapshotSelector(packages), useWorkspaces: bindSnapshotSelector(workspaces),
+    onPackagesRefresh: vi.fn(async () => {}), onPackageInstall: vi.fn(async () => 'unused'), onPackageUpdate: vi.fn(async () => 'unused'),
+    onTaskEnable: vi.fn(async () => undefined), onTaskDisable: vi.fn(async () => undefined),
     t: makeTranslate(copy), useAssistants: bindSnapshotSelector(store), useSessions: bindSnapshotSelector(sessions),
     onOpenSession: vi.fn(),
     onPick: vi.fn(async (_id: string | null) => {}), onChat: vi.fn(async (_id: string | null) => {}), onDismiss: vi.fn(),

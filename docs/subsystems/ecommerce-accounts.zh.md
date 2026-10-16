@@ -2,7 +2,7 @@
 
 [English](ecommerce-accounts.md) | 中文
 
-电商账号让桌面版用户把 DSH 登录到公司经营的电商平台，支持天猫、淘宝、拼多多、抖店和京东（POP 店铺）的商家账号。电商账号、商家账号、买家账号等术语定义在[术语表](../glossary.zh.md#ecommerce-account)中；每个账号为何是一份由系统 Google Chrome 保存的登录，记录在[电商账号 Agent Note](../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.zh.md) 中。[`@deepseek-ai/dsh-ecommerce-accounts`](../../packages/ecommerce/ecommerce-accounts/README.zh.md) 管理账号及其 Chrome 进程；[`@deepseek-ai/dsh-client-ui-ecommerce-accounts`](../../packages/client/ui-ecommerce-accounts/README.zh.md) 渲染设置分区。
+电商账号让桌面版用户把 DSH 登录到公司经营的电商平台，支持天猫、淘宝、拼多多、抖店、京东（POP 店铺）和健康品牌云台的商家账号。电商账号、商家账号、买家账号等术语定义在[术语表](../glossary.zh.md#ecommerce-account)中；每个账号为何是一份由系统 Google Chrome 保存的登录，记录在[电商账号 Agent Note](../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.zh.md) 中。[`@deepseek-ai/dsh-ecommerce-accounts`](../../packages/ecommerce/ecommerce-accounts/README.zh.md) 管理账号及其 Chrome 进程；[`@deepseek-ai/dsh-client-ui-ecommerce-accounts`](../../packages/client/ui-ecommerce-accounts/README.zh.md) 渲染设置分区。
 
 ## 存储
 
@@ -14,7 +14,7 @@
 
 ## 检查
 
-一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的登录响应，失败时重试一次：天猫的 `mtop.user.getusersimple`（会给出账号名）、淘宝千牛的 `mtop.taobao.jdy.resource.shop.info.get`、拼多多的 `janus/api/checkLogin`，抖店的 `byteshop/menu/list/v2`，或京东商家后台的 `NavigationFacade.findShopInfo`（会给出账号名和店铺名）；拼多多、抖店和京东的页面还会给出店铺名，设置分区会把它与填写的店铺名比较。页面被平台转到登录页时立即判为未登录。在规定时间内没有答复、页面无法加载，或账号的浏览器数据正被一个不是 DSH 启动的 Chrome 占用时，检查以对应的问题（超时、网络、占用）失败，并保留上次的结果。最近一次结果随账号保存，此后一直显示，重启后也是。DSH 不会自行检查、不定时检查，设置分区打开时也不检查：只在用户要求时，以及任务接管一个上次已登录结果早于 30 分钟的账号时检查。曾经登录、现在未登录的账号为登录过期，桌面版会弹出提示，可直接打开该分区。登录经检查确认后，其 Chrome 关闭。
+一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的登录响应，失败时重试一次：天猫的 `mtop.user.getusersimple`（会给出账号名）、淘宝千牛的 `mtop.taobao.jdy.resource.shop.info.get`、拼多多的 `janus/api/checkLogin`，抖店的 `byteshop/menu/list/v2`，或京东商家后台的 `NavigationFacade.findShopInfo`（会给出账号名和店铺名），或云台的 `mtop.alihealth.crm.industry.user.current`（会给出账号名）；拼多多、抖店和京东的页面还会给出店铺名，设置分区会把它与填写的店铺名比较。页面被平台转到登录页时立即判为未登录。在规定时间内没有答复、页面无法加载，或账号的浏览器数据正被一个不是 DSH 启动的 Chrome 占用时，检查以对应的问题（超时、网络、占用）失败，并保留上次的结果。最近一次结果随账号保存，此后一直显示，重启后也是。DSH 不会自行检查、不定时检查，设置分区打开时也不检查：只在用户要求时，以及任务接管一个上次已登录结果早于 30 分钟的账号时检查。曾经登录、现在未登录的账号为登录过期，桌面版会弹出提示，可直接打开该分区。登录经检查确认后，其 Chrome 关闭。
 
 ## 重启之后
 

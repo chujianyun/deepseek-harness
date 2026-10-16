@@ -24,6 +24,8 @@ afterEach(async () => {
 async function mount(optional = true) {
   const steps: string[] = []
   let created: SessionId | undefined
+  const appended: { type: string; data: unknown }[] = []
+  const append = (type: string, data: unknown) => { steps.push(type); appended.push({ type, data }) }
   const record = (name: string) => vi.fn(async (..._args: unknown[]) => { steps.push(name) })
   const ctx = new Context()
   contexts.push(ctx)
@@ -32,7 +34,7 @@ async function mount(optional = true) {
     rename: record('rename'),
     resolveAgent: vi.fn(async (_id: SessionId): Promise<{ agent: typeof AGENT } | { error: Error }> => {
       steps.push('resolve')
-      return { agent: { ...AGENT, id: created!, session: { id: created! } } }
+      return { agent: { ...AGENT, id: created!, session: { id: created!, append } as typeof AGENT['session'] } }
     }),
     useModel: vi.fn(async (_agent: object, _model: object) => { steps.push('model'); return true }),
   }
@@ -49,6 +51,7 @@ async function mount(optional = true) {
   ctx.provide('sessionController', controller as never)
   ctx.provide('schedule', schedule as never)
   ctx.provide('workspaceRegistry', workspaceRegistry as never)
+  ctx.provide('sessionProjections', { register: vi.fn(), stateOf: () => undefined } as never)
   if (optional) {
     ctx.provide('assistants', assistants as never)
     ctx.provide('permissionPresets', permissionPresets as never)
@@ -56,7 +59,7 @@ async function mount(optional = true) {
   const warn = vi.spyOn(ctx.logger, 'warn')
   await ctx.plugin(AutomationTasksService).await()
   return {
-    service: ctx.get('automationTasks')!, steps, controller, schedule, workspaceRegistry, assistants, permissionPresets, warn,
+    service: ctx.get('automationTasks')!, steps, appended, controller, schedule, workspaceRegistry, assistants, permissionPresets, warn,
     session: () => created!,
   }
 }
@@ -67,11 +70,14 @@ describe('creating an automation task', () => {
     const result = await m.service.create({
       ...BASE, assistantId: 'a-shop', model: { provider: 'deepseek', model: 'v4' },
       permission: 'full-access', window: { start: '2026-10-11', end: '', time_zone: 'Asia/Shanghai' },
+      operations: [' lark-cli   im +messages-send ', 'dsh-ecommerce browser', 'lark-cli im +messages-send', ''],
     })
     const sessionId = m.session()
-    const agent = { ...AGENT, id: sessionId, session: { id: sessionId } }
+    const agent = { ...AGENT, id: sessionId, session: expect.objectContaining({ id: sessionId }) as object }
     expect(result).toEqual({ sessionId, record: RECORD })
-    expect(m.steps).toEqual(['validate', 'create', 'rename', 'resolve', 'assistant', 'model', 'permission', 'schedule'])
+    expect(m.steps).toEqual(['validate', 'create', 'rename', 'resolve', 'assistant', 'model', 'permission', 'automation-tasks/operations', 'schedule'])
+    // The declaration is read: trimmed, one space between words, without blanks and repeats.
+    expect(m.appended).toEqual([{ type: 'automation-tasks/operations', data: { operations: ['lark-cli im +messages-send', 'dsh-ecommerce browser'] } }])
     expect(m.controller.create).toHaveBeenCalledWith({ sessionId, workspaceId: WORKSPACE })
     expect(m.controller.rename).toHaveBeenCalledWith({ sessionId, title: '日报' })
     expect(m.assistants.select).toHaveBeenCalledWith(agent, 'a-shop')
@@ -90,7 +96,7 @@ describe('creating an automation task', () => {
   ]
   it.each(timings)('passes the %j timing to the schedule, and only what the form chose', async (timing, selector) => {
     const m = await mount()
-    await m.service.create({ ...BASE, timing })
+    await m.service.create({ ...BASE, timing, operations: [] })
     expect(m.steps).toEqual(['validate', 'create', 'rename', 'resolve', 'schedule'])
     expect(m.schedule.create).toHaveBeenCalledWith(m.session(), { title: '日报', prompt: '导出昨日日报', ...selector }, undefined, undefined)
   })
@@ -114,6 +120,15 @@ describe('a refused task', () => {
     await expect(m.service.create(BASE)).rejects.toMatchObject({
       code: 'automation-tasks/invalid', message: 'No occurrence of this rule falls within the effective dates.', details: { code: 'invalid_rule' },
     })
+    const operations: [string[], string][] = [
+      [Array.from({ length: 51 }, (_, index) => `cli${String(index)} x`), 'too_many'],
+      [['lark-cli'], 'not_declarable'],
+      [[`lark-cli ${'x'.repeat(200)}`], 'too_long'],
+      [['lark-cli im +messages-send; rm -rf ~'], 'shell_character'],
+    ]
+    for (const [declared, code] of operations) {
+      await expect(m.service.create({ ...BASE, operations: declared })).rejects.toMatchObject({ code: 'automation-tasks/invalid', details: { code } })
+    }
     for (const preset of ['custom', 'gone']) {
       await expect(m.service.create({ ...BASE, permission: preset })).rejects.toMatchObject({
         code: 'automation-tasks/invalid', details: { code: 'unknown_permission' },

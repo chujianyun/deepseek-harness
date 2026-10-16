@@ -202,3 +202,47 @@ describe('recent sessions on the detail page', () => {
     expect(within(section).getByText('共 12 个会话，这里显示最近 10 个。')).toBeTruthy()
   })
 })
+
+describe('assistant detail page after a package update', () => {
+  async function mountWithRevision(revision: string) {
+    let stored: AssistantDetail = { assistant, files: FILES }
+    const sessions = createSnapshotStore({ ids: [], byId: {} })
+    const props = {
+      useSessions: bindSnapshotSelector(sessions) as never, onOpenSession: vi.fn(), t: makeTranslate(zh), assistant,
+      onBack: vi.fn(), onChat: vi.fn(async (_id: string | null) => {}), onDuplicate: vi.fn(), onDelete: vi.fn(),
+      onRead: vi.fn(async (_id: string): Promise<AssistantDetail | string> => stored),
+      onUpdate: vi.fn(async (): Promise<string | undefined> => undefined),
+      onLoadOptions: vi.fn(async () => options), squareAvatar: vi.fn(async () => ''),
+    }
+    const view = render(<AssistantDetailPage {...props} revision={revision} />)
+    await act(async () => { await Promise.resolve() })
+    return {
+      props,
+      rewrite: (files: Partial<typeof FILES>) => { stored = { assistant, files: { ...stored.files, ...files } } },
+      rerender: async (next: string) => {
+        view.rerender(<AssistantDetailPage {...props} revision={next} />)
+        await act(async () => { await Promise.resolve() })
+      },
+    }
+  }
+  const editor = () => screen.getByRole<HTMLTextAreaElement>('textbox', { name: /IDENTITY\.md/ })
+
+  it('reads the assistant again when the revision changes and nothing is unsaved', async () => {
+    const m = await mountWithRevision('1.0.0')
+    m.rewrite({ 'IDENTITY.md': '# 新身份\n' })
+    await m.rerender('1.0.0')
+    expect(m.props.onRead).toHaveBeenCalledTimes(1)
+    await m.rerender('1.1.0')
+    expect(m.props.onRead).toHaveBeenCalledTimes(2)
+    expect(editor().value).toBe('# 新身份\n')
+  })
+
+  it('keeps unsaved edits when the revision changes', async () => {
+    const m = await mountWithRevision('1.0.0')
+    fireEvent.change(editor(), { target: { value: '# 我的修改\n' } })
+    m.rewrite({ 'IDENTITY.md': '# 新身份\n' })
+    await m.rerender('1.1.0')
+    expect(m.props.onRead).toHaveBeenCalledTimes(1)
+    expect(editor().value).toBe('# 我的修改\n')
+  })
+})

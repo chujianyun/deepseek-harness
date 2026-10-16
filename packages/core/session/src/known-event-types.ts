@@ -29,6 +29,8 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'assistant/instructions',
   'assistant/message',
   'assistant/selected',
+  'automation-tasks/operations',
+  'automation-tasks/unattended',
   'command/done',
   'command/run',
   'compaction/end',

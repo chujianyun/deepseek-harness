@@ -8,13 +8,15 @@
  * the real-FFI round-trip lives in acl.spec.ts (win32 only).
  */
 
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Win32Error } from '@deepseek-ai/dsh-win32-process'
 import { describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import koffi from 'koffi'
 
-import { grantWrite, revokeWrite, withPathLock } from '../src/acl.ts'
+import { grantWrite, revokeWrite, unreachedDirectory, withPathLock } from '../src/acl.ts'
 import { allocBytes, ptrAddress } from '../src/ffi.ts'
 import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
 import * as abi from '../src/win32-abi.ts'
@@ -969,5 +971,93 @@ describe('revokeWrite no-DACL path', () => {
     }
     expect(caught).toBeInstanceOf(Win32Error)
     expect((caught as Win32Error).api).toBe('LocalFree')
+  })
+})
+
+describe('unreachedDirectory edge cases', () => {
+  /** A security read that finds no DACL, no label, and no descriptor. */
+  const noDacl = () => vi.fn((
+    _path: unknown, _type: unknown, _info: unknown, _owner: unknown, _group: unknown,
+    dacl: NativePtr, sacl: NativePtr, descriptor: NativePtr,
+  ) => {
+    koffi.encode(dacl, PVOID, 0n)
+    koffi.encode(sacl, PVOID, 0n)
+    koffi.encode(descriptor, PVOID, 0n)
+    return 0
+  })
+
+  it('passes over what it cannot list or read, trusts a directory without a DACL, and stops at the limit', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-acl-scan-'))
+    try {
+      mkdirSync(join(root, 'a', 'b'), { recursive: true })
+      const sid = craftWorldSid()
+      // A missing root lists nothing.
+      expect(unreachedDirectory(aclApi(), join(root, 'missing'), sid)).toBeUndefined()
+      // No DACL and no descriptor: nothing to free, and nothing the grant could add.
+      const bareRead = noDacl()
+      const bareFree = vi.fn(() => 0n as NativePtr)
+      expect(unreachedDirectory(aclApi({ getNamedSecurityInfoW: bareRead, localFree: bareFree }), root, sid)).toBeUndefined()
+      expect(bareRead).toHaveBeenCalledTimes(2)
+      expect(bareFree).not.toHaveBeenCalled()
+      // Security that cannot be read is passed over, with what lies below it.
+      const refused = vi.fn(() => 5)
+      expect(unreachedDirectory(aclApi({ getNamedSecurityInfoW: refused }), root, sid)).toBeUndefined()
+      expect(refused).toHaveBeenCalledTimes(1)
+      // The limit counts the root: a limit of two reads only the first level.
+      const limitedRead = noDacl()
+      expect(unreachedDirectory(aclApi({ getNamedSecurityInfoW: limitedRead }), root, sid, 2)).toBeUndefined()
+      expect(limitedRead).toHaveBeenCalledTimes(1)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  /** A DACL of one allow ACE for GRANT_MASK naming the world SID, with the given ACE flags. */
+  function grantAcl(flags: number): NativePtr {
+    const acl = allocBytes(24)
+    const fields: [number, string, number][] = [
+      [0, 'uint8', 2], [2, 'uint16', 24], [4, 'uint16', 1], // ACL: revision, size, ACE count
+      [8, 'uint8', abi.ACCESS_ALLOWED_ACE_TYPE], [9, 'uint8', flags], [10, 'uint16', 16], [12, 'uint32', abi.GRANT_MASK],
+      [16, 'uint8', 1], [17, 'uint8', 0], [23, 'uint8', 1], // the inline SID S-1-1 (world authority, no sub-authorities)
+    ]
+    for (const [offset, type, value] of fields) koffi.encode(acl, offset, type, value)
+    return acl
+  }
+
+  /** A security read answering with `dacl` and, when given, a descriptor whose control word is `control`. */
+  function reading(dacl: NativePtr, control?: number) {
+    const descriptorBlock = control === undefined ? undefined : allocBytes(20)
+    if (descriptorBlock !== undefined) koffi.encode(descriptorBlock, 2, 'uint16', control)
+    return vi.fn((
+      _path: unknown, _type: unknown, _info: unknown, _owner: unknown, _group: unknown,
+      daclSlot: NativePtr, sacl: NativePtr, descriptor: NativePtr,
+    ) => {
+      koffi.encode(daclSlot, PVOID, ptrAddress(dacl))
+      koffi.encode(sacl, PVOID, 0n)
+      koffi.encode(descriptor, PVOID, descriptorBlock === undefined ? 0n : ptrAddress(descriptorBlock))
+      return 0
+    })
+  }
+
+  it('counts an inherited grant as carrying, never an inherit-only one, and passes over a protected DACL with what lies below it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-acl-scan-'))
+    try {
+      mkdirSync(join(root, 'a', 'b'), { recursive: true })
+      const sid = craftWorldSid()
+      const inherited = abi.SUB_CONTAINERS_AND_OBJECTS_INHERIT | abi.INHERITED_ACE
+      expect(unreachedDirectory(aclApi({ getNamedSecurityInfoW: reading(grantAcl(inherited)) }), root, sid)).toBeUndefined()
+      const inheritOnly = abi.SUB_CONTAINERS_AND_OBJECTS_INHERIT | abi.INHERIT_ONLY_ACE
+      expect(unreachedDirectory(aclApi({ getNamedSecurityInfoW: reading(grantAcl(inheritOnly)) }), root, sid)).toBe(join(root, 'a'))
+      // Inheritance turned off: propagation reaches neither the folder nor anything below it.
+      const protectedRead = reading(grantAcl(inheritOnly), abi.SE_DACL_PROTECTED)
+      const free = vi.fn(() => 0n as NativePtr)
+      expect(unreachedDirectory(aclApi({ getNamedSecurityInfoW: protectedRead, localFree: free }), root, sid)).toBeUndefined()
+      expect(protectedRead).toHaveBeenCalledTimes(1)
+      expect(free).toHaveBeenCalledTimes(1)
+      // An unprotected descriptor is freed and its folder judged by its DACL.
+      expect(unreachedDirectory(aclApi({ getNamedSecurityInfoW: reading(grantAcl(inheritOnly), 0) }), root, sid)).toBe(join(root, 'a'))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-13-automation-tasks-unattended.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-13-automation-tasks-unattended.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-13-automation-tasks-unattended:
+  en: 23d46c701da8ae79
+  zh: 3c4497d320be40b6
+/2026-10-13-automation-tasks-unattended/summary:
+  en: 07569cdf767db414
+  zh: 738762f406e716a1
+/2026-10-13-automation-tasks-unattended/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-13-automation-tasks-unattended/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-13-automation-tasks-unattended/compatibility:
+  en: eafb2e24c2ecbf24
+  zh: 2e50a294f66c7e8f
+/2026-10-13-automation-tasks-unattended/verification:
+  en: 8d6378c8a075dc35
+  zh: ca26bec0845073e0
+/2026-10-13-automation-tasks-unattended/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

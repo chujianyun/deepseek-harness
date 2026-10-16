@@ -99,6 +99,7 @@ const OVERRIDES: Record<string, { license?: string; repo?: string }> = {
 const PYTHON_METADATA: Record<string, { license: string; repo: string; role?: string }> = {
   pydantic: { license: 'MIT', repo: 'https://github.com/pydantic/pydantic', role: 'runtime dependency of `deepseek-harness-sdk`' },
   hatchling: { license: 'MIT', repo: 'https://github.com/pypa/hatch', role: 'build backend' },
+  chinesecalendar: { license: 'MIT', repo: 'https://github.com/LKI/chinese-calendar' },
   'et-xmlfile': { license: 'MIT', repo: 'https://foss.heptapod.net/openpyxl/et_xmlfile' },
   lxml: { license: 'BSD-3-Clause', repo: 'https://github.com/lxml/lxml' },
   numpy: { license: 'BSD-3-Clause', repo: 'https://github.com/numpy/numpy' },

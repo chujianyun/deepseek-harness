@@ -16,18 +16,21 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { assistantOf, assistantSessions, createAssistantsSource, type AssistantPicker, type BlankSession, type WizardOptions } from './assistants-source.ts'
 import { squareAvatar } from './avatar-image.ts'
 import { AssistantSeat } from './AssistantSeat.tsx'
 import { SessionAssistantBadge, SessionAssistantHover } from './SessionAssistant.tsx'
 import { assistantGrouping } from './session-grouping.tsx'
-import { AssistantsPage } from './AssistantsPage.tsx'
+import { AssistantsPage, type AssistantsPageInjected } from './AssistantsPage.tsx'
+import { createPackagesSource } from './packages-source.ts'
 import { AssistantsPanelIcon } from './AssistantsPanelIcon.tsx'
 import { en, zh, type AssistantsLocaleKey } from './locales.ts'
 
 export type { AssistantPicker, AssistantsDependencies, AssistantsInjected, AssistantsSnapshot, BlankSession } from './assistants-source.ts'
 export type { AssistantsLocaleKey } from './locales.ts'
-export type { AssistantsPageProps } from './AssistantsPage.tsx'
+export type { AssistantsPageInjected, AssistantsPageProps } from './AssistantsPage.tsx'
+export type { PackageActionOutcome, PackagesDependencies, PackagesInjected, PackagesSnapshot } from './packages-source.ts'
 export type { AssistantSeatProps } from './AssistantSeat.tsx'
 
 declare module '@deepseek-ai/cordis' {
@@ -89,7 +92,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-assistants: dictionaries')
   const t = ctx.locale.bind(NS)
   const remote = ctx.remote.assistants
-  ctx.inject(['sessions', 'uiWorkspace'], (scope: ClientContext) => {
+  ctx.inject(['sessions', 'uiWorkspace', 'workspaces'], (scope: ClientContext) => {
     const blankSession = (): BlankSession | undefined => {
       const summary = Object.values(scope.sessions.list.getSnapshot().byId)
         .find(session => session.blank && (session.retainedBy.mainView ?? 0) > 0)
@@ -126,18 +129,40 @@ export function apply(ctx: ClientContext): void {
     scope.effect(() => scope.uiWorkspace.registerSessionGrouping(assistantGrouping(
       t, source.hooks.assistants, onChange => scope.locale.subscribe(onChange), (assistantId) => { void source.onChat(assistantId) },
     )), 'ui-assistants: Assistant grouping')
-    scope.slots.inject('main', () => scope.slots.register({ name: 'main', key: PANEL_ID, locale: NS, inject: () => source }, AssistantsPage))
+    // Company assistant packages, over an optional Remote: until a deployment mounts it, every call
+    // refuses and the page shows no company section.
+    let packagesRemote: ClientContext['remote']['assistantPackages'] | undefined
+    const packagesCall = (): ClientContext['remote']['assistantPackages'] => {
+      if (packagesRemote === undefined) throw new Error('assistant packages are not available')
+      return packagesRemote
+    }
+    const packages = createPackagesSource({
+      read: () => packagesCall().getState(),
+      install: packageId => packagesCall().installPackage(packageId),
+      update: assistantId => packagesCall().updatePackage(assistantId),
+      enableTask: (assistantId, taskId, workspaceId) => packagesCall().enableTask(assistantId, taskId, workspaceId as WorkspaceId),
+      disableTask: (assistantId, taskId) => packagesCall().disableTask(assistantId, taskId),
+      workspaces: scope.workspaces.list,
+    })
+    scope.inject(['remote.assistantPackages'], (mounted: ClientContext) => {
+      packagesRemote = mounted.remote.assistantPackages
+      mounted.effect(() => () => { packagesRemote = undefined }, 'ui-assistants: assistant packages Remote')
+      void packages.onPackagesRefresh()
+    })
+    // One face for every registration: the assistants face with the packages face, hooks merged.
+    const face: AssistantsPageInjected = { ...source, ...packages, hooks: { ...source.hooks, ...packages.hooks } }
+    scope.slots.inject('main', () => scope.slots.register({ name: 'main', key: PANEL_ID, locale: NS, inject: () => face }, AssistantsPage))
     scope.slots.inject('sidebar.panellist', () => scope.slots.register({
       name: 'sidebar.panellist', id: PANEL_ID, order: 8, label: () => t('panel'), locale: NS,
     }, AssistantsPanelIcon))
     scope.slots.inject('conversation.hero.assistant', () => scope.slots.register({
-      name: 'conversation.hero.assistant', locale: NS, inject: () => source,
+      name: 'conversation.hero.assistant', locale: NS, inject: () => face,
     }, AssistantSeat))
     scope.slots.inject('sidebar.session.row.badge', () => scope.slots.register({
-      name: 'sidebar.session.row.badge', id: 'assistant-badge', order: 10, locale: NS, inject: () => source,
+      name: 'sidebar.session.row.badge', id: 'assistant-badge', order: 10, locale: NS, inject: () => face,
     }, SessionAssistantBadge))
     scope.slots.inject('sidebar.session.row.hover', () => scope.slots.register({
-      name: 'sidebar.session.row.hover', id: 'assistant-hover', order: 5, locale: NS, inject: () => source,
+      name: 'sidebar.session.row.hover', id: 'assistant-hover', order: 5, locale: NS, inject: () => face,
     }, SessionAssistantHover))
   })
 }

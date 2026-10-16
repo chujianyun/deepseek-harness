@@ -1247,6 +1247,9 @@ importers:
       '@deepseek-ai/dsh-api-workspace-files':
         specifier: workspace:*
         version: link:../workspace-files
+      '@deepseek-ai/dsh-assistant-packages':
+        specifier: workspace:*
+        version: link:../../assistant/assistant-packages
       '@deepseek-ai/dsh-assistants':
         specifier: workspace:*
         version: link:../../assistant/assistants
@@ -1714,6 +1717,52 @@ importers:
       '@deepseek-ai/dsh-util-workspace-path':
         specifier: workspace:*
         version: link:../../util/workspace-path
+
+  packages/assistant/assistant-packages:
+    dependencies:
+      '@deepseek-ai/dsh-atomic-write':
+        specifier: workspace:*
+        version: link:../../util/atomic-write
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-assistants':
+        specifier: workspace:*
+        version: link:../assistants
+      '@deepseek-ai/dsh-automation-tasks':
+        specifier: workspace:*
+        version: link:../../schedule/automation-tasks
+      '@deepseek-ai/dsh-home-paths':
+        specifier: workspace:*
+        version: link:../../util/home-paths
+      '@deepseek-ai/dsh-hub-account':
+        specifier: workspace:*
+        version: link:../../credentials/hub-account
+      '@deepseek-ai/dsh-schedule':
+        specifier: workspace:*
+        version: link:../../schedule/schedule
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:*
+        version: link:../../core/session
+      '@deepseek-ai/dsh-skill-market':
+        specifier: workspace:*
+        version: link:../../skill/skill-market
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:*
+        version: link:../../typert/protocol
+      '@deepseek-ai/dsh-workspace':
+        specifier: workspace:*
+        version: link:../../workspace/workspace
 
   packages/assistant/assistants:
     dependencies:
@@ -2568,6 +2617,9 @@ importers:
       '@deepseek-ai/dsh-app-boot':
         specifier: workspace:*
         version: link:../../boot/app-boot
+      '@deepseek-ai/dsh-assistant-packages':
+        specifier: workspace:*
+        version: link:../../assistant/assistant-packages
       '@deepseek-ai/dsh-assistants':
         specifier: workspace:*
         version: link:../../assistant/assistants
@@ -3433,6 +3485,12 @@ importers:
       '@deepseek-ai/dsh-api-session-controller':
         specifier: workspace:*
         version: link:../../api/session-controller
+      '@deepseek-ai/dsh-api-workspace-controller':
+        specifier: workspace:*
+        version: link:../../api/workspace-controller
+      '@deepseek-ai/dsh-assistant-packages':
+        specifier: workspace:*
+        version: link:../../assistant/assistant-packages
       '@deepseek-ai/dsh-assistants':
         specifier: workspace:*
         version: link:../../assistant/assistants
@@ -3469,6 +3527,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:*
         version: link:../../typert/protocol
+      '@deepseek-ai/dsh-workspace':
+        specifier: workspace:*
+        version: link:../../workspace/workspace
       '@testing-library/react':
         specifier: ^16.1.0
         version: 16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -3556,6 +3617,12 @@ importers:
       '@deepseek-ai/dsh-client-test-runtime':
         specifier: workspace:*
         version: link:../../test-support/client-runtime
+      '@deepseek-ai/dsh-client-ui-chat':
+        specifier: workspace:*
+        version: link:../ui-chat
+      '@deepseek-ai/dsh-client-ui-conversation':
+        specifier: workspace:*
+        version: link:../ui-conversation
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: workspace:*
         version: link:../ui-primitives
@@ -8346,11 +8413,26 @@ importers:
         specifier: ^0.8.2
         version: 0.8.3
 
+  packages/ecommerce/mingliu-skills:
+    devDependencies:
+      '@deepseek-ai/dsh-assistant-packages':
+        specifier: workspace:*
+        version: link:../../assistant/assistant-packages
+      '@deepseek-ai/dsh-automation-tasks':
+        specifier: workspace:*
+        version: link:../../schedule/automation-tasks
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
+
   packages/ecommerce/tmall-skills:
     devDependencies:
       '@deepseek-ai/dsh-ecommerce-accounts':
         specifier: workspace:*
         version: link:../ecommerce-accounts
+      '@types/jsdom':
+        specifier: ^28.0.3
+        version: 28.0.3
       '@types/pngjs':
         specifier: ^6.0.5
         version: 6.0.5
@@ -8363,6 +8445,9 @@ importers:
       jpeg-js:
         specifier: ^0.4.4
         version: 0.4.4
+      jsdom:
+        specifier: 29.1.1
+        version: 29.1.1(@noble/hashes@2.3.0)
       pngjs:
         specifier: ^7.0.0
         version: 7.0.0
@@ -11984,6 +12069,9 @@ importers:
       '@deepseek-ai/dsh-assistants':
         specifier: workspace:*
         version: link:../../assistant/assistants
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:*
+        version: link:../../llm/llm
       '@deepseek-ai/dsh-permission-presets':
         specifier: workspace:*
         version: link:../../interaction/permission-presets
@@ -11993,9 +12081,21 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:*
         version: link:../../core/session
+      '@deepseek-ai/dsh-session-projection':
+        specifier: workspace:*
+        version: link:../../session/session-projection
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:*
         version: link:../../typert/protocol
+      '@deepseek-ai/dsh-user-approval':
+        specifier: workspace:*
+        version: link:../../interaction/user-approval
+      '@deepseek-ai/dsh-util-values':
+        specifier: workspace:*
+        version: link:../../util/values
       '@deepseek-ai/dsh-workspace':
         specifier: workspace:*
         version: link:../../workspace/workspace

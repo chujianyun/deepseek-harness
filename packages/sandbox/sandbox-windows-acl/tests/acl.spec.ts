@@ -9,13 +9,14 @@
  * whose per-test lock file is removed in cleanup.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import koffi from 'koffi'
 
-import { buildExplicitAccess, grantWrite, lockFilePath, revokeWrite, withPathLock } from '../src/acl.ts'
+import { buildExplicitAccess, grantWrite, lockFilePath, revokeWrite, unreachedDirectory, withPathLock } from '../src/acl.ts'
 import { AclSandbox } from '../src/index.ts'
 import { createRestrictedToken, makeWellKnownSid } from '../src/token.ts'
 import { allocOverlapped, allocPtrSlot, decodePtr, isInvalidHandle, isNullPtr, win32 } from '../src/ffi.ts'
@@ -357,6 +358,56 @@ describe.skipIf(!isWin32)('ACL editing', () => {
       revokeWrite(api, dir, capabilitySid)
       expect(readDirectAces(api, dir).some(ace => ace.sid === 'S-1-4-4242-2')).toBe(false)
     } finally {
+      apply.mockRestore()
+      if (!isNullPtr(capabilitySid)) api.localFree(capabilitySid)
+      if (!isNullPtr(lowSid)) api.localFree(lowSid)
+      if (!isNullPtr(world)) api.localFree(world)
+    }
+  })
+
+  it('a folder moved in after the grant keeps its old permissions until the next grant applies the root again; links are not followed', async () => {
+    const api = await win32()
+    const dir = scratch()
+    const outside = scratch()
+    const capabilitySid = sidFromString(api, 'S-1-4-4242-3')
+    const lowSid = lowLabelSid(api)
+    const world = worldSid(api)
+    const apply = vi.spyOn(api, 'setNamedSecurityInfoW')
+    try {
+      mkdirSync(join(dir, 'before', 'deeper'), { recursive: true })
+      grantWrite(api, dir, capabilitySid, lowSid, world)
+      expect(apply).toHaveBeenCalledTimes(1)
+      // Folders that existed at the grant inherit it, however deep.
+      expect(unreachedDirectory(api, dir, capabilitySid)).toBeUndefined()
+      // A junction to an ungranted folder is not followed.
+      const junction = spawnSync('cmd', ['/c', 'mklink', '/J', join(dir, 'link'), outside], { encoding: 'utf8' })
+      expect(junction.status, junction.stdout + junction.stderr).toBe(0)
+      expect(unreachedDirectory(api, dir, capabilitySid)).toBeUndefined()
+      // A rename within the volume moves the folder with the permissions it had.
+      const moved = join(outside, 'moved')
+      mkdirSync(join(moved, 'inner'), { recursive: true })
+      renameSync(moved, join(dir, 'before', 'moved'))
+      expect(unreachedDirectory(api, dir, capabilitySid)).toBe(join(dir, 'before', 'moved'))
+      // Only the root is visited under a limit of one.
+      expect(unreachedDirectory(api, dir, capabilitySid, 1)).toBeUndefined()
+      // The next grant does not skip: it applies the root again and its propagation reaches the folder.
+      grantWrite(api, dir, capabilitySid, lowSid, world)
+      expect(apply).toHaveBeenCalledTimes(2)
+      expect(unreachedDirectory(api, dir, capabilitySid)).toBeUndefined()
+      grantWrite(api, dir, capabilitySid, lowSid, world)
+      expect(apply).toHaveBeenCalledTimes(2)
+      // A folder with inheritance turned off never receives the root's entries: it is passed over, so the
+      // grant keeps skipping instead of applying the root again on every provision.
+      const sealed = join(outside, 'sealed')
+      mkdirSync(join(sealed, 'inner'), { recursive: true })
+      const seal = spawnSync('icacls', [sealed, '/inheritance:d'], { encoding: 'utf8' })
+      expect(seal.status, seal.stdout + seal.stderr).toBe(0)
+      renameSync(sealed, join(dir, 'sealed'))
+      expect(unreachedDirectory(api, dir, capabilitySid)).toBeUndefined()
+      grantWrite(api, dir, capabilitySid, lowSid, world)
+      expect(apply).toHaveBeenCalledTimes(2)
+    } finally {
+      rmSync(join(dir, 'link'), { force: true })
       apply.mockRestore()
       if (!isNullPtr(capabilitySid)) api.localFree(capabilitySid)
       if (!isNullPtr(lowSid)) api.localFree(lowSid)

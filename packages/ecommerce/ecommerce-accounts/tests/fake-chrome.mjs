@@ -2,8 +2,9 @@
 // A stand-in for Google Chrome in tests: it answers `--version`, serves the DevTools HTTP endpoints
 // and the browser WebSocket on --remote-debugging-port, and plays the Tmall check: the home page
 // sends `mtop.user.getusersimple`, signed in while `<user-data-dir>/fake-signed-in` holds a nick; the
-// Taobao, Pinduoduo, Douyin shop, and JD merchant pages answer their own checks, and the Taobao, Douyin
-// shop, and JD pages go to sign in while signed out; the Pinduoduo and Douyin shop pages also name the store, which
+// Taobao, Pinduoduo, Douyin shop, JD merchant, and Yuntai pages answer their own checks, and the Taobao,
+// Douyin shop, JD, and Yuntai pages go to sign in while signed out; the Yuntai check names the account,
+// and the Pinduoduo and Douyin shop pages also name the store, which
 // FAKE_CHROME_NO_STORE leaves out and FAKE_CHROME_NO_STORE_BODY loses. FAKE_CHROME_OFFLINE fails every
 // navigation. A connection that sets auto-attach watches every tab, as DSH's guard does: each tab's
 // page loads pause until it continues or fails them; an item.taobao.com page redirects to Tmall,
@@ -22,7 +23,7 @@
 // backend calls the pdd-publish skill makes: the 避孕套 category and its template, image uploads, and a
 // 草稿箱 that a save adds to, except a store whose user name has 拒, which refuses the save. A Douyin shop's new-item page has a form store DSH finds, its 避孕套 form,
 // a draft save that adds a 下架 draft, and the category, list, and upload calls the doudian-publish skill
-// makes. Its tabs are
+// makes. The Tmall home page has a report table the collection runner's table reader reads. Its tabs are
 // kept in `<user-data-dir>/fake-tabs.json` and come back with --restore-last-session. As in Chrome, a
 // closed tab is still listed once by Target.getTargets, but has no window any more.
 import { createHash } from 'node:crypto'
@@ -95,6 +96,7 @@ const LOGINS = [
   ['https://login.taobao.com/', 'https://qn.taobao.com/home.htm/QnworkbenchHome/'],
   ['https://mms.pinduoduo.com/login', 'https://mms.pinduoduo.com/home/'],
   ['https://fxg.jinritemai.com/login', 'https://fxg.jinritemai.com/ffa/mshop/homepage/index'],
+  ['https://mozi-login.alibaba-inc.com/', 'https://yuntai.taobao.com/v2/third-party-invest'],
   ['https://passport.shop.jd.com/login', 'https://shop.jd.com/jdm/home'],
   ['https://passport.jd.com/new/login', 'https://www.jd.com/'],
 ]
@@ -150,6 +152,14 @@ const pageLoad = (url, nick) => {
         { url: 'https://fxg.jinritemai.com/byteshop/menu/list/v2', body: JSON.stringify({ code: 0, data: { menu_list: [{ name: '首页' }] } }) },
         ...store({ url: 'https://fxg.jinritemai.com/center/qualification/shop/info', body: JSON.stringify({ code: 0, data: { shop_name: `${nick}店` } }) }),
       ] }
+  }
+  if (url.startsWith('https://yuntai.taobao.com/')) {
+    return nick === undefined
+      ? { redirect: 'https://mozi-login.alibaba-inc.com/ssoLogin.htm?APP_NAME=alihealth_nr_crm' }
+      : { responses: [{
+        url: 'https://h5api.m.taobao.com/h5/mtop.alihealth.crm.industry.user.current/1.0/',
+        body: `mtopjsonp1(${JSON.stringify({ ret: ['SUCCESS::调用成功'], data: { model: { name: `${nick}:ai`, sellerName: `${nick}旗舰店` } } })})`,
+      }] }
   }
   return {
     responses: [{
@@ -340,6 +350,8 @@ const itemApi = (target, expression) => {
 }
 const evaluateIn = (target, expression) => {
   if (expression === 'location.href') return target.url
+  // The collection runner's table reader, on the Tmall home page's report table.
+  if (expression.includes('"#report"')) return target.url.startsWith('https://www.tmall.com/') ? { headers: ['日期', '访客数'], rows: [['2026-10-12', '1024']], footer: [] } : null
   if (expression.includes('__ICE_APP_CONTEXT__')) return renderedItem()
   if (expression.includes('#nocaptcha')) return false
   if (expression === "document.readyState === 'complete'") return true

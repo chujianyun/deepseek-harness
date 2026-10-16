@@ -1,5 +1,6 @@
 /** The automation task form's values, their checks, and the `automationTasks.create` request they make. */
 import type { AutomationTaskCreateRequest } from '@deepseek-ai/dsh-automation-tasks/client'
+import { readOperations, type OperationProblem } from '@deepseek-ai/dsh-automation-tasks/operations'
 import type { ScheduleTimingChange } from '@deepseek-ai/dsh-schedule/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { TaskFormLocaleKey } from './locales.ts'
@@ -21,6 +22,8 @@ export interface TaskFormValues {
   /** `provider/model` as `JSON.stringify([provider, model])`; empty for the default model. */
   model: string
   permission: string
+  /** Operations its scheduled runs may run without asking, one per line as typed. */
+  operations: string
   mode: FrequencyMode
   repeat: Repeat
   /** ISO weekdays, Monday 1 through Sunday 7. */
@@ -36,7 +39,7 @@ export interface TaskFormValues {
 }
 
 /** The field a message belongs under. */
-export type TaskFormField = 'title' | 'workspace' | 'prompt' | 'frequency' | 'window' | 'form'
+export type TaskFormField = 'title' | 'workspace' | 'prompt' | 'operations' | 'frequency' | 'window' | 'form'
 
 /** One field's message. */
 export interface TaskFormProblem {
@@ -56,10 +59,16 @@ const WORKDAYS = [1, 2, 3, 4, 5]
 export function initialValues(defaults: { workspaceId: string; permission: string; time: string; date: string }): TaskFormValues {
   return {
     title: '', workspaceId: defaults.workspaceId, prompt: '', assistantId: '', model: '', permission: defaults.permission,
-    mode: 'periodic', repeat: 'daily', weekdays: [1], time: defaults.time, interval: '1', unit: 'hours',
+    operations: '', mode: 'periodic', repeat: 'daily', weekdays: [1], time: defaults.time, interval: '1', unit: 'hours',
     date: defaults.date, start: '', end: '',
   }
 }
+
+/** The message for a refused declaration. */
+const OPERATION_KEYS = {
+  too_many: 'error.operationsTooMany', too_long: 'error.operationTooLong', shell_character: 'error.operationShellCharacter',
+  not_declarable: 'error.operationNotDeclarable',
+} as const satisfies Record<OperationProblem['code'], TaskFormLocaleKey>
 
 /** The timing the values describe, read in the browser's zone. */
 function timing(values: TaskFormValues, zone: string): ScheduleTimingChange {
@@ -96,8 +105,10 @@ export function toRequest(
   else if (values.mode === 'periodic' && values.repeat === 'weekly' && values.weekdays.length === 0) {
     problems.push({ field: 'frequency', key: 'error.weekdaysRequired' })
   }
+  const declared = readOperations(values.operations.split('\n'))
+  if ('problem' in declared) problems.push({ field: 'operations', key: OPERATION_KEYS[declared.problem.code] })
   if (values.start !== '' && values.end !== '' && values.end < values.start) problems.push({ field: 'window', key: 'error.windowOrder' })
-  if (problems.length > 0) return { problems }
+  if (problems.length > 0 || 'problem' in declared) return { problems }
   const [provider, model] = values.model === '' ? [] : JSON.parse(values.model) as [string, string]
   return {
     request: {
@@ -105,6 +116,7 @@ export function toRequest(
       ...(values.assistantId === '' ? {} : { assistantId: values.assistantId }),
       ...(provider === undefined || model === undefined ? {} : { model: { provider, model } }),
       ...(values.permission === '' ? {} : { permission: values.permission }),
+      ...(declared.operations.length === 0 ? {} : { operations: declared.operations }),
       ...(values.start === '' && values.end === '' ? {} : {
         window: { ...(values.start === '' ? {} : { start: values.start }), ...(values.end === '' ? {} : { end: values.end }), time_zone: zone },
       }),
@@ -135,6 +147,10 @@ export function refusalProblem(refusal: TaskFormRefusal, windowed: boolean): Tas
       case 'not_future': return { field: 'frequency', key: 'error.notFuture' }
       case 'frequency_too_high': return { field: 'frequency', key: 'error.intervalInvalid' }
       case 'unknown_permission': return { field: 'prompt', key: 'error.permissionUnknown' }
+      case 'too_many':
+      case 'too_long':
+      case 'shell_character':
+      case 'not_declarable': return { field: 'operations', key: OPERATION_KEYS[detail] }
       case 'invalid_rule': return windowed ? { field: 'window', key: 'error.outsideWindow' } : { field: 'frequency', key: 'error.timingInvalid' }
       default: return { field: 'frequency', key: 'error.timingInvalid' }
     }

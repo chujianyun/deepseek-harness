@@ -354,6 +354,27 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-files -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-assistant-packages -->
+<a id="deepseek-aidsh-assistant-packages"></a>
+
+## `@deepseek-ai/dsh-assistant-packages`
+
+- `inject`: `hubAccount` · `assistants`
+- `source`: [`packages/assistant/assistant-packages/src/index.ts:50`](../packages/assistant/assistant-packages/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** DeepSeek Harness home; install records live under `<dshHome>/assistant-packages`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** Largest package download accepted, in bytes. */
+  maxPackageBytes?: number
+  /** Avatar key of an assistant whose package names none. */
+  defaultAvatar?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-assistant-packages -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-assistants -->
 <a id="deepseek-aidsh-assistants"></a>
 
@@ -957,7 +978,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-ecommerce-accounts`
 
 - `inject`: `hubAccount` · `skills` · `shellEnv`
-- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:76`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
+- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:77`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -4834,7 +4855,7 @@ export interface Config {
 | `@deepseek-ai/dsh-api-account-controller` | `deepseekAccount` · `agents` | [`packages/api/account-controller/src/index.ts`](../packages/api/account-controller/src/index.ts) |
 | `@deepseek-ai/dsh-api-remotes` | `typertGateway` | [`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts) |
 | `@deepseek-ai/dsh-authorization` | `credentials` | [`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts) |
-| `@deepseek-ai/dsh-automation-tasks` | `sessionController` · `schedule` · `workspaceRegistry` | [`packages/schedule/automation-tasks/src/index.ts`](../packages/schedule/automation-tasks/src/index.ts) |
+| `@deepseek-ai/dsh-automation-tasks` | `sessionController` · `schedule` · `workspaceRegistry` · `sessionProjections` | [`packages/schedule/automation-tasks/src/index.ts`](../packages/schedule/automation-tasks/src/index.ts) |
 | `@deepseek-ai/dsh-browser-use` | — | [`packages/browser-use/browser-use/src/index.ts`](../packages/browser-use/browser-use/src/index.ts) |
 | `@deepseek-ai/dsh-client-file-upload` | `agents` · `attachments` · `commands` · `connection` | [`packages/client/file-upload/src/index.ts`](../packages/client/file-upload/src/index.ts) |
 | `@deepseek-ai/dsh-client-modules` | `loader` | [`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts) |
@@ -5006,6 +5027,7 @@ export interface Config {
 | `@deepseek-ai/dsh-llm-deepseek` | — | [`packages/llm/llm-deepseek/src/index.ts`](../packages/llm/llm-deepseek/src/index.ts) |
 | `@deepseek-ai/dsh-llm-mock-server` | — | [`packages/test-support/llm-mock-server/src/index.ts`](../packages/test-support/llm-mock-server/src/index.ts) |
 | `@deepseek-ai/dsh-loader-smoke` | — | [`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts) |
+| `@deepseek-ai/dsh-mingliu-skills` | — | [`packages/ecommerce/mingliu-skills/src/index.ts`](../packages/ecommerce/mingliu-skills/src/index.ts) |
 | `@deepseek-ai/dsh-native-command` | — | [`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts) |
 | `@deepseek-ai/dsh-output-retention` | — | [`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts) |
 | `@deepseek-ai/dsh-package-manifest` | — | [`packages/util/package-manifest/src/index.ts`](../packages/util/package-manifest/src/index.ts) |

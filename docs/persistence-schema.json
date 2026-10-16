@@ -5575,6 +5575,178 @@
       }
     },
     {
+      "key": "event:automation-tasks/operations",
+      "kind": "event",
+      "event": "automation-tasks/operations",
+      "surface": false,
+      "digest": "d60ead507685260a63b9f19a000299cf336786adf7c00e6622ddfcf9c68c0b18",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "operations",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 3
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "automation-tasks/operations"
+          }
+        ]
+      }
+    },
+    {
+      "key": "event:automation-tasks/unattended",
+      "kind": "event",
+      "event": "automation-tasks/unattended",
+      "surface": false,
+      "digest": "1a6796bd36dcb998e3c06d848d57d7bdd05c122532b656118232e55bcfcde125",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 6,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "allowed",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "callId",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "command",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "operations",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "turn",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "boolean"
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "array",
+            "element": 3
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
+            "value": "automation-tasks/unattended"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:command/done",
       "kind": "event",
       "event": "command/done",
@@ -22613,6 +22785,11 @@
       ]
     },
     {
+      "digest": "1a6796bd36dcb998e3c06d848d57d7bdd05c122532b656118232e55bcfcde125",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "1ab2ef1296f157ba96998f179bb5daa9d21a82480da2901127aeab2730797c92",
       "names": [],
       "sources": []
@@ -23756,6 +23933,13 @@
       ]
     },
     {
+      "digest": "649bd3586ab7136afc82d66e78674a7fadc71190792d2ff39b9bd90bd48c76e3",
+      "names": [],
+      "sources": [
+        "packages/schedule/automation-tasks/src/types.ts:31"
+      ]
+    },
+    {
       "digest": "6598cd6da253948d6b207c6374a45335804c79b576866d6215649c2d1bc85e25",
       "names": [
         "packages/experimental/agent-team/src/types.ts#TeamMemberSnapshot"
@@ -24849,6 +25033,13 @@
       "sources": []
     },
     {
+      "digest": "af5057d29d842290d0578e435d4cd6fdd1b6de31336b893f6139e4c54a68c175",
+      "names": [],
+      "sources": [
+        "packages/schedule/automation-tasks/src/types.ts:21"
+      ]
+    },
+    {
       "digest": "af6e173f7be819bcd0a5c8d77918649c10ce761d8a184ff472f2e01ce64eb2e0",
       "names": [],
       "sources": []
@@ -25339,6 +25530,11 @@
       "sources": []
     },
     {
+      "digest": "d60ead507685260a63b9f19a000299cf336786adf7c00e6622ddfcf9c68c0b18",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "d63b8b8ffad9c02fd80c43a17df4f240c1fe8118ecca9de34f9d5871838ab5b9",
       "names": [],
       "sources": []
@@ -25384,6 +25580,11 @@
     },
     {
       "digest": "db06ef35b27a38425046b2228fa6bce9582abe140d781d363137eb2f4d233a1c",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "db3911a0f56d92b61eb3ae6475356679888c75e959099ce10974a3cafa79f5fe",
       "names": [],
       "sources": []
     },
@@ -25853,6 +26054,11 @@
       "sources": [
         "packages/assistant/assistants/src/types.ts:197"
       ]
+    },
+    {
+      "digest": "fcd7b84bc8e2dfbf987878644fc361083db365dc0fe465f6cdf184ff44dbc341",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "fcf427290c6213c2a7feb57492d832ce324f5b9737a759f424dab69e6bd101a0",

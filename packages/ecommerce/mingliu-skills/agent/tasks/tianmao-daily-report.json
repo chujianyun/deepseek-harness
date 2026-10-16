@@ -1,0 +1,21 @@
+{
+  "id": "tianmao-daily-report",
+  "title": "天猫日报采集填报",
+  "prompt": "今天是工作日，执行 tianmao-daily-report 技能，把名流官方旗舰店最近 10 天里日报表还空着的日期（到昨天为止）补上。\n1. 今天是法定节假日就输出「今日为法定节假日，跳过」并结束。\n2. 日报表从云文档《AI巡检固化配置》第五节读当月「天猫一店」的映射；没有当月映射就停止并报告「需人工介入」。\n3. 先过回测闸门：工作区 tianmao-daily-report/backtest.json 的 month 不是这个月时，本轮只回测、不写表。\n4. 用 tmall-daily-figures 技能逐天采集生意参谋、万相台和健康品牌云台（自投关键字 ML，商品 MO=610081277604、003=524565741530）。\n5. 只写「实际完成」列里店铺gmv、外投、自投、推广这几项空着的非公式格，用 lark-cli sheets +cells-set 写入；人工填过的格不覆盖，缺数据的指标不写，绝不估算。\n6. 写后回读核对，最后逐天报告写入的单元格、跳过项及原因；有异常时首行写「需人工介入」。不发任何群消息。",
+  "timing": {
+    "kind": "weekly",
+    "weekdays": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "time": "06:00"
+  },
+  "timeZone": "Asia/Shanghai",
+  "permission": "workspace-write",
+  "operations": [
+    "lark-cli sheets +cells-set"
+  ]
+}

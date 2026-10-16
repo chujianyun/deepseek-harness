@@ -136,6 +136,7 @@ flowchart TD
     pkg_api_workspace_files["api-workspace-files"]
   end
   subgraph group_assistant["packages/assistant"]
+    pkg_assistant_packages["assistant-packages"]
     pkg_assistants["assistants"]
   end
   subgraph group_attachment["packages/attachment"]
@@ -275,6 +276,7 @@ flowchart TD
   end
   subgraph group_ecommerce["packages/ecommerce"]
     pkg_ecommerce_accounts["ecommerce-accounts"]
+    pkg_mingliu_skills["mingliu-skills"]
     pkg_tmall_skills["tmall-skills"]
   end
   subgraph group_experimental["packages/experimental"]
@@ -1490,11 +1492,25 @@ flowchart TD
   pkg_session_sync --> pkg_typert_protocol
   pkg_automation_tasks --> pkg_api_session_controller
   pkg_automation_tasks --> pkg_assistants
+  pkg_automation_tasks --> pkg_llm
   pkg_automation_tasks --> pkg_permission_presets
   pkg_automation_tasks --> pkg_schedule
   pkg_automation_tasks --> pkg_session
+  pkg_automation_tasks --> pkg_session_projection
+  pkg_automation_tasks --> pkg_tools
   pkg_automation_tasks --> pkg_typert_protocol
+  pkg_automation_tasks --> pkg_user_approval
+  pkg_automation_tasks --> pkg_util_values
   pkg_automation_tasks --> pkg_workspace
+  pkg_assistant_packages --> pkg_assistants
+  pkg_assistant_packages --> pkg_automation_tasks
+  pkg_assistant_packages --> pkg_home_paths
+  pkg_assistant_packages --> pkg_hub_account
+  pkg_assistant_packages --> pkg_schedule
+  pkg_assistant_packages --> pkg_session
+  pkg_assistant_packages --> pkg_skill_market
+  pkg_assistant_packages --> pkg_typert_protocol
+  pkg_assistant_packages --> pkg_workspace
   pkg_feedback_report --> pkg_api_session_controller
   pkg_feedback_report --> pkg_assistants
   pkg_feedback_report --> pkg_hub_account
@@ -1615,6 +1631,7 @@ flowchart TD
 | [`client-web`](../packages/client/web) | `client` | — |
 | [`credentials`](../packages/credentials/credentials) | `credentials` | — |
 | [`office-to-pdf`](../packages/document/office-to-pdf) | `document` | — |
+| [`mingliu-skills`](../packages/ecommerce/mingliu-skills) | `ecommerce` | — |
 | [`tmall-skills`](../packages/ecommerce/tmall-skills) | `ecommerce` | — |
 | [`experimental-agent-team-profile`](../packages/experimental/agent-team-profile) | `experimental` | — |
 | [`experimental-inspector-profile`](../packages/experimental/inspector-profile) | `experimental` | — |
@@ -1855,6 +1872,7 @@ flowchart TD
 | [`assistants`](../packages/assistant/assistants) | `assistant` | [`agent`](../packages/core/agent), [`agent-default-model`](../packages/core/agent-default-model), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`api-session-controller`](../packages/api/session-controller), [`connectors`](../packages/connector/connectors), [`hub-account`](../packages/credentials/hub-account), [`knowledge-base`](../packages/knowledge/knowledge-base), [`knowledge-selection`](../packages/knowledge/knowledge-selection), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`skill`](../packages/skill/skill), [`skill-market`](../packages/skill/skill-market), [`system-prompt`](../packages/core/system-prompt), [`typert-protocol`](../packages/typert/protocol) |
 | [`session-share`](../packages/session-query/session-share) | `session-query` | [`assistants`](../packages/assistant/assistants), [`hub-account`](../packages/credentials/hub-account), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-query`](../packages/session-query/session-query), [`typert-protocol`](../packages/typert/protocol) |
 | [`session-sync`](../packages/session-query/session-sync) | `session-query` | [`api-session-controller`](../packages/api/session-controller), [`assistants`](../packages/assistant/assistants), [`attachment`](../packages/attachment/attachment), [`hub-account`](../packages/credentials/hub-account), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection-cache`](../packages/session/session-projection-cache), [`session-query`](../packages/session-query/session-query), [`session-title`](../packages/session/session-title), [`typert-protocol`](../packages/typert/protocol) |
-| [`automation-tasks`](../packages/schedule/automation-tasks) | `schedule` | [`api-session-controller`](../packages/api/session-controller), [`assistants`](../packages/assistant/assistants), [`permission-presets`](../packages/interaction/permission-presets), [`schedule`](../packages/schedule/schedule), [`session`](../packages/core/session), [`typert-protocol`](../packages/typert/protocol), [`workspace`](../packages/workspace/workspace) |
+| [`automation-tasks`](../packages/schedule/automation-tasks) | `schedule` | [`api-session-controller`](../packages/api/session-controller), [`assistants`](../packages/assistant/assistants), [`llm`](../packages/llm/llm), [`permission-presets`](../packages/interaction/permission-presets), [`schedule`](../packages/schedule/schedule), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol), [`user-approval`](../packages/interaction/user-approval), [`util-values`](../packages/util/values), [`workspace`](../packages/workspace/workspace) |
+| [`assistant-packages`](../packages/assistant/assistant-packages) | `assistant` | [`assistants`](../packages/assistant/assistants), [`automation-tasks`](../packages/schedule/automation-tasks), [`home-paths`](../packages/util/home-paths), [`hub-account`](../packages/credentials/hub-account), [`schedule`](../packages/schedule/schedule), [`session`](../packages/core/session), [`skill-market`](../packages/skill/skill-market), [`typert-protocol`](../packages/typert/protocol), [`workspace`](../packages/workspace/workspace) |
 | [`feedback-report`](../packages/feedback/feedback-report) | `feedback` | [`api-session-controller`](../packages/api/session-controller), [`assistants`](../packages/assistant/assistants), [`hub-account`](../packages/credentials/hub-account), [`llm`](../packages/llm/llm), [`message-feedback`](../packages/feedback/message-feedback), [`session`](../packages/core/session), [`session-query`](../packages/session-query/session-query), [`session-share`](../packages/session-query/session-share), [`session-title`](../packages/session/session-title), [`typert-protocol`](../packages/typert/protocol) |
 <!-- END GENERATED module-graph:packages -->

@@ -5,7 +5,7 @@
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { MERCHANT_PLATFORMS, type CategoryMemory, type EcommercePlatform, type PublishMemory } from './account.ts'
+import { MERCHANT_PLATFORMS, type CategoryMemory, type PublishMemory, type PublishPlatform } from './account.ts'
 import type { Draft, FieldCheck } from './draft.ts'
 import { EXIT, parseCommandLine, SkillError } from './errors.ts'
 import type { PublishRules } from './publish-rules.ts'
@@ -220,7 +220,7 @@ export function categoriesText(categories: readonly CandidateCategory[], reason:
 }
 
 /** The platforms' names for the user. */
-const PLATFORM_NAMES: Readonly<Record<string, string>> = { ...MERCHANT_PLATFORMS, taobao: '淘宝', jd: '京东' } satisfies Record<EcommercePlatform, string>
+const PLATFORM_NAMES: Readonly<Record<string, string>> = { ...MERCHANT_PLATFORMS, taobao: '淘宝', jd: '京东' } satisfies Record<PublishPlatform, string>
 
 /**
  * The category the company remembered for a product line on one platform. A line remembered only on
@@ -230,7 +230,7 @@ const PLATFORM_NAMES: Readonly<Record<string, string>> = { ...MERCHANT_PLATFORMS
  * @param platform - the platform being published to.
  * @returns the category, or what to tell the model when there is none.
  */
-export function rememberedCategory(memory: PublishMemory, line: string, platform: EcommercePlatform): CategoryMemory | string {
+export function rememberedCategory(memory: PublishMemory, line: string, platform: PublishPlatform): CategoryMemory | string {
   const byPlatform = memory.categories[line] ?? {}
   const entry = byPlatform[platform]
   if (entry !== undefined) return entry

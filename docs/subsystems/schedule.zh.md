@@ -463,6 +463,8 @@ type ScheduleDeliveryHistoryResult =
 
 Session 获取、消息入队或持久化确认失败时，任务继续保存在存储中，并报告宿主警告。后续管理变更或宿主重启会重试。Session 持久化与任务 put 不具有跨存储原子性。收件箱已持久化、任务尚未 put 时发生崩溃，可能重复投递；回执并未消除这一间隔。Schedule 不提供模型结果回执、执行取消或外部通知渠道。
 
+投递的指令会开启一个无人值守的轮次。在[自动化任务](../../packages/schedule/automation-tasks/README.zh.md)的会话中，这个轮次自行应答审批：需要确认的调用在其中每条命令都是任务声明的操作时直接执行，否则被拒绝而不是一直等待；每次应答都以 `automation-tasks/unattended` 记入日志，轮次末尾显示这些应答的记录。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -480,9 +482,10 @@ Host owner of the `automationTasks` Remote namespace.
 ```ts cordis-catalog
 /**
  * Create one automation task: a new Session in the workspace, named after the task, with the
- * requested assistant, model, and permission preset, then the schedule bound to
- * it. The assistant and permission presets are optional services; asking for one a
- * deployment lacks is `automation-tasks/unavailable`. A step's refusal passes through unchanged,
+ * requested assistant, model, permission preset, and declared operations
+ * (`automation-tasks/operations`), then the schedule bound to it. The assistant and permission
+ * presets are optional services; asking for one a deployment lacks is
+ * `automation-tasks/unavailable`. A step's refusal passes through unchanged,
  * except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an
  * unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.
  * @param request - the task as the form submits it.

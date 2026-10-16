@@ -286,6 +286,7 @@ The [shared runtime lock](scripts/primary-runtime/lock.json) records each distri
 
 | Distribution | Locked version | Project license |
 | --- | --- | --- |
+| [`chinesecalendar`](https://github.com/LKI/chinese-calendar) | 1.11.0 | MIT |
 | [`et-xmlfile`](https://foss.heptapod.net/openpyxl/et_xmlfile) | 2.0.0 | MIT |
 | [`lxml`](https://github.com/lxml/lxml) | 6.1.3 | BSD-3-Clause |
 | [`numpy`](https://github.com/numpy/numpy) | 2.3.5 | BSD-3-Clause |

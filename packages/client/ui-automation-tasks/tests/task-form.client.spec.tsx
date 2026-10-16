@@ -83,12 +83,13 @@ describe('the Add automation task form', () => {
     fill(zh['field.permission'], 'danger-full-access')
     fireEvent.click(within(screen.getByRole('dialog')).getByLabelText(zh['risk.acknowledge']))
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh['risk.confirm'] }))
+    fill(zh['field.operations'], 'lark-cli sheets +write\ndsh-ecommerce browser')
     fill(zh['time.label'], '08:30')
     fill(zh['window.end'], '2026-12-31')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['action.save'] })) })
     expect(h.onCreate).toHaveBeenCalledWith({
       title: '店铺日报', prompt: '导出昨日日报', workspaceId: 'ws-2', assistantId: 'a-shop', model: { provider: 'deepseek', model: 'v4' },
-      permission: 'danger-full-access',
+      permission: 'danger-full-access', operations: ['lark-cli sheets +write', 'dsh-ecommerce browser'],
       timing: { kind: 'daily', daily: { time: '08:30:00', time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone } },
       window: { end: '2026-12-31', time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone },
     })
@@ -104,6 +105,12 @@ describe('the Add automation task form', () => {
     // Editing a field clears only its own message.
     fill(en['field.title'], 'Report')
     expect(screen.getAllByRole('alert').map(alert => alert.textContent)).toEqual([en['error.promptRequired']])
+    // A declared operation with a shell character is explained under the declaration.
+    fill(en['field.prompt'], 'Export')
+    fill(en['field.operations'], 'lark-cli sheets +write | jq')
+    fireEvent.click(screen.getByRole('button', { name: en['action.save'] }))
+    expect(screen.getAllByRole('alert').map(alert => alert.textContent)).toEqual([en['error.operationShellCharacter']])
+    expect(h.onCreate).not.toHaveBeenCalled()
   })
 
   it('switches between recurring, interval, and once, and picks weekdays', async () => {

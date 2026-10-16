@@ -286,7 +286,7 @@ describe('e-commerce accounts section', () => {
     fireEvent.click(screen.getByRole('button', { name: '新增账号' }))
     const dialog = screen.getByRole('dialog', { name: '新增账号' })
     const platform = within(dialog).getByRole<HTMLSelectElement>('combobox', { name: '平台' })
-    expect([...platform.options].map(option => option.text)).toEqual(['天猫', '淘宝', '拼多多', '抖店', '京东'])
+    expect([...platform.options].map(option => option.text)).toEqual(['天猫', '淘宝', '拼多多', '抖店', '京东', '健康品牌云台'])
     // JD takes merchant and buyer accounts, as Tmall and Taobao do.
     fireEvent.change(platform, { target: { value: 'jd' } })
     expect([...within(dialog).getByRole<HTMLSelectElement>('combobox', { name: '账号类型' }).options].map(option => option.text)).toEqual(['商家账号', '买家账号'])

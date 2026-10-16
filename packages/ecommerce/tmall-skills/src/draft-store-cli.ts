@@ -4,7 +4,7 @@
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
-import type { EcommercePlatform, MerchantBrowser } from './account.ts'
+import type { MerchantBrowser, PublishPlatform } from './account.ts'
 import { runCli, withMerchantPage, type Deps } from './cli.ts'
 import { beijingTime } from './dates.ts'
 import { EXIT, SkillError } from './errors.ts'
@@ -148,7 +148,7 @@ export interface CategoryFinder {
   /** The platform's name for the user, such as 抖店. */
   readonly name: string
   /** The platform the company's remembered categories are kept under. */
-  readonly platform: EcommercePlatform
+  readonly platform: PublishPlatform
   /** What a category the store cannot use is marked with, such as 未开通. */
   readonly unusable: string
   readonly search: (page: Page, keyword: string) => Promise<readonly CandidateCategory[]>

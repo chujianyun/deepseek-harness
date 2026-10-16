@@ -1,0 +1,178 @@
+{
+  "formatVersion": 2,
+  "roots": [
+    {
+      "key": "event:automation-tasks/operations",
+      "kind": "event",
+      "event": "automation-tasks/operations",
+      "surface": false,
+      "digest": "d60ead507685260a63b9f19a000299cf336786adf7c00e6622ddfcf9c68c0b18",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "operations",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 3
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "automation-tasks/operations"
+          }
+        ]
+      }
+    },
+    {
+      "key": "event:automation-tasks/unattended",
+      "kind": "event",
+      "event": "automation-tasks/unattended",
+      "surface": false,
+      "digest": "1a6796bd36dcb998e3c06d848d57d7bdd05c122532b656118232e55bcfcde125",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 6,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "allowed",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "callId",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "command",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "operations",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "turn",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "boolean"
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "array",
+            "element": 3
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
+            "value": "automation-tasks/unattended"
+          }
+        ]
+      }
+    }
+  ],
+  "types": []
+}

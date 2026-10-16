@@ -57,7 +57,7 @@ import type {
 export type * from './types.ts'
 export {
   DOUDIAN, JD, JD_BUYER, mtopUserNick, matchesCheckApi, parseJsonOrJsonp, PINDUODUO, PLATFORMS, PUBLIC_PAGE, specOf,
-  TAOBAO, TAOBAO_BUYER, TMALL,
+  TAOBAO, TAOBAO_BUYER, TMALL, YUNTAI,
   type CheckAnswer, type PlatformSpec,
 } from './platforms.ts'
 import { changeStream } from '@deepseek-ai/dsh-change-stream'
@@ -126,7 +126,9 @@ export const Config: Schema<Config> = Schema.object({
 export const CHROME_DOWNLOAD_URL = 'https://www.google.com/chrome/'
 
 /** Which platforms and kinds can be added now, as `<platform>/<kind>`. */
-const ADDABLE: ReadonlySet<string> = new Set(['tmall/merchant', 'taobao/merchant', 'pinduoduo/merchant', 'doudian/merchant', 'jd/merchant', 'tmall/buyer', 'taobao/buyer', 'jd/buyer'])
+const ADDABLE: ReadonlySet<string> = new Set([
+  'tmall/merchant', 'taobao/merchant', 'pinduoduo/merchant', 'doudian/merchant', 'jd/merchant', 'yuntai/merchant', 'tmall/buyer', 'taobao/buyer', 'jd/buyer',
+])
 /** The platforms a buyer account can be on. */
 const BUYER_PLATFORMS: readonly string[] = ECOMMERCE_PLATFORMS.filter(platform => ADDABLE.has(`${platform}/buyer`))
 
@@ -177,7 +179,9 @@ const TENANT_QUEUE = Symbol('tenant')
 const NODE_KEY = 'DSH_ECOMMERCE_NODE'
 
 /** Each platform's name in what the model reads. */
-const PLATFORM_NAMES = { tmall: 'Tmall', taobao: 'Taobao', pinduoduo: 'Pinduoduo', doudian: 'Douyin shop', jd: 'JD.com' } as const satisfies Record<EcommercePlatform, string>
+const PLATFORM_NAMES = {
+  tmall: 'Tmall', taobao: 'Taobao', pinduoduo: 'Pinduoduo', doudian: 'Douyin shop', jd: 'JD.com', yuntai: 'Tmall Health Brand Yuntai',
+} as const satisfies Record<EcommercePlatform, string>
 
 /** Each check problem in what the model reads. */
 const PROBLEM_TEXT = {

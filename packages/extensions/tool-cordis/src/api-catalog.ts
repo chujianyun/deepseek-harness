@@ -416,6 +416,47 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'assistantPackages',
+    summary: 'Host owner of company assistant packages and of the `assistantPackages` Remote namespace.',
+    description: 'Host owner of company assistant packages and of the `assistantPackages` Remote namespace.',
+    methods: [
+      {
+        signature: '@Remote getState(signal: AbortSignal): Promise<AssistantPackagesState>',
+        description: 'Read the packages the company offers and the assistants installed from packages here. A switched-on task whose schedule was deleted elsewhere reads as switched off.',
+        parameters: [{ name: 'signal', description: 'caller lifetime.' }],
+        returns: 'the offered packages (null while signed out or unreachable) and the installs.',
+      },
+      {
+        signature: '@Remote installPackage(packageId: string, signal: AbortSignal): Promise<AssistantPackageInstallResult>',
+        description: 'Install a package: install the Skills it names from the company\'s Skill Hub, create its assistant, and record the install with every recommended task switched off. Installing a package already installed here updates that assistant instead.',
+        parameters: [{ name: 'packageId', description: 'user center package id.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'what was installed and the state after it.',
+        throws: ['RemoteError `hub-account/signed-out`, `assistant-packages/not-found`, `assistant-packages/invalid`, `assistant-packages/unavailable`, or an `assistants/*` refusal of the package\'s fields.'],
+      },
+      {
+        signature: '@Remote updatePackage(assistantId: string, signal: AbortSignal): Promise<AssistantPackageInstallResult>',
+        description: 'Update an installed assistant to its package\'s current version. Core files and profile fields the user has not changed since the package wrote them take the new version\'s; changed ones are kept. Skills the new version names are installed. Already current, nothing changes.',
+        parameters: [{ name: 'assistantId', description: 'the assistant installed from a package.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'what was updated, the files kept, and the state after it.',
+        throws: ['RemoteError `hub-account/signed-out`, `assistant-packages/not-installed`, `assistant-packages/not-found`, `assistant-packages/invalid`, or `assistant-packages/unavailable`.'],
+      },
+      {
+        signature: '@Remote enableTask(assistantId: string, taskId: string, workspaceId: WorkspaceId, signal: AbortSignal): Promise<AssistantPackagesState>',
+        description: 'Switch a recommended task on: create an automation task in the workspace, bound to the assistant, with the task\'s timing, instruction, permission preset, and connector grant. Already on, nothing changes.',
+        parameters: [{ name: 'assistantId', description: 'the assistant installed from a package.' }, { name: 'taskId', description: 'the package\'s task id.' }, { name: 'workspaceId', description: 'workspace the task\'s Session is filed under.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'the state after it.',
+        throws: ['RemoteError `hub-account/signed-out`, `assistant-packages/not-installed`, `assistant-packages/task-not-found`, or an `automation-tasks/*` refusal.'],
+      },
+      {
+        signature: '@Remote disableTask(assistantId: string, taskId: string, signal: AbortSignal): Promise<AssistantPackagesState>',
+        description: 'Switch a recommended task off: delete its schedule. Its Session and history stay. Already off, nothing changes.',
+        parameters: [{ name: 'assistantId', description: 'the assistant installed from a package.' }, { name: 'taskId', description: 'the package\'s task id.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'the state after it.',
+        throws: ['RemoteError `hub-account/signed-out`, `assistant-packages/not-installed`, or `assistant-packages/task-not-found`.'],
+      },
+    ],
+  },
+  {
     key: 'assistants',
     summary: 'Host owner of the assistants and of the `assistants` Remote namespace.',
     description: 'Host owner of the assistants and of the `assistants` Remote namespace.',
@@ -686,7 +727,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: '@Remote(\'create\') async create(request: AutomationTaskCreateRequest): Promise<AutomationTaskCreateValue>',
-        description: 'Create one automation task: a new Session in the workspace, named after the task, with the requested assistant, model, and permission preset, then the schedule bound to it. The assistant and permission presets are optional services; asking for one a deployment lacks is `automation-tasks/unavailable`. A step\'s refusal passes through unchanged, except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.',
+        description: 'Create one automation task: a new Session in the workspace, named after the task, with the requested assistant, model, permission preset, and declared operations (`automation-tasks/operations`), then the schedule bound to it. The assistant and permission presets are optional services; asking for one a deployment lacks is `automation-tasks/unavailable`. A step\'s refusal passes through unchanged, except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.',
         parameters: [{ name: 'request', description: 'the task as the form submits it.' }],
         returns: 'the new Session and the stored schedule.',
       },
@@ -5607,6 +5648,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AssistantModel {\n    readonly provider: string;\n    readonly model: string;\n    readonly reasoningEffort?: string;\n}',
   },
   {
+    name: 'AssistantPackageInstallResult',
+    declaration: 'export interface AssistantPackageInstallResult {\n    readonly assistantId: string;\n    readonly version: string;\n    readonly installedSkills: readonly string[];\n    readonly missingSkills: readonly string[];\n    readonly keptFiles: readonly string[];\n    readonly state: AssistantPackagesState;\n}',
+  },
+  {
+    name: 'AssistantPackageItem',
+    declaration: 'export interface AssistantPackageItem {\n    readonly id: string;\n    readonly name: string;\n    readonly version: string;\n    readonly manifest: AssistantPackageManifest;\n    readonly updatedAt: string;\n    readonly installedAssistantId: string | null;\n}',
+  },
+  {
+    name: 'AssistantPackageManifest',
+    declaration: 'export interface AssistantPackageManifest {\n    readonly name: string;\n    readonly displayName: string;\n    readonly description: string;\n    readonly version: string;\n    readonly avatar?: string;\n    readonly preset?: string;\n    readonly skills?: readonly string[];\n    readonly connectors?: readonly string[];\n    readonly tasks: readonly AssistantPackageTask[];\n}',
+  },
+  {
+    name: 'AssistantPackagesState',
+    declaration: 'export interface AssistantPackagesState {\n    readonly tenantId: string | null;\n    readonly packages: readonly AssistantPackageItem[] | null;\n    readonly unavailable: boolean;\n    readonly installed: readonly InstalledPackageView[];\n}',
+  },
+  {
+    name: 'AssistantPackageTask',
+    declaration: 'export interface AssistantPackageTask {\n    readonly id: string;\n    readonly title: string;\n    readonly prompt: string;\n    readonly timing: AssistantPackageTaskTiming;\n    readonly timeZone: string;\n    readonly permission?: string;\n    readonly operations?: readonly string[];\n}',
+  },
+  {
+    name: 'AssistantPackageTaskTiming',
+    declaration: 'export type AssistantPackageTaskTiming = {\n    readonly kind: \'daily\';\n    readonly time: string;\n} | {\n    readonly kind: \'weekly\';\n    readonly weekdays: readonly number[];\n    readonly time: string;\n} | {\n    readonly kind: \'cron\';\n    readonly expression: string;\n};',
+  },
+  {
     name: 'AssistantPresetAvatar',
     declaration: 'export interface AssistantPresetAvatar {\n    readonly kind: \'preset\';\n    readonly key: string;\n}',
   },
@@ -5740,7 +5805,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AutomationTaskCreateRequest',
-    declaration: 'export interface AutomationTaskCreateRequest {\n    readonly title: string;\n    readonly prompt: string;\n    readonly workspaceId: WorkspaceId;\n    readonly assistantId?: string;\n    readonly model?: ModelSelection;\n    readonly permission?: string;\n    readonly timing: ScheduleTimingChange;\n    readonly window?: ScheduleWindowInput;\n}',
+    declaration: 'export interface AutomationTaskCreateRequest {\n    readonly title: string;\n    readonly prompt: string;\n    readonly workspaceId: WorkspaceId;\n    readonly assistantId?: string;\n    readonly model?: ModelSelection;\n    readonly permission?: string;\n    readonly operations?: readonly string[];\n    readonly timing: ScheduleTimingChange;\n    readonly window?: ScheduleWindowInput;\n}',
   },
   {
     name: 'AutomationTaskCreateValue',
@@ -6320,7 +6385,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EcommercePlatform',
-    declaration: 'export type EcommercePlatform = \'tmall\' | \'taobao\' | \'pinduoduo\' | \'doudian\' | \'jd\';',
+    declaration: 'export type EcommercePlatform = \'tmall\' | \'taobao\' | \'pinduoduo\' | \'doudian\' | \'jd\' | \'yuntai\';',
   },
   {
     name: 'EditGoalRequest',
@@ -6651,6 +6716,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface InstallBundleOptions {\n    enabled?: boolean;\n    requestId?: PluginInstallRequestId;\n    approvedBuilds?: string[];\n    registry?: Registry;\n}',
   },
   {
+    name: 'InstalledPackageView',
+    declaration: 'export interface InstalledPackageView {\n    readonly assistantId: string;\n    readonly packageId: string;\n    readonly name: string;\n    readonly displayName: string;\n    readonly version: string;\n    readonly updateVersion: string | null;\n    readonly tasks: readonly InstalledTaskView[];\n    readonly missingSkills: readonly string[];\n}',
+  },
+  {
     name: 'InstalledSkillActionValue',
     declaration: 'export interface InstalledSkillActionValue {\n    readonly done: true;\n}',
   },
@@ -6665,6 +6734,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'InstalledSkillView',
     declaration: 'export interface InstalledSkillView {\n    readonly name: string;\n    readonly description: string;\n    readonly group: InstalledSkillGroup;\n    readonly source: string;\n    readonly path: string;\n    readonly enabled: boolean;\n    readonly withdrawn: boolean;\n}',
+  },
+  {
+    name: 'InstalledTaskView',
+    declaration: 'export interface InstalledTaskView extends AssistantPackageTask {\n    readonly enabled: {\n        readonly sessionId: string;\n        readonly scheduleId: string;\n        readonly version: string;\n    } | null;\n    readonly outdated: boolean;\n}',
   },
   {
     name: 'InstallSpecKind',

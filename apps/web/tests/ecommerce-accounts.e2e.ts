@@ -5,7 +5,8 @@
 // second add of the same account is refused, and the account name is corrected to the one Tmall
 // reports. A Pinduoduo shop signs in the same way; a JD shop names both the account and the store, and
 // its merchant account stays off JD product pages; when a task finds its sign-in ended, an app-wide
-// notice leads back to Settings. Deleting an account closes its Chrome and removes its browser data.
+// notice leads back to Settings. A Health Brand Yuntai account signs in through Alibaba Health's
+// sign-in page, and Yuntai names the account. Deleting an account closes its Chrome and removes its browser data.
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -41,6 +42,7 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
   let accountDir: string | undefined
   let pddDir: string | undefined
   let jdDir: string | undefined
+  let yuntaiDir: string | undefined
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
     failurePage = page
@@ -191,8 +193,25 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     await notice.getByText('去重新登录').click()
     await settings.getByRole('region', { name: '电商账号' }).getByText('未登录或登录过期').waitFor({ timeout: 10_000 })
 
-    // Delete both: each account's Chrome closes and its browser data goes.
-    for (const name of ['名流旗舰店', '拼多多小店', '京东店']) {
+    // A Health Brand Yuntai account opens Alibaba Health's sign-in page; once signed in, Yuntai names the account.
+    await section.getByRole('button', { name: '新增账号' }).click()
+    await add.getByRole('combobox', { name: '平台' }).selectOption('yuntai')
+    await add.getByPlaceholder('例如：名流旗舰店', { exact: true }).fill('名流官方旗舰店')
+    await add.getByPlaceholder('例如：名流旗舰店:运营').fill('小云:ai')
+    await add.getByRole('button', { name: '去登录' }).click()
+    const yuntaiSignIn = page.getByRole('dialog', { name: '登录健康品牌云台' })
+    await yuntaiSignIn.waitFor()
+    yuntaiDir = join(harnessHome, 'ecommerce', tenantId, 'browsers', (await scaffold.ctx.ecommerceAccounts.getState()).accounts[3]!.id)
+    await expect.poll(() => access(join(yuntaiDir!, 'user-data', 'fake-args.json')).then(() => true, () => false), { timeout: 10_000 }).toBe(true)
+    // The stand-in Yuntai names the account after the signed-in user: 小云 + :ai.
+    await writeFile(join(yuntaiDir, 'user-data', 'fake-signed-in'), '小云')
+    await yuntaiSignIn.getByText('登录成功，平台显示的账号是「小云:ai」', { exact: false }).waitFor({ timeout: 15_000 })
+    expect(await yuntaiSignIn.getByRole('note').count()).toBe(0)
+    await yuntaiSignIn.getByRole('button', { name: '完成' }).click()
+    await expect.poll(() => section.getByRole('button', { name: '查看 名流官方旗舰店 的详情' }).textContent()).toContain('已登录')
+
+    // Delete them all: each account's Chrome closes and its browser data goes.
+    for (const name of ['名流旗舰店', '拼多多小店', '京东店', '名流官方旗舰店']) {
       await section.getByRole('button', { name: `查看 ${name} 的详情` }).click()
       await section.getByRole('button', { name: '删除账号' }).click()
       await page.getByRole('dialog', { name: '删除电商账号' }).getByRole('button', { name: '删除', exact: true }).click()
@@ -202,6 +221,7 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     await expect(access(accountDir)).rejects.toThrow()
     await expect(access(pddDir)).rejects.toThrow()
     await expect(access(jdDir)).rejects.toThrow()
+    await expect(access(yuntaiDir)).rejects.toThrow()
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
     if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-ecommerce-accounts')
@@ -209,7 +229,7 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
   } finally {
     await browser.close()
     // A failed run may leave the stand-in Chrome running; deleting the account would have closed it.
-    for (const dir of [accountDir, pddDir, jdDir]) {
+    for (const dir of [accountDir, pddDir, jdDir, yuntaiDir]) {
       if (dir === undefined) continue
       await killRecordedChrome(dir)
     }

@@ -25,6 +25,7 @@ The assistant family gives Desktop users named working roles: each tenant's assi
 | Package | Role | ctx key |
 |---|---|---|
 | [`assistants/`](assistants/README.md) | Each tenant's assistants, their core files, and session binding, over the `assistants` Remote | `ctx.assistants` |
+| [`assistant-packages/`](assistant-packages/README.md) | Company assistant packages from the user center: install, update, and recommended scheduled tasks, over the `assistantPackages` Remote | `ctx.assistantPackages` |
 
 -----
 

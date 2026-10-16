@@ -9,8 +9,8 @@
   en: e7c80d1de4d328b4
   zh: d9f368c27fd9f998
 /session-persistence-event-catalog/persistence-type-fingerprints:
-  en: 23e2c57dd6b06bf1
-  zh: be73525e5dfcde12
+  en: 54629ce36414b96b
+  zh: a81aa7680614ee79
 /session-persistence-event-catalog/event-envelope:
   en: 7ebb1a2e0dd1f916
   zh: 8946f415dda5c1b8
@@ -56,6 +56,15 @@
 /session-persistence-event-catalog/events/assistant/assistant-selected-log-only:
   en: 9e9e0f0459948e32
   zh: 7522691c66b1f009
+/session-persistence-event-catalog/events/automation-tasks:
+  en: 1389ffb0cf45157d
+  zh: 1389ffb0cf45157d
+/session-persistence-event-catalog/events/automation-tasks/automation-tasks-operations-log-only:
+  en: 2cc02996b620d788
+  zh: 4afc35105902dac0
+/session-persistence-event-catalog/events/automation-tasks/automation-tasks-unattended-log-only:
+  en: 11b97bd98d57696b
+  zh: 4abf8b0c1f954680
 /session-persistence-event-catalog/events/command:
   en: 2cecb5b0ee955732
   zh: 2cecb5b0ee955732
@@ -375,8 +384,14 @@
   en: 01f55a1f1a615bcb
   zh: 01f55a1f1a615bcb
 /session-persistence-event-catalog/resolved-persistence-types/at:
-  en: e9c7351a4bef61c2
-  zh: e9c7351a4bef61c2
+  en: e92cde17df9c4c97
+  zh: e92cde17df9c4c97
+/session-persistence-event-catalog/resolved-persistence-types/automation-tasks-operations:
+  en: 4198f9ec9cd1a375
+  zh: 4198f9ec9cd1a375
+/session-persistence-event-catalog/resolved-persistence-types/automation-tasks-unattended:
+  en: cacdc34acb649bb3
+  zh: cacdc34acb649bb3
 /session-persistence-event-catalog/resolved-persistence-types/block:
   en: e63bdf41a006d2bd
   zh: e63bdf41a006d2bd
@@ -1377,8 +1392,11 @@
   en: a3de6a6fe9672c7a
   zh: a357481e27b3b81f
 /session-persistence-event-catalog/resolved-persistence-types/agentpreset:
-  en: b8a0f8aac9708056
-  zh: f5f004bd205b41e1
+  en: 0ffe653edf0c0104
+  zh: ac00e6d2313bb283
+/session-persistence-event-catalog/resolved-persistence-types/allowed-callid-command-operations:
+  en: a25a1ae0a7c3bde1
+  zh: f0e6203dfbebc106
 /session-persistence-event-catalog/resolved-persistence-types/allowedmodels:
   en: 6178321110ceb69d
   zh: 0a9d94cab9d57487
@@ -1860,8 +1878,11 @@
   en: 22665480d164fdc7
   zh: aa2c96be4a4fe468
 /session-persistence-event-catalog/resolved-persistence-types/mode-source:
-  en: 3028b222670ce5ad
-  zh: cae4c9437e560d61
+  en: 2c15dd7083786c93
+  zh: c25ff83a2c62bb0e
+/session-persistence-event-catalog/resolved-persistence-types/operations:
+  en: 052f04e3da6fe556
+  zh: 5ee89caad7d00f98
 /session-persistence-event-catalog/resolved-persistence-types/policy-source:
   en: 00f1d435f82d2753
   zh: c2ab108ad2748a6c
@@ -1926,8 +1947,14 @@
   en: 15c28ead81d7e914
   zh: c8a3275e0e669e86
 /session-persistence-event-catalog/resolved-persistence-types/type-assistant-selected:
-  en: 75b26ac0be0f6c29
-  zh: 0ccef52a62588b0a
+  en: 4365057d8a1527c3
+  zh: 5e1c5f645a8ac737
+/session-persistence-event-catalog/resolved-persistence-types/type-automation-tasks-operations:
+  en: 33972fbe3b3c044c
+  zh: f8f76d5018f6a7c5
+/session-persistence-event-catalog/resolved-persistence-types/type-automation-tasks-unattended:
+  en: 46c7f68d07f6c87b
+  zh: a2f4bd6edfa24b34
 /session-persistence-event-catalog/resolved-persistence-types/type-block-end:
   en: cadfb1b0fdf56a1f
   zh: 9531fa9b07fcac9b

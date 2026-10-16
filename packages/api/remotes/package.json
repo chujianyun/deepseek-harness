@@ -69,6 +69,7 @@
     "@deepseek-ai/dsh-api-terminal-controller": "workspace:*",
     "@deepseek-ai/dsh-api-workspace-controller": "workspace:*",
     "@deepseek-ai/dsh-api-workspace-files": "workspace:*",
+    "@deepseek-ai/dsh-assistant-packages": "workspace:*",
     "@deepseek-ai/dsh-assistants": "workspace:*",
     "@deepseek-ai/dsh-automation-tasks": "workspace:*",
     "@deepseek-ai/dsh-session-share": "workspace:*",

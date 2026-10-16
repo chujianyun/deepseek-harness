@@ -35,7 +35,7 @@ const NAME_FIELD: TaskFormField = 'title'
 /** The field whose message a value belongs under. */
 const FIELD_OF: Record<keyof TaskFormValues, TaskFormField> = {
   title: NAME_FIELD, workspaceId: 'workspace', prompt: 'prompt', assistantId: 'prompt', model: 'prompt', permission: 'prompt',
-  mode: 'frequency', repeat: 'frequency', weekdays: 'frequency', time: 'frequency', interval: 'frequency',
+  operations: 'operations', mode: 'frequency', repeat: 'frequency', weekdays: 'frequency', time: 'frequency', interval: 'frequency',
   unit: 'frequency', date: 'frequency', start: 'window', end: 'window',
 }
 
@@ -202,6 +202,13 @@ export function TaskForm({ t, onDone, useWorkspaces, loadOptions, onCreate }: Ta
             </div>
           </div>
           {problem('prompt')}
+        </div>
+
+        <div className={css.field}>
+          <label className={css.legend} htmlFor={`${id}-operations`}>{label('field.operations', 'field.operationsHint')}</label>
+          <textarea id={`${id}-operations`} className={css.operations} value={values.operations} rows={3} spellCheck={false}
+            placeholder={t('field.operationsPlaceholder')} aria-label={t('field.operations')} onChange={(event) => { set({ operations: event.target.value }) }} />
+          {problem('operations')}
         </div>
 
         <fieldset className={css.field}>
