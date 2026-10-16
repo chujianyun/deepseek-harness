@@ -113,7 +113,7 @@ describe('recommended tasks', () => {
     })
     // The meeting sync only adds records: it declares the one write that adds them, not updating or deleting.
     expect(parsed.tasks[2]).toMatchObject({
-      title: '拼多多日会待办同步', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '17:00' }, connectors: [], permission: 'workspace-write',
+      title: '拼多多日会待办同步', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5, 6, 7], time: '17:00' }, connectors: [], permission: 'workspace-write',
       operations: ['lark-cli base +record-batch-create'],
     })
     // The ROI runs only preview; what they send waits for the person's reply, so they declare nothing.

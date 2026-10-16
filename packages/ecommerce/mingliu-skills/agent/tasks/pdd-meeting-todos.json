@@ -1,7 +1,7 @@
 {
   "id": "pdd-meeting-todos",
   "title": "拼多多日会待办同步",
-  "prompt": "今天是工作日，执行 pdd-meeting-todos 技能，同步「拼多多每日例会」的待办。\n1. 会议表、待办表、组织者和负责人 open_id 都读工作区 pdd-meeting-todos/config.json；没有这个文件就停止并报告缺少配置。\n2. 先核对最近同步过的待办有没有被人工删除，删了的记进 exclusions.json。\n3. 同步今天以及最近 7 天内还没同步的拼多多日会；都没有就结束，报告「今天无拼多多日会，未同步」。\n4. 纪要「待办」板块与逐字稿末尾主持人口述待办交叉核对，口述有、纪要缺的也纳入；按 exclusions.json 跳过人工删除过的待办。\n5. 只新增：用 lark-cli base +record-batch-create 把待办追加进待办表，绝不修改、绝不删除已有记录；同一场会已同步过（synced.json 或待办表里已有）就不再写入。\n6. 写入后记进 synced.json，最后报告每场写入条数、跳过的条目和负责人留空的原因。",
+  "prompt": "执行 pdd-meeting-todos 技能（周末开的日会也同步），同步「拼多多每日例会」的待办。\n1. 会议表、待办表、组织者和负责人 open_id 都读工作区 pdd-meeting-todos/config.json；没有这个文件就停止并报告缺少配置。\n2. 先核对最近同步过的待办有没有被人工删除，删了的记进 exclusions.json。\n3. 同步今天以及最近 7 天内还没同步的拼多多日会；都没有就结束，报告「今天无拼多多日会，未同步」。\n4. 纪要「待办」板块与逐字稿末尾主持人口述待办交叉核对，口述有、纪要缺的也纳入；按 exclusions.json 跳过人工删除过的待办。\n5. 只新增：用 lark-cli base +record-batch-create 把待办追加进待办表，绝不修改、绝不删除已有记录；同一场会已同步过（synced.json 或待办表里已有）就不再写入。\n6. 写入后记进 synced.json，最后报告每场写入条数、跳过的条目和负责人留空的原因。",
   "timing": {
     "kind": "weekly",
     "weekdays": [
@@ -9,7 +9,9 @@
       2,
       3,
       4,
-      5
+      5,
+      6,
+      7
     ],
     "time": "17:00"
   },
