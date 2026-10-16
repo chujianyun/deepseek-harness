@@ -20,7 +20,9 @@ import os
 import re
 import sys
 
-from inspection_card import InputError, read_json
+# 不在技能目录里留 __pycache__：客户端会把它当成对技能的本地修改，更新技能时要人确认覆盖。
+sys.dont_write_bytecode = True
+from inspection_card import InputError, read_json  # noqa: E402
 
 DATE = re.compile(r"(\d{1,2})月(\d{1,2})日")
 ACTUAL = re.compile(r"^实际完成[（(](\d{1,2})月(\d{1,2})日[）)]$")
