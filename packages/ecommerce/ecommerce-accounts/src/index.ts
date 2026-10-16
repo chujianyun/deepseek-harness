@@ -802,16 +802,18 @@ export class EcommerceAccountsService extends TypertRemoteService {
   }
 
   /**
-   * Answer `dsh-ecommerce buyer [platform]`: take over the buyer account that can be used and has
-   * opened the fewest pages today, or say why none can.
+   * Answer `dsh-ecommerce buyer [platform[,platform…]]`: take over the buyer account on those
+   * platforms, or on any, that can be used and has opened the fewest pages today, or say why none can.
    */
   private async modelBuyer(grant: Grant, platform: string): Promise<BridgeReply> {
     if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
-    if (platform !== '' && !BUYER_PLATFORMS.includes(platform)) {
-      return refused(`DSH: buyer accounts are on ${BUYER_PLATFORMS.slice(0, -1).join(', ')}, and ${String(BUYER_PLATFORMS.at(-1))}, not "${platform}".`)
+    const wanted = platform === '' ? [] : platform.split(',')
+    const unknown = wanted.find(item => !BUYER_PLATFORMS.includes(item))
+    if (unknown !== undefined) {
+      return refused(`DSH: buyer accounts are on ${new Intl.ListFormat('en', { type: 'conjunction' }).format(BUYER_PLATFORMS)}, not "${unknown}".`)
     }
     const buyers = this.entries
-      .filter(entry => entry.kind === 'buyer' && (platform === '' || entry.platform === platform))
+      .filter(entry => entry.kind === 'buyer' && (wanted.length === 0 || wanted.includes(entry.platform)))
       .sort((a, b) => this.pagesToday(a) - this.pagesToday(b))
     if (buyers.length === 0) {
       return refused('DSH: there is no buyer account for this. Stop, and ask the user to add one in DSH Settings → E-commerce accounts (设置 → 电商账号).')

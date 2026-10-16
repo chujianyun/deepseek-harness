@@ -337,7 +337,7 @@ function AddDialog(
   const ready = (buyer || storeName.trim() !== '') && account.trim() !== ''
   const choosePlatform = (next: EcommercePlatform): void => {
     setPlatform(next)
-    // Buyer accounts are on Taobao and Tmall only.
+    // Buyer accounts are on Taobao, Tmall, and JD only.
     if (!BUYER_PLATFORMS.has(next)) setKind('merchant')
   }
   const submit = async (): Promise<void> => {

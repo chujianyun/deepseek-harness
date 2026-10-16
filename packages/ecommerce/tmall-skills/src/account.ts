@@ -92,7 +92,7 @@ export interface BuyerBrowser {
 }
 
 /**
- * Let DSH pick a buyer account — signed in, not resting after risk control, fewest pages today — and
+ * Let DSH pick a Tmall or Taobao buyer account — signed in, not resting after risk control, fewest pages today — and
  * reserve its browser for this bash call. Merchant accounts are never used.
  * @param run - runs `dsh-ecommerce`.
  * @returns the account, its browser address, and the pages it has left today.
@@ -100,7 +100,8 @@ export interface BuyerBrowser {
  *   resting), signed-out when the account is signed out, failed otherwise.
  */
 export async function takeOverBuyer(run = runDshEcommerce): Promise<BuyerBrowser> {
-  const taken = await takeOver(['buyer'], run)
+  // Tmall and Taobao share one sign-in; a buyer on another platform never reads their pages.
+  const taken = await takeOver(['buyer', 'tmall,taobao'], run)
   return { id: taken.id, platform: taken.platform, account: taken.account, cdpUrl: taken.cdpUrl, pagesLeft: taken.pagesLeft ?? 0 }
 }
 

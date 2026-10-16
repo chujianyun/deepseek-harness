@@ -46,7 +46,7 @@ No effect.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Buyer accounts on Tmall and Taobao only** — the kind select offers buyer accounts for those platforms.
+- **Buyer accounts on Tmall, Taobao, and JD.com only** — the kind select offers buyer accounts for those platforms.
 
 <a id="dev-note"></a>
 ### Dev Note

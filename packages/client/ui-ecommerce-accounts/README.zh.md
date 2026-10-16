@@ -46,7 +46,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **买家账号仅限天猫和淘宝** — 账号类型下拉框只为这两个平台提供买家账号。
+- **买家账号仅限天猫、淘宝和京东** — 账号类型下拉框只为这三个平台提供买家账号。
 
 <a id="dev-note"></a>
 ### 开发备注

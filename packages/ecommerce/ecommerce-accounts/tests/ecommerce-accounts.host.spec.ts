@@ -1572,6 +1572,14 @@ describe('buyer accounts and risk protection', () => {
     })
     // JD takes buyer accounts too: without one, it says so rather than refusing the platform.
     expect((await runCommand(env, varsOf(env, bashCall('c-4b')), 'buyer', 'jd')).stderr).toContain('there is no buyer account for this')
+    // Several platforms, comma-separated, pick among their buyers only; one unknown platform refuses them all.
+    const jd = await signedInBuyer(env, { platform: 'jd', kind: 'buyer', account: '京东买家' })
+    const picked = JSON.parse((await runCommand(env, varsOf(env, bashCall('c-4c')), 'buyer', 'tmall,taobao')).stdout) as { id: string }
+    expect([first, second]).toContain(picked.id)
+    expect(picked.id).not.toBe(jd)
+    expect(await runCommand(env, varsOf(env, bashCall('c-4d')), 'buyer', 'tmall,amazon')).toMatchObject({
+      code: 1, stderr: 'DSH: buyer accounts are on tmall, taobao, and jd, not "amazon".\n',
+    })
     const started = varsOf(env, bashCall('c-5'))
     expect(await (await fetch(`${started.DSH_ECOMMERCE_URL!}/buyer`)).text()).toContain('"kind": "buyer"')
     env.hub.set(null)
