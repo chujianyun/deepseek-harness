@@ -91,11 +91,11 @@ def classify(items):
 
 
 def grouped(rows, line):
-    """按负责人分组（顺序同输入），每组一行加粗负责人，下面逐项列出。"""
+    """按负责人分组（顺序同输入），每组一行加粗负责人，下面逐项列出；组间空一行，否则飞书把下一位负责人并进上一条列表项。"""
     owners = {}
     for row in rows:
         owners.setdefault(row["owner"], []).append(row)
-    return "\n".join(f"**{owner}**\n" + "\n".join(f"- {line(r)}" for r in group) for owner, group in owners.items())
+    return "\n\n".join(f"**{owner}**\n" + "\n".join(f"- {line(r)}" for r in group) for owner, group in owners.items())
 
 
 def build_card(platform, date, c):

@@ -798,11 +798,12 @@ describe('inspection_card.py', () => {
     expect(advice).toBe('**整体建议**\n- 本日 3 家店铺达成率低于 90%，建议相关负责人复查货品/投放/流量/转化链路。\n- AI只做数据解读和提醒，不替代负责人判断。')
     expect(focus).toBe([
       '**需优先关注**', '**店长乙**', '- 名流保健官方旗舰店：目标 1.91，实际 1.67，达成率 87.4%，暂无环比数据。',
-      '**店长丙**', '- 名流成人保健品官方旗舰店：目标 0.78，实际 0.70，达成率 89.7%，暂无环比数据。',
-      '**店长甲**', '- 名流成人保健品旗舰店：目标 3.31，实际 2.79，达成率 84.3%，暂无环比数据。',
+      '', '**店长丙**', '- 名流成人保健品官方旗舰店：目标 0.78，实际 0.70，达成率 89.7%，暂无环比数据。',
+      '', '**店长甲**', '- 名流成人保健品旗舰店：目标 3.31，实际 2.79，达成率 84.3%，暂无环比数据。',
     ].join('\n'))
     // A row at or over its target is in neither list; a row in 90%~100% only under the slight shifts.
-    expect(mild).toBe('**轻微偏移观察**\n**店长甲**\n- 名流计生用品官方旗舰店：94.2%\n**店长乙**\n- 名流男性用品官方旗舰店：92.9%')
+    // A blank line parts the owners: without it Feishu runs the next owner's name into the list item above.
+    expect(mild).toBe('**轻微偏移观察**\n**店长甲**\n- 名流计生用品官方旗舰店：94.2%\n\n**店长乙**\n- 名流男性用品官方旗舰店：92.9%')
     expect(ran.text).not.toContain('名流保健情趣旗舰店')
     expect(ending).toContain('机器人只发送提醒，不接收回复。')
     expect(ran.out).toContain('【部门群巡检提醒｜拼多多】\n巡检日期：10月15日\n\n巡检日期\n10月15日')
