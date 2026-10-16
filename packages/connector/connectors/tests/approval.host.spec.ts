@@ -232,10 +232,13 @@ describe('connector writes under full access', () => {
       expect(decision).toMatchObject({ kind: 'ask' })
       expect(decision).not.toHaveProperty('onRemember')
     }
-    // Reads run as before, and a session under workspace-write still asks for the plain write.
+    // Reads run as before, and a session under workspace-write or read-only still asks for the plain write.
     expect(await t.gate(bash('lark-cli calendar +agenda', 'call-5', agent))).toEqual({ kind: 'allow' })
     const other = await auditedAgent()
     expect(await t.gate(bash('lark-cli im +messages-send', 'call-6', other.agent))).toMatchObject({ kind: 'ask' })
+    const readOnly = await auditedAgent()
+    readOnly.agent.session.append('sandbox/mode', { mode: 'read-only' })
+    expect(await t.gate(bash('lark-cli im +messages-send', 'call-7', readOnly.agent))).toMatchObject({ kind: 'ask' })
   })
 })
 
