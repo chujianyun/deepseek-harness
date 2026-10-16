@@ -6,7 +6,9 @@
 
 <指标.json>：{"platform": "天猫一店" | "拼多多", "date": "YYYY-MM-DD",
               "items": [{"owner": "负责人", "name": "指标或店铺", "target": 1.91, "actual": 1.67,
-                         "direction": "normal" | "reverse" | "auxiliary", "note": "原因：…（可省）", "suggestion": "…（可省）"}]}
+                         "direction": "normal" | "reverse" | "auxiliary", "note": "原因：…（可省）", "suggestion": "…（可省）",
+                         "percent": true（可省，目标与实际按百分数显示）}]}
+通常由 inspection_read.py 读表写出。
 target / actual 用报告里的单位（万元等），actual 为 null 表示实际待更新（不按 0）；target 为 null 或 0 不判断。
 reverse = 越低越好（费比、排名），达成率 = 目标 / 实际；auxiliary = 花费类辅助项，不分级。
 在 <目录> 下写 card.json（一行；单引号和弯引号都写成 JSON 转义，可直接放进 `--content '<card.json 的内容>'`），
@@ -105,7 +107,8 @@ def build_card(platform, date, c):
     pct = lambda r: f"{r['rate']:.{digits}f}%"
 
     def focus_line(r):
-        text = f"{r['name']}：目标 {r['target']:.2f}，实际 {r['actual']:.2f}，达成率 {pct(r)}，暂无环比数据。"
+        shown = (lambda v: f"{v * 100:.2f}%") if r.get("percent") else (lambda v: f"{v:.2f}")
+        text = f"{r['name']}：目标 {shown(r['target'])}，实际 {shown(r['actual'])}，达成率 {pct(r)}，暂无环比数据。"
         if r.get("note"):
             text += r["note"].strip().rstrip("。") + "。"
         if r.get("suggestion"):

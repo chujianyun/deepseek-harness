@@ -856,6 +856,138 @@ describe('inspection_card.py', () => {
   })
 })
 
+describe('inspection_read.py', () => {
+  const script = join(SKILLS_DIR, 'ai-inspection', 'scripts', 'inspection_read.py')
+  const card = join(SKILLS_DIR, 'ai-inspection', 'scripts', 'inspection_card.py')
+  type Cell = string | number | null | { value: unknown; formula?: string }
+  /** `lark-cli sheets +cells-get --include value,formula` output for rows from 1, columns from A. */
+  const cells = (rows: Cell[][], extra: Record<string, unknown> = {}) => {
+    const width = Math.max(...rows.map(row => row.length))
+    const letter = (i: number): string => (i >= 26 ? letter(Math.floor(i / 26) - 1) : '') + String.fromCharCode(65 + (i % 26))
+    return {
+      ok: true,
+      data: {
+        has_more: false,
+        ranges: [{
+          row_indices: rows.map((_row, i) => i + 1),
+          col_indices: Array.from({ length: width }, (_v, i) => letter(i)),
+          cells: rows.map(row => Array.from({ length: width }, (_v, i) => (typeof row[i] === 'object' && row[i] !== null ? row[i] : { value: row[i] ?? null }))),
+          ...extra,
+        }],
+      },
+    }
+  }
+  async function run(files: Record<string, unknown>, args: (dir: string) => string[]) {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-inspection-read-'))
+    try {
+      for (const [name, content] of Object.entries(files)) await writeFile(join(dir, name), JSON.stringify(content))
+      const ended = await runPython(script, args(dir))
+      const items = await readFile(join(dir, 'items.json'), 'utf8').then(t => JSON.parse(t) as { platform: string; date: string; items: Record<string, unknown>[] }, () => undefined)
+      const carded = items ? await runPython(card, ['--items', join(dir, 'items.json'), '--out', join(dir, 'card')]) : undefined
+      return { ...ended, items, carded }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }
+  /** 天猫 sheet: a 4-column block a day, the first target header written 「目标（…）」, the others the bare date. */
+  const TMALL = [
+    ['渠道', '负责人', '实际完成(w) 9月', '10月目标', '10月增量', '实际完成(w) 10月', '目标（10月01日）', '实际完成（10月01日）', '完成率（10月01日）', '原因及策略（10月01日）', '10月02日', '实际完成（10月02日）'],
+    ['店铺gmv', '甲', 1071, 1200, 129, { value: 60, formula: '=H2+L2' }, '30.34 ', '28.66 ', null, null, '36.31 ', '34.82 '],
+    ['外投花费', '乙', 156, 230, 74, 0, '5', '6.03', null, null, '6.78 ', '7.02 '],
+    ['会员', '丙', 1, 1, 1, 0, '14.16 ', null, null, null, '14.16 ', null],
+    ['店铺费比', '甲', 1, 1, 1, 0, '61.64%', '0.6', null, null, '61.64%', { value: 0.592475588742102, formula: '=(L3)/L2' }],
+    ['备注', null, null, null, null, null, null, null, null, null, 'x', 'y'],
+  ]
+  const tmall = (sheet: unknown, date = '2026-10-02') => run({ 'cells.json': sheet }, dir => ['tmall', '--cells', join(dir, 'cells.json'), '--date', date, '--out', join(dir, 'items.json')])
+
+  it('reads 天猫 rows from the target and actual columns of the day, by their headers', async () => {
+    const ran = await tmall(cells(TMALL))
+    expect([ran.code, ran.out]).toEqual([0, expect.stringContaining('天猫一店 2026-10-02：读到 4 行')])
+    expect(ran.items).toEqual({
+      platform: '天猫一店', date: '2026-10-02', items: [
+        { owner: '甲', name: '店铺gmv', target: 36.31, actual: 34.82, direction: 'normal', source: 'K2/L2' },
+        { owner: '乙', name: '外投花费', target: 6.78, actual: 7.02, direction: 'auxiliary', source: 'K3/L3' },
+        { owner: '丙', name: '会员', target: 14.16, actual: null, direction: 'normal', source: 'K4/L4' },
+        { owner: '甲', name: '店铺费比', target: 0.6164, actual: 0.592475588742102, direction: 'reverse', source: 'K5/L5', percent: true },
+      ],
+    })
+    expect(ran.out).toContain('- 丙｜会员：目标 14.16，实际 待更新（K4/L4）')
+    // The first day's target column is headed 「目标（10月01日）」.
+    expect((await tmall(cells(TMALL), '2026-10-01')).items!.items[0]).toMatchObject({ target: 30.34, actual: 28.66, source: 'G2/H2' })
+    // A percentage row keeps its percentages on the card.
+    const shown = await tmall(cells([TMALL[0]!, ['店铺费比', '甲', 1, 1, 1, 0, null, null, null, null, '50.00%', '80.00%']]))
+    expect(shown.carded!.out).toContain('- 店铺费比：目标 50.00%，实际 80.00%，达成率 62.50%')
+  })
+
+  it('refuses a 天猫 sheet whose day it cannot place, or a read that is not whole', async () => {
+    const missing = await tmall(cells(TMALL), '2026-10-03')
+    expect([missing.code, missing.items, missing.out]).toEqual([2, undefined, expect.stringContaining('表头里「实际完成（10月3日）」没有')])
+    for (const [sheet, message] of [
+      [cells([[...TMALL[0]!.slice(0, 11), '实际完成（10月02日）', '实际完成（10月02日）'], ...TMALL.slice(1)]), '不止一列'],
+      [cells([[...TMALL[0]!.slice(0, 10), '原因', '实际完成（10月02日）'], ...TMALL.slice(1)]), '左边一列的表头是「原因」'],
+      [cells([TMALL[0]!, ['备注', null]]), 'A 列没有同时写了指标和负责人的行'],
+      [cells(TMALL, { truncated: true }), '读数被截断'],
+      [{ data: { ...cells(TMALL).data, has_more: true } }, '没读全（has_more）'],
+      [{ data: {} }, '没有 data.ranges'],
+    ] as const) {
+      const ran = await tmall(sheet)
+      expect([ran.code, ran.items, ran.out]).toEqual([2, undefined, expect.stringContaining(message)])
+    }
+    expect((await tmall(cells(TMALL), '10月2日')).out).toContain('--date 要写成 YYYY-MM-DD')
+  })
+
+  /** 拼多多: targets by date column in 万元; actuals a record a day in 元, store fields mostly without 「名流」. */
+  const TARGETS = [
+    ['店铺名称', '负责人', '每天平均GMV（万元）', '10月1日', '10月2日'],
+    ['名流旗舰店', '甲', '7.40', { value: 7.252, formula: '=7.4*E19' }, { value: 7.252, formula: '=7.4*E19' }],
+    ['名流官方旗舰店', '乙', '6.70', 6.566, 6.566],
+    ['名流情趣旗舰店', '甲', '7.35', 7.203, 7.203],
+    ['名流器械保健旗舰店', '丙', '1', 1, 1],
+    ['合计', null, null, '21', '21'],
+  ]
+  const record = (date: string | number, values: Record<string, string>) => ({ 日期: date, 日期1: '星期', 目标: 685900, 合计: '0', ...values })
+  const actuals = (records: Record<string, unknown>[], fields = ['日期', '日期1', '目标', '合计', '旗舰店', '名流官方旗舰店', '情趣旗舰店', '保健情趣旗舰店'], hasMore = false) => ({
+    ok: true, data: { fields, data: records.map(r => fields.map(f => r[f] ?? '')), has_more: hasMore },
+  })
+  const DAY2 = record('2026-10-02T00:00:00.000+08:00', { 旗舰店: '57734.32', 名流官方旗舰店: '72394.00', 情趣旗舰店: '', 保健情趣旗舰店: '30003' })
+  const pdd = (targets: unknown, acts: unknown) =>
+    run({ 'targets.json': targets, 'actuals.json': acts }, dir => ['pdd', '--target-cells', join(dir, 'targets.json'), '--actuals', join(dir, 'actuals.json'), '--date', '2026-10-02', '--out', join(dir, 'items.json')])
+
+  it('matches each 拼多多 store to its actuals field, with or without 「名流」, and converts 元 to 万元', async () => {
+    const ran = await pdd(cells(TARGETS), actuals([record('2026-10-01T00:00:00.000+08:00', { 旗舰店: '1' }), DAY2]))
+    expect([ran.code, ran.items]).toEqual([0, {
+      platform: '拼多多', date: '2026-10-02', items: [
+        { owner: '甲', name: '名流旗舰店', target: 7.25, actual: 5.7734, direction: 'normal', source: 'E2/旗舰店' },
+        { owner: '乙', name: '名流官方旗舰店', target: 6.57, actual: 7.2394, direction: 'normal', source: 'E3/名流官方旗舰店' },
+        { owner: '甲', name: '名流情趣旗舰店', target: 7.2, actual: null, direction: 'normal', source: 'E4/情趣旗舰店' },
+      ],
+    }])
+    // A store in the actuals but not among the targets is named, not graded.
+    expect(ran.out).toContain('实际表里有目标表没有的店铺，未纳入：保健情趣旗舰店')
+    expect(ran.carded!.out).toContain('- 名流旗舰店：目标 7.25，实际 5.77，达成率 79.6%')
+    // A date read as a timestamp in milliseconds counts in Asia/Shanghai.
+    const stamped = await pdd(cells(TARGETS), actuals([{ ...DAY2, 日期: Date.UTC(2026, 9, 1, 16) }]))
+    expect(stamped.items!.items[0]).toMatchObject({ actual: 5.7734 })
+  })
+
+  it('stops when a store or the day cannot be found once', async () => {
+    for (const [targets, acts, message] of [
+      [cells(TARGETS), actuals([DAY2], ['日期', '名流官方旗舰店', '情趣旗舰店']), '「名流旗舰店」在实际表里找不到对应字段'],
+      [cells(TARGETS), actuals([DAY2], ['日期', '旗舰店', '旗舰店', '名流官方旗舰店', '情趣旗舰店']), '对上了多个字段：旗舰店、旗舰店'],
+      [cells(TARGETS), actuals([]), '日期为 2026-10-02 的记录没有'],
+      [cells(TARGETS), actuals([DAY2, DAY2]), '不止一条'],
+      [cells(TARGETS), actuals([DAY2], undefined, true), '实际表没读全'],
+      [cells(TARGETS), actuals([DAY2], ['名流旗舰店']), '实际表没有「日期」字段'],
+      [cells(TARGETS), { data: [] }, '不是 lark-cli base +record-list --format json 的输出'],
+      [cells(TARGETS.map(row => row.slice(0, 4))), actuals([DAY2]), '目标表表头里「10月2日」没有'],
+      [cells([TARGETS[0]!, ['合计', null]]), actuals([DAY2]), '目标表 A 列没有同时写了店铺和负责人的行'],
+    ] as const) {
+      const ran = await pdd(targets, acts)
+      expect([ran.code, ran.items, ran.out]).toEqual([2, undefined, expect.stringContaining(message)])
+    }
+  })
+})
+
 describe('plan_roi.py', () => {
   const script = join(SKILLS_DIR, 'plan-roi-analysis', 'scripts', 'plan_roi.py')
   const plan = (id: string, name: string, account: string, cost: number, gmv: number, roi: number) => ({

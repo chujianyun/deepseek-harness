@@ -15,10 +15,21 @@ description: "部门日报/周报 AI 巡检（上海名流卫生用品·市场�
 
 1. **识别平台与日期**：确认用户点名平台（天猫一店 / 拼多多）、日报/周报、巡检日期语义。
 2. **读表格映射**：读取云文档《AI巡检固化配置》（https://scnntx5zuepg.feishu.cn/docx/E3cXdNjFQoPknUx34NscD0lAnZb）**第五节「当月表格映射」**（唯一运行配置源，按第五节内的读取方式用 lark-cli docs 局部读取），取当月目标/实际表 token、sheet、列位置。⚠️ 若第五节没有当月/当前平台的映射，视为映射缺失：不猜测表名、不沿用上月 token，向用户确认后再继续（可用 inspection-config-update 技能补配置）。
-3. **读取在线表**：用飞书内置能力读目标表与实际表（`lark-cli sheets +csv-get` / `lark-cli base +record-list`，只读），核对日期列、表头、单位。
-4. **计算达成率**：按平台口径计算，见 `references/巡检逻辑.md`。
+3. **读取在线表**（只读，原样存文件，`<目录>` 是工作区 `ai-inspection/<今天 YYYYMMDD>/`，先建好）：
+   ```bash
+   lark-cli sheets +cells-get --as user --spreadsheet-token <天猫表 token> --sheet-id <天猫 sheet> --range A1:EA60 --include value,formula > <目录>/tmall-cells.json
+   lark-cli sheets +cells-get --as user --spreadsheet-token <拼多多目标表 token> --sheet-id <拼多多 sheet> --range A1:AZ60 --include value,formula > <目录>/pdd-target-cells.json
+   lark-cli base +record-list --as user --base-token <拼多多实际 base> --table-id <拼多多实际 table> --limit 200 --format json > <目录>/pdd-actuals.json
+   ```
+   再用脚本读出每一行（`<python>` 用 `load_workspace_dependencies` 返回的自带解释器）：
+   ```bash
+   <python> <技能目录>/scripts/inspection_read.py tmall --cells <目录>/tmall-cells.json --date <巡检日期 YYYY-MM-DD> --out <目录>/tmall.json
+   <python> <技能目录>/scripts/inspection_read.py pdd --target-cells <目录>/pdd-target-cells.json --actuals <目录>/pdd-actuals.json --date <巡检日期> --out <目录>/pdd.json
+   ```
+   脚本按表头定日期列、按店铺名对上实际表字段（同名优先，其次去掉开头「名流」），对不上、对上多个、数据没读全都以退出码 2 报告原因——这时不出卡片、不发送，把原因报告用户，不自己改读法。每行的目标、实际、来源单元格都打印出来；读数一律来自脚本，不自己从表里摘数。
+4. **计算达成率**：由下一步的脚本按平台口径计算（口径见 `references/巡检逻辑.md`），不手算。
 5. **连续未达标检测（⚠️ 已暂停 2026-09-28）**：用户已指示「以后都先不做连续未达标的」——日常巡检**跳过本步**，不检测、不推送、不复查、不登记。仅当用户明确要求恢复时，才按 `references/连续未达标提醒.md` 执行。
-6. **生成卡片**：每个平台把读到的每一行（负责人、指标或店铺、目标、实际、方向）写进 `<目录>/<tmall|pdd>.json`，运行 `<python> <技能目录>/scripts/inspection_card.py --items <目录>/<tmall|pdd>.json --out <目录>/<tmall|pdd>`（`<python>` 用 `load_workspace_dependencies` 返回的自带解释器，`<目录>` 是工作区 `ai-inspection/<今天 YYYYMMDD>/`）。脚本按达成率分级、写整体建议，生成原巡检卡片格式的卡片 `card.json` 并自检，打印分级摘要与卡片预览；退出码 2 → 报告原因，不发送。分级和卡片内容一律来自脚本，不手写、不改。输入格式见脚本开头说明和 `references/推送文案模板.md`。
+6. **生成卡片**：对第 3 步写出的 `<目录>/<tmall|pdd>.json` 运行 `<python> <技能目录>/scripts/inspection_card.py --items <目录>/<tmall|pdd>.json --out <目录>/<tmall|pdd>`，不改动这两个文件。脚本按达成率分级、写整体建议，生成原巡检卡片格式的卡片 `card.json` 并自检，打印分级摘要与卡片预览；退出码 2 → 报告原因，不发送。分级和卡片内容一律来自脚本，不手写、不改。输入格式见脚本开头说明和 `references/推送文案模板.md`。
 7. **只读预览交付**：在回复中给出脚本打印的预览（含「只读预览」声明）。
 8. **推送（仅当明确指令，或定时任务指令要求自动推送）**：按 `references/推送群路由.md` 取推送目标，先测试群→用户确认→正式群；定时任务按其指令直接推送，指令列出的目标就是本次的目标。每个目标单独运行一条命令发送 `card.json`（见下）。
 
@@ -61,4 +72,5 @@ description: "部门日报/周报 AI 巡检（上海名流卫生用品·市场�
 - `references/连续未达标提醒.md` — 连续两天未达标提醒（已暂停；触发标准/推送对象/报告模板/复查机制）
 - `references/推送文案模板.md` — 精简版统一框架模板（日期/整体建议/需优先关注/轻微偏移观察/结尾说明）
 - `references/推送群路由.md` — 推送目标从哪里取、发送身份、成功判据
+- `scripts/inspection_read.py` — 从天猫表、拼多多目标表和实际表读出某天每一行的负责人、目标、实际
 - `scripts/inspection_card.py` — 按达成率分级，生成并自检原巡检卡片格式的卡片
