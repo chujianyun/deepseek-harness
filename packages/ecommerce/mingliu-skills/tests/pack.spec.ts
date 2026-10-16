@@ -143,18 +143,20 @@ describe('recommended tasks', () => {
     for (const task of parsed.tasks) expect(readOperations(task.operations ?? [])).toEqual({ operations: task.operations ?? [] })
   })
 
-  it('send the inspection only to the test group while it is in development', async () => {
+  it('send the inspection cards to the formal groups, and to JACK only from the workspace configuration', async () => {
     const [inspection] = await readTasks() as { prompt: string }[]
-    expect(inspection!.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_492528df63e4be9cd8b7dcb2eeed26ce'])
-    // No month or table token is fixed in the instruction: the month's mapping is read from the configuration document.
+    expect(inspection!.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_b3209fb4ebbb1faa5f4dc138569a60d3', 'oc_ee49f7314e8b680598e07d3b1333563f'])
+    expect(inspection!.prompt).toContain('ai-inspection/config.json 的 jack_open_id')
+    // No person, month, or table token is fixed in the instruction: they are read from the workspace and the configuration document.
     expect(inspection!.prompt).not.toMatch(/OPEN_ID|\bou_|20\d\d-\d\d(?!-\d)|BdO2sx|KGJzsl|B6KNbU/u)
   })
 
-  it('send the ROI report only to the test group, and the provider reminders only to the test group webhook', async () => {
+  it('send the ROI report to the configured group, and each provider reminder to its own group', async () => {
     const [, , , report, reminder] = await readTasks() as { prompt: string }[]
-    expect(report!.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_492528df63e4be9cd8b7dcb2eeed26ce'])
+    expect(report!.prompt).not.toMatch(/\boc_/u)
+    expect(report!.prompt).toContain('「内部日报接收」')
     expect(reminder!.prompt).not.toMatch(/\boc_|https:\/\/open\.feishu\.cn|\bou_/u)
-    expect(reminder!.prompt).toContain('只发到 webhook 映射里的「测试群」')
+    expect(reminder!.prompt).toContain('webhook 映射里各服务商自己的群')
     for (const prompt of [report!.prompt, reminder!.prompt]) expect(prompt).toContain('本次运行只出预览')
   })
 })
@@ -180,11 +182,11 @@ describe('the meeting to-do sync', () => {
 })
 
 describe('the video performance report', () => {
-  it('sends only to the test group, and its send passes the unattended check in either shell', async () => {
+  it('sends to the video performance group, and its send passes the unattended check in either shell', async () => {
     const [, , , , , , reminder, report] = await readTasks() as { prompt: string; operations: string[] }[]
     expect(report!.prompt).toContain('日期取昨天')
     expect(reminder!.prompt).toContain('日期取今天')
-    for (const task of [report!, reminder!]) expect(task.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_492528df63e4be9cd8b7dcb2eeed26ce'])
+    for (const task of [report!, reminder!]) expect(task.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_df6799c50c2f17b1b359857facd99a52'])
     const skill = await readFile(join(SKILLS_DIR, 'video-performance-report', 'SKILL.md'), 'utf8')
     expect(skill).toContain('距月GMV目标还差：数据待更新（月目标 14000 元）')
     // The message goes in a file lark-cli reads, so no shell has to quote it.
@@ -1076,11 +1078,11 @@ describe('plan_roi.py', () => {
 describe('packAgent', () => {
   it('builds 「运营日报助手」 as an assistant package naming every 名流 skill, the data skills they run, office, and Feishu', async () => {
     const zip = await packAgent(out)
-    expect(zip).toBe(join(out, 'mingliu-ops-report-1.0.0.zip'))
+    expect(zip).toBe(join(out, 'mingliu-ops-report-1.1.0.zip'))
     const entries = unzipSync(await readFile(zip))
     expect(Object.keys(entries).sort()).toEqual(['agent.json', ...CORE_FILES].map(name => `mingliu-ops-report/${name}`).sort())
     const manifest = manifestSchema.parse(JSON.parse(strFromU8(entries['mingliu-ops-report/agent.json']!)))
-    expect(manifest).toMatchObject({ name: 'mingliu-ops-report', displayName: '运营日报助手', version: '1.0.0', connectors: ['feishu'] })
+    expect(manifest).toMatchObject({ name: 'mingliu-ops-report', displayName: '运营日报助手', version: '1.1.0', connectors: ['feishu'] })
     expect(manifest.skills).toEqual(expect.arrayContaining([...SKILLS, 'tmall-daily-figures', 'yuntai-details', 'pdd-live-figures', 'office-docx', 'office-pptx', 'office-xlsx']))
     expect(manifest.skills).toHaveLength(SKILLS.length + 6)
     expect(manifest.tasks.map(task => task.id)).toEqual((await readTasks() as { id: string }[]).map(task => task.id))
