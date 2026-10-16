@@ -8,7 +8,7 @@
  */
 
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { zipSync } from 'fflate'
 
@@ -82,12 +82,10 @@ export async function packAgent(outDir: string): Promise<string> {
  */
 async function walk(dir: string, prefix: string): Promise<Array<{ path: string; entry: string }>> {
   const found: Array<{ path: string; entry: string }> = []
-  for (const item of await readdir(dir, { withFileTypes: true })) {
-    if (item.name.startsWith('.') || item.name === '__pycache__') continue
-    const path = join(dir, item.name)
-    const entry = `${prefix}/${item.name}`
-    if (item.isDirectory()) found.push(...await walk(path, entry))
-    else found.push({ path, entry })
+  for (const item of await readdir(dir, { recursive: true, withFileTypes: true })) {
+    const parts = relative(dir, join(item.parentPath, item.name)).split(sep)
+    if (!item.isFile() || parts.some(part => part.startsWith('.') || part === '__pycache__')) continue
+    found.push({ path: join(item.parentPath, item.name), entry: [prefix, ...parts].join('/') })
   }
   return found.sort((a, b) => a.entry.localeCompare(b.entry))
 }
