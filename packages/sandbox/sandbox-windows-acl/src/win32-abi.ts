@@ -127,6 +127,12 @@ export const ACCESS_DENIED_ACE_TYPE = 1
 export const SID_MAX_SUB_AUTHORITIES = 15
 /** ACE flag marking inherited entries. */
 export const INHERITED_ACE = 0x10
+
+/** ACE_HEADER.AceFlags: the ACE only passes to children and grants the object itself nothing (winnt.h). */
+export const INHERIT_ONLY_ACE = 0x8
+
+/** SECURITY_DESCRIPTOR_CONTROL: the DACL takes no inherited entries, so a parent's entries never reach it (winnt.h). */
+export const SE_DACL_PROTECTED = 0x1000
 /** Maximum SID allocation size in bytes. */
 export const SECURITY_MAX_SID_SIZE = 68
 /** x64 SID_AND_ATTRIBUTES byte size. */

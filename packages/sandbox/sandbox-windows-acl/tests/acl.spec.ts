@@ -396,8 +396,18 @@ describe.skipIf(!isWin32)('ACL editing', () => {
       expect(unreachedDirectory(api, dir, capabilitySid)).toBeUndefined()
       grantWrite(api, dir, capabilitySid, lowSid, world)
       expect(apply).toHaveBeenCalledTimes(2)
-      rmSync(join(dir, 'link'))
+      // A folder with inheritance turned off never receives the root's entries: it is passed over, so the
+      // grant keeps skipping instead of applying the root again on every provision.
+      const sealed = join(outside, 'sealed')
+      mkdirSync(join(sealed, 'inner'), { recursive: true })
+      const seal = spawnSync('icacls', [sealed, '/inheritance:d'], { encoding: 'utf8' })
+      expect(seal.status, seal.stdout + seal.stderr).toBe(0)
+      renameSync(sealed, join(dir, 'sealed'))
+      expect(unreachedDirectory(api, dir, capabilitySid)).toBeUndefined()
+      grantWrite(api, dir, capabilitySid, lowSid, world)
+      expect(apply).toHaveBeenCalledTimes(2)
     } finally {
+      rmSync(join(dir, 'link'), { force: true })
       apply.mockRestore()
       if (!isNullPtr(capabilitySid)) api.localFree(capabilitySid)
       if (!isNullPtr(lowSid)) api.localFree(lowSid)

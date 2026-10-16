@@ -280,7 +280,8 @@ function mergeAndApply(
  * the robust failure handling.
  * @param acl - the current explicit DACL pointer (from {@link readCurrentSecurity}).
  * @param aceType - the ACE type to match.
- * @param inheritance - the ACE inheritance flags to match.
+ * @param inheritance - the ACE inheritance flags to match; undefined matches any flags of an ACE that applies
+ *   to the object itself (not inherit-only).
  * @param mask - the access mask to match.
  * @param sidPtr - the trustee SID to match.
  * @returns whether the exact entry is already present.
@@ -295,7 +296,9 @@ function hasExactEntry(acl: NativePtr, aceType: number, inheritance: number | un
     const aceSize = decodeUint16At(acl, offset + 2)
     if (aceSize < 8 || offset + aceSize > aclSize) return false // implausible: fall back to the merge path
     const exact = decodeUint8At(acl, offset) === aceType
-      && (inheritance === undefined || decodeUint8At(acl, offset + 1) === inheritance)
+      && (inheritance === undefined
+        ? (decodeUint8At(acl, offset + 1) & abi.INHERIT_ONLY_ACE) === 0
+        : decodeUint8At(acl, offset + 1) === inheritance)
       && decodeUint32At(acl, offset + 4) === mask
     if (exact && sameSidAt(acl, offset + 8, sidPtr, 0)) return true
     offset += aceSize
@@ -334,9 +337,11 @@ export const INHERITANCE_SCAN_LIMIT = 4096
 /**
  * The first directory under `root`, breadth first, whose DACL carries no write grant for the capability SID,
  * explicit or inherited. A folder moved in from elsewhere on the same volume keeps the permissions it had, so it
- * lacks the grant and the Low label until the root's inheritable entries are applied again. Links and junctions
- * are not followed, a directory whose listing or security cannot be read is passed over, and after `limit`
- * directories the rest are trusted, so a huge workspace costs a bounded read.
+ * lacks the grant — and the Low label, which the same propagation carries — until the root's inheritable entries
+ * are applied again. Not visited: links and junctions; a directory whose security cannot be read, or whose DACL is
+ * protected (inheritance turned off), with everything below it, since propagation reaches neither; a directory
+ * that cannot be listed has no children visited. After `limit` directories the rest are trusted, so a huge
+ * workspace costs a bounded read.
  * @param api - the binding table.
  * @param root - the granted directory.
  * @param sidPtr - the capability SID the grant names.
@@ -347,8 +352,24 @@ export function unreachedDirectory(
   api: Win32Bindings, root: string, sidPtr: NativePtr, limit = INHERITANCE_SCAN_LIMIT,
 ): string | undefined {
   const queue = [root]
-  for (let visited = 0; visited < queue.length && visited < limit; visited++) {
+  for (let visited = 0; visited < queue.length; visited++) {
     const dir = queue[visited] as string
+    if (dir !== root) {
+      let security: ReturnType<typeof readCurrentSecurity>
+      try {
+        security = readCurrentSecurity(api, dir)
+      } catch {
+        // Security this user cannot read cannot be repaired by the grant either.
+        continue
+      }
+      const { oldAcl, descriptor } = security
+      // Self-relative SECURITY_DESCRIPTOR: Revision@0, Sbz1@1, Control@2 (WORD).
+      const isProtected = descriptor !== null && (decodeUint16At(descriptor, 2) & abi.SE_DACL_PROTECTED) !== 0
+      const carries = oldAcl === null || hasExactEntry(oldAcl, abi.ACCESS_ALLOWED_ACE_TYPE, undefined, abi.GRANT_MASK, sidPtr)
+      if (descriptor !== null) api.localFree(descriptor) // best-effort: a read-only probe
+      if (isProtected) continue
+      if (!carries) return dir
+    }
     let entries: Dirent[]
     try {
       entries = readdirSync(dir, { withFileTypes: true })
@@ -356,19 +377,7 @@ export function unreachedDirectory(
       // An unlistable directory is the diagnosis skill's case, not a missing inheritance.
       continue
     }
-    for (const entry of entries) if (entry.isDirectory()) queue.push(join(dir, entry.name))
-    if (dir === root) continue
-    let security: ReturnType<typeof readCurrentSecurity>
-    try {
-      security = readCurrentSecurity(api, dir)
-    } catch {
-      // Security this user cannot read cannot be repaired by the grant either.
-      continue
-    }
-    const { oldAcl, descriptor } = security
-    const carries = oldAcl === null || hasExactEntry(oldAcl, abi.ACCESS_ALLOWED_ACE_TYPE, undefined, abi.GRANT_MASK, sidPtr)
-    if (descriptor !== null) api.localFree(descriptor)
-    if (!carries) return dir
+    for (const entry of entries) if (entry.isDirectory() && queue.length < limit) queue.push(join(dir, entry.name))
   }
   return undefined
 }
@@ -412,7 +421,8 @@ function hasForeignGrant(oldAcl: NativePtr, sidPtr: NativePtr): boolean {
  * identical descriptor across the whole tree (eager inheritance; minutes on
  * large workspaces) — unless {@link unreachedDirectory} finds a directory
  * below without the grant, as a folder moved in after the last apply; then
- * the apply runs again and its propagation reaches that folder. Otherwise read-merge-write, so pre-existing explicit ACEs
+ * the apply runs again and its propagation reaches that folder. Otherwise
+ * read-merge-write, so pre-existing explicit ACEs
  * survive (same shape as {@link revokeWrite}). Runs under the per-path lock.
  * The directory must be owned by the caller AND grant WRITE_OWNER (the label
  * lives in the SACL; owner-implicit rights cover only READ_CONTROL and
