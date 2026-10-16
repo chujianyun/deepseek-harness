@@ -425,9 +425,21 @@ export class ConnectorsService extends TypertRemoteService {
       // Remembered for the tenant, or granted to this session by the same tenant, as an automation task's session is.
       const remembered = rememberable && asked.every(item => granted.has(grantKey(tenant, item.id, item.command)))
       const sessionAllowed = rememberable && exec.agent !== undefined && this.sessionAllows(exec.agent.session, tenant, asked)
-      if (exec.agent !== undefined && (remembered || sessionAllowed)) {
-        exec.agent.session.append('connectors/always-allowed', { callId: exec.callId, commands: [...new Set(asked.map(item => `${item.cli} ${item.command}`))] })
+      // Full access asks for nothing, so a write that could be always allowed runs unasked there.
+      const fullAccess = exec.agent !== undefined
+        && this.ctx.get('sandboxPolicy')?.resolve({ session: exec.agent.session }).mode === 'danger-full-access'
+      const commands = [...new Set(asked.map(item => `${item.cli} ${item.command}`))]
+      if (exec.agent !== undefined && (remembered || sessionAllowed || (rememberable && fullAccess))) {
+        exec.agent.session.append('connectors/always-allowed', { callId: exec.callId, commands })
         return decision
+      }
+      // What needs the user each time cannot be approved under full access: say so instead of a silent rejection.
+      if (fullAccess) {
+        return {
+          kind: 'deny',
+          reason: `${commands.join(', ')}: a connector command that is high-risk or of unknown risk needs the user's approval for each call, `
+            + 'and this session runs with full access, which asks for none. Ask the user to switch the session to workspace-write to approve it.',
+        }
       }
       // Commands the CLI runs only confirmed get its confirm flag once the user approves the call.
       const confirmed = parts.flatMap(part => part.classification.invocations.filter(item => item.confirm).map(item => `${part.cli} ${item.command}`))
