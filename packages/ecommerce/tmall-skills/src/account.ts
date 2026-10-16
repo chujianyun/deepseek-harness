@@ -32,7 +32,9 @@ const OUTSIDE_DSH = 'dsh-ecommerce: e-commerce accounts are only available in a 
 
 /** The request a `dsh-ecommerce` command makes, or the usage error it prints. */
 function requestOf(base: string, args: readonly string[]): { url: string; init?: RequestInit } | undefined {
-  const [command, argument] = args
+  // An empty argument is a missing one, as the command's `[ -z "$2" ]` has it.
+  const [command, given] = args
+  const argument = given === '' ? undefined : given
   switch (command) {
     case 'accounts': case 'memory': return { url: `${base}/${command}` }
     case 'browser': case 'risk': case 'signed-out':
@@ -64,7 +66,10 @@ export async function runDshEcommerce(args: readonly string[], env: NodeJS.Proce
     const body = `${(await response.text()).replace(/\n+$/u, '')}\n`
     return response.status === 200 ? { code: 0, stdout: body, stderr: '' } : { code: 1, stdout: '', stderr: body }
   } catch (error) {
-    return { code: 1, stdout: '', stderr: `dsh-ecommerce: ${(error as Error).message}\n` }
+    // fetch says only "fetch failed"; why the connection failed is its cause.
+    const { message, cause } = error as Error
+    const why = cause instanceof Error ? `${message}: ${cause.message}` : message
+    return { code: 1, stdout: '', stderr: `dsh-ecommerce: ${why}\n` }
   }
 }
 
