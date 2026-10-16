@@ -2,7 +2,7 @@
 
 [English](ecommerce-accounts.md) | 中文
 
-电商账号让桌面版用户把 DSH 登录到公司经营的电商平台，支持天猫、淘宝、拼多多和抖店的商家账号。电商账号、商家账号、买家账号等术语定义在[术语表](../glossary.zh.md#ecommerce-account)中；每个账号为何是一份由系统 Google Chrome 保存的登录，记录在[电商账号 Agent Note](../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.zh.md) 中。[`@deepseek-ai/dsh-ecommerce-accounts`](../../packages/ecommerce/ecommerce-accounts/README.zh.md) 管理账号及其 Chrome 进程；[`@deepseek-ai/dsh-client-ui-ecommerce-accounts`](../../packages/client/ui-ecommerce-accounts/README.zh.md) 渲染设置分区。
+电商账号让桌面版用户把 DSH 登录到公司经营的电商平台，支持天猫、淘宝、拼多多、抖店和京东（POP 店铺）的商家账号。电商账号、商家账号、买家账号等术语定义在[术语表](../glossary.zh.md#ecommerce-account)中；每个账号为何是一份由系统 Google Chrome 保存的登录，记录在[电商账号 Agent Note](../../.agents/notes/proposed/feature/2026-10-07-ecommerce-accounts-over-store-session.zh.md) 中。[`@deepseek-ai/dsh-ecommerce-accounts`](../../packages/ecommerce/ecommerce-accounts/README.zh.md) 管理账号及其 Chrome 进程；[`@deepseek-ai/dsh-client-ui-ecommerce-accounts`](../../packages/client/ui-ecommerce-accounts/README.zh.md) 渲染设置分区。
 
 ## 存储
 
@@ -14,7 +14,7 @@
 
 ## 检查
 
-一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的登录响应，失败时重试一次：天猫的 `mtop.user.getusersimple`（会给出账号名）、淘宝千牛的 `mtop.taobao.jdy.resource.shop.info.get`、拼多多的 `janus/api/checkLogin`，或抖店的 `byteshop/menu/list/v2`；拼多多和抖店的页面还会给出店铺名，设置分区会把它与填写的店铺名比较。页面被平台转到登录页时立即判为未登录。在规定时间内没有答复、页面无法加载，或账号的浏览器数据正被一个不是 DSH 启动的 Chrome 占用时，检查以对应的问题（超时、网络、占用）失败，并保留上次的结果。最近一次结果随账号保存，此后一直显示，重启后也是。DSH 不会自行检查、不定时检查，设置分区打开时也不检查：只在用户要求时，以及任务接管一个上次已登录结果早于 30 分钟的账号时检查。曾经登录、现在未登录的账号为登录过期，桌面版会弹出提示，可直接打开该分区。登录经检查确认后，其 Chrome 关闭。
+一次检查在后台标签页打开平台的业务页面，读取平台自己在该页返回的登录响应，失败时重试一次：天猫的 `mtop.user.getusersimple`（会给出账号名）、淘宝千牛的 `mtop.taobao.jdy.resource.shop.info.get`、拼多多的 `janus/api/checkLogin`，抖店的 `byteshop/menu/list/v2`，或京东商家后台的 `NavigationFacade.findShopInfo`（会给出账号名和店铺名）；拼多多、抖店和京东的页面还会给出店铺名，设置分区会把它与填写的店铺名比较。页面被平台转到登录页时立即判为未登录。在规定时间内没有答复、页面无法加载，或账号的浏览器数据正被一个不是 DSH 启动的 Chrome 占用时，检查以对应的问题（超时、网络、占用）失败，并保留上次的结果。最近一次结果随账号保存，此后一直显示，重启后也是。DSH 不会自行检查、不定时检查，设置分区打开时也不检查：只在用户要求时，以及任务接管一个上次已登录结果早于 30 分钟的账号时检查。曾经登录、现在未登录的账号为登录过期，桌面版会弹出提示，可直接打开该分区。登录经检查确认后，其 Chrome 关闭。
 
 ## 重启之后
 
@@ -26,7 +26,7 @@ Chrome 只在需要时运行：检查或任务会在后台启动账号的 Chrome
 
 ## 买家账号与风控保护
 
-天猫和淘宝的买家账号只用于查看公开商品页面，由 DSH 而不是模型保证安全：任务使用账号期间，DSH 通过自己的 DevTools 连接监看其浏览器，暂停每一次页面加载。商家账号不能打开公开的商品页或搜索页。买家账号最多打开租户的每日页面上限（默认 20，可在设置中修改），按自然日计数；平台风控一旦出现，DSH 不再为该任务加载任何内容，并让该账号休息 72 小时。`dsh-ecommerce buyer` 挑选可用且当天打开页面最少的买家账号，或说明为何都不可用。任务的标签页落在平台登录页时，或技能脚本上报它以其他方式发现的掉线时，DSH 立即检查该账号，确认掉线后显示为已失效；技能会告诉用户哪家店铺需要重新登录，跨多家店铺的任务继续处理其他店铺。
+天猫、淘宝和京东的买家账号只用于查看公开商品页面，由 DSH 而不是模型保证安全：任务使用账号期间，DSH 通过自己的 DevTools 连接监看其浏览器，暂停每一次页面加载。商家账号不能打开公开的商品页或搜索页。买家账号最多打开租户的每日页面上限（默认 20，可在设置中修改），按自然日计数；平台风控一旦出现，DSH 不再为该任务加载任何内容，并让该账号休息 72 小时。`dsh-ecommerce buyer` 挑选可用且当天打开页面最少的买家账号，或说明为何都不可用。任务的标签页落在平台登录页时，或技能脚本上报它以其他方式发现的掉线时，DSH 立即检查该账号，确认掉线后显示为已失效；技能会告诉用户哪家店铺需要重新登录，跨多家店铺的任务继续处理其他店铺。
 
 ## 天猫取数技能
 

@@ -128,9 +128,10 @@ export async function probe(cdp: Cdp, spec: PlatformSpec, timeoutMs: number): Pr
     /** The store response was read: the name it carries, or undefined; still unread while `storeRead` is false. */
     let store: string | undefined
     let storeRead = spec.store === undefined
-    const signedIn = (signed: Extract<CheckAnswer, { signedIn: true }>): ProbeResult => ({
-      kind: 'signed-in', ...signed.name === undefined ? {} : { name: signed.name }, ...store === undefined ? {} : { store },
-    })
+    const signedIn = (signed: Extract<CheckAnswer, { signedIn: true }>): ProbeResult => {
+      const named = signed.store ?? store
+      return { kind: 'signed-in', ...signed.name === undefined ? {} : { name: signed.name }, ...named === undefined ? {} : { store: named } }
+    }
     const conclude = (): void => {
       if (answer === undefined) return
       if (!answer.signedIn) settle({ kind: 'signed-out' })

@@ -20,10 +20,10 @@ export type EcommerceAccountsSectionProps = PropsLocale<'ecommerce-accounts'> & 
 type T = TranslateNS<'ecommerce-accounts'>
 
 const PLATFORM_KEYS = {
-  tmall: 'platformTmall', taobao: 'platformTaobao', pinduoduo: 'platformPinduoduo', doudian: 'platformDoudian',
+  tmall: 'platformTmall', taobao: 'platformTaobao', pinduoduo: 'platformPinduoduo', doudian: 'platformDoudian', jd: 'platformJd',
 } as const satisfies Record<EcommercePlatform, EcommerceLocaleKey>
 /** Platforms a buyer account can be on. */
-const BUYER_PLATFORMS: ReadonlySet<EcommercePlatform> = new Set(['tmall', 'taobao'])
+const BUYER_PLATFORMS: ReadonlySet<EcommercePlatform> = new Set(['tmall', 'taobao', 'jd'])
 /** Platforms in the order the add form offers them. */
 const PLATFORM_ORDER = Object.keys(PLATFORM_KEYS) as EcommercePlatform[]
 const PROBLEM_KEYS = {
@@ -337,7 +337,7 @@ function AddDialog(
   const ready = (buyer || storeName.trim() !== '') && account.trim() !== ''
   const choosePlatform = (next: EcommercePlatform): void => {
     setPlatform(next)
-    // Buyer accounts are on Taobao and Tmall only.
+    // Buyer accounts are on Taobao, Tmall, and JD only.
     if (!BUYER_PLATFORMS.has(next)) setKind('merchant')
   }
   const submit = async (): Promise<void> => {

@@ -13,7 +13,8 @@ import { writeJsonAtomic } from '../src/files.ts'
 import { applyUpdate, DamagedMemory, EMPTY_MEMORY, readMemory } from '../src/memory.ts'
 import { SKILL_CONTENT } from '../src/skill.ts'
 import EcommerceAccountsService, {
-  DOUDIAN, matchesCheckApi, mtopUserNick, parseJsonOrJsonp, PINDUODUO, PUBLIC_PAGE, RISK_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL,
+  DOUDIAN, JD, JD_BUYER, matchesCheckApi, mtopUserNick, parseJsonOrJsonp, PINDUODUO, PUBLIC_PAGE, RISK_PAGE, specOf,
+  TAOBAO, TAOBAO_BUYER, TMALL,
 } from '../src/index.ts'
 import { alive, backgroundBundle, browserPid, closeChrome, ensureTab, findChrome, launchChrome, readRecord } from '../src/chrome.ts'
 import { Cdp, pageTabs } from '../src/cdp.ts'
@@ -163,6 +164,10 @@ describe('platform checks', () => {
     expect(matchesCheckApi('data:text/plain,x', TMALL.checkApi)).toBe(false)
     expect(matchesCheckApi('not a url', TMALL.checkApi)).toBe(false)
     expect(matchesCheckApi('https://a.example/', 'https://a.example/')).toBe(true)
+    // A check API that names a query value matches only responses carrying it; others on the same path do not.
+    expect(matchesCheckApi('https://sff.jd.com/api?v=1.0&appId=x&api=dsm.shop.center.pageframe.navigation.NavigationFacade.findShopInfo', JD.checkApi)).toBe(true)
+    expect(matchesCheckApi('https://sff.jd.com/api?v=1.0&appId=x&api=dsm.shop.home.comm.grayFacade.isGray', JD.checkApi)).toBe(false)
+    expect(matchesCheckApi('https://sff.jd.com/api?v=1.0', JD.checkApi)).toBe(false)
     expect(TMALL.isLoginPage('https://login.tmall.com/?x')).toBe(true)
     expect(TMALL.isLoginPage('https://login.taobao.com/havanaone/login/login.htm')).toBe(true)
     expect(TMALL.isLoginPage('https://www.tmall.com/')).toBe(false)
@@ -739,6 +744,13 @@ describe('e-commerce account edge cases', () => {
     expect(DOUDIAN.read('{"code":0,"data":{"menu_list":[]}}')).toEqual({ signedIn: false })
     expect(DOUDIAN.read('{"code":10008,"data":null}')).toEqual({ signedIn: false })
     expect(DOUDIAN.read('[]')).toEqual({ signedIn: false })
+    // JD's merchant backend names both the signed-in account and the store in one response.
+    expect(JD.read('{"msg":"成功","code":200,"data":{"shopName":"名流京东店","account":"名流:小美","logoUrl":""}}')).toEqual({ signedIn: true, name: '名流:小美', store: '名流京东店' })
+    expect(JD.read('{"code":200,"data":{"shopName":"","account":"名流:小美"}}')).toEqual({ signedIn: true, name: '名流:小美' })
+    // Every signed-in backend reply seen names the account, so one without it is not taken as signed in.
+    expect(JD.read('{"code":200,"data":{"shopName":"名流京东店","account":""}}')).toEqual({ signedIn: false })
+    expect(JD.read('{"code":401,"msg":"未登录","data":null}')).toEqual({ signedIn: false })
+    expect(JD.read('oops')).toEqual({ signedIn: false })
     expect(PINDUODUO.store!.read('{"result":{"merchantMainSimpleVO":{"mallName":"名流保健"}}}')).toBe('名流保健')
     expect(PINDUODUO.store!.read('{"result":{"merchantMainSimpleVO":null}}')).toBeUndefined()
     expect(PINDUODUO.store!.read('{"result":null}')).toBeUndefined()
@@ -753,23 +765,27 @@ describe('e-commerce account edge cases', () => {
     expect(PINDUODUO.isLoginPage('https://mms.pinduoduo.com/home/')).toBe(false)
     expect(DOUDIAN.isLoginPage('https://fxg.jinritemai.com/login/common')).toBe(true)
     expect(DOUDIAN.isLoginPage('https://fxg.jinritemai.com/ffa/mshop/homepage/index')).toBe(false)
+    // JD's merchant sign-in, and the security verification it passes through, are both still signing in.
+    expect(JD.isLoginPage('https://passport.shop.jd.com/login/index.action/jdm?ReturnUrl=x')).toBe(true)
+    expect(JD.isLoginPage('https://aq.jd.com/certified/index?o=LOGIN')).toBe(true)
+    expect(JD.isLoginPage('https://shop.jd.com/jdm/home')).toBe(false)
   })
 
-  it('signs in Taobao, Pinduoduo, and Douyin shop accounts, and shows a lost sign-in as expired', async () => {
+  it('signs in Taobao, Pinduoduo, Douyin shop, and JD merchant accounts, and shows a lost sign-in as expired', async () => {
     const env = await setup()
-    for (const platform of ['taobao', 'pinduoduo', 'doudian'] as const) {
+    for (const platform of ['taobao', 'pinduoduo', 'doudian', 'jd'] as const) {
       const { accountId } = await env.service.addAccount({ ...merchant, platform })
       expect((await env.service.getState()).accounts.at(-1)).toMatchObject({ platform, status: 'signed-out', expired: false })
       await env.service.startSignIn(accountId)
       await env.signIn(accountId, '小美')
     }
     const signedIn = await env.settle(s => s.accounts.every(account => account.status === 'signed-in'))
-    // These platforms name no account; Pinduoduo and Douyin shop pages name the store.
-    expect(signedIn.accounts.map(account => [account.signedInAs, account.signedInStore])).toEqual([[undefined, undefined], [undefined, '小美店'], [undefined, '小美店']])
+    // Taobao, Pinduoduo, and Douyin shop name no account; Pinduoduo and Douyin shop pages name the store, and JD's names both.
+    expect(signedIn.accounts.map(account => [account.signedInAs, account.signedInStore])).toEqual([[undefined, undefined], [undefined, '小美店'], [undefined, '小美店'], ['小美', '小美店']])
     for (const account of signedIn.accounts) await rm(join(env.browserDir(account.id), 'user-data', 'fake-signed-in'))
-    // Signed out, the Taobao and Douyin shop pages go to sign in, and Pinduoduo says so.
+    // Signed out, the Taobao, Douyin shop, and JD pages go to sign in, and Pinduoduo says so.
     const lost = await env.service.checkAccounts()
-    expect(lost.accounts.map(account => [account.status, account.expired])).toEqual([['signed-out', true], ['signed-out', true], ['signed-out', true]])
+    expect(lost.accounts.map(account => [account.status, account.expired])).toEqual([['signed-out', true], ['signed-out', true], ['signed-out', true], ['signed-out', true]])
   })
 
   it('shows a check that times out, cannot reach the page, or finds the browser held by another Chrome as a problem', async () => {
@@ -1004,7 +1020,7 @@ describe('e-commerce accounts for the model', () => {
       { id: expect.any(String) as string, platform: 'pinduoduo', store: '名流旗舰店', account: 'pdd', kind: 'merchant', status: 'signed-out' },
     ])
     expect(listed.stdout).not.toMatch(/cookie|user-data|ecommerce\//iu)
-    const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao] | dsh-ecommerce risk <account-id>'
+    const usage = 'usage: dsh-ecommerce accounts | dsh-ecommerce browser <account-id> | dsh-ecommerce buyer [tmall|taobao|jd] | dsh-ecommerce risk <account-id>'
       + ' | dsh-ecommerce signed-out <account-id> | dsh-ecommerce memory | dsh-ecommerce remember <json-file>\n'
     expect(await runCommand(env, varsOf(env, exec))).toMatchObject({ code: 2, stderr: usage })
     expect(await runCommand(env, varsOf(env, exec), 'browser')).toMatchObject({ code: 2, stderr: usage })
@@ -1239,7 +1255,33 @@ describe('buyer accounts and risk protection', () => {
     expect(PUBLIC_PAGE.test('https://item.taobao.com/item.htm?id=1')).toBe(true)
     expect(PUBLIC_PAGE.test('https://s.taobao.com/search?q=x')).toBe(true)
     expect(PUBLIC_PAGE.test('https://myseller.taobao.com/home.htm')).toBe(false)
+    expect(PUBLIC_PAGE.test('https://item.jd.com/100012043978.html')).toBe(true)
+    expect(PUBLIC_PAGE.test('https://npcitem.jd.hk/100012043978.html')).toBe(true)
+    expect(PUBLIC_PAGE.test('https://search.jd.com/Search?keyword=x')).toBe(true)
+    expect(PUBLIC_PAGE.test('https://item.m.jd.com/product/100012043978.html')).toBe(true)
+    expect(PUBLIC_PAGE.test('https://shop.jd.com/jdm/home')).toBe(false)
     expect(RISK_PAGE.test('https://h5api.m.taobao.com/_____tmd_____/punish?x5secdata=1')).toBe(true)
+  })
+
+  it('signs in a JD buyer through the JD home page, and knows JD\'s risk-control pages', async () => {
+    const env = await setup()
+    const jd = await signedInBuyer(env, { platform: 'jd', kind: 'buyer', account: '京东买家' })
+    expect((await env.service.getState()).accounts.find(account => account.id === jd)).toMatchObject({ status: 'signed-in', signedInAs: '京东买家' })
+    expect(specOf('jd', 'buyer')).toBe(JD_BUYER)
+    expect(specOf('jd', 'merchant')).toBe(JD)
+    // The JD home page asks passport's loginservice, which names the signed-in user.
+    expect(JD_BUYER.read('jsonpLogin({"Identity":{"IsAuthenticated":true,"Unick":"京东买家","Name":"jd_123"}})')).toEqual({ signedIn: true, name: '京东买家' })
+    expect(JD_BUYER.read('jsonpLogin({"Identity":{"IsAuthenticated":true,"Unick":"","Name":"jd_123"}})')).toEqual({ signedIn: true, name: 'jd_123' })
+    expect(JD_BUYER.read('jsonpLogin({"Identity":{"IsAuthenticated":true}})')).toEqual({ signedIn: true })
+    expect(JD_BUYER.read('jsonpLogin({"Identity":{"IsAuthenticated":false,"Unick":"","Name":""}})')).toEqual({ signedIn: false })
+    expect(JD_BUYER.read('jsonpLogin({})')).toEqual({ signedIn: false })
+    expect(JD_BUYER.isLoginPage('https://passport.jd.com/new/login.aspx?ReturnUrl=x')).toBe(true)
+    expect(JD_BUYER.isLoginPage('https://passport.jd.com/uc/login?ltype=logout')).toBe(true)
+    expect(JD_BUYER.isLoginPage('https://www.jd.com/')).toBe(false)
+    // JD's block page for too many visits, and its risk handler, are risk control.
+    expect(RISK_PAGE.test('https://pc-frequent-pro.pf.jd.com/?from=pc_item&reason=403')).toBe(true)
+    expect(RISK_PAGE.test('https://cfe.m.jd.com/privatedomain/risk_handler/03101900/?returnurl=x')).toBe(true)
+    expect(RISK_PAGE.test('https://item.jd.com/100012043978.html')).toBe(false)
   })
 
   it('keeps a merchant account off public product and search pages', async () => {
@@ -1526,7 +1568,17 @@ describe('buyer accounts and risk protection', () => {
       code: 1, stderr: 'DSH: there is no buyer account for this. Stop, and ask the user to add one in DSH Settings → E-commerce accounts (设置 → 电商账号).\n',
     })
     expect(await runCommand(env, varsOf(env, bashCall('c-4')), 'buyer', 'pinduoduo')).toMatchObject({
-      code: 1, stderr: 'DSH: buyer accounts are on tmall and taobao, not "pinduoduo".\n',
+      code: 1, stderr: 'DSH: buyer accounts are on tmall, taobao, and jd, not "pinduoduo".\n',
+    })
+    // JD takes buyer accounts too: without one, it says so rather than refusing the platform.
+    expect((await runCommand(env, varsOf(env, bashCall('c-4b')), 'buyer', 'jd')).stderr).toContain('there is no buyer account for this')
+    // Several platforms, comma-separated, pick among their buyers only; one unknown platform refuses them all.
+    const jd = await signedInBuyer(env, { platform: 'jd', kind: 'buyer', account: '京东买家' })
+    const picked = JSON.parse((await runCommand(env, varsOf(env, bashCall('c-4c')), 'buyer', 'tmall,taobao')).stdout) as { id: string }
+    expect([first, second]).toContain(picked.id)
+    expect(picked.id).not.toBe(jd)
+    expect(await runCommand(env, varsOf(env, bashCall('c-4d')), 'buyer', 'tmall,amazon')).toMatchObject({
+      code: 1, stderr: 'DSH: buyer accounts are on tmall, taobao, and jd, not "amazon".\n',
     })
     const started = varsOf(env, bashCall('c-5'))
     expect(await (await fetch(`${started.DSH_ECOMMERCE_URL!}/buyer`)).text()).toContain('"kind": "buyer"')
@@ -1677,8 +1729,8 @@ describe('publishing memory', () => {
     expect((await run({})).stderr).toBe('DSH: nothing was remembered, the file is not as described: (top level): nothing to remember\n')
     expect((await run({ columns: { 价: 'money' } })).stderr).toContain('columns.价')
     expect((await run({ category: { line: '水多多', platform: 'tmall', catId: 'abc' } })).stderr).toContain('category.catId')
-    expect((await run({ category: { line: '水多多', platform: 'jd', catId: '1' } })).stderr).toContain('category.platform')
-    expect((await run({ forget: { categories: [{ line: '水多多', platform: 'jd' }] } })).stderr).toContain('forget.categories')
+    expect((await run({ category: { line: '水多多', platform: 'amazon', catId: '1' } })).stderr).toContain('category.platform')
+    expect((await run({ forget: { categories: [{ line: '水多多', platform: 'amazon' }] } })).stderr).toContain('forget.categories')
     expect((await run({ store: { name: '名流', values: { 品牌: '' } } })).stderr).toContain('store.values.品牌')
     expect((await run({ declarations: { store: '名流', catId: '1', confirmed: [] } })).stderr).toContain('declarations.confirmed')
     expect((await run({ shops: {} })).code).toBe(1)

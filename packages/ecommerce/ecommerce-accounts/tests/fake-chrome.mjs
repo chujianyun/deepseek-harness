@@ -2,8 +2,8 @@
 // A stand-in for Google Chrome in tests: it answers `--version`, serves the DevTools HTTP endpoints
 // and the browser WebSocket on --remote-debugging-port, and plays the Tmall check: the home page
 // sends `mtop.user.getusersimple`, signed in while `<user-data-dir>/fake-signed-in` holds a nick; the
-// Taobao, Pinduoduo, and Douyin shop pages answer their own checks, and the Taobao and Douyin shop
-// pages go to sign in while signed out; the Pinduoduo and Douyin shop pages also name the store, which
+// Taobao, Pinduoduo, Douyin shop, and JD merchant pages answer their own checks, and the Taobao, Douyin
+// shop, and JD pages go to sign in while signed out; the Pinduoduo and Douyin shop pages also name the store, which
 // FAKE_CHROME_NO_STORE leaves out and FAKE_CHROME_NO_STORE_BODY loses. FAKE_CHROME_OFFLINE fails every
 // navigation. A connection that sets auto-attach watches every tab, as DSH's guard does: each tab's
 // page loads pause until it continues or fails them; an item.taobao.com page redirects to Tmall,
@@ -95,6 +95,8 @@ const LOGINS = [
   ['https://login.taobao.com/', 'https://qn.taobao.com/home.htm/QnworkbenchHome/'],
   ['https://mms.pinduoduo.com/login', 'https://mms.pinduoduo.com/home/'],
   ['https://fxg.jinritemai.com/login', 'https://fxg.jinritemai.com/ffa/mshop/homepage/index'],
+  ['https://passport.shop.jd.com/login', 'https://shop.jd.com/jdm/home'],
+  ['https://passport.jd.com/new/login', 'https://www.jd.com/'],
 ]
 const urlOf = (target) => {
   const home = LOGINS.find(([login]) => target.url.startsWith(login))?.[1]
@@ -125,6 +127,20 @@ const pageLoad = (url, nick) => {
       : { responses: [
         ...store({ url: 'https://mms.pinduoduo.com/earth/api/mallInfo/querySimpleCredential', body: JSON.stringify({ success: true, result: { merchantMainSimpleVO: { mallName: `${nick}店` } } }) }),
         { url: 'https://mms.pinduoduo.com/janus/api/checkLogin', body: JSON.stringify({ success: true, result: { login: true } }) },
+      ] }
+  }
+  if (url.startsWith('https://www.jd.com/')) {
+    const identity = nick === undefined ? { IsAuthenticated: false, Unick: '', Name: '' } : { IsAuthenticated: true, Unick: nick, Name: 'jd_fake' }
+    return { responses: [{ url: 'https://passport.jd.com/loginservice.aspx?method=Login&callback=jsonpLogin', body: `jsonpLogin(${JSON.stringify({ Identity: identity })})` }] }
+  }
+  if (url.startsWith('https://shop.jd.com/')) {
+    // Every backend call shares one path; only its `api` query names what it asks.
+    const sff = api => `https://sff.jd.com/api?v=1.0&appId=ZSCUMIUH2ZNF8Z2PVU1J&api=${api}`
+    return nick === undefined
+      ? { redirect: 'https://passport.shop.jd.com/login/index.action/jdm?ReturnUrl=https%3A%2F%2Fshop.jd.com%2Fjdm%2Fhome' }
+      : { responses: [
+        { url: sff('dsm.shop.home.comm.grayFacade.isGray'), body: JSON.stringify({ code: 200, data: false }) },
+        { url: sff('dsm.shop.center.pageframe.navigation.NavigationFacade.findShopInfo'), body: JSON.stringify({ msg: '成功', code: 200, data: { shopName: `${nick}店`, account: nick, logoUrl: '' } }) },
       ] }
   }
   if (url.startsWith('https://fxg.jinritemai.com/')) {
@@ -480,8 +496,10 @@ wss.on('connection', (socket) => {
           const requestId = `r2-${String(index)}`
           const lost = process.env.FAKE_CHROME_NO_BODY !== undefined || (response.store === true && process.env.FAKE_CHROME_NO_STORE_BODY !== undefined)
           if (!lost) bodies.set(requestId, response.body)
-          emit('Network.responseReceived', { requestId, response: { url: `${response.url}?t=1&sign=x` } }, 'other-session')
-          emit('Network.responseReceived', { requestId, response: { url: `${response.url}?t=1&sign=x` } }, sessionId)
+          // Each call carries its own time and signature, after any query of its own.
+          const url = `${response.url}${response.url.includes('?') ? '&' : '?'}t=1&sign=x`
+          emit('Network.responseReceived', { requestId, response: { url } }, 'other-session')
+          emit('Network.responseReceived', { requestId, response: { url } }, sessionId)
           emit('Network.loadingFinished', { requestId }, 'other-session')
           emit('Network.loadingFinished', { requestId }, sessionId)
         })
