@@ -5,8 +5,8 @@
     python3 plan_roi.py --plans <计划明细.json> --out <目录> [--spend-min 700] [--hi 1.5] [--mid 1.2]
 
 <计划明细.json> 是 yuntai-details 的 yuntai-plans.mjs 输出。
-在 <目录> 下写 classified.json（三档清单与账户汇总）和 card.json（一行；单引号和弯引号都写成 JSON 转义，
-bash 和 PowerShell 都可直接放进 `--content '<card.json 的内容>'`），并打印摘要。卡片超过飞书大小上限时逐步减少高 ROI 表的行数，并在卡片里注明。
+在 <目录> 下写 classified.json（三档清单与账户汇总）和 card.json（一行；单引号和弯引号都写成 JSON 转义；
+发送时用 `--content "@<card.json 的路径>"` 由 lark-cli 读文件），并打印摘要。卡片超过飞书大小上限时逐步减少高 ROI 表的行数，并在卡片里注明。
 退出码：0 = 已生成；2 = 输入有误或卡片自检不通过。
 """
 import argparse

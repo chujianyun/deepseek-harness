@@ -5,7 +5,7 @@
     python3 inspection_read.py tmall --cells <天猫表.json> --date <YYYY-MM-DD> --out <tmall.json>
     python3 inspection_read.py pdd  --target-cells <拼多多目标表.json> --actuals <拼多多实际.json> --date <YYYY-MM-DD> --out <pdd.json>
 
-<天猫表.json> / <拼多多目标表.json> 是 `lark-cli sheets +cells-get --include value,formula` 的输出；
+<天猫表.json> / <拼多多目标表.json> 是 `lark-cli sheets +cells-get --include value,formula --output-path` 写的文件（重定向的整段输出也可）；
 <拼多多实际.json> 是 `lark-cli base +record-list --format json` 的输出（实际多维表，元）。
 天猫：按表头「实际完成（M月D日）」定实际列，紧挨的左一列为目标列（表头须是同一天）；A 列指标、B 列负责人；目标写成百分数的行标 percent。
 拼多多：目标表按表头「M月D日」定目标列（万元，保留 2 位）；实际表取「日期」为这一天的那条记录，元 ÷ 10000；
@@ -57,11 +57,12 @@ def direction_of(name):
 
 
 def grid(data, path):
-    """+cells-get 的输出 → {(行号, 列字母): 值}；被截断的读数拒绝。"""
-    ranges = (data.get("data") or {}).get("ranges") if isinstance(data, dict) else None
+    """+cells-get 的输出（重定向的整段输出，或 --output-path 写的 data 部分）→ {(行号, 列字母): 值}；被截断的读数拒绝。"""
+    payload = data.get("data", data) if isinstance(data, dict) else None
+    ranges = payload.get("ranges") if isinstance(payload, dict) else None
     if not ranges:
-        raise InputError(f"{path} 里没有 data.ranges，请用 lark-cli sheets +cells-get --include value,formula 读取。")
-    if data["data"].get("has_more"):
+        raise InputError(f"{path} 里没有 ranges，请用 lark-cli sheets +cells-get --include value,formula --output-path 读取。")
+    if payload.get("has_more"):
         raise InputError(f"{path} 没读全（has_more），请缩小 --range 后重读。")
     cells = {}
     for part in ranges:

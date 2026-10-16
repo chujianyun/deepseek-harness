@@ -11,7 +11,7 @@
 通常由 inspection_read.py 读表写出。
 target / actual 用报告里的单位（万元等），actual 为 null 表示实际待更新（不按 0）；target 为 null 或 0 不判断。
 reverse = 越低越好（费比、排名），达成率 = 目标 / 实际；auxiliary = 花费类辅助项，不分级。
-在 <目录> 下写 card.json（一行；单引号和弯引号都写成 JSON 转义，可直接放进 `--content '<card.json 的内容>'`），
+在 <目录> 下写 card.json（一行；单引号和弯引号都写成 JSON 转义），发送时用 `--content "@<card.json 的路径>"` 由 lark-cli 读文件，
 并打印分级摘要与卡片预览。退出码：0 = 已生成；2 = 输入有误或卡片自检不通过。
 """
 import argparse

@@ -19,9 +19,9 @@ Python 用 `load_workspace_dependencies` 返回的自带解释器（`<python>`�
    目前只取抖音（站外投流的绝大部分）；报告里注明其他媒体未纳入。失败不重试超过 2 次。
 3. **分档与卡片**：`<python> <技能目录>/scripts/plan_roi.py --plans <目录>/plans.json --out <目录> [--spend-min 700] [--hi 1.5] [--mid 1.2]`。它写 `classified.json`（三档清单与账户汇总）和 `card.json`（卡片，已自检：card 2.0 结构、标题、各段内容、大小），并打印摘要。退出码 2 → 报告原因，不发送。卡片里的数一律来自脚本输出，不手算、不改；计划名与计划 ID 原样保留。
 4. **预览**：把摘要和卡片各段内容在对话里给用户看，说明将发往哪个群。用户没有明确说「发到内部群」（或指定别的群）就到此为止。
-5. **发送（仅当用户明确要求）**：目标群读配置文档《投流ROI巡检配置》https://scnntx5zuepg.feishu.cn/docx/DdcJd7xIyoX1FgxTd5dcAOHXnue 「内部日报接收」当前值（`lark-cli docs +fetch`，只读）；用户指定了群时以用户为准。以智能体自身身份单独运行一条命令，`--content` 是 `card.json` 的全部内容（一行、不含单引号），整体用单引号括起：
+5. **发送（仅当用户明确要求）**：目标群读配置文档《投流ROI巡检配置》https://scnntx5zuepg.feishu.cn/docx/DdcJd7xIyoX1FgxTd5dcAOHXnue 「内部日报接收」当前值（`lark-cli docs +fetch`，只读）；用户指定了群时以用户为准。以智能体自身身份单独运行一条命令，`--content` 用 `@` 加卡片文件相对工作区的路径，由 lark-cli 读文件（不把卡片内容写进命令，Windows 的命令行会拆坏其中的引号）：
    ```bash
-   lark-cli im +messages-send --as bot --chat-id <chat_id> --msg-type interactive --idempotency-key plan-roi-<起>-<止> --content '<card.json 的内容>'
+   lark-cli im +messages-send --as bot --chat-id <chat_id> --msg-type interactive --idempotency-key plan-roi-<起>-<止> --content "@plan-roi-analysis/<今天 YYYYMMDD>/card.json"
    ```
    不用管道、不拼别的命令；禁止以用户身份发送。成功判据：返回成功且带 message_id；失败报告关键错误，不重试超过 2 次。
 6. **交付**：窗口与阈值、计划总数与过线条数、三档条数、整体有效 ROI、优先加码与建议关停的计划（带计划 ID）；发送了就附 message_id 与时间。

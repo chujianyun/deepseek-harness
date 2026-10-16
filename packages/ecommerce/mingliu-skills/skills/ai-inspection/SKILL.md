@@ -17,8 +17,8 @@ description: "部门日报/周报 AI 巡检（上海名流卫生用品·市场�
 2. **读表格映射**：读取云文档《AI巡检固化配置》（https://scnntx5zuepg.feishu.cn/docx/E3cXdNjFQoPknUx34NscD0lAnZb）**第五节「当月表格映射」**（唯一运行配置源，按第五节内的读取方式用 lark-cli docs 局部读取），取当月目标/实际表 token、sheet、列位置。⚠️ 若第五节没有当月/当前平台的映射，视为映射缺失：不猜测表名、不沿用上月 token，向用户确认后再继续（可用 inspection-config-update 技能补配置）。
 3. **读取在线表**（只读，原样存文件，`<目录>` 是工作区 `ai-inspection/<今天 YYYYMMDD>/`，先建好）：
    ```bash
-   lark-cli sheets +cells-get --as user --spreadsheet-token <天猫表 token> --sheet-id <天猫 sheet> --range A1:EA60 --include value,formula > <目录>/tmall-cells.json
-   lark-cli sheets +cells-get --as user --spreadsheet-token <拼多多目标表 token> --sheet-id <拼多多 sheet> --range A1:AZ60 --include value,formula > <目录>/pdd-target-cells.json
+   lark-cli sheets +cells-get --as user --spreadsheet-token <天猫表 token> --sheet-id <天猫 sheet> --range A1:EA60 --include value,formula --output-path <目录>/tmall-cells.json
+   lark-cli sheets +cells-get --as user --spreadsheet-token <拼多多目标表 token> --sheet-id <拼多多 sheet> --range A1:AZ60 --include value,formula --output-path <目录>/pdd-target-cells.json
    lark-cli base +record-list --as user --base-token <拼多多实际 base> --table-id <拼多多实际 table> --limit 200 --format json > <目录>/pdd-actuals.json
    ```
    再用脚本读出每一行（`<python>` 用 `load_workspace_dependencies` 返回的自带解释器）：
@@ -60,9 +60,9 @@ description: "部门日报/周报 AI 巡检（上海名流卫生用品·市场�
 - 读取 `references/推送群路由.md` 确认目标群。
 - 发送身份：**当前智能体自身**——MO 飞书连接器的 lark-cli 以机器人身份（`--as bot`）发送，不以任何个人名义发送；不使用任何独立 app 机器人直连脚本。
 - 流程：对话中推送为测试群 → 用户确认 → 正式群；定时任务按指令直接推送。发送成功判据：lark-cli 返回成功且带 message_id。
-- 命令：单独运行一条命令，不用管道、不加 `cd`，`--content` 是 `card.json` 的全部内容（一行、不含单引号），整体用单引号括起：
+- 命令：单独运行一条命令，不用管道、不加 `cd`；`--content` 用 `@` 加卡片文件相对工作区的路径，由 lark-cli 读文件（不把卡片内容写进命令，Windows 的命令行会拆坏其中的引号）：
   ```bash
-  lark-cli im +messages-send --as bot --chat-id <chat_id> --msg-type interactive --idempotency-key ai-inspection-<tmall|pdd>-<巡检日期 YYYYMMDD>-<chat_id 末 8 位> --content '<card.json 的内容>'
+  lark-cli im +messages-send --as bot --chat-id <chat_id> --msg-type interactive --idempotency-key ai-inspection-<tmall|pdd>-<巡检日期 YYYYMMDD>-<chat_id 末 8 位> --content "@ai-inspection/<今天 YYYYMMDD>/<tmall|pdd>/card.json"
   ```
   不用 `--markdown` 或富文本发送；一份巡检发出后不补发更正，有错报告用户。
 

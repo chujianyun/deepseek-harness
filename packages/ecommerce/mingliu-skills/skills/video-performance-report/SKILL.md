@@ -27,11 +27,11 @@ description: "视频素材绩效日报与当日提醒（上海名流卫生用品
 3. **读 @ 对象**：读工作区 `video-performance-report/config.json`：`{"mention": {"name": "<跟进人姓名>", "open_id": "<open_id>"}}`。open_id 必须是在 MO 飞书连接下查到的值。文件缺失或缺 open_id → 不发送，报告「缺少 video-performance-report/config.json 的 @ 对象」。
 4. **今天发过没有**：读工作区 `video-performance-report/sent.json`（`{"<日报|提醒>-YYYY-MM-DD": {"at": "<ISO 时间>", "message_id": "om_…"}}`，按报告日期记）；这一条已经有记录 → 不再发送，报告「已发送过」。
 5. **生成**：按下面模板生成，`{日期}` 写成「M月D日」（如「9月23日」）。标题行用 `<at user_id="{open_id}">{name}</at>` @ 跟进人，**只 @ 这一个人**，不 @ 其他成员。
-6. **发送**：发到任务指令给出的群（chat_id），以智能体自身身份单独运行一条命令：
+6. **发送**：先把消息写成工作区文件 `video-performance-report/<日报|提醒>-YYYYMMDD.json`，内容 `{"text": "<整篇日报>"}`（合法 JSON，换行写成 `\n`），再发到任务指令给出的群（chat_id），以智能体自身身份单独运行一条命令，`--content` 用 `@` 加这个文件的路径，由 lark-cli 读文件（不把消息写进命令，Windows 的命令行会拆坏其中的引号）：
    ```bash
-   lark-cli im +messages-send --as bot --chat-id <chat_id> --msg-type text --idempotency-key video-report-<日报|提醒>-YYYYMMDD --content '{"text":"<整篇日报，换行写成 \n，双引号写成 \">"}'
+   lark-cli im +messages-send --as bot --chat-id <chat_id> --msg-type text --idempotency-key video-report-<日报|提醒>-YYYYMMDD --content "@video-performance-report/<日报|提醒>-YYYYMMDD.json"
    ```
-   `--content` 整体用单引号括起，文中不出现单引号；不用管道、不拼别的命令；禁止以用户身份发送，不使用任何自建应用直连脚本。`--idempotency-key` 用「运行类型 + 日期」，挡住短时间内的重试。发送成功判据：lark-cli 返回成功且带 message_id；成功后立即把 message_id 记进 `sent.json`（同一天重跑靠它不重发）。发送报错时不记，报告原因。
+   不用管道、不拼别的命令；禁止以用户身份发送，不使用任何自建应用直连脚本。`--idempotency-key` 用「运行类型 + 日期」，挡住短时间内的重试。发送成功判据：lark-cli 返回成功且带 message_id；成功后立即把 message_id 记进 `sent.json`（同一天重跑靠它不重发）。发送报错时不记，报告原因。
 
 ## 模板（固定，一字不改）
 

@@ -187,9 +187,14 @@ describe('the video performance report', () => {
     for (const task of [report!, reminder!]) expect(task.prompt.match(/\boc_[0-9a-f]+/gu)).toEqual(['oc_492528df63e4be9cd8b7dcb2eeed26ce'])
     const skill = await readFile(join(SKILLS_DIR, 'video-performance-report', 'SKILL.md'), 'utf8')
     expect(skill).toContain('距月GMV目标还差：数据待更新（月目标 14000 元）')
+    // The message goes in a file lark-cli reads, so no shell has to quote it.
     const send = 'lark-cli im +messages-send --as bot --chat-id oc_x --msg-type text --idempotency-key video-report-日报-20261013 '
-      + '--content \'{"text":"【小红书、微博、视频号素材绩效日报｜10月13日】<at user_id=\\"ou_x\\">x</at>\\n日期：10月13日"}\''
+      + '--content "@video-performance-report/日报-20261013.json"'
+    expect(skill).toContain('--content "@video-performance-report/<日报|提醒>-YYYYMMDD.json"')
     for (const dialect of ['bash', 'pwsh'] as const) expect(declaredOperations(send, dialect, report!.operations, false)).toEqual(['lark-cli im +messages-send'])
+    for (const name of ['ai-inspection', 'plan-roi-analysis']) {
+      expect(await readFile(join(SKILLS_DIR, name, 'SKILL.md'), 'utf8'), name).toMatch(/--msg-type interactive [^\n]*--content "@[^"]+card\.json"/u)
+    }
   })
 })
 
@@ -912,6 +917,8 @@ describe('inspection_read.py', () => {
       ],
     })
     expect(ran.out).toContain('- 丙｜会员：目标 14.16，实际 待更新（K4/L4）')
+    // A read written with --output-path holds only the data part.
+    expect((await tmall(cells(TMALL).data)).items).toEqual(ran.items)
     // The first day's target column is headed 「目标（10月01日）」.
     expect((await tmall(cells(TMALL), '2026-10-01')).items!.items[0]).toMatchObject({ target: 30.34, actual: 28.66, source: 'G2/H2' })
     // A percentage row keeps its percentages on the card.
@@ -928,7 +935,7 @@ describe('inspection_read.py', () => {
       [cells([TMALL[0]!, ['备注', null]]), 'A 列没有同时写了指标和负责人的行'],
       [cells(TMALL, { truncated: true }), '读数被截断'],
       [{ data: { ...cells(TMALL).data, has_more: true } }, '没读全（has_more）'],
-      [{ data: {} }, '没有 data.ranges'],
+      [{ data: {} }, '里没有 ranges'],
     ] as const) {
       const ran = await tmall(sheet)
       expect([ran.code, ran.items, ran.out]).toEqual([2, undefined, expect.stringContaining(message)])
