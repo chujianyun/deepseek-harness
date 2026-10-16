@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-assistant-packages",
   "description": "Company assistant packages for Desktop: install an assistant a tenant administrator published on the user center, with its Skills and recommended scheduled tasks",
-  "version": "1.0.3",
+  "version": "1.0.7",
   "publishConfig": {
     "access": "public"
   },

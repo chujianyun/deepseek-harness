@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 import type { CollectDeps } from '../src/collect.ts'
 import { cents, dateOf, itemsOf, main, noFigures, readAlimama, readSycm, unlessNotReady } from '../src/daily-figures.ts'
 import { EXIT, SkillError } from '../src/errors.ts'
-import type { Page } from '../src/page.ts'
 import { effectQuery, main as yuntaiMain, ownAccount, queryEffect, readYuntai, type EffectRow } from '../src/yuntai-figures.ts'
 import { FakePage, on, postedBody, sendsTemplate, type Route } from './support.ts'
 
@@ -249,7 +248,7 @@ describe('readYuntai', () => {
     const refused = Object.assign(new Error('refused'), { ret: ['FAIL'] })
     await expect(run({ mtop: { request: () => Promise.reject(refused) } })).resolves.toEqual({ ret: ['FAIL'] })
     await expect(run({ mtop: { request: () => Promise.reject(new Error('断网')) } })).resolves.toEqual({ ret: ['断网'] })
-    const page = { evaluate: () => Promise.resolve({ result: [], totalCount: 0 }) } as unknown as Page
+    const page = new FakePage([on('effect.query', { result: [], totalCount: 0 })])
     expect(await queryEffect(page, {})).toEqual({ result: [], totalCount: 0 })
   })
 })

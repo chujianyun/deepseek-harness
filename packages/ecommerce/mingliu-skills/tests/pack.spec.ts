@@ -55,14 +55,15 @@ const SCRIPT_ENV = {
 
 /**
  * Run a skill's Python script. A script killed at the timeout, or one whose interpreter is missing,
- * ends with code -1, so it is never taken for a success.
+ * ends with code -1, so it is never taken for a success. Its output's line ends read as `\n`, also on
+ * Windows, where Python writes `\r\n`.
  */
 async function runPython(
   script: string, args: readonly string[], env: Record<string, string | undefined> = {},
 ): Promise<{ code: number; out: string }> {
   return await new Promise((done) => {
     execFile(PYTHON, [script, ...args], { env: { ...SCRIPT_ENV, ...env }, timeout: 4000, encoding: 'utf8' }, (error, stdout) => {
-      done({ code: error ? (typeof error.code === 'number' ? error.code : -1) : 0, out: stdout })
+      done({ code: error ? (typeof error.code === 'number' ? error.code : -1) : 0, out: stdout.replaceAll('\r\n', '\n') })
     })
   })
 }
@@ -689,7 +690,7 @@ describe('collect_plan.py', () => {
         await writeFile(join(dir, name), JSON.stringify(content))
       }
       const ended = await runPython(script, args(dir))
-      const read = async (name: string) => await readFile(join(dir, 'out', name), 'utf8').then(text => JSON.parse(text) as unknown, () => undefined)
+      const read = async (name: string) => await readFile(join(dir, 'out', name), 'utf8').then((text): unknown => JSON.parse(text), () => undefined)
       return { ...ended, plan: await read('plan.json'), zaida: await read('batch-在达-0.json') }
     } finally {
       await rm(dir, { recursive: true, force: true })
