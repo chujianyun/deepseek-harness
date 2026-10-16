@@ -69,6 +69,8 @@ function submittedCommandName(line: string): string {
 interface LiveState {
   readonly contributions: Map<string, CommandContribution>
   readonly decorations: Map<string, CommandDecoration>
+  /** Command name → how many registrations hide it from the empty-query menu. */
+  readonly menuHidden: Map<string, number>
   readonly popups: WeakMapWithValues<SessionBinding, PopupSelectController<ClientSessionContext>>
 }
 
@@ -80,6 +82,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
   private readonly live: LiveState = {
     contributions: new Map(),
     decorations: new Map(),
+    menuHidden: new Map(),
     popups: new WeakMapWithValues(),
   }
   /** `command`-namespace translator (composer refusal notices). */
@@ -166,6 +169,25 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
   }
 
   /**
+   * Leave one command out of the empty-query menu; a typed query still finds it. Effect disposer (rides the
+   * caller's fiber); registrations of one name count until the last is disposed.
+   * @param name - command name without the leading slash.
+   * @returns the disposer removing the registration.
+   */
+  hideFromMenu(name: string): () => void {
+    const dispose = this.ctx.effect(() => {
+      const { menuHidden } = this.live
+      menuHidden.set(name, (menuHidden.get(name) ?? 0) + 1)
+      return () => {
+        const left = (menuHidden.get(name) ?? 1) - 1
+        if (left === 0) menuHidden.delete(name)
+        else menuHidden.set(name, left)
+      }
+    }, 'command.hideFromMenu()')
+    return () => { void dispose() }
+  }
+
+  /**
    * Close every open popup for a command whose options have become stale.
    * Pending loads and confirmations lose their binding; drafts stay intact.
    * @param name - command name without the leading slash.
@@ -245,7 +267,9 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
       })
     }
     const visible = rows.filter(c => req.position === 'leading' || c.hint === undefined)
-    return req.query === '' ? sectionRows(visible, this.t) : rankByName(visible, req.query)
+    return req.query === ''
+      ? sectionRows(visible.filter(c => !this.live.menuHidden.has(c.name)), this.t)
+      : rankByName(visible, req.query)
   }
 
   /** Decision table, menu column: contribution/decorated-host → popup or action; host input → claim; host bare → detached execute. */

@@ -42,10 +42,11 @@ function streamChat(res: ServerResponse, request: ChatRequest, script: ChatScrip
  * A mock `/v1/embeddings` — a 64-dimension bag of hashed terms, so texts sharing words point the same
  * way — and a scripted `/v1/chat/completions` that records each request.
  * @param script - the chat model's script.
- * @returns the base URL, the chat requests received, and a closer.
+ * @returns the base URL, the chat requests received, how many embedding requests arrived, and a closer.
  */
 export async function startEmbeddingsEndpoint(script: ChatScript = { query: '', answer: '', noTool: '' }) {
   const chats: ChatRequest[] = []
+  let embeddings = 0
   const server = createServer((req, res) => {
     let raw = ''
     req.on('data', (chunk: Buffer) => { raw += chunk.toString() })
@@ -56,6 +57,7 @@ export async function startEmbeddingsEndpoint(script: ChatScript = { query: '', 
         streamChat(res, request, script)
         return
       }
+      embeddings += 1
       const body = JSON.parse(raw) as { input: string[] }
       const data = body.input.map((text, index) => {
         const embedding = new Array<number>(64).fill(0)
@@ -74,6 +76,7 @@ export async function startEmbeddingsEndpoint(script: ChatScript = { query: '', 
   return {
     baseURL: `http://127.0.0.1:${String((server.address() as { port: number }).port)}/v1`,
     chats,
+    embedded: () => embeddings,
     close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => { resolve() }) }),
   }
 }

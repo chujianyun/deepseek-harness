@@ -206,6 +206,8 @@ flowchart LR
   svc_automationTasks["ctx.automationTasks<br/>Automation tasks"]
   pkg_session_share["session-share"]
   svc_sessionShare["ctx.sessionShare<br/>Session sharing"]
+  pkg_session_sync["session-sync"]
+  svc_sessionSync["ctx.sessionSync<br/>Session sync"]
   pkg_goal["goal"]
   svc_goals["ctx.goals<br/>Same-session goal domain"]
   pkg_ssh["ssh"]
@@ -417,6 +419,7 @@ flowchart LR
   pkg_session_query_sqlite --> svc_sessionQuery
   pkg_session_reference --> svc_sessionReferenceResolver
   pkg_session_share --> svc_sessionShare
+  pkg_session_sync --> svc_sessionSync
   pkg_session_telemetry --> svc_sessionTelemetry
   pkg_session_telemetry_otel --> svc_sessionTelemetry
   pkg_session_title --> svc_sessionTitle
@@ -689,8 +692,9 @@ flowchart LR
 | `ctx.agentDefaultModel` | `core` | [`agent-default-model`](../packages/core/agent-default-model) | - | [`api-session-controller`](../packages/api/session-controller), [`headless`](../packages/bundle/headless) | - | Reads the default ModelSelection from volatile Config and saves selections through the profile editor. |
 | `ctx.agentLoop` | `bundle` | [`agent-loop`](../packages/core/agent-loop) | - | [`base`](../packages/bundle/base), [`sdk-minimal`](../packages/bundle/sdk-minimal) | - | 唯一的具体循环插件；扩展包依赖 dsh-agent 的事件和服务，而不依赖此包。 |
 | `ctx.schedule` | `core` | [`schedule`](../packages/schedule/schedule) | - | - | - | 独立于 Session 的加载状态存储任务，并将到期消息排入原 Session。 |
-| `ctx.automationTasks` | `core` | [`automation-tasks`](../packages/schedule/automation-tasks) | - | - | - | 一次调用创建表单填写的自动化任务：以任务命名、绑定智能体、模型、权限与连接器授权的会话，以及绑定到它的调度。 |
+| `ctx.automationTasks` | `core` | [`automation-tasks`](../packages/schedule/automation-tasks) | - | - | - | 一次调用创建表单填写的自动化任务：以任务命名、绑定智能体、模型与权限的会话，以及绑定到它的调度。 |
 | `ctx.sessionShare` | `core` | [`session-share`](../packages/session-query/session-share) | - | - | - | 把一个会话的对话快照上传到 Hub 登录所在的用户中心，读取它的链接，以及取消分享。 |
+| `ctx.sessionSync` | `core` | [`session-sync`](../packages/session-query/session-sync) | - | - | - | 把每个顶层会话连同子智能体会话和附件上传到 Hub 登录所在的用户中心，在本机删除时也在用户中心删除。 |
 | `ctx.goals` | `core` | [`goal`](../packages/goal/goal) | - | - | - | 从会话日志折叠带修订版本的目标状态，并将实时延续激活保留在进程本地。 |
 | `ctx.ssh` | `core` | [`ssh`](../packages/ssh/ssh) | - | [`fs-ssh`](../packages/ssh/fs-ssh), [`subprocess-ssh`](../packages/ssh/subprocess-ssh), [`sandbox-ssh`](../packages/ssh/sandbox-ssh) | - | 负责一条经过认证的 OpenSSH 连接、已安装辅助程序身份、独立程序流，以及配套远端提供方的断连清理。 |
 | `ctx.subprocess` | `seam` | [`subprocess`](../packages/subprocess/subprocess) | [`subprocess-local`](../packages/subprocess/subprocess-local), [`subprocess-ssh`](../packages/ssh/subprocess-ssh) | [`bash-local`](../packages/shell/bash-local), [`bash-sandbox`](../packages/shell/bash-sandbox), [`terminal-bash`](../packages/terminal/terminal-bash), [`lsp-stdio`](../packages/lsp/lsp-stdio), [`subagent-acp`](../packages/subagent/subagent-acp), [`subagent-codex`](../packages/subagent/subagent-codex), [`subagent-claude-code`](../packages/subagent/subagent-claude-code) | - | Bash 执行器、PTY shell 后端、LSP Host，以及进程外 ACP、Codex 和 Claude Code subagent 后端都通过 ctx.subprocess 执行 spawn；该服务负责进程坐标、进程树／会话生命周期、stdio 处置、终端机制和 kill 升级。 |

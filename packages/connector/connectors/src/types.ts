@@ -12,30 +12,23 @@ declare module '@deepseek-ai/dsh-session/types' {
     /**
      * A bash call ran connector writes without asking, because the user had always allowed each of
      * them for the signed-in tenant, or allowed their connectors for this session — log-only audit,
-     * never in the model transcript. `commands`
-     * names them as `<cli> <command words>`, such as `lark-cli im +messages-send`.
+     * never in the model transcript. `commands` names them as `<cli> <command words>`, such as
+     * `lark-cli im +messages-send`. No longer appended: plain writes now run without asking; kept so
+     * logs that carry it still load.
      */
     'connectors/always-allowed': {
       callId: ToolCallId
       commands: string[]
     }
     /**
-     * The session's plain connector writes run without asking for these connectors from now on,
-     * while the granting tenant stays signed in, as granted when an automation task created the
-     * session; replaces the earlier grant, and an empty list withdraws it. Log-only, never in the
-     * model transcript.
+     * Granted a session's plain connector writes for these connectors on behalf of a tenant, as an
+     * automation task did when it created the session. Log-only, never in the model transcript. No
+     * longer appended: plain writes now run without asking; kept so logs that carry it still load.
      */
     'connectors/session-allowed': {
       connectors: string[]
       tenantId: string
     }
-  }
-}
-
-declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionStateMap {
-    /** Connectors whose plain writes run without asking in this session, and the tenant that granted them; null before a grant. */
-    connectorGrants: { connectors: string[]; tenantId: string | null }
   }
 }
 
@@ -47,6 +40,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'connectors/unavailable': { readonly id: string }
     /** The connector's CLI is not installed, so it cannot connect yet. */
     'connectors/not-installed': { readonly id: string }
+    /** The user center gives the signed-in tenant no company tool of this name. */
+    'connectors/no-company-tool': { readonly name: string }
   }
 }
 
@@ -127,11 +122,6 @@ export interface ConnectorView {
   readonly enabled: boolean
   /** The Skills the installed CLI release ships, which reach the model while connected and on. */
   readonly skills: readonly ConnectorSkillView[]
-  /**
-   * The write commands the current tenant always allows, as command words such as
-   * `im +messages-send`; they run without asking. Empty while signed out of the Hub.
-   */
-  readonly alwaysAllowed: readonly string[]
 }
 
 /** A Skill a connector gives the model. */
@@ -140,7 +130,38 @@ export interface ConnectorSkillView {
   readonly description: string
 }
 
+/**
+ * Where the signed-in tenant's company tools are.
+ * - `signed-out`: no Hub sign-in, so there are none.
+ * - `loading`: the user center has not answered yet.
+ * - `ready`: the list is the user center's.
+ * - `sign-in-again`: the Hub sign-in predates company tools; signing in again grants them.
+ * - `unavailable`: the user center could not be read; the list is the last one read, if any.
+ */
+export type CompanyToolsStatus = 'signed-out' | 'loading' | 'ready' | 'sign-in-again' | 'unavailable'
+
+/** A company tool card: a connector the user center gives the tenant, such as 吉客云 (Jackyun). */
+export interface CompanyToolView {
+  /** The tool's name, which is also the model shell's command, such as `jackyun`. */
+  readonly name: string
+  /** What the tool connects to, such as `jackyun`. */
+  readonly kind: string
+  readonly displayName: string
+  readonly description: string
+  /** The platform methods the company allows the tool to call. */
+  readonly methods: readonly string[]
+  /** Whether the tenant keeps the tool on: its own choice, or else the company's auto-install. */
+  readonly enabled: boolean
+}
+
+/** The company tools of the signed-in tenant. */
+export interface CompanyToolsView {
+  readonly status: CompanyToolsStatus
+  readonly tools: readonly CompanyToolView[]
+}
+
 /** Everything the Connectors page shows, in display order. */
 export interface ConnectorsState {
   readonly connectors: readonly ConnectorView[]
+  readonly company: CompanyToolsView
 }

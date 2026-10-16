@@ -36,10 +36,13 @@ async function writeSkill(root: string, name: string, description: string): Prom
   await writeFile(join(root, name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\n\nBody of ${name}.\n`)
 }
 
-async function boot({ signedIn = true } = {}) {
+type MockCenter = Awaited<ReturnType<typeof startMockUserCenter>>
+interface BootOptions { signedIn?: boolean; autoInstall?: boolean; skills?: MockSkill[]; beforeMarket?: (center: MockCenter) => void }
+
+async function boot({ signedIn = true, autoInstall = false, skills = [PDF, SQL], beforeMarket }: BootOptions = {}) {
   const center = await startMockUserCenter()
   cleanups.push(() => center.close())
-  center.skills = [PDF, SQL]
+  center.skills = skills
   const home = await temp()
   const dshHome = join(home, '.dsh')
   const ctx = new Context()
@@ -57,7 +60,8 @@ async function boot({ signedIn = true } = {}) {
     await expect.poll(async () => (await hub.getState()).status).toBe('signed-in')
   }
   if (signedIn) await signIn()
-  const live = await liveConfig(ctx, SkillMarket, { dshHome, watch: false })
+  beforeMarket?.(center)
+  const live = await liveConfig(ctx, SkillMarket, { dshHome, watch: false, autoInstall })
   ctx.provide('settings', { update: async (_entry: string, patch: Record<string, unknown>) => { await live.update(patch) } } as never)
   const market = ctx.get('skillMarket')!
   return { ctx, center, home, dshHome, hub, market, signIn, live }
@@ -548,6 +552,275 @@ describe('skillMarket', () => {
       expect(nextPatch('1.2.3')).toBe('1.2.4')
       expect(nextPatch('0.9.9')).toBe('0.9.10')
       expect(nextPatch('weird')).toBe('weird')
+    })
+  })
+
+  describe('automatic install (Spec #221)', () => {
+    const MARKED: MockSkill = { ...PDF, autoInstall: true }
+    // The run the market starts at each sign-in; driven directly here (TypeScript allows bracket access to the private method).
+    const run = (market: SkillMarket, signal: AbortSignal) => market['autoInstall'](market.tenantId!, signal)
+    const installed = async (market: SkillMarket) => [...(await market.records()).keys()].sort()
+
+    it('installs the Skills the Hub marks for automatic install after sign-in, and only those', async () => {
+      const { market } = await boot({ autoInstall: true, skills: [MARKED, { ...SQL, autoInstall: false }] })
+      await expect.poll(() => installed(market)).toEqual(['pdf-tools'])
+    })
+
+    it('walks every market page', async () => {
+      const many: MockSkill[] = Array.from({ length: 101 }, (_, i) => ({ ...SQL, id: `s-${i}`, name: `skill-${String(i).padStart(3, '0')}`, autoInstall: i === 100 }))
+      const { market } = await boot({ skills: many })
+      expect(await run(market, signal())).toEqual(['skill-100'])
+    })
+
+    it('does not bring back a Skill the user uninstalled; installing it by hand makes it automatic again', async () => {
+      const { market, live, dshHome } = await boot({ skills: [MARKED] })
+      await run(market, signal())
+      await market.markUninstalled('pdf-tools')
+      await rm(join(dshHome, 'skills-market', 't-a', 'pdf-tools'), { recursive: true })
+      expect((live.entry.options.config as { uninstalledSkills?: string[] }).uninstalledSkills).toEqual(['t-a/pdf-tools'])
+      expect(await run(market, signal())).toEqual([])
+      expect(await installed(market)).toEqual([])
+      await market.installSkill('s-pdf', {}, signal())
+      expect((live.entry.options.config as { uninstalledSkills?: string[] }).uninstalledSkills).toEqual([])
+    })
+
+    it('refuses to record an uninstall while signed out; a manual install still succeeds when forgetting it fails', async () => {
+      const signedOutMarket = (await boot({ signedIn: false })).market
+      expect(remoteErrorOf(await signedOutMarket.markUninstalled('pdf-tools').catch((error: unknown) => error))).toMatchObject({ code: 'hub-account/signed-out' })
+      const { ctx, market, live } = await boot({ skills: [MARKED] })
+      await market.markUninstalled('pdf-tools')
+      vi.spyOn(ctx.get('settings')!, 'update').mockRejectedValueOnce(new Error('settings unavailable'))
+      expect(await market.installSkill('s-pdf', {}, signal())).toMatchObject({ installedVersion: '1.0.0' })
+      expect((live.entry.options.config as { uninstalledSkills?: string[] }).uninstalledSkills).toEqual(['t-a/pdf-tools'])
+    })
+
+    it('updates a marked Skill to a newer version, but not one whose files the user edited', async () => {
+      const { center, market, dshHome } = await boot({ skills: [MARKED] })
+      await run(market, signal())
+      center.skills = [{ ...MARKED, version: '1.1.0', files: { 'scripts/run.sh': 'echo v2\n' } }]
+      expect(await run(market, signal())).toEqual(['pdf-tools'])
+      expect((await market.records()).get('pdf-tools')?.version).toBe('1.1.0')
+      // Unchanged version: nothing to do
+      expect(await run(market, signal())).toEqual([])
+
+      await writeFile(join(dshHome, 'skills-market', 't-a', 'pdf-tools', 'scripts/run.sh'), 'echo mine\n')
+      center.skills = [{ ...MARKED, version: '1.2.0' }]
+      expect(await run(market, signal())).toEqual([])
+      expect(await readFile(join(dshHome, 'skills-market', 't-a', 'pdf-tools', 'scripts/run.sh'), 'utf8')).toBe('echo mine\n')
+      expect((await market.installedStatus(signal()))[0]).toMatchObject({ name: 'pdf-tools', state: 'update', latestVersion: '1.2.0' })
+    })
+
+    it('asks the Hub for marked Skills only, and stops at once against a Hub that sends no autoInstall field', async () => {
+      const { center, market } = await boot({ skills: [MARKED] })
+      await run(market, signal())
+      expect(center.clientRequests.find(path => path.startsWith('/api/client/skills?autoInstall=true&page=1&pageSize=100'))).toBeDefined()
+      const old = await boot({ skills: [PDF, SQL] })
+      expect(await run(old.market, signal())).toEqual([])
+      expect(old.center.clientRequests.filter(path => path.includes('download'))).toEqual([])
+    })
+
+    it('does not download a Skill whose local copy the user edited, and junk files are not edits', async () => {
+      const { center, market, dshHome } = await boot({ skills: [MARKED] })
+      await run(market, signal())
+      const dir = join(dshHome, 'skills-market', 't-a', 'pdf-tools')
+      await writeFile(join(dir, '.DS_Store'), 'finder')
+      center.skills = [{ ...MARKED, version: '1.1.0' }]
+      expect(await run(market, signal())).toEqual(['pdf-tools'])
+      await writeFile(join(dir, 'scripts/run.sh'), 'echo mine\n')
+      center.skills = [{ ...MARKED, version: '1.2.0' }]
+      const downloads = () => center.clientRequests.filter(path => path.endsWith('/download')).length
+      const before = downloads()
+      expect(await run(market, signal())).toEqual([])
+      expect(downloads()).toBe(before)
+    })
+
+    it('writes nothing when the Hub sign-in moved to another tenant during the run', async () => {
+      const { center, market, hub, dshHome } = await boot({ skills: [MARKED] })
+      const getState = hub.getState.bind(hub)
+      vi.spyOn(hub, 'getState').mockImplementation(async () => {
+        const state = await getState()
+        return { ...state, profile: state.profile === null ? null : { ...state.profile, tenantId: 't-other' } }
+      })
+      expect(await run(market, signal()).catch((error: unknown) => remoteErrorOf(error)?.code)).toBe('skill-market/tenant-changed')
+      expect(await readdir(join(dshHome, 'skills-market')).catch(() => [])).toEqual([])
+      void center
+    })
+
+    it('runs one install of the same Skill at a time', async () => {
+      const { market } = await boot({ skills: [MARKED] })
+      const [a, b] = await Promise.all([market.installSkill('s-pdf', {}, signal()), market.installSkill('s-pdf', {}, signal())])
+      expect([a.installedVersion, b.installedVersion]).toEqual(['1.0.0', '1.0.0'])
+    })
+
+    it('leaves alone a user Skill of the same name, and a market install of another Hub Skill of that name', async () => {
+      const { market, dshHome } = await boot({ skills: [MARKED] })
+      await writeSkill(join(dshHome, 'skills'), 'pdf-tools', 'Mine')
+      expect(await run(market, signal())).toEqual([])
+      expect(await installed(market)).toEqual([])
+    })
+
+    it('skips an installed copy that came from another Hub Skill of the same name', async () => {
+      const { center, market } = await boot({ skills: [PDF] })
+      await market.installSkill('s-pdf', {}, signal())
+      center.skills = [{ ...MARKED, id: 's-other', version: '9.0.0' }]
+      expect(await run(market, signal())).toEqual([])
+      expect((await market.records()).get('pdf-tools')).toMatchObject({ hubSkillId: 's-pdf', version: '1.0.0' })
+    })
+
+    it('reports a Hub failure to the caller and keeps going past one Skill that fails', async () => {
+      const { center, market } = await boot({ skills: [MARKED, { ...SQL, autoInstall: true }] })
+      center.downloadBody = strToU8('not a zip')
+      expect(await run(market, signal())).toEqual([])
+      center.downloadBody = undefined
+      center.clientStatus = 500
+      expect(remoteErrorOf(await run(market, signal()).catch((error: unknown) => error))).toMatchObject({ code: 'skill-market/unavailable' })
+    })
+
+    it('gives up quietly when the Hub fails at sign-in; the next sign-in tries again', async () => {
+      const failing = (mock: MockCenter) => { mock.clientStatus = 500 }
+      const { center, market, hub, signIn } = await boot({ autoInstall: true, skills: [MARKED], beforeMarket: failing })
+      await expect.poll(() => center.clientRequests.some(path => path.startsWith('/api/client/skills?autoInstall=true&page=1'))).toBe(true)
+      expect(await installed(market)).toEqual([])
+      center.clientStatus = undefined
+      await hub.signOut()
+      await expect.poll(() => market.tenantId).toBeUndefined()
+      await signIn()
+      await expect.poll(() => installed(market)).toEqual(['pdf-tools'])
+    })
+
+    it('stops at the next Skill once its run is aborted', async () => {
+      const { market } = await boot({ skills: [MARKED, { ...SQL, autoInstall: true }] })
+      const controller = new AbortController()
+      const running = run(market, controller.signal)
+      controller.abort()
+      await expect(running).rejects.toThrow()
+    })
+
+    it('runs again after each sign-in and stops with the service', async () => {
+      const { market, hub, signIn } = await boot({ autoInstall: true, skills: [MARKED] })
+      await expect.poll(() => installed(market)).toEqual(['pdf-tools'])
+      await hub.signOut()
+      await expect.poll(() => market.tenantId).toBeUndefined()
+      await signIn()
+      await expect.poll(() => market.tenantId).toBe('t-a')
+      await expect.poll(() => installed(market)).toEqual(['pdf-tools'])
+    })
+  })
+
+  describe('withdrawn by the platform (Spec #221)', () => {
+    const withdrawn = (live: Awaited<ReturnType<typeof boot>>['live']) => (live.entry.options.config as { withdrawnSkills?: string[] }).withdrawnSkills
+
+    it('switches off a Skill the Hub reports withdrawn, keeps its files, and refuses to install it again', async () => {
+      const { ctx, center, market, live, dshHome } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      center.withdrawn.add('s-pdf')
+      expect((await market.installedStatus(signal()))[0]).toMatchObject({ name: 'pdf-tools', state: 'withdrawn', latestVersion: null })
+      expect(withdrawn(live)).toEqual(['t-a/pdf-tools'])
+      expect(market.isWithdrawn('pdf-tools')).toBe(true)
+      expect(market.isDisabled('pdf-tools')).toBe(true)
+      await expect.poll(async () => (await ctx.skills.get('pdf-tools'))?.invocation).toEqual({ modelInvocable: false, userInvocable: false })
+      expect(await readFile(join(dshHome, 'skills-market', 't-a', 'pdf-tools', 'scripts/run.sh'), 'utf8')).toBe('echo pdf\n')
+      expect(remoteErrorOf(await market.installSkill('s-pdf', {}, signal()).catch((error: unknown) => error))).toMatchObject({ code: 'skill-market/withdrawn', details: { id: 's-pdf' } })
+      // A Hub that cannot be asked leaves the record as it was
+      center.clientStatus = 500
+      expect((await market.installedStatus(signal()))[0]).toMatchObject({ state: 'unknown' })
+      expect(withdrawn(live)).toEqual(['t-a/pdf-tools'])
+    })
+
+    it('switches it back on when the platform offers it again, keeping the user\'s own switch', async () => {
+      const { center, market, live } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      await market.installSkill('s-sql', {}, signal())
+      await market.setDisabled('sql-helper', true)
+      center.withdrawn.add('s-pdf')
+      center.withdrawn.add('s-sql')
+      await market.installedStatus(signal())
+      expect(withdrawn(live)).toEqual(['t-a/pdf-tools', 't-a/sql-helper'])
+      center.withdrawn.clear()
+      await market.installedStatus(signal())
+      expect(withdrawn(live)).toEqual([])
+      expect(market.isDisabled('pdf-tools')).toBe(false)
+      // The user switched sql-helper off before: it stays off
+      expect(market.isDisabled('sql-helper')).toBe(true)
+    })
+
+    it('checks the installed Skills at sign-in, before the automatic install', async () => {
+      const { center, market, hub, signIn, live } = await boot({ autoInstall: true, skills: [PDF] })
+      await market.installSkill('s-pdf', {}, signal())
+      center.withdrawn.add('s-pdf')
+      await hub.signOut()
+      await expect.poll(() => market.tenantId).toBeUndefined()
+      expect(await market.installedStatus(signal())).toEqual([])
+      await signIn()
+      await expect.poll(() => withdrawn(live)).toEqual(['t-a/pdf-tools'])
+    })
+
+    it('forgets the withdrawal when the Skill is installed again after the platform offers it', async () => {
+      const { center, market, live } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      center.withdrawn.add('s-pdf')
+      await market.installedStatus(signal())
+      center.withdrawn.clear()
+      center.skills = [{ ...PDF, version: '1.1.0' }, SQL]
+      await market.installSkill('s-pdf', {}, signal())
+      expect(withdrawn(live)).toEqual([])
+    })
+
+    it('ends a withdrawal when the platform then deletes the Skill: it keeps working like any unavailable one', async () => {
+      const { center, market, live } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      center.withdrawn.add('s-pdf')
+      await market.installedStatus(signal())
+      center.withdrawn.clear()
+      center.skills = [SQL]
+      expect((await market.installedStatus(signal()))[0]).toMatchObject({ state: 'unavailable' })
+      expect(withdrawn(live)).toEqual([])
+      expect(market.isDisabled('pdf-tools')).toBe(false)
+    })
+
+    it('checks at sign-in even when automatic install is off', async () => {
+      const { center, market, hub, signIn, live } = await boot({ skills: [PDF] })
+      await market.installSkill('s-pdf', {}, signal())
+      center.withdrawn.add('s-pdf')
+      await hub.signOut()
+      await expect.poll(() => market.tenantId).toBeUndefined()
+      await signIn()
+      await expect.poll(() => withdrawn(live)).toEqual(['t-a/pdf-tools'])
+    })
+
+    it('records nothing when the Hub sign-in moved to another tenant during the check', async () => {
+      const { center, market, hub, live } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      center.withdrawn.add('s-pdf')
+      const getState = hub.getState.bind(hub)
+      vi.spyOn(hub, 'getState').mockImplementation(async () => {
+        const state = await getState()
+        return { ...state, profile: state.profile === null ? null : { ...state.profile, tenantId: 't-other' } }
+      })
+      expect(remoteErrorOf(await market.installedStatus(signal()).catch((error: unknown) => error))).toMatchObject({ code: 'skill-market/tenant-changed' })
+      expect(withdrawn(live) ?? []).toEqual([])
+    })
+
+    it('forgets the withdrawal when the user uninstalls the Skill, and a withdrawn download says so', async () => {
+      const { center, market, live } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      center.withdrawn.add('s-pdf')
+      await market.installedStatus(signal())
+      await market.markUninstalled('pdf-tools')
+      expect(withdrawn(live)).toEqual([])
+      expect((live.entry.options.config as { uninstalledSkills?: string[] }).uninstalledSkills).toEqual(['t-a/pdf-tools'])
+      // The move failed after all: the uninstall record is forgotten again
+      await market.markUninstalled('pdf-tools', false)
+      expect((live.entry.options.config as { uninstalledSkills?: string[] }).uninstalledSkills).toEqual([])
+    })
+
+    it('keeps the withdrawal when recording it fails, and logs it', async () => {
+      const { ctx, center, market } = await boot()
+      await market.installSkill('s-pdf', {}, signal())
+      center.withdrawn.add('s-pdf')
+      vi.spyOn(ctx.get('settings')!, 'update').mockRejectedValueOnce(new Error('settings unavailable'))
+      expect((await market.installedStatus(signal()))[0]).toMatchObject({ state: 'withdrawn' })
+      expect(market.isWithdrawn('pdf-tools')).toBe(false)
     })
   })
 })

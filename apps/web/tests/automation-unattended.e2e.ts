@@ -134,7 +134,7 @@ it.skipIf(process.platform === 'win32')('runs declared operations unattended, re
     const workspace = await ctx.workspaceRegistry.create(scaffold.workspaceCwd, '默认工作区')
     const { sessionId } = await ctx.automationTasks.create({
       title: '运营日报', prompt: '跑运营日报', workspaceId: workspace.id, model: { provider: 'acme-gateway', model: 'acme-chat' },
-      permission: 'workspace-write', connectors: ['feishu'], operations: ['lark-cli sheets +write'],
+      permission: 'workspace-write', operations: ['lark-cli sheets +write'],
       timing: { kind: 'at', at: new Date(Date.now() + 20_000).toISOString() },
     })
     const resolved = await ctx.sessionController.resolveAgent(sessionId)
@@ -162,7 +162,7 @@ it.skipIf(process.platform === 'win32')('runs declared operations unattended, re
     // runs, confirmed with --yes, and the undeclared write of unknown risk is refused, with nobody asked.
     const full = await ctx.automationTasks.create({
       title: '运营日报（完全权限）', prompt: '跑运营日报', workspaceId: workspace.id, model: { provider: 'acme-gateway', model: 'acme-chat' },
-      permission: 'danger-full-access', connectors: ['feishu'], operations: ['lark-cli drive +delete'],
+      permission: 'danger-full-access', operations: ['lark-cli drive +delete'],
       timing: { kind: 'at', at: new Date(Date.now() + 15_000).toISOString() },
     })
     const fullRun = await ctx.sessionController.resolveAgent(full.sessionId)

@@ -25,13 +25,13 @@ describe('building the request', () => {
     expect(toRequest(base(patch), ZONE)).toMatchObject({ request: { timing } })
   })
 
-  it('carries the assistant, model, connectors, and effective dates only when chosen', () => {
+  it('carries the assistant, model, and effective dates only when chosen', () => {
     const built = toRequest(base({
-      assistantId: 'a-shop', model: JSON.stringify(['deepseek', 'v4']), permission: '', connectors: ['feishu'], start: '2026-10-11', end: '2026-12-31',
+      assistantId: 'a-shop', model: JSON.stringify(['deepseek', 'v4']), permission: '', start: '2026-10-11', end: '2026-12-31',
       operations: ' lark-cli  sheets +write \n\nlark-cli sheets +write\ndsh-ecommerce browser\n',
     }), ZONE)
     expect(built).toMatchObject({ request: {
-      assistantId: 'a-shop', model: { provider: 'deepseek', model: 'v4' }, connectors: ['feishu'],
+      assistantId: 'a-shop', model: { provider: 'deepseek', model: 'v4' },
       operations: ['lark-cli sheets +write', 'dsh-ecommerce browser'],
       window: { start: '2026-10-11', end: '2026-12-31', time_zone: ZONE },
     } })

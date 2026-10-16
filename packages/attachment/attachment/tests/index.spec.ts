@@ -166,6 +166,7 @@ describe('AttachmentStore.readImageRequest', () => {
     const store = new RecordingStore(new Context())
     const ref = await store.saveImage(image(1))
     expect(store.imageHostPath(ref)).toBeUndefined()
+    await expect(store.saveStoredImage(ref, Uint8Array.of(1))).rejects.toMatchObject({ code: 'ATTACHMENT_FILES_UNSUPPORTED' })
     await expect(store.saveFile({ data: Uint8Array.of(1), name: 'notes.txt' }))
       .rejects.toMatchObject({ code: 'ATTACHMENT_FILES_UNSUPPORTED' })
     await expect(store.saveFileStream({

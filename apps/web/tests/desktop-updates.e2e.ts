@@ -51,7 +51,8 @@ describe('web e2e: Desktop update workspace chrome', () => {
           const availableLabel = locale === 'zh-CN' ? '新版本' : 'Update'
           const retryLabel = locale === 'zh-CN' ? '重试更新' : 'Retry update'
           const errorDetail = locale === 'zh-CN' ? '下载更新失败，请重试。' : 'Could not download the update. Please try again.'
-          const readyLabel = locale === 'zh-CN' ? '安装并重启' : 'Install and Restart'
+          const readyLabel = locale === 'zh-CN' ? '重启更新' : 'Restart to update'
+          const progressLabel = locale === 'zh-CN' ? '下载中 58%' : 'Downloading 58%'
           const version = '0.1.5-nightly.20260911'
           // The carrier classification deliberately uses English shell copy; Web copy follows its own locale.
           const available = presentDesktopUpdate({ phase: 'available', version }, en)
@@ -73,7 +74,7 @@ describe('web e2e: Desktop update workspace chrome', () => {
 
           const progress = presentDesktopUpdate({ phase: 'downloading', version, percent: 58 }, en)
           await publish(progress)
-          const downloading = page.getByRole('button', { name: '58%', exact: true })
+          const downloading = page.getByRole('button', { name: progressLabel, exact: true })
           await downloading.waitFor()
           expect(await downloading.getAttribute('aria-disabled')).toBe('true')
           expect(await downloading.locator('svg').count()).toBe(1)
@@ -86,10 +87,10 @@ describe('web e2e: Desktop update workspace chrome', () => {
           const expand = locale === 'zh-CN' ? '打开侧边栏' : 'Open sidebar'
           await page.getByRole('button', { name: collapse, exact: true }).click()
           const toggle = page.getByRole('button', { name: expand, exact: true })
-          const badge = toggle.getByRole('img', { name: '58%', exact: true })
+          const badge = toggle.getByRole('img', { name: progressLabel, exact: true })
           await badge.waitFor()
           await expect.poll(() => downloading.count()).toBe(0)
-          expect(await page.getByRole('img', { name: '58%', exact: true }).count()).toBe(1)
+          expect(await page.getByRole('img', { name: progressLabel, exact: true }).count()).toBe(1)
           const updateBackground = await badge.evaluate(element => getComputedStyle(element).backgroundColor)
           await page.screenshot({ path: join(evidence, 'collapsed.png') })
 

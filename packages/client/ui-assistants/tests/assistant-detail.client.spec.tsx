@@ -40,7 +40,7 @@ async function mount(view: AssistantView = assistant, read?: () => Promise<Assis
   const props = {
     useSessions: bindSnapshotSelector(sessions) as never, onOpenSession: vi.fn(),
     t: makeTranslate(zh), assistant: view,
-    onBack: vi.fn(), onChat: vi.fn(async (_id: string) => {}), onDuplicate: vi.fn(), onDelete: vi.fn(),
+    onBack: vi.fn(), onChat: vi.fn(async (_id: string | null) => {}), onDuplicate: vi.fn(), onDelete: vi.fn(),
     onRead: vi.fn(read ?? (async (_id: string): Promise<AssistantDetail | string> => stored)),
     onUpdate: vi.fn(async (_id: string, input: UpdateAssistantInput): Promise<string | undefined> => {
       const assistant = { ...stored.assistant, ...(input.name === undefined ? {} : { name: input.name }) }
@@ -209,7 +209,7 @@ describe('assistant detail page after a package update', () => {
     const sessions = createSnapshotStore({ ids: [], byId: {} })
     const props = {
       useSessions: bindSnapshotSelector(sessions) as never, onOpenSession: vi.fn(), t: makeTranslate(zh), assistant,
-      onBack: vi.fn(), onChat: vi.fn(async (_id: string) => {}), onDuplicate: vi.fn(), onDelete: vi.fn(),
+      onBack: vi.fn(), onChat: vi.fn(async (_id: string | null) => {}), onDuplicate: vi.fn(), onDelete: vi.fn(),
       onRead: vi.fn(async (_id: string): Promise<AssistantDetail | string> => stored),
       onUpdate: vi.fn(async (): Promise<string | undefined> => undefined),
       onLoadOptions: vi.fn(async () => options), squareAvatar: vi.fn(async () => ''),

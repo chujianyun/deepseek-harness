@@ -117,7 +117,7 @@ V3 未知内容标签变为 `plugin:<original-type>`，其他字段原样保留�
 | `session/title-llm-request` | 每个 `data.messages[]` 成员 |
 | `developer/message` | 仅由原生遍历器处理；未知可忽略 V3 事件被命名空间化，其 payload 不被访问 |
 
-插件来源要求字符串 `plugin`，允许空字符串。转换移除该属性、替换 `kind`，并保留其他所有自有 JSON 属性。直接来源 kind 必须为非空字符串。转换不从消息文本、工具参数、配置或当前文件推断缺失元数据。
+插件来源要求字符串 `plugin`，允许空字符串。导出的 `releasedV3ProducerKind` 对为 V3 版本编写的插件实时产生的消息执行同样的改名。转换移除该属性、替换 `kind`，并保留其他所有自有 JSON 属性。直接来源 kind 必须为非空字符串。转换不从消息文本、工具参数、配置或当前文件推断缺失元数据。
 
 | 精确的 V3 `plugin` | V4 `kind` |
 |---|---|

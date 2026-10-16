@@ -22,7 +22,6 @@ export interface TaskFormValues {
   /** `provider/model` as `JSON.stringify([provider, model])`; empty for the default model. */
   model: string
   permission: string
-  connectors: string[]
   /** Operations its scheduled runs may run without asking, one per line as typed. */
   operations: string
   mode: FrequencyMode
@@ -60,7 +59,7 @@ const WORKDAYS = [1, 2, 3, 4, 5]
 export function initialValues(defaults: { workspaceId: string; permission: string; time: string; date: string }): TaskFormValues {
   return {
     title: '', workspaceId: defaults.workspaceId, prompt: '', assistantId: '', model: '', permission: defaults.permission,
-    connectors: [], operations: '', mode: 'periodic', repeat: 'daily', weekdays: [1], time: defaults.time, interval: '1', unit: 'hours',
+    operations: '', mode: 'periodic', repeat: 'daily', weekdays: [1], time: defaults.time, interval: '1', unit: 'hours',
     date: defaults.date, start: '', end: '',
   }
 }
@@ -117,7 +116,6 @@ export function toRequest(
       ...(values.assistantId === '' ? {} : { assistantId: values.assistantId }),
       ...(provider === undefined || model === undefined ? {} : { model: { provider, model } }),
       ...(values.permission === '' ? {} : { permission: values.permission }),
-      ...(values.connectors.length === 0 ? {} : { connectors: [...values.connectors] }),
       ...(declared.operations.length === 0 ? {} : { operations: declared.operations }),
       ...(values.start === '' && values.end === '' ? {} : {
         window: { ...(values.start === '' ? {} : { start: values.start }), ...(values.end === '' ? {} : { end: values.end }), time_zone: zone },

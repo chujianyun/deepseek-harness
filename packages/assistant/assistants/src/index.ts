@@ -33,6 +33,7 @@ import { followTenant } from '@deepseek-ai/dsh-hub-account'
 import type {} from '@deepseek-ai/dsh-connectors'
 import type {} from '@deepseek-ai/dsh-knowledge-base'
 import type {} from '@deepseek-ai/dsh-knowledge-selection'
+import type {} from '@deepseek-ai/dsh-skill-market'
 import { RUNTIME_PROVIDER } from '@deepseek-ai/dsh-skill'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
@@ -225,6 +226,9 @@ function jsonText(value: object): string {
 }
 
 /** The kinds of capability a subset names. */
+/** Source of the Skills installed from the Skill Hub market (`@deepseek-ai/dsh-skill-market`). */
+const MARKET_SOURCE = 'market'
+
 const SUBSET_KINDS = ['skills', 'connectors', 'knowledgeBases'] as const
 
 /**
@@ -374,16 +378,22 @@ export class AssistantsService extends TypertRemoteService {
    * List the Skills, connectors, and knowledge bases available now, which subsets can name.
    * Skills are those a new session's default Agent preset discovers outside any project; a
    * service the deployment does not compose offers none.
-   * @returns enabled model-usable Skills other than connector Skills, connectors installed and
+   * @returns enabled model-usable Skills other than connector Skills, named by their Skill Hub display name when the
+   *   tenant installed them from the Hub and by their name otherwise, connectors installed and
    *   switched on for the tenant (named by id), and the tenant's knowledge bases.
    */
   @Remote
   async capabilityOptions(): Promise<AssistantCapabilityOptions> {
     // Skill discovery mounts with an Agent preset, so read through the default preset's scope, as a new session sees it.
     await using lease = await this.ctx.get('agentPresets')?.acquireScope()
+    const installed = await this.ctx.get('skillMarket')?.records()
     const skills = (await this.ctx.get('skills')?.list(lease === undefined ? {} : { scope: lease.key }) ?? [])
       .filter(skill => skill.invocation.modelInvocable && !systemSkill(skill))
-      .map(skill => ({ id: skill.name, name: skill.name, description: skill.description }))
+      .map(skill => ({
+        id: skill.name, description: skill.description,
+        // A same-named Skill of higher precedence (such as one in ~/.agents/skills) keeps its own name.
+        name: (skill.source === MARKET_SOURCE ? installed?.get(skill.name)?.displayName : undefined) ?? skill.name,
+      }))
     // The client names each connector in its own language.
     const connectors = (await this.ctx.get('connectors')?.getState())?.connectors
       .filter(item => item.enabled && !NOT_INSTALLED.has(item.status))

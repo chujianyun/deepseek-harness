@@ -187,7 +187,9 @@ async write(session: Session): Promise<void>
  * the refreshed checkpoint is written back (fail-soft, fire-and-forget), so
  * the first cold read creates the cache row and later ones seed from it.
  * The caller supplies the complete log in seq order: this service never
- * consults the persistence layer.
+ * consults the persistence layer. A complete log of an id deleted earlier in
+ * this process means the session was stored anew under it, so its
+ * checkpoint is written again, as after `session/created`.
  * @param meta - the stored session header (identity witness).
  * @param inheritedEventCount - exact inherited prefix length for projection initialization and identity.
  * @param events - the session's complete log, in seq order.

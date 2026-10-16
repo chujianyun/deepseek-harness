@@ -20,7 +20,7 @@ afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
 })
 
-/** The service over recorded fakes; `optional` mounts the assistants, connectors, and permission presets. */
+/** The service over recorded fakes; `optional` mounts the assistants and permission presets. */
 async function mount(optional = true) {
   const steps: string[] = []
   let created: SessionId | undefined
@@ -44,7 +44,6 @@ async function mount(optional = true) {
   }
   const workspaceRegistry = { archiveSession: record('archive') }
   const assistants = { select: record('assistant') }
-  const connectors = { allowInSession: vi.fn((..._args: unknown[]) => { steps.push('connectors') }) }
   const permissionPresets = {
     set: vi.fn((..._args: unknown[]) => { steps.push('permission') }),
     catalog: () => ({ options: [{ value: 'workspace-write' }, { value: 'full-access' }, { value: 'custom' }] }),
@@ -55,13 +54,12 @@ async function mount(optional = true) {
   ctx.provide('sessionProjections', { register: vi.fn(), stateOf: () => undefined } as never)
   if (optional) {
     ctx.provide('assistants', assistants as never)
-    ctx.provide('connectors', connectors as never)
     ctx.provide('permissionPresets', permissionPresets as never)
   }
   const warn = vi.spyOn(ctx.logger, 'warn')
   await ctx.plugin(AutomationTasksService).await()
   return {
-    service: ctx.get('automationTasks')!, steps, appended, controller, schedule, workspaceRegistry, assistants, connectors, permissionPresets, warn,
+    service: ctx.get('automationTasks')!, steps, appended, controller, schedule, workspaceRegistry, assistants, permissionPresets, warn,
     session: () => created!,
   }
 }
@@ -71,13 +69,13 @@ describe('creating an automation task', () => {
     const m = await mount()
     const result = await m.service.create({
       ...BASE, assistantId: 'a-shop', model: { provider: 'deepseek', model: 'v4' },
-      permission: 'full-access', connectors: ['feishu'], window: { start: '2026-10-11', end: '', time_zone: 'Asia/Shanghai' },
+      permission: 'full-access', window: { start: '2026-10-11', end: '', time_zone: 'Asia/Shanghai' },
       operations: [' lark-cli   im +messages-send ', 'dsh-ecommerce browser', 'lark-cli im +messages-send', ''],
     })
     const sessionId = m.session()
     const agent = { ...AGENT, id: sessionId, session: expect.objectContaining({ id: sessionId }) as object }
     expect(result).toEqual({ sessionId, record: RECORD })
-    expect(m.steps).toEqual(['validate', 'create', 'rename', 'resolve', 'assistant', 'model', 'permission', 'connectors', 'automation-tasks/operations', 'schedule'])
+    expect(m.steps).toEqual(['validate', 'create', 'rename', 'resolve', 'assistant', 'model', 'permission', 'automation-tasks/operations', 'schedule'])
     // The declaration is read: trimmed, one space between words, without blanks and repeats.
     expect(m.appended).toEqual([{ type: 'automation-tasks/operations', data: { operations: ['lark-cli im +messages-send', 'dsh-ecommerce browser'] } }])
     expect(m.controller.create).toHaveBeenCalledWith({ sessionId, workspaceId: WORKSPACE })
@@ -85,7 +83,6 @@ describe('creating an automation task', () => {
     expect(m.assistants.select).toHaveBeenCalledWith(agent, 'a-shop')
     expect(m.controller.useModel).toHaveBeenCalledWith(agent, { provider: 'deepseek', model: 'v4' })
     expect(m.permissionPresets.set).toHaveBeenCalledWith(agent.session, 'full-access')
-    expect(m.connectors.allowInSession).toHaveBeenCalledWith(agent.session, ['feishu'])
     expect(m.schedule.create).toHaveBeenCalledWith(sessionId, {
       title: '日报', prompt: '导出昨日日报', daily: { time: '09:00:00', time_zone: 'Asia/Shanghai' },
     }, undefined, { start: '2026-10-11', end: '', time_zone: 'Asia/Shanghai' })
@@ -99,14 +96,13 @@ describe('creating an automation task', () => {
   ]
   it.each(timings)('passes the %j timing to the schedule, and only what the form chose', async (timing, selector) => {
     const m = await mount()
-    await m.service.create({ ...BASE, timing, connectors: [], operations: [] })
+    await m.service.create({ ...BASE, timing, operations: [] })
     expect(m.steps).toEqual(['validate', 'create', 'rename', 'resolve', 'schedule'])
     expect(m.schedule.create).toHaveBeenCalledWith(m.session(), { title: '日报', prompt: '导出昨日日报', ...selector }, undefined, undefined)
   })
 
   it.each([
     [{ assistantId: 'a-shop' }, 'assistant'],
-    [{ connectors: ['feishu'] }, 'connectors'],
     [{ permission: 'full-access' }, 'permission'],
   ] as const)('refuses %j without that service, before creating a Session', async (extra, field) => {
     const m = await mount(false)

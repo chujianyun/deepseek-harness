@@ -134,11 +134,13 @@ describe('classify', () => {
     expect((await classify('dws schemas', 'dws', reader, ['schema'])).risk).toBe('unknown')
   })
 
-  it('reads help, version, a dry run, and a bare call as read, and an expanded argument or opaque form as unknown', async () => {
+  it('reads help, version, a dry run, and a bare call as read, and a variable among the command words or an opaque form as unknown', async () => {
     for (const command of ['lark-cli drive +delete --help', 'lark-cli --version', 'lark-cli im +messages-send --dry-run', 'lark-cli']) {
       expect((await classify(command, 'lark-cli', reader)).risk).toBe('read')
     }
-    expect(await classify('lark-cli im +messages-send --chat-id $CHAT', 'lark-cli', reader)).toEqual({ risk: 'unknown', invocations: [{ command: 'im +messages-send', risk: 'unknown', confirm: false }] })
+    // A variable in a flag value leaves the command words to read; one among them does not.
+    expect(await classify('lark-cli im +messages-send --chat-id $CHAT', 'lark-cli', reader)).toEqual({ risk: 'write', invocations: [{ command: 'im +messages-send', risk: 'write', confirm: false }] })
+    expect(await classify('lark-cli im $SEND --chat-id c1', 'lark-cli', reader)).toEqual({ risk: 'unknown', invocations: [{ command: 'im $SEND', risk: 'unknown', confirm: false }] })
     expect(await classify(' echo $(lark-cli drive +delete) ', 'lark-cli', reader)).toEqual({ risk: 'unknown', invocations: [{ command: 'echo $(lark-cli drive +delete)', risk: 'unknown', confirm: false }] })
   })
 })

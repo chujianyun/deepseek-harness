@@ -27,6 +27,8 @@ Use the **Built-in plugins** settings section to inspect the plugins this deploy
 
 Open **Built-in plugins** in Settings. [ui-settings-plugin-inventory](../ui-settings-plugin-inventory/README.md) contributes the inventory as the section's one tab, shown as the page itself; a second registered tab turns the row into tabs. A deployment whose composition contributes no tab shows the section's empty line.
 
+The web-app bundle leaves this row out of the enterprise Desktop (the `desktop` profile with a configured user center), as it leaves out the Plugins page.
+
 To contribute a tab, register into `settings.plugins.tab` with an `id`, an `order`, and a localized `label`; the section renders the entries in order and mounts a tab on its first selection. Feature copy stays in the registering plugin's dictionary.
 
 -----

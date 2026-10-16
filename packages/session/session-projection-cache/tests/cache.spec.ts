@@ -291,6 +291,17 @@ describe('SessionProjectionCache write policy', () => {
     expect(await storedRecord(root, id)).toBeDefined()
   })
 
+  it('caches a deleted id again once a complete log stored anew under it is cold-read', async () => {
+    const { ctx, cache, root } = await harness()
+    const id = SessionId('stored-anew')
+    ctx.emit('session/deleted', id)
+    const written = whenWritten(ctx, id)
+    const log: SessionEvent[] = [{ type: 'cache-test/mark', seq: SessionSeq(0), time: 1, data: { marks: ['pulled'] } }]
+    expect(cache.coldSnapshot(headerOf(id), SessionLogOffset(0), log).values['cache-test/marks']).toEqual({ marks: ['pulled'] })
+    await written
+    expect((await storedRows(root, id))?.['cache-test/marks']?.val).toEqual({ marks: ['pulled'] })
+  })
+
   it('flushes when the in-turn event count reaches the configured threshold', async () => {
     const { ctx, root } = await harness({ config: { writeEveryEvents: 3, writeIntervalMs: 60_000 } })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })

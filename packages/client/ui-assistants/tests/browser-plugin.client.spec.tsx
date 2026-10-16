@@ -48,7 +48,11 @@ async function bench(setup: { packages?: boolean } = {}) {
   ctx.provide('sessions', { list } as never)
   const startSession = vi.fn()
   const openSession = vi.fn()
-  const groupings: { id: string; subscribe?: (onChange: () => void) => () => void }[] = []
+  const groupings: {
+    id: string
+    subscribe?: (onChange: () => void) => () => void
+    groupOf: (session: object) => { create?: () => void }
+  }[] = []
   const registerSessionGrouping = vi.fn((grouping: typeof groupings[number]) => {
     groupings.push(grouping)
     return () => { groupings.splice(groupings.indexOf(grouping), 1) }
@@ -158,6 +162,9 @@ describe('ui-assistants browser plugin', () => {
     b.ctx.locale.register('grouping-probe' as never, { zh: {}, en: {} })()
     expect(relabel).toHaveBeenCalled()
     stopGrouping()
+    // General mode's heading opens a new session the way an assistant card's Chat does.
+    b.groupings[0]!.groupOf({ id: 's', metadata: {} }).create!()
+    expect(b.startSession).toHaveBeenCalledOnce()
     await fiber.dispose()
     expect(b.groupings).toEqual([])
     expect(b.ctx.get('assistantPicker')).toBeUndefined()

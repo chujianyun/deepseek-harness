@@ -127,7 +127,7 @@ export function apply(ctx: ClientContext): void {
     scope.effect(() => scope.sessions.list.subscribe(() => { void source.sessionsChanged() }), 'ui-assistants: session list')
     scope.provide('assistantPicker', { pickTemplate: source.pickTemplate } satisfies AssistantPicker)
     scope.effect(() => scope.uiWorkspace.registerSessionGrouping(assistantGrouping(
-      t, source.hooks.assistants, onChange => scope.locale.subscribe(onChange),
+      t, source.hooks.assistants, onChange => scope.locale.subscribe(onChange), (assistantId) => { void source.onChat(assistantId) },
     )), 'ui-assistants: Assistant grouping')
     // Company assistant packages, over an optional Remote: until a deployment mounts it, every call
     // refuses and the page shows no company section.

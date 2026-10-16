@@ -278,14 +278,18 @@ describe('e-commerce accounts section', () => {
       account({ id: 'e2', platform: 'doudian', storeName: '抖店一号', status: 'check-failed', problem: 'busy' }),
       account({ id: 'e3', platform: 'taobao', storeName: '淘宝店', status: 'check-failed', problem: 'timeout' }),
       account({ id: 'e4', storeName: '天猫店', status: 'signed-in', inUse: true }),
+      account({ id: 'e5', platform: 'jd', storeName: '京东店', status: 'check-failed', problem: 'timeout' }),
     ] })
-    for (const [group, problem] of [['拼多多', '网络不通'], ['抖店', '浏览器正被其他程序占用'], ['淘宝', '检查超时'], ['天猫', '任务使用中']] as const) {
+    for (const [group, problem] of [['拼多多', '网络不通'], ['抖店', '浏览器正被其他程序占用'], ['淘宝', '检查超时'], ['天猫', '任务使用中'], ['京东', '检查超时']] as const) {
       expect(screen.getByText(group).closest('details')!.textContent).toContain(problem)
     }
     fireEvent.click(screen.getByRole('button', { name: '新增账号' }))
     const dialog = screen.getByRole('dialog', { name: '新增账号' })
     const platform = within(dialog).getByRole<HTMLSelectElement>('combobox', { name: '平台' })
-    expect([...platform.options].map(option => option.text)).toEqual(['天猫', '淘宝', '拼多多', '抖店', '健康品牌云台'])
+    expect([...platform.options].map(option => option.text)).toEqual(['天猫', '淘宝', '拼多多', '抖店', '京东', '健康品牌云台'])
+    // JD takes merchant and buyer accounts, as Tmall and Taobao do.
+    fireEvent.change(platform, { target: { value: 'jd' } })
+    expect([...within(dialog).getByRole<HTMLSelectElement>('combobox', { name: '账号类型' }).options].map(option => option.text)).toEqual(['商家账号', '买家账号'])
     fireEvent.change(platform, { target: { value: 'doudian' } })
     fireEvent.change(within(dialog).getByPlaceholderText('例如：名流旗舰店'), { target: { value: '抖店二号' } })
     fireEvent.change(within(dialog).getByPlaceholderText('例如：名流旗舰店:运营'), { target: { value: 'b' } })
@@ -386,7 +390,7 @@ describe('e-commerce accounts section', () => {
     expect(screen.getByText('风控冷却').nextSibling?.textContent).toMatch(/^剩 \d+ 小时（01-02 \d\d:04 结束）$/u)
   })
 
-  it('renders nothing but the intro before the first state, and follows an account that disappears', () => {
+  it('renders nothing before the first state, and follows an account that disappears', () => {
     const props = mount(undefined)
     expect(screen.queryByText('还没有电商账号。')).toBeNull()
     props.set({ ...base, accounts: [account()] })

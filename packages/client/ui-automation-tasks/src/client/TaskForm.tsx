@@ -1,6 +1,6 @@
 /** The Add automation task form, shown by the Automation tasks page in place of its list. */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Button, Checkbox, IconCloseOutlineRegular, Input, RiskConfirmation, SegmentedTabs } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconCloseOutlineRegular, Input, RiskConfirmation, SegmentedTabs } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SegmentedTab } from '@deepseek-ai/dsh-client-ui-primitives'
 import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller/default-workspace'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -35,7 +35,7 @@ const NAME_FIELD: TaskFormField = 'title'
 /** The field whose message a value belongs under. */
 const FIELD_OF: Record<keyof TaskFormValues, TaskFormField> = {
   title: NAME_FIELD, workspaceId: 'workspace', prompt: 'prompt', assistantId: 'prompt', model: 'prompt', permission: 'prompt',
-  connectors: 'prompt', operations: 'operations', mode: 'frequency', repeat: 'frequency', weekdays: 'frequency', time: 'frequency', interval: 'frequency',
+  operations: 'operations', mode: 'frequency', repeat: 'frequency', weekdays: 'frequency', time: 'frequency', interval: 'frequency',
   unit: 'frequency', date: 'frequency', start: 'window', end: 'window',
 }
 
@@ -203,24 +203,6 @@ export function TaskForm({ t, onDone, useWorkspaces, loadOptions, onCreate }: Ta
           </div>
           {problem('prompt')}
         </div>
-
-        <fieldset className={css.field}>
-          <legend className={css.legend}>{label('field.connectors', 'field.connectorsHint')}</legend>
-          {options.connectors.length === 0
-            ? <p className={css.muted}>{t('field.connectorsNone')}</p>
-            : (
-              <div className={css.connectors}>
-                {options.connectors.map(connector => (
-                  <Checkbox key={connector} checked={values.connectors.includes(connector)}
-                    label={connector === 'feishu' || connector === 'dingtalk' ? t(`connector.${connector}`) : connector}
-                    onChange={(checked) => {
-                      const rest = values.connectors.filter(item => item !== connector)
-                      set({ connectors: checked ? [...rest, connector] : rest })
-                    }} />
-                ))}
-              </div>
-            )}
-        </fieldset>
 
         <div className={css.field}>
           <label className={css.legend} htmlFor={`${id}-operations`}>{label('field.operations', 'field.operationsHint')}</label>

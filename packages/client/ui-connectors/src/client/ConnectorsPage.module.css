@@ -33,7 +33,6 @@
   line-height: 28px;
 }
 
-.intro,
 .meta {
   margin: 0;
   font-size: 13px;
@@ -54,6 +53,29 @@
   background: var(--dsw-alias-interactive-bg-hover-danger);
   color: var(--dsw-alias-state-error-primary);
   font-size: 13px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.notice {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-interactive-bg-hover);
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .grid {
@@ -77,6 +99,7 @@
 }
 
 .card[data-status='unsupported'] .avatar,
+.card[data-status='unsupported'] .logo,
 .card[data-status='unsupported'] .name,
 .card[data-status='unsupported'] .description {
   opacity: 0.5;
@@ -88,6 +111,14 @@
   gap: 8px;
   min-width: 0;
   min-height: 28px;
+}
+
+.logo {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--dsw-radius-xs);
+  box-shadow: 0 0 0 0.5px var(--dsw-alias-border-l2);
 }
 
 .avatar {
@@ -281,49 +312,7 @@
   cursor: pointer;
 }
 
-.allowed {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 11px;
-}
-
-.allowedLabel {
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.allowedList {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.allowedItem {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.allowedItem code {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--ds-font-family-code);
-}
-
 .more:disabled {
   cursor: default;
   opacity: 0.5;
-}
-
-/* Header intro, as on the Plugins page. */
-.header .intro {
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-secondary);
 }

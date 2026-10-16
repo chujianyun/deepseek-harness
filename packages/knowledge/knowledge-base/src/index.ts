@@ -10,6 +10,10 @@
  * resume for the local embedding model, which costs nothing, and fail as `interrupted` for API
  * models, so nothing is billed without the user asking. Another tenant's sign-in stops the worker.
  *
+ * The knowledge bases sync with the user center of the Hub sign-in (`sync.ts`): names, settings, and
+ * item copies upload, and the employee's other computers' knowledge bases are pulled and processed
+ * here. What is pulled for an API embedding model waits for the user to process it.
+ *
  * @module @deepseek-ai/dsh-knowledge-base
  */
 
@@ -19,7 +23,7 @@ import { basename, extname, join } from 'node:path'
 import type { WebError } from '@deepseek-ai/dsh-web'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { EmbeddingState } from '@deepseek-ai/dsh-embedding'
-import { followTenant } from '@deepseek-ai/dsh-hub-account'
+import { followTenant, syncDeviceName } from '@deepseek-ai/dsh-hub-account'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { canOpenNativePath, openNativeAssociatedPath } from '@deepseek-ai/dsh-native-command'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -29,7 +33,9 @@ import { chunkText } from './chunk.ts'
 import { scanFolder, type FolderFile } from './folder.ts'
 import { pageToMarkdown } from './page.ts'
 import { isSupported, readDocument } from './readers.ts'
+import { settingsShape } from './settings.ts'
 import { BaseStore, type ItemRow } from './store.ts'
+import { KnowledgeSync, type LocalBase, type RemoteBase, type RemoteItem } from './sync.ts'
 import type {
   KnowledgeAddResult, KnowledgeBaseSettings, KnowledgeBaseView, KnowledgeItemError, KnowledgeRecallResult, KnowledgeRejectReason,
   KnowledgeItemView, KnowledgeNote, KnowledgeSearchHit, KnowledgeSettingsPatch, KnowledgeState,
@@ -67,6 +73,16 @@ export interface Config {
   maxNoteTitleLength?: number
   /** Longest note body, in characters. */
   maxNoteChars?: number
+  /** Name of this computer as the employee's other computers show it. Defaults to the host name without `.local`. */
+  deviceName?: string
+  /** Wait after a change before uploading, so changes in quick succession upload once, in milliseconds. */
+  syncDebounceMs?: number
+  /** Interval of the pull and upload pass, in milliseconds. */
+  syncIntervalMs?: number
+  /** Wait before retrying after the user center could not be reached, in milliseconds. */
+  syncRetryMs?: number
+  /** Deadline of each user-center request, in milliseconds. */
+  requestTimeoutMs?: number
 }
 
 /** Validated plugin configuration. */
@@ -81,17 +97,13 @@ export const Config: Schema<Config> = Schema.object({
   maxFolderFiles: Schema.natural().min(1).default(1000),
   maxNoteTitleLength: Schema.natural().min(1).default(100),
   maxNoteChars: Schema.natural().min(1).default(1_000_000),
+  deviceName: Schema.string(),
+  syncDebounceMs: Schema.number().min(0).max(600_000).default(2_000),
+  syncIntervalMs: Schema.number().min(100).max(86_400_000).default(300_000),
+  syncRetryMs: Schema.number().min(100).max(86_400_000).default(60_000),
+  requestTimeoutMs: Schema.number().min(1).max(3_600_000).default(300_000),
 })
 
-/** Chunking and retrieval settings with their bounds; defaults follow Cherry Studio's. */
-const settingsShape = {
-  chunkStrategy: z.enum(['structured', 'delimiter']),
-  chunkSeparator: z.string(),
-  chunkSize: z.number().int().positive(),
-  chunkOverlap: z.number().int().nonnegative(),
-  documentCount: z.number().int().min(1).max(50),
-  threshold: z.number().min(0).max(1),
-}
 
 /** The cross-field rules: overlap below size, and a separator for delimiter chunking. */
 function crossFieldProblem(settings: KnowledgeBaseSettings): keyof KnowledgeBaseSettings | undefined {
@@ -139,7 +151,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
   static inject = ['embedding', 'hubAccount']
   static Config = Config
 
-  private readonly config: Required<Omit<Config, 'dshHome'>>
+  private readonly config: Required<Omit<Config, 'dshHome' | 'deviceName'>>
   private readonly root: string
   private tenantId: string | null = null
   private bases = new Map<string, OpenBase>()
@@ -154,20 +166,36 @@ export class KnowledgeBaseService extends TypertRemoteService {
   private revision = Date.now()
   private readonly listeners = new Set<() => void>()
   private readonly lifetime = new AbortController()
+  private readonly sync: KnowledgeSync
+  /** Pages pulled with their fetched copy, processed from it once; reprocessing fetches them again. */
+  private readonly pulledPages = new Set<string>()
 
   /** @param ctx - Host with embedding models and the Hub sign-in. @param config - storage and chunking options. */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'knowledgeBases', { namespace: 'knowledgeBases' })
-    const resolved = Config(config) as Required<Omit<Config, 'dshHome'>> & Pick<Config, 'dshHome'>
+    const resolved = Config(config) as Required<Omit<Config, 'dshHome' | 'deviceName'>> & Pick<Config, 'dshHome' | 'deviceName'>
     this.config = resolved
-    this.root = join(resolveDshHome(resolved.dshHome), 'knowledge')
+    const home = resolveDshHome(resolved.dshHome)
+    this.root = join(home, 'knowledge')
+    const device = syncDeviceName(resolved.deviceName, 'knowledge-base')
     ctx.embedding.registerUsage(id => this.users(id))
     ctx.effect(() => () => {
       this.lifetime.abort()
       this.job?.controller.abort()
       this.closeBases()
-      this.changed()
+      this.changed(false)
     }, 'knowledge-base: lifetime')
+    this.sync = new KnowledgeSync(ctx, {
+      snapshot: () => this.serialized(() => Promise.resolve(this.syncSnapshot())),
+      baseExists: (tenantId, baseId) => stat(join(this.root, tenantId, baseId)).then(info => info.isDirectory(), () => false),
+      applyBase: (tenantId, base) => this.serialized(() => this.applyBase(tenantId, base)),
+      applyItem: (tenantId, item, content) => this.serialized(() => this.applyItem(tenantId, item, content)),
+      removeBase: (tenantId, baseId) => this.serialized(() => this.removePulledBase(tenantId, baseId)),
+      removeItem: (tenantId, baseId, itemId) => this.serialized(() => this.removePulledItem(tenantId, baseId, itemId)),
+    }, {
+      statePath: join(home, 'knowledge-sync.json'), device, debounceMs: resolved.syncDebounceMs, intervalMs: resolved.syncIntervalMs,
+      retryMs: resolved.syncRetryMs, requestTimeoutMs: resolved.requestTimeoutMs,
+    })
   }
 
   async [Service.init](): Promise<void> {
@@ -179,10 +207,11 @@ export class KnowledgeBaseService extends TypertRemoteService {
     void (async () => {
       for await (const state of this.ctx.embedding.watch(this.lifetime.signal)) {
         this.embedding = state
-        this.changed()
+        this.changed(false)
         this.kick()
       }
     })()
+    await this.sync.start()
   }
 
   /**
@@ -203,6 +232,16 @@ export class KnowledgeBaseService extends TypertRemoteService {
   @Remote({ mode: 'stream' })
   watch(signal: AbortSignal): AsyncIterable<KnowledgeState> {
     return changeStream(this.listeners, () => this.getState(), signal, this.lifetime.signal)
+  }
+
+  /**
+   * Pull the employee's other computers' knowledge base changes and upload this computer's now, as
+   * when the Knowledge page opens or the window comes back to the front.
+   */
+  @Remote
+  syncNow(): Promise<void> {
+    this.sync.refresh()
+    return Promise.resolve()
   }
 
   /**
@@ -345,13 +384,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
   @Remote
   deleteBase(id: string): Promise<KnowledgeState> {
     return this.serialized(async () => {
-      const base = this.base(id)
-      await this.stopJob(job => job.baseId === id)
-      base.store.close()
-      this.bases.delete(id)
-      await rm(base.dir, { recursive: true, force: true })
-      this.changed()
-      this.kick()
+      await this.dropBase(id, this.base(id))
       return this.getState()
     })
   }
@@ -536,11 +569,11 @@ export class KnowledgeBaseService extends TypertRemoteService {
   }
 
   /**
-   * Process an item again from its stored copy.
+   * Process an item again from its stored copy; a folder is scanned again, on the computer it was added on only.
    * @param id - knowledge base id.
    * @param itemId - item id.
    * @returns the state with the item pending.
-   * @throws RemoteError `knowledge/not-found`.
+   * @throws RemoteError `knowledge/not-found`, or `knowledge/folder-elsewhere` for a folder another computer added.
    */
   @Remote
   reprocessItem(id: string, itemId: string): Promise<KnowledgeState> {
@@ -548,6 +581,8 @@ export class KnowledgeBaseService extends TypertRemoteService {
       const base = this.base(id)
       const item = this.item(base, itemId)
       if (item.kind === 'folder') {
+        const device = this.sync.cameFrom(item.id)
+        if (device !== null) throw new RemoteError('knowledge/folder-elsewhere', `folder ${itemId} is scanned on ${device}`, { id: itemId, device })
         await this.syncFolder(base, item)
       } else {
         await this.stopJob(job => job.itemId === itemId)
@@ -570,11 +605,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
   deleteItem(id: string, itemId: string): Promise<KnowledgeState> {
     return this.serialized(async () => {
       const base = this.base(id)
-      const item = this.item(base, itemId)
-      for (const gone of [...base.store.items().filter(entry => entry.parentId === itemId), item]) await this.removeItem(base, gone)
-      await this.settle(base)
-      this.changed()
-      this.kick()
+      await this.dropItem(base, this.item(base, itemId))
       return this.getState()
     })
   }
@@ -600,10 +631,12 @@ export class KnowledgeBaseService extends TypertRemoteService {
     return base.store.search(vector, query, options.limit, options.threshold)
   }
 
-  private changed(): void {
+  /** @param uploads - whether the change can be one to upload; progress and model state are not. */
+  private changed(uploads = true): void {
     // Clock-based, so a restarted Host still answers with revisions above those a page already holds.
     this.revision = Math.max(this.revision + 1, Date.now())
     for (const listener of this.listeners) listener()
+    if (uploads) this.sync.touched()
   }
 
   /** Run state changes one at a time, so a tenant switch never interleaves with an edit. */
@@ -747,9 +780,19 @@ export class KnowledgeBaseService extends TypertRemoteService {
     }
   }
 
+  /** Whether a knowledge base's embedding model can run here: the local model installed, or an API model Settings offers. */
   private modelReady(modelId: string): boolean {
-    if (modelId !== this.embedding?.local.id) return true
-    return this.embedding.local.status === 'installed'
+    if (modelId === this.embedding?.local.id) return this.embedding.local.status === 'installed'
+    return !this.modelMissing(modelId)
+  }
+
+  /**
+   * Whether an embedding model is neither this computer's local model nor one Settings offers, as
+   * for a knowledge base pulled from another computer.
+   */
+  private modelMissing(modelId: string): boolean {
+    if (modelId === this.embedding?.local.id) return this.embedding.local.status === 'unsupported'
+    return this.embedding?.apiModels.some(model => model.id === modelId) === false
   }
 
   private view(base: OpenBase): KnowledgeBaseView {
@@ -759,7 +802,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
     const api = this.embedding?.apiModels.find(model => model.id === embeddingModelId)
     const embeddingModelName = local?.id === embeddingModelId ? local.name : api?.model ?? embeddingModelId
     return {
-      id, name, embeddingModelId, embeddingModelName, createdAt, dimensions,
+      id, name, embeddingModelId, embeddingModelName, createdAt, dimensions, modelMissing: this.modelMissing(embeddingModelId),
       status: !this.modelReady(embeddingModelId) ? 'unavailable' : rebuilding ? 'rebuilding' : 'ready',
       settings: { chunkStrategy, chunkSeparator, chunkSize, chunkOverlap, documentCount, threshold },
       items: this.itemViews(base.store.items()),
@@ -769,11 +812,12 @@ export class KnowledgeBaseService extends TypertRemoteService {
   /** Items as shown: a folder takes its progress and chunk count from its files. */
   private itemViews(items: readonly ItemRow[]): KnowledgeItemView[] {
     return items.map(({ modifiedAt: _modifiedAt, ...item }) => {
-      if (item.kind !== 'folder') return item
+      if (item.kind !== 'folder') return { ...item, scannedOn: null }
       const files = items.filter(entry => entry.parentId === item.id)
       const busy = files.some(file => file.status === 'pending' || file.status === 'processing')
       return {
         ...item,
+        scannedOn: this.sync.cameFrom(item.id),
         status: item.status === 'failed' ? 'failed' : busy ? 'processing' : 'completed',
         chunkCount: files.reduce((sum, file) => sum + file.chunkCount, 0),
       }
@@ -799,6 +843,146 @@ export class KnowledgeBaseService extends TypertRemoteService {
       // A directory without readable settings is not a knowledge base.
       return undefined
     }
+  }
+
+  /** The signed-in tenant's knowledge bases as the sync uploads them. */
+  private syncSnapshot(): { tenantId: string | null; bases: LocalBase[] } {
+    const bases = [...this.bases.values()].map((base): LocalBase => {
+      const { id, name, embeddingModelId, createdAt } = base.settings
+      const { chunkStrategy, chunkSeparator, chunkSize, chunkOverlap, documentCount, threshold } = base.settings
+      return {
+        id, name, embeddingModelId, createdAt,
+        settings: { chunkStrategy, chunkSeparator, chunkSize, chunkOverlap, documentCount, threshold },
+        items: base.store.items().map(row => ({ row, copy: row.kind === 'folder' ? null : this.copyPath(base, row) })),
+      }
+    })
+    return { tenantId: this.tenantId, bases }
+  }
+
+  /** Whether pulled items of a knowledge base process on their own: only for the local model, which costs nothing. */
+  private processesOnItsOwn(modelId: string): boolean {
+    return modelId === this.embedding?.local.id
+  }
+
+  /**
+   * Create or update a knowledge base pulled from another computer. A new embedding model drops the
+   * old chunks; its items process again for the local model, or wait for the user for an API model.
+   */
+  private async applyBase(tenantId: string, pulled: RemoteBase): Promise<boolean> {
+    if (this.tenantId !== tenantId) return false
+    const existing = this.bases.get(pulled.id)
+    const dimensions = await this.offeredDimensions(pulled.embeddingModelId).catch(() => null)
+    const own = this.processesOnItsOwn(pulled.embeddingModelId)
+    if (existing === undefined) {
+      const dir = join(this.root, tenantId, pulled.id)
+      const settings: BaseSettings = {
+        version: 1, id: pulled.id, name: pulled.name, embeddingModelId: pulled.embeddingModelId, dimensions, ...pulled.settings,
+        rebuilding: false, createdAt: pulled.createdAt,
+      }
+      await mkdir(join(dir, 'files'), { recursive: true })
+      await this.writeSettings(dir, settings)
+      this.bases.set(pulled.id, { dir, settings, store: new BaseStore(join(dir, 'index.sqlite')) })
+      this.bases = new Map([...this.bases].sort(([, a], [, b]) => a.settings.createdAt.localeCompare(b.settings.createdAt)))
+    } else {
+      const modelChanged = pulled.embeddingModelId !== existing.settings.embeddingModelId
+      if (modelChanged) await this.stopJob(job => job.baseId === pulled.id)
+      const rebuilding = modelChanged ? own && existing.store.items().length > 0 : existing.settings.rebuilding
+      const settings: BaseSettings = {
+        ...existing.settings, ...pulled.settings, name: pulled.name, embeddingModelId: pulled.embeddingModelId,
+        dimensions: modelChanged ? dimensions : existing.settings.dimensions, rebuilding,
+      }
+      await this.writeSettings(existing.dir, settings)
+      if (modelChanged) {
+        existing.store.requeueAll(true)
+        if (!own) this.awaitUser(existing.store, existing.store.items())
+      }
+      existing.settings = settings
+    }
+    this.changed()
+    this.kick()
+    return true
+  }
+
+  /** Leave items for the user to process, as pulled ones of an API embedding model are. */
+  private awaitUser(store: BaseStore, items: readonly ItemRow[]): void {
+    for (const item of items) if (item.kind !== 'folder') store.setStatus(item.id, 'failed', 'synced')
+  }
+
+  /** Create or update an item pulled from another computer, with its copy; it is processed here again. */
+  private async applyItem(tenantId: string, pulled: RemoteItem, content: Uint8Array | null): Promise<boolean> {
+    if (this.tenantId !== tenantId) return false
+    const base = this.bases.get(pulled.baseId)
+    if (base === undefined) return false
+    const items = base.store.items()
+    if (pulled.parentId !== null && !items.some(item => item.id === pulled.parentId && item.kind === 'folder')) return false
+    const existing = items.find(item => item.id === pulled.id)
+    if (existing !== undefined && existing.kind !== pulled.kind) return false
+    // The same content again (the other computer uploaded it anew): its chunks stay as they are.
+    if (existing !== undefined && await this.unchanged(base, existing, pulled, content)) return true
+    if (pulled.kind !== 'folder') {
+      await this.stopJob(job => job.itemId === pulled.id)
+      const copy = this.copyPath(base, pulled)
+      // A renamed file may change its copy's extension.
+      if (existing !== undefined && this.copyPath(base, existing) !== copy) await rm(this.copyPath(base, existing), { force: true })
+      if (content !== null) await writeFile(copy, content)
+      if (pulled.kind === 'url' && content !== null) this.pulledPages.add(pulled.id)
+    }
+    const fields = { name: pulled.name, source: pulled.source, size: pulled.size }
+    if (existing === undefined) {
+      base.store.addItem({
+        id: pulled.id, kind: pulled.kind, parentId: pulled.parentId, ...fields, addedAt: pulled.addedAt, chunkCount: 0,
+        status: pulled.kind === 'folder' ? 'completed' : 'pending', error: null,
+      })
+    } else {
+      base.store.updateItem(pulled.id, fields)
+      if (pulled.kind !== 'folder') base.store.setStatus(pulled.id, 'pending', null)
+    }
+    if (pulled.kind !== 'folder' && !this.processesOnItsOwn(base.settings.embeddingModelId)) {
+      this.awaitUser(base.store, base.store.items().filter(item => item.id === pulled.id))
+    }
+    this.changed()
+    this.kick()
+    return true
+  }
+
+  /** Whether a pulled item matches the stored one: its fields and its copy's bytes. */
+  private async unchanged(base: OpenBase, existing: ItemRow, pulled: RemoteItem, content: Uint8Array | null): Promise<boolean> {
+    const same = existing.name === pulled.name && existing.source === pulled.source && existing.size === pulled.size
+    if (!same || existing.parentId !== pulled.parentId) return false
+    if (content === null) return true
+    const copy = await readFile(this.copyPath(base, existing)).catch(() => undefined)
+    return copy !== undefined && Buffer.compare(copy, content) === 0
+  }
+
+  /** Delete a knowledge base another computer deleted. */
+  private async removePulledBase(tenantId: string, baseId: string): Promise<void> {
+    const base = this.tenantId === tenantId ? this.bases.get(baseId) : undefined
+    if (base !== undefined) await this.dropBase(baseId, base)
+  }
+
+  /** Delete an item another computer deleted, a folder with its files. */
+  private async removePulledItem(tenantId: string, baseId: string, itemId: string): Promise<void> {
+    const base = this.tenantId === tenantId ? this.bases.get(baseId) : undefined
+    const item = base?.store.items().find(entry => entry.id === itemId)
+    if (base !== undefined && item !== undefined) await this.dropItem(base, item)
+  }
+
+  /** Delete an item, a folder with its files, and end a rebuild it was the last one of. */
+  private async dropItem(base: OpenBase, item: ItemRow): Promise<void> {
+    for (const gone of [...base.store.items().filter(entry => entry.parentId === item.id), item]) await this.removeItem(base, gone)
+    await this.settle(base)
+    this.changed()
+    this.kick()
+  }
+
+  /** Close and delete a knowledge base with its files and index. */
+  private async dropBase(id: string, base: OpenBase): Promise<void> {
+    await this.stopJob(job => job.baseId === id)
+    base.store.close()
+    this.bases.delete(id)
+    await rm(base.dir, { recursive: true, force: true })
+    this.changed()
+    this.kick()
   }
 
   private closeBases(): void {
@@ -886,7 +1070,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
     this.job = job
     const signal = AbortSignal.any([controller.signal, this.lifetime.signal])
     base.store.setStatus(itemId, 'processing', null)
-    this.changed()
+    this.changed(false)
     const fail = (error: KnowledgeItemError, detail: unknown): void => {
       console.info('[knowledge-base] item failed', { error, detail: String(detail) })
       base.store.setStatus(itemId, 'failed', error)
@@ -903,7 +1087,8 @@ export class KnowledgeBaseService extends TypertRemoteService {
       }
     } finally {
       this.job = undefined
-      this.changed()
+      // Fetching a page renames it and replaces its copy.
+      this.changed(item.kind === 'url')
       void this.serialized(() => this.settle(base)).catch((error: unknown) => {
         // The rebuild stays on; the next item finished or deleted, or the next activation of this tenant, tries again.
         console.warn('[knowledge-base] could not end a rebuild', { error: String(error) })
@@ -918,7 +1103,7 @@ export class KnowledgeBaseService extends TypertRemoteService {
     const settings = { ...base.settings, rebuilding: false }
     await this.writeSettings(base.dir, settings)
     base.settings = settings
-    this.changed()
+    this.changed(false)
   }
 
   /** Read, chunk, embed, and index one item; expected failures are recorded through `fail`. */
@@ -928,7 +1113,9 @@ export class KnowledgeBaseService extends TypertRemoteService {
   ): Promise<void> {
     const itemId = item.id
     // A page that cannot be fetched again is indexed from its last fetched copy, then marked failed.
-    const unfetched = item.kind === 'url' ? await this.fetchPage(base, item, signal) : undefined
+    // A page pulled with its copy is indexed from it, not fetched again, so computers do not trade newer copies of a changing page.
+    const fetch = item.kind === 'url' && !this.pulledPages.delete(itemId)
+    const unfetched = fetch ? await this.fetchPage(base, item, signal) : undefined
     let text: string
     try {
       text = await readDocument(this.copyPath(base, item), { maxWorkbookRows: this.config.maxWorkbookRows })

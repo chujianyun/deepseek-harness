@@ -16,6 +16,7 @@ import type {
   InboxWireState,
 } from '@deepseek-ai/dsh-agent'
 import { z } from 'zod'
+import { adoptLegacyPluginSources } from './legacy-plugin-source.ts'
 
 /** Wire validation for pending agent input reconstructed from durable inbox splices. */
 export const inboxProjectionSchema = z.object({
@@ -170,7 +171,7 @@ export class ReactLoopInbox implements InboxContract {
     deleteCount: number,
     inserted: UserMessage[],
   ): UserMessage[] {
-    return this.mutate(target, start, deleteCount, inserted, true)
+    return this.mutate(target, start, deleteCount, adoptLegacyPluginSources(inserted), true)
   }
 
   /** Locate one pending identity across both owned lists. */

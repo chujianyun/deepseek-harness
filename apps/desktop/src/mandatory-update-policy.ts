@@ -32,6 +32,14 @@ export interface DesktopPolicyState {
   readonly error?: 'unavailable' | 'authentication-required'
   /** Newer release the Hub offers without forcing it; only a no-force success carries one. */
   readonly available?: DesktopAvailableRelease
+  /** Release a mandatory decision requires, when the Hub names it; its installers allow in-app update. */
+  readonly required?: DesktopRequiredRelease
+}
+
+/** The version a mandatory decision requires and its installers for this platform and architecture. */
+export interface DesktopRequiredRelease {
+  readonly version: string
+  readonly packages: readonly DesktopUpdatePackage[]
 }
 
 /** A newer release offered for manual download. */
@@ -40,6 +48,16 @@ export interface DesktopAvailableRelease {
   /** Allowed download page. */
   readonly page: string
   readonly detail?: string
+  /** Installers of this platform and architecture for in-app update; empty means the page is the only way. */
+  readonly packages: readonly DesktopUpdatePackage[]
+}
+
+/** One installer the Hub serves for in-app update, verified by size and SHA-256 after download. */
+export interface DesktopUpdatePackage {
+  readonly kind: 'exe' | 'zip' | 'dmg'
+  readonly url: string
+  readonly sha256: string
+  readonly size: number
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -119,13 +137,37 @@ function text(value: unknown, limit: number): string | undefined {
   return typeof value === 'string' && value.trim() !== '' && value.length <= limit ? value : undefined
 }
 
+/**
+ * Keep only well-formed installers served from an allowed download origin or the policy origin itself.
+ * @param value - Hub-provided package list; malformed entries are dropped individually.
+ * @param config - Deployment origins; a loopback policy origin is permitted only in explicit development.
+ * @returns Installers in Hub order.
+ */
+function parsePackages(value: unknown, config: DesktopPolicyConfig): DesktopUpdatePackage[] {
+  if (!Array.isArray(value)) return []
+  const origins = [...config.allowedPageOrigins, config.origin]
+  return value.flatMap((item): DesktopUpdatePackage[] => {
+    const entry = record(item)
+    const kind = entry?.kind
+    const sha256 = entry?.sha256
+    const size = entry?.size_bytes
+    let url: URL
+    try { url = new URL(String(entry?.url)) } catch { return [] }
+    if ((kind !== 'exe' && kind !== 'zip' && kind !== 'dmg') || typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(sha256)
+      || typeof size !== 'number' || !Number.isSafeInteger(size) || size <= 0
+      || url.username !== '' || url.password !== '' || !origins.includes(url.origin)
+      || (url.protocol !== 'https:' && url.origin !== config.origin)) return []
+    return [{ kind, url: url.href, sha256, size }]
+  })
+}
+
 function parseAvailable(value: unknown, current: string, config: DesktopPolicyConfig): DesktopAvailableRelease | undefined {
   const offer = record(value)
   const version = typeof offer?.version === 'string' ? valid(offer.version) : null
   const page = desktopPolicyPage(offer?.desktop_app_link, config.allowedPageOrigins)
   if (version === null || page === undefined || !gt(version, current)) return undefined
   const detail = text(offer?.detail, 16_384)
-  return { version, page, ...(detail === undefined ? {} : { detail }) }
+  return { version, page, ...(detail === undefined ? {} : { detail }), packages: parsePackages(offer?.packages, config) }
 }
 
 function parsePolicy(body: unknown, ok: boolean, config: DesktopPolicyConfig, current: string): DesktopPolicyState {
@@ -136,8 +178,11 @@ function parsePolicy(body: unknown, ok: boolean, config: DesktopPolicyConfig, cu
     const title = text(content?.title, 256)
     const detail = text(content?.detail, 16_384)
     const page = desktopPolicyPage(data?.desktop_app_link, config.allowedPageOrigins)
+    const version = typeof data?.version === 'string' ? valid(data.version) : null
+    const required = version !== null && gt(version, current) ? { version, packages: parsePackages(data?.packages, config) } : undefined
     return { blocking: true, checking: false,
-      ...(title === undefined ? {} : { title }), ...(detail === undefined ? {} : { detail }), ...(page === undefined ? {} : { page }) }
+      ...(title === undefined ? {} : { title }), ...(detail === undefined ? {} : { detail }), ...(page === undefined ? {} : { page }),
+      ...(required === undefined ? {} : { required }) }
   }
   if (ok && root?.code === 0 && data?.biz_code === 0 && data.biz_data === null) {
     const available = parseAvailable(data.available, current, config)

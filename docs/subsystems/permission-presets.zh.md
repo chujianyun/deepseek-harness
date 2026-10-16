@@ -70,7 +70,7 @@ interface PresetOption {
 
 ## 切换与 `permission/preset` 事件
 
-`set(session, name)` 解析预设（未知名称抛出异常），在适用时运行 Auto 准入，在 `name` 尚不是生效预设时追加一条仅记日志的 `permission/preset` 事件，然后通过各旋钮自己的 setter（[dsh-sandbox-policy](../../packages/sandbox/sandbox-policy) 的 `setSandboxMode` 与 [dsh-user-approval](../../packages/interaction/user-approval) 的 `setApprovalPolicy`）写入，且仅当该 knob 的生效值发生变化时才写。同一轮次内，选择事件先于旋钮事件出现；重新选择当前生效的预设则什么都不追加。
+`set(session, name)` 解析预设（未知名称抛出异常），在适用时运行 Auto 准入，在 `name` 尚不是生效预设时追加一条仅记日志的 `permission/preset` 事件，然后通过各旋钮自己的 setter（[dsh-sandbox-policy](../../packages/sandbox/sandbox-policy) 的 `setSandboxMode` 与 [dsh-user-approval](../../packages/interaction/user-approval) 的 `setApprovalPolicy`）写入，且仅当该 knob 的生效值发生变化时才写。同一轮次内，选择事件先于旋钮事件出现；重新选择当前生效的预设则什么都不追加。`set()` 不改变之后会话的默认值；`/permission <预设>` 命令（来自任何客户端）还会通过设置服务把配置预设保存为 `defaultPreset`，保存逐个进行，因此之后的会话从最近一次切换开始。
 
 `permission/preset` 是持久、仅记日志的用户意图：它不进入模型 transcript（文本记录），模型可见的后果由 knob 事件经各自消费方承担；它存在是为了在两个预设共享同一个旋钮组合时，让 `current()` 仍能保住用户选择的究竟是哪一个预设。`permissions` 投影把该选择与两个 knob 事件一同折叠，并保留用于区分空恢复 seed 与新会话的 `session/end-seed` 边界；回放不需要任何追赶状态或原始日志重扫。恢复的 `auto` 选择在 agent 发布前必须存在 live Auto 注册。完整事件声明见[持久化日志事件目录](../persistence-catalog.zh.md)；方法签名见生成的[服务目录](#ctxpermissionpresets--permissionpresetservice)。
 
@@ -133,7 +133,8 @@ optionOf(name: string): PresetOption
 
 /**
  * Record a changed preset, then update each changed knob through its own
- * setter. Selecting the effective preset again appends nothing.
+ * setter. Selecting the effective preset again appends nothing. The default
+ * of later sessions stays; only the user's `/permission` switch changes it.
  * @param session - the session the switch belongs to.
  * @param name - the preset to switch to; unknown names throw.
  */

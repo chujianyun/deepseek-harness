@@ -20,11 +20,14 @@ import type { FieldCheck } from './draft.ts'
 import { EXIT, SkillError } from './errors.ts'
 import { readImage } from './images.ts'
 import type { Page } from './page.ts'
+import type { PublishRules } from './publish-rules.ts'
 import {
-  categoryById, childCategories, createSession, pddRules, predictCategories, readLimits, readTemplate, searchCategories, setCategory,
+  categoryById, childCategories, createSession, MEDICAL_DEVICE_IMAGE, pddRules, predictCategories, readLimits, readTemplate,
+  searchCategories, setCategory,
 } from './pdd-category.ts'
 import {
-  buildGoods, extraPrices, listDrafts, listGoods, readSession, saveDraft, specIdFor, uploadPddImage, type DraftRow,
+  buildGoods, carouselFiles, certificateFile, extraPrices, fileWhiteImage, listDrafts, listGoods, readSession, saveDraft, specIdFor,
+  uploadPddImage, type DraftRow,
 } from './pdd-publish.ts'
 import { openPdd, PDD_GOODS_URL, PddRefusal } from './pdd.ts'
 import { readStoreRules, runDraftStore, type CategoryFinder, type DraftStore } from './draft-store-cli.ts'
@@ -89,7 +92,7 @@ const save: DraftStore['save'] = async (page, account, draft, options, deps) => 
   const rules = await readStoreRules(options.rules as string, STORE)
   const checks = (draft.checks ?? []) as FieldCheck[]
   const prices = extraPrices(checks, draft.skus.map(sku => sku.price))
-  const reasons = saveBlockers(draft, rules, options, prices)
+  const reasons = [...saveBlockers(draft, rules, options, prices), ...certificateProblems(draft, rules, checks)]
   if (reasons.length > 0 || 'problems' in prices) throw unready(reasons, '草稿箱')
   const { title, recordPath, records, record } = await saveContext(options, account, draft, rules.catId)
   const found = await alreadySaved(page, records, title)
@@ -114,10 +117,15 @@ const save: DraftStore['save'] = async (page, account, draft, options, deps) => 
     session = await createSession(page)
     await setCategory(page, session, rules.catId)
     const template = await readTemplate(page, rules.catId)
-    const images = await uploadAll(page, draft, progress)
+    const images = await uploadAll(page, draft, checks, progress)
     const specs: Record<string, number> = {}
     for (const sku of draft.skus) specs[sku.name] = await specIdFor(page, rules.catId, sku.name)
     const detail = await readSession(page, session)
+    const white = draft.images.white[0]
+    if (white !== undefined) {
+      progress('登记白底图')
+      await fileWhiteImage(page, session.goodsId, detail.cat_ids, images[white] as string)
+    }
     form = buildGoods(detail, { draft, checks, rules, template, session, images, specs, prices, stock: options.stock ?? 0 })
   } catch (error) {
     // Nothing was saved yet.
@@ -156,10 +164,39 @@ async function draftListed(page: Page, draftId: string): Promise<boolean> {
   return page.waitFor(async () => (await listDrafts(page, 50)).some((row: DraftRow) => row.draftId === draftId), 30_000)
 }
 
-/** Upload every image the form uses: up to 10 carousel images, the detail images, and the SKU images. */
-async function uploadAll(page: Page, draft: DraftFile, progress: (step: string) => void): Promise<Record<string, string>> {
+/**
+ * Why the registration certificate cannot be saved: rules that ask for it with a draft checked without it,
+ * a path that is not one of the material folder's images, or an image also sorted into the carousel or the detail.
+ */
+function certificateProblems(draft: DraftFile, rules: PublishRules, checks: readonly FieldCheck[]): string[] {
+  const asked = rules.fields.some(field => field.key === MEDICAL_DEVICE_IMAGE.key)
+  if (asked && !checks.some(check => check.key === MEDICAL_DEVICE_IMAGE.key)) {
+    return ['草稿不是按这份字段规则检查的（没有医疗器械注册证/器械备案凭证一项），请用这份字段规则重新整理素材']
+  }
+  const file = certificateFile(checks)
+  if (file === undefined) return []
+  if (!Object.values(draft.images).some(files => files.includes(file))) {
+    return [`${MEDICAL_DEVICE_IMAGE.label}写的「${file}」不是素材文件夹里的图片，请写素材里注册证图片的路径`]
+  }
+  if ([...draft.images.main, ...draft.images.main34, ...draft.images.detail].includes(file)) {
+    return [`注册证图片「${file}」也归在了轮播图或详情图里，请在答案的 images 里把它改成 other`]
+  }
+  return []
+}
+
+/**
+ * Upload every image the form uses: up to 10 carousel images, the white-background image, the detail
+ * images, the registration certificate image, and the SKU images.
+ */
+async function uploadAll(
+  page: Page, draft: DraftFile, checks: readonly FieldCheck[], progress: (step: string) => void,
+): Promise<Record<string, string>> {
   const skuImages = draft.skus.flatMap(sku => sku.image === undefined ? [] : [sku.image])
-  const files = new Set([...draft.images.main.slice(0, 10), ...draft.images.detail, ...skuImages])
+  const certificate = certificateFile(checks)
+  const files = new Set([
+    ...carouselFiles(draft), ...draft.images.white.slice(0, 1), ...draft.images.detail,
+    ...certificate === undefined ? [] : [certificate], ...skuImages,
+  ])
   progress(`上传 ${String(files.size)} 张图片`)
   const images: Record<string, string> = {}
   for (const file of files) {

@@ -26,6 +26,10 @@ import { changeStream } from '@deepseek-ai/dsh-change-stream'
 
 export type * from './types.ts'
 export { followTenant, type TenantSource } from './follow.ts'
+export {
+  refuseSync, syncAccountOf, syncDeviceName, SyncNotAllowed, SyncPasses, SyncRecordFile, SyncRetryLater, SyncSignIn, withEntry,
+  type SyncHub,
+} from './sync.ts'
 export { userCenterRefusal, type UserCenterRefusal } from './refusal.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -64,7 +68,7 @@ export interface Config {
 export const Config: Schema<Config> = Schema.object({
   origin: Schema.string().required(),
   clientId: Schema.string().required(),
-  scope: Schema.string().default('profile skills:read skills:write'),
+  scope: Schema.string().default('profile skills:read skills:write connectors:use'),
   allowLoopbackHttp: Schema.boolean().default(false),
   requestTimeoutMs: Schema.number().min(1).max(120_000).default(15_000),
   attemptTimeoutMs: Schema.number().min(1).max(3_600_000).default(600_000),

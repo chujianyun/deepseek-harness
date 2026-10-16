@@ -18,7 +18,6 @@ const OPTIONS: TaskFormOptions = {
     { value: 'read-only', label: '只读（管理员命名）' },
   ],
   defaultPermission: 'workspace-write',
-  connectors: ['feishu', 'other'],
 }
 const RECORD = { id: 'schedule-1', kind: 'daily', title: '店铺日报', prompt: '导出', time: '09:00:00.000', timeZone: 'UTC', scheduledAt: '2026-10-11T09:00:00.000Z' }
 
@@ -54,7 +53,7 @@ const field = (name: string) => screen.getByLabelText<HTMLInputElement & HTMLSel
 const fill = (name: string, value: string) => { fireEvent.change(field(name), { target: { value } }) }
 
 describe('the Add automation task form', () => {
-  it('loads, then saves a daily task with the chosen assistant, model, permission, and connector, and hands it to the page', async () => {
+  it('loads, then saves a daily task with the chosen assistant, model, and permission, and hands it to the page', async () => {
     const h = mount()
     expect(screen.getByRole('status').textContent).toBe(zh.loading)
     await screen.findByRole('form', { name: zh['breadcrumb.current'] })
@@ -84,14 +83,13 @@ describe('the Add automation task form', () => {
     fill(zh['field.permission'], 'danger-full-access')
     fireEvent.click(within(screen.getByRole('dialog')).getByLabelText(zh['risk.acknowledge']))
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh['risk.confirm'] }))
-    fireEvent.click(screen.getByLabelText(zh['connector.feishu']))
     fill(zh['field.operations'], 'lark-cli sheets +write\ndsh-ecommerce browser')
     fill(zh['time.label'], '08:30')
     fill(zh['window.end'], '2026-12-31')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['action.save'] })) })
     expect(h.onCreate).toHaveBeenCalledWith({
       title: '店铺日报', prompt: '导出昨日日报', workspaceId: 'ws-2', assistantId: 'a-shop', model: { provider: 'deepseek', model: 'v4' },
-      permission: 'danger-full-access', connectors: ['feishu'], operations: ['lark-cli sheets +write', 'dsh-ecommerce browser'],
+      permission: 'danger-full-access', operations: ['lark-cli sheets +write', 'dsh-ecommerce browser'],
       timing: { kind: 'daily', daily: { time: '08:30:00', time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone } },
       window: { end: '2026-12-31', time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone },
     })
@@ -186,17 +184,16 @@ describe('the Add automation task form', () => {
     expect(again.onDone).toHaveBeenCalledWith(undefined)
   })
 
-  it('dismisses the notice, and says so when no connector is connected', async () => {
-    mount({ copy: en, loaded: { ...OPTIONS, connectors: [], permissions: [] } })
+  it('dismisses the notice, and offers no permission select without presets', async () => {
+    mount({ copy: en, loaded: { ...OPTIONS, permissions: [] } })
     await screen.findByRole('form')
     expect(screen.getByRole('note').textContent).toContain(en['notice.text'])
     fireEvent.click(screen.getByRole('button', { name: en['notice.dismiss'] }))
     expect(screen.queryByRole('note')).toBeNull()
-    expect(screen.getByText(en['field.connectorsNone'])).toBeDefined()
     expect(screen.queryByLabelText(en['field.permission'])).toBeNull()
   })
 
-  it('fills the workspace once the list arrives and again after the chosen one goes, and unchecks a connector', async () => {
+  it('fills the workspace once the list arrives and again after the chosen one goes', async () => {
     const h = mount({ spaces: [] })
     await screen.findByRole('form')
     expect(field(zh['field.workspace']).value).toBe('')
@@ -205,12 +202,10 @@ describe('the Add automation task form', () => {
     fill(zh['field.workspace'], 'ws-8')
     act(() => { h.store.set({ ...h.store.getSnapshot(), items: [view('ws-9', '新工作区')] }) })
     await waitFor(() => { expect(field(zh['field.workspace']).value).toBe('ws-9') })
-    fireEvent.click(screen.getByLabelText('other'))
-    fireEvent.click(screen.getByLabelText('other'))
     fill(zh['field.title'], '日报')
     fill(zh['field.prompt'], '导出')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['action.save'] })) })
-    expect(h.onCreate.mock.calls[0]![0]).not.toHaveProperty('connectors')
+    expect(h.onCreate.mock.calls[0]![0]).toMatchObject({ workspaceId: 'ws-9' })
   })
 
   it('stops after the page has gone', async () => {

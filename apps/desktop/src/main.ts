@@ -2,6 +2,7 @@ import type { ProductEventMap, ProductEvent } from '@deepseek-ai/dsh-client-prod
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
+import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -61,6 +62,8 @@ import { DesktopUpdateOverlays } from './update-overlay.ts'
 import { DesktopQuitConfirmation } from './quit-confirmation.ts'
 import { DesktopTray } from './tray.ts'
 import { DesktopBackgroundNotice } from './background-notice.ts'
+import { HubUpdater, windowsInstaller } from './hub-updater.ts'
+import { macBundle, macInstaller, macPreparation, macReplaceable } from './mac-update.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
@@ -513,9 +516,15 @@ async function main(): Promise<void> {
     if (isMandatory()) { mandatoryUI?.sync(); return Promise.resolve() }
     let shown = updateErrors.get(state)
     if (shown === undefined) {
+      // A failed in-app transfer or installation can still be completed from the download page.
+      const page = state.failedOperation === 'check' ? undefined : mandatoryPolicy?.state.available?.page
       shown = ordinaryMessageBox({ type: 'error', title: locale.messages.updateFailedTitle,
         message: desktopUpdateErrorSummary(state, locale.messages),
-        technicalDetails: state.technicalDetails ?? state.message ?? '' }).then(() => {})
+        ...(page === undefined ? {} : {
+          buttons: [locale.messages.updateOpenDownloadPage, locale.messages.updateAcknowledge], defaultId: 1, cancelId: 1 }),
+        technicalDetails: state.technicalDetails ?? state.message ?? '' }).then(async (result) => {
+        if (page !== undefined && result.response === 0) await shell.openExternal(page).catch((error: unknown) => { console.error(error) })
+      })
       updateErrors.set(state, shown)
     }
     return shown
@@ -579,6 +588,29 @@ async function main(): Promise<void> {
     return startup
   }
 
+  // A signed build keeps its packaged feed. Unsigned builds carry none, so the user center's installers are
+  // the update source; development runs use them only with an explicit installer kind.
+  const signedFeed = app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml'))
+  // macOS replaces the running App from the ZIP; where it cannot (a mounted or translocated App, or a
+  // read-only folder) the user drags the disk image's App into place instead.
+  const developmentKind = app.isPackaged ? undefined : process.env.DSH_DESKTOP_IN_APP_UPDATE_KIND
+  const runningBundle = macBundle(process.execPath)
+  const updateKind = app.isPackaged
+    ? process.platform === 'win32' ? 'exe' : process.platform === 'darwin' ? (macReplaceable(runningBundle) ? 'zip' : 'dmg') : undefined
+    : developmentKind === 'exe' || developmentKind === 'zip' || developmentKind === 'dmg' ? developmentKind : undefined
+  const quitForUpdate = (): void => { app.quit() }
+  const hubUpdater = new HubUpdater({
+    offer: () => mandatoryPolicy?.state.blocking === true ? mandatoryPolicy.state.required : mandatoryPolicy?.state.available,
+    currentVersion: () => app.getVersion(),
+    kind: updateKind,
+    directory: join(app.getPath('userData'), 'updates'),
+    prepare: updateKind === 'zip' ? macPreparation(runningBundle) : file => Promise.resolve(file),
+    install: updateKind === 'zip' ? macInstaller(runningBundle, join(app.getPath('logs'), 'update-install.log'), quitForUpdate)
+      : windowsInstaller(quitForUpdate),
+    fetch: (input, init) => net.fetch(input instanceof URL ? input.href : input, init),
+    idleTimeoutMs: Number(process.env.DSH_DESKTOP_UPDATE_HTTP_IDLE_TIMEOUT_MS ?? 60_000),
+  })
+  void hubUpdater.clear().catch((error: unknown) => { console.error(error) })
   const updates = new DesktopUpdateCoordinator(
     publishUpdate,
     async () => {
@@ -593,7 +625,8 @@ async function main(): Promise<void> {
         type: active ? 'warning' : 'info', title: locale.messages.updateTitle,
         message: active ? locale.messages.updateActiveTasks : ready.message,
         detail: active ? locale.messages.updateActiveTasksDetail : ready.detail,
-        buttons: active ? [locale.messages.updateStopTasks, locale.messages.updateLater] : [locale.messages.installAndRestart],
+        buttons: active ? [locale.messages.updateStopTasks, locale.messages.updateLater]
+          : [locale.messages.installAndRestart, locale.messages.later],
         defaultId: 1, cancelId: 1,
       }
       if (isMandatory()) {
@@ -630,16 +663,44 @@ async function main(): Promise<void> {
       }
       return true
     },
-    undefined, undefined, undefined,
+    signedFeed ? undefined : hubUpdater,
+    // A mandatory decision installs in-app when it names the required release; a disk-image update needs the
+    // user's drag, which the mandatory window cannot ask for, so that case keeps the download page.
+    signedFeed ? undefined : () => hubUpdater.supported && mandatoryPolicy !== undefined && (!mandatoryPolicy.state.blocking
+      || (hubUpdater.kind !== 'dmg' && mandatoryPolicy.state.required?.packages.some(item => item.kind === hubUpdater.kind) === true)),
+    undefined,
     (success, reason) => { void track('desktop_upgrade_download_result', { is_success: success, ...reason === undefined ? {} : { error_reason: reason } }) },
 
   )
 
   const updateSchedule = new DesktopUpdateSchedule(updates, resolveDesktopUpdateScheduleConfig(process.env))
 
-  const downloadUpdate = async (version: string): Promise<DesktopUpdateState> => {
+  /** A disk-image update cannot replace the App itself: open the image and explain the drag into Applications. */
+  const installManually = async (version: string): Promise<void> => {
+    const result = await ordinaryMessageBox({ type: 'info', title: locale.messages.updateTitle,
+      message: formatDesktopMessage(locale.messages.updateManualInstallTitle, { version }),
+      detail: locale.messages.updateManualInstallDetail,
+      buttons: [locale.messages.updateOpenInstaller, locale.messages.later], defaultId: 0, cancelId: 1 })
+    const installer = hubUpdater.installer
+    if (result.response !== 0 || installer === undefined) return
+    const failure = await shell.openPath(installer)
+    if (failure !== '') { console.error(`desktop update: cannot open ${installer}: ${failure}`); return }
+    // The running App holds the single-instance lock and its bundle, so it quits before the drag.
+    app.quit()
+  }
+  const installUpdate = async (version: string): Promise<DesktopUpdateState> => {
+    if (signedFeed || hubUpdater.kind !== 'dmg') return updates.install(version)
+    await installManually(version)
+    return updates.state
+  }
+
+  const downloadUpdate = async (confirmed: string): Promise<DesktopUpdateState> => {
     void track('desktop_upgrade_click', {})
     updateJournal?.action('download-requested')
+    // The user-center offer can change between polls, including after a failed download, when automatic
+    // checks pause; checking first downloads the current target.
+    const checked = signedFeed ? undefined : await updates.check(true)
+    const version = checked?.phase === 'available' ? checked.version ?? confirmed : confirmed
     const state = await updates.download(version)
     if (state.phase !== 'ready' || quitting) return state
     // Only a completed user-driven download opens this prompt; cancelling installation does not reopen it.
@@ -648,7 +709,7 @@ async function main(): Promise<void> {
     if (!isMandatory()) await windowShown()
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- A quit can begin while the show is awaited.
     if (quitting) return state
-    return updates.install(version)
+    return installUpdate(version)
   }
   const windowShown = (): Promise<void> => new Promise((resolve) => {
     const window = currentDialogWindow()
@@ -759,6 +820,7 @@ async function main(): Promise<void> {
     if (current.id === locale.id) return
     locale = current
     platformView.notifyLocaleChanged()
+    mandatoryUI?.sync()
     windowsLanguage = locale.id
     refreshApplicationMenu()
   })
@@ -825,6 +887,10 @@ async function main(): Promise<void> {
           state = updates.hasUpdateSource ? await updateSchedule.check(true) : updates.state
           // Only an up-to-date result consults the policy's offered release, so only it waits for the policy.
           if (state.phase === 'idle') await policyCheck
+          // The in-app updater reads the offer from the policy, so a newly arrived offer needs another check.
+          if (state.phase === 'idle' && updates.hasUpdateSource && mandatoryPolicy?.state.available !== undefined) {
+            state = await updateSchedule.check(true)
+          }
         }
         if (isMandatory()) { mandatoryUI?.focus(); return }
         if (state.phase === 'error' && state.failedOperation === 'check') { await showUpdateFailure(state); return }
@@ -848,18 +914,21 @@ async function main(): Promise<void> {
         if (state.phase === 'ready' || (state.phase === 'error' && state.failedOperation === 'install')) {
           if (state.version !== undefined) {
             failedOperation = 'install'
-            await showUpdateFailure(await updates.install(state.version))
+            await showUpdateFailure(await installUpdate(state.version))
           }
           return
         }
         if (state.phase !== 'available' && !(state.phase === 'error' && state.failedOperation === 'download')) return
-        if (manual) {
-          const result = await ordinaryMessageBox({ title: locale.messages.updateCheckTitle,
-            message: formatDesktopMessage(locale.messages.updateAvailable, { version: state.version ?? '' }),
-            detail: locale.messages.updateDetail,
-            buttons: [locale.messages.updateDownload], cancelId: 1 })
-          if (result.response !== 0) return
-        }
+        controller?.abort()
+        const offer = mandatoryPolicy?.state.available
+        const result = await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
+          message: formatDesktopMessage(locale.messages.updateAvailable, { version: state.version ?? '' }),
+          detail: [offer?.version === state.version ? offer?.detail : undefined,
+            formatDesktopMessage(locale.messages.updateCurrentDetail, { version: desktopClientMetadata(locale.id).version }),
+            locale.messages.updateDetail]
+            .filter(line => line !== undefined).join('\n\n'),
+          buttons: [locale.messages.updateNow, locale.messages.later], defaultId: 0, cancelId: 1 })
+        if (result.response !== 0) return
         if (!isMandatory() && state.version !== undefined) {
           controller?.abort()
           failedOperation = 'download'
@@ -1315,6 +1384,7 @@ async function main(): Promise<void> {
     if (!['win32', 'darwin'].includes(process.platform) || !['x64', 'arm64'].includes(process.arch)) throw new Error('desktop policy: unsupported platform')
     let wasBlocking = false
     let wasOffered: string | undefined
+    let wasTarget: string | undefined
     mandatoryPolicy = new DesktopMandatoryUpdatePolicy(policyConfig, {
       platform: process.platform as 'win32' | 'darwin', arch: process.arch as 'x64' | 'arm64',
       bundledDshVersion: app.isPackaged ? readDesktopRuntime(resources.dsh).release.version : app.getVersion(),
@@ -1328,13 +1398,21 @@ async function main(): Promise<void> {
       const offered = state.blocking ? undefined : state.available?.version
       if (offered !== wasOffered) broadcastUpdatePresentation()
       wasOffered = offered
+      // The in-app updater reads its target from the policy, so a new, changed, or withdrawn target needs a check;
+      // a republished installer keeps the version but changes its checksum.
+      const release = state.blocking ? state.required : state.available
+      const target = release === undefined ? undefined : [release.version, ...release.packages.map(item => item.sha256)].join(' ')
+      if (target !== wasTarget && !signedFeed && hubUpdater.supported) {
+        void updateSchedule.check(false, true).catch((error: unknown) => { console.error(error) })
+      }
+      wasTarget = target
       if (state.blocking && !wasBlocking) void updateSchedule.check(false, true).catch((error: unknown) => { console.error(error) })
       wasBlocking = state.blocking
     }, policyAuth?.request, () => desktopClientMetadata(locale.id))
     const policy = mandatoryPolicy
     mandatoryUI = new DesktopMandatoryUpdateWindow({
       overlays: updateOverlays,
-      preload: fileURLToPath(new URL('./preload-mandatory.cjs', import.meta.url)), locale,
+      preload: fileURLToPath(new URL('./preload-mandatory.cjs', import.meta.url)), locale: () => locale,
       allowedPageOrigins: policyConfig.allowedPageOrigins, parent: () => mainWindow,
       policy: () => policy.state, update: () => updates.state, hasUpdateSource: () => updates.hasUpdateSource,
       refresh: async () => { await Promise.all([checkPolicyManually(), updateSchedule.check(true)]) },

@@ -34,8 +34,6 @@ export interface AssistantPackageTask {
   readonly timing: AssistantPackageTaskTiming
   /** IANA zone the timing is read in. */
   readonly timeZone: string
-  /** Connectors whose plain writes run without asking in the task's Session. */
-  readonly connectors: readonly string[]
   /** Permission preset of the task's Session; absent keeps the default. */
   readonly permission?: string
   /**

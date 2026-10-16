@@ -30,6 +30,7 @@ Each package README describes what you can do with its part of the family.
 | [`session-query-sqlite/`](session-query-sqlite/README.md) | Full-text search across session history backed by a SQLite FTS5 index | registers on `ctx.sessionQuery` |
 | [`session-log-export/`](session-log-export/README.md) | Web `/export` command and browser download of a session ZIP | `ctx.sessionLogDownload` (browser) |
 | [`session-share/`](session-share/README.md) | Share one Session with the user's company: a conversation snapshot uploaded to the user center, its link, and its withdrawal | `ctx.sessionShare` |
+| [`session-sync/`](session-sync/README.md) | Sync Sessions to the user center of the Hub sign-in: each conversation with its subagent Sessions and attachments, uploads after each turn, and deletions | `ctx.sessionSync` |
 | [`tool-session-query/`](tool-session-query/README.md) | Model-facing tools to search, trace, and read session history | registers on `ctx.tools` |
 
 -----

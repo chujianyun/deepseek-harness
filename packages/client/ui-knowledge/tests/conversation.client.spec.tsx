@@ -113,7 +113,7 @@ describe('KnowledgeCitationsCard', () => {
 
 describe('KnowledgePicker', () => {
   const base = (id: string, name: string, status: KnowledgeBaseView['status'] = 'ready'): KnowledgeBaseView => ({
-    id, name, embeddingModelId: 'local/q', embeddingModelName: 'Q', status, createdAt: '2026-10-05T00:00:00.000Z', dimensions: 4, items: [],
+    id, name, embeddingModelId: 'local/q', embeddingModelName: 'Q', modelMissing: false, status, createdAt: '2026-10-05T00:00:00.000Z', dimensions: 4, items: [],
     settings: { chunkStrategy: 'structured', chunkSeparator: '\\n\\n', chunkSize: 1024, chunkOverlap: 200, documentCount: 6, threshold: 0 },
   })
 

@@ -26,6 +26,8 @@ export interface BrandSettings {
   readonly defaultSessionGrouping?: string
   /** Idle Sessions each sidebar group shows before its overflow control. */
   readonly sessionsPerGroup?: number
+  /** Commands the composer's + menu leaves out; typing their names still runs them. */
+  readonly menuHiddenCommands?: readonly string[]
 }
 
 /** Props of the `conversation.hero.dock` quick-task occupant. */

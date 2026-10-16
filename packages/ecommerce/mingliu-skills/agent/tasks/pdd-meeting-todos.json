@@ -16,7 +16,6 @@
     "time": "17:00"
   },
   "timeZone": "Asia/Shanghai",
-  "connectors": [],
   "permission": "workspace-write",
   "operations": [
     "lark-cli base +record-batch-create"

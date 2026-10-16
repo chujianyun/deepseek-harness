@@ -24,6 +24,9 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../session/session-format-v3-to-v4"
+    },
+    {
       "path": "../../session/session-persistence"
     },
     {

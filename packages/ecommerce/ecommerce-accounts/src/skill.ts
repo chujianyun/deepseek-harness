@@ -4,7 +4,7 @@
 export const SKILL_NAME = 'ecommerce-accounts'
 
 /** The Skill's catalog description, which the model reads to decide when to load it. */
-export const SKILL_DESCRIPTION = 'Read store data with the e-commerce accounts (Tmall, Taobao, Pinduoduo, Douyin shop, Tmall Health Brand Yuntai) the user signed in to in DSH, '
+export const SKILL_DESCRIPTION = 'Read store data with the e-commerce accounts (Tmall, Taobao, Pinduoduo, Douyin shop, JD, Tmall Health Brand Yuntai) the user signed in to in DSH, '
   + 'through the dsh-ecommerce command: list the accounts, pick the merchant account, take over its signed-in Chrome, '
   + 'and read or save what the company confirmed while publishing (store information, categories, table headers, declarations).'
 
@@ -17,9 +17,9 @@ The user signs e-commerce accounts in to their platforms in DSH Settings → E-c
 
 Run them in the shell (bash; PowerShell on Windows):
 
-- \`dsh-ecommerce accounts\` prints the accounts as JSON: \`id\`, \`platform\` (\`tmall\`, \`taobao\`, \`pinduoduo\`, \`doudian\`, or \`yuntai\` for Tmall Health Brand Yuntai), \`store\` (merchant accounts), \`account\`, \`kind\` (\`merchant\` or \`buyer\`), and \`status\` (\`signed-in\`, \`signed-out\`, \`signing-in\`, \`checking\`, or \`check-failed\`); a buyer account also has \`pagesToday\` and \`pageLimit\`, and \`cooldownUntil\` while it rests.
+- \`dsh-ecommerce accounts\` prints the accounts as JSON: \`id\`, \`platform\` (\`tmall\`, \`taobao\`, \`pinduoduo\`, \`doudian\`, \`jd\`, or \`yuntai\` for Tmall Health Brand Yuntai), \`store\` (merchant accounts), \`account\`, \`kind\` (\`merchant\` or \`buyer\`), and \`status\` (\`signed-in\`, \`signed-out\`, \`signing-in\`, \`checking\`, or \`check-failed\`); a buyer account also has \`pagesToday\` and \`pageLimit\`, and \`cooldownUntil\` while it rests.
 - \`dsh-ecommerce browser <id>\` makes sure the account is signed in, checking with the platform unless a recent check found it signed in, reserves its browser for this shell call, and prints JSON with \`cdpUrl\`, the Chrome DevTools address of its signed-in Chrome. Connect to it in the same shell call, for example with Playwright's \`chromium.connectOverCDP(cdpUrl)\`; the reservation ends when the call ends. The browser runs minimized out of the user's sight: open a tab of your own in the background, close it when you are done, and never close the browser. With Playwright: \`const ctx = browser.contexts()[0]; const opened = ctx.waitForEvent('page'); await (await browser.newBrowserCDPSession()).send('Target.createTarget', { url: 'about:blank', background: true }); const page = await opened\`. Do not use \`newPage()\`: it brings the window to the front over the user's work.
-- \`dsh-ecommerce buyer [tmall|taobao]\` picks a buyer account for you — signed in, not resting, with the fewest pages opened today — and takes over its browser the same way; its JSON also has \`pagesLeft\`. If none can be used, it says why for each.
+- \`dsh-ecommerce buyer [tmall|taobao|jd]\` (or several platforms, comma-separated, such as \`tmall,taobao\`) picks a buyer account for you — signed in, not resting, with the fewest pages opened today — and takes over its browser the same way; its JSON also has \`pagesLeft\`. If none can be used, it says why for each.
 
 ## Publishing memory
 

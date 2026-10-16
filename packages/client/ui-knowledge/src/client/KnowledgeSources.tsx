@@ -71,8 +71,10 @@ export function KnowledgeSources(props: SourceProps) {
 function StatusCell({ t, item }: { t: T; item: KnowledgeItemView }) {
   return (
     <td>
-      <Tag tone={STATUS_TONE[item.status]}>{t(`status.${item.status}`)}</Tag>
-      {item.error !== null && <span className={css.itemError}>{t(`error.${item.error}`)}</span>}
+      {item.error === 'synced'
+        // Pulled for an API model: waiting for the user, not failed.
+        ? <><Tag tone="neutral">{t('status.pending')}</Tag><span className={css.itemNote}>{t('error.synced')}</span></>
+        : <><Tag tone={STATUS_TONE[item.status]}>{t(`status.${item.status}`)}</Tag>{item.error !== null && <span className={css.itemError}>{t(`error.${item.error}`)}</span>}</>}
     </td>
   )
 }
@@ -84,10 +86,13 @@ function RowActions(props: SourceProps & { item: KnowledgeItemView; children?: R
   const { t, base, item, useKnowledge, onReprocess, onDeleteItem, children } = props
   const busy = useKnowledge(snapshot => snapshot.busy)
   const settled = item.status === 'completed' || item.status === 'failed'
+  // A folder another computer added is scanned again only there.
+  const elsewhere = item.scannedOn
   return (
     <td className={css.rowActions} aria-label={t('itemActions', { name: item.name })}>
       {children}
-      {settled && <Button variant="ghost" disabled={busy} onClick={() => { void onReprocess(base.id, item.id) }}>{t('reprocess')}</Button>}
+      {elsewhere !== null && <span className={css.muted}>{t('scannedOn', { device: elsewhere })}</span>}
+      {settled && elsewhere === null && <Button variant="ghost" disabled={busy} onClick={() => { void onReprocess(base.id, item.id) }}>{t('reprocess')}</Button>}
       <Button variant="ghost" disabled={busy} onClick={() => { void onDeleteItem(base.id, item.id) }}>{t('deleteItem')}</Button>
     </td>
   )

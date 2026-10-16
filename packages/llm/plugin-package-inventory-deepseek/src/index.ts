@@ -59,13 +59,21 @@ function barePackageName(specifier: string): string | undefined {
   return first.startsWith('@') ? `${first}/${second}` : first
 }
 
-/** Read one manifest identity, optionally treating an absent name as a loose-module marker. */
-function identityFromManifest(path: string, allowAnonymous: boolean): DeepSeekPluginPackageIdentity | undefined {
+/**
+ * Read one manifest identity, optionally treating an absent name as a loose-module marker.
+ * A named package without a nonempty string version is omitted through `warn`, so a third-party package does not fail every request.
+ */
+function identityFromManifest(
+  path: string, allowAnonymous: boolean, warn: (message: string) => void,
+): DeepSeekPluginPackageIdentity | undefined {
   const manifest = JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
   if (allowAnonymous && manifest.name === undefined) return undefined
-  if (typeof manifest.name !== 'string' || manifest.name.length === 0
-    || typeof manifest.version !== 'string' || manifest.version.length === 0) {
-    throw new Error(`plugin-package-inventory-deepseek: ${path} must declare non-empty name and version`)
+  if (typeof manifest.name !== 'string' || manifest.name.length === 0) {
+    throw new Error(`plugin-package-inventory-deepseek: ${path} must declare a non-empty name`)
+  }
+  if (typeof manifest.version !== 'string' || manifest.version.length === 0) {
+    warn(`plugin-package-inventory-deepseek: ${path} declares no version; omitted from dsh_plugin_packages`)
+    return undefined
   }
   return { name: manifest.name, version: manifest.version }
 }
@@ -103,9 +111,12 @@ class PackageIdentityResolver {
   // TODO: Invalidate manifest identities if in-process package-version replacement becomes a supported upgrade path.
   private readonly cache = new Map<string, DeepSeekPluginPackageIdentity | undefined>()
 
+  private readonly unversioned = new Set<string>()
+
   constructor(
     private readonly hostBaseUrl: string,
     private readonly packages: Context['pluginPackages'] | undefined,
+    private readonly warn: (message: string) => void,
   ) {}
 
   /** Resolve one Loader entry's owning package, or absence for a non-package loose module. */
@@ -129,7 +140,12 @@ class PackageIdentityResolver {
         : new URL(moduleName, treeBase)
       if (moduleUrl.protocol === 'file:') manifest = nearestManifest(fileURLToPath(moduleUrl))
     }
-    const identity = manifest === undefined ? undefined : identityFromManifest(manifest, packageName === undefined)
+    const identity = manifest === undefined ? undefined : identityFromManifest(manifest, packageName === undefined, (message) => {
+      // Entries reaching one manifest through different anchors or subpaths warn once.
+      if (this.unversioned.has(manifest)) return
+      this.unversioned.add(manifest)
+      this.warn(message)
+    })
     this.cache.set(key, identity)
     return identity
   }
@@ -191,7 +207,7 @@ function collectActivePluginPackages(
 export function apply(ctx: Context, config: Config): void {
   if (config.enabled === false) return
   const hostBaseUrl = ctx.baseUrl ?? import.meta.url
-  const resolver = new PackageIdentityResolver(hostBaseUrl, ctx.get('pluginPackages'))
+  const resolver = new PackageIdentityResolver(hostBaseUrl, ctx.get('pluginPackages'), (message) => { ctx.logger.warn(message) })
   ctx.deepseekLlmApiExtensions.register('dsh_plugin_packages', {
     prepare: (request) => {
       const value: DeepSeekPluginPackageInventoryExtension = {

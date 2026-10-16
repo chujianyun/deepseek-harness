@@ -29,10 +29,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 }
 
 /**
- * An e-commerce platform DSH supports: Tmall, Taobao, Pinduoduo, Douyin shops (抖店), and Tmall Health
- * Brand Yuntai (健康品牌云台).
+ * An e-commerce platform DSH supports: Tmall, Taobao, Pinduoduo, Douyin shops (抖店), JD POP stores (京东),
+ * and Tmall Health Brand Yuntai (健康品牌云台).
  */
-export type EcommercePlatform = 'tmall' | 'taobao' | 'pinduoduo' | 'doudian' | 'yuntai'
+export type EcommercePlatform = 'tmall' | 'taobao' | 'pinduoduo' | 'doudian' | 'jd' | 'yuntai'
 
 /** A platform new items are published to; Yuntai is a back office with no items of its own. */
 export type PublishPlatform = Exclude<EcommercePlatform, 'yuntai'>

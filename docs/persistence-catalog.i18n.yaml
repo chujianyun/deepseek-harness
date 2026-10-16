@@ -93,8 +93,8 @@
   en: b25a2042e3adc414
   zh: b25a2042e3adc414
 /session-persistence-event-catalog/events/connectors/connectors-always-allowed-log-only:
-  en: 87aad687ccd91d3c
-  zh: 4ea4308161bfbdcd
+  en: 042ac898f4ec1427
+  zh: c70cf5b31ffefe24
 /session-persistence-event-catalog/events/connectors/connectors-session-allowed-log-only:
   en: 39488dfcd8138a96
   zh: 5fe657600c782490
@@ -168,8 +168,8 @@
   en: 19917bc5438e60af
   zh: 19917bc5438e60af
 /session-persistence-event-catalog/events/permission/permission-preset-log-only:
-  en: 41de5f6e1dad8620
-  zh: 92cb5d5e87a23405
+  en: dcfeed1fa023a4ed
+  zh: 27b67061de31eec1
 /session-persistence-event-catalog/events/plan:
   en: 4294f78d26ed985b
   zh: 4294f78d26ed985b
@@ -1341,8 +1341,8 @@
   en: 38211d71372021e4
   zh: c0305af81a67e285
 /session-persistence-event-catalog/resolved-persistence-types/string:
-  en: 81f46685c3851639
-  zh: 0c22bf43593f6e77
+  en: 5c361515a4bfd0e5
+  zh: 9dfc0faa5b66053a
 /session-persistence-event-catalog/resolved-persistence-types/string~2:
   en: 0089620bf4638263
   zh: 1922bef1713094bb
@@ -1413,8 +1413,8 @@
   en: 623c7ca3ddb37002
   zh: 12bc02769556c6ed
 /session-persistence-event-catalog/resolved-persistence-types/callid-commands:
-  en: b27e0424f5db0636
-  zh: 35f4b6b5f5e2e066
+  en: 9c2941747eb83afb
+  zh: 4c94c760adcc08db
 /session-persistence-event-catalog/resolved-persistence-types/callid-files-turn:
   en: 5f4d3f66ed86a14d
   zh: 7c729360fa1279e6
@@ -1833,8 +1833,8 @@
   en: 77a2e15c8413b18c
   zh: 91d39eed9dfd96d1
 /session-persistence-event-catalog/resolved-persistence-types/kind-user:
-  en: 1aeb3051c37530db
-  zh: 2f7b5d9f49affb98
+  en: f4f1a15f5f3634d1
+  zh: d4b55f30c2262957
 /session-persistence-event-catalog/resolved-persistence-types/kind-user-approval:
   en: a52d2dfbaf844127
   zh: 4c5306ca40f20873
@@ -1887,8 +1887,8 @@
   en: 00f1d435f82d2753
   zh: c2ab108ad2748a6c
 /session-persistence-event-catalog/resolved-persistence-types/preset:
-  en: f60ecbd156c6f063
-  zh: c9149679bbacff21
+  en: 84966186304f972f
+  zh: 8b994edb472b6eea
 /session-persistence-event-catalog/resolved-persistence-types/reason-turn:
   en: 168c2ac7db7371b4
   zh: f851223c95582eb9

@@ -15,10 +15,10 @@ import { CompanyPackages, PackageTasks, timingText } from '../src/client/Package
 afterEach(() => { cleanup() })
 
 const MANIFEST: AssistantPackageManifest = {
-  name: 'ops-report', displayName: '运营日报助手', description: '每天巡检与日报', version: '1.0.0', avatar: 'ocean', skills: ['ai-inspection'], connectors: ['feishu'],
+  name: 'ops-report', displayName: '运营日报助手', description: '每天巡检与日报', version: '1.0.0', avatar: 'ocean', skills: ['ai-inspection'],
   tasks: [
-    { id: 'inspection', title: '部门巡检', prompt: 'p', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '11:00' }, timeZone: 'Asia/Shanghai', connectors: ['feishu'] },
-    { id: 'report', title: '天猫日报', prompt: 'p', timing: { kind: 'cron', expression: '0 6 * * 1-5' }, timeZone: 'Asia/Shanghai', connectors: [] },
+    { id: 'inspection', title: '部门巡检', prompt: 'p', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '11:00' }, timeZone: 'Asia/Shanghai' },
+    { id: 'report', title: '天猫日报', prompt: 'p', timing: { kind: 'cron', expression: '0 6 * * 1-5' }, timeZone: 'Asia/Shanghai' },
   ],
 }
 

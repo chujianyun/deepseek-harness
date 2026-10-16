@@ -43,6 +43,33 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** How many installed Skills the status check asks the Hub about at once. */
+const STATUS_CHECK_CONCURRENCY = 4
+
+type TenantListField = 'disabledSkills' | 'uninstalledSkills' | 'withdrawnSkills'
+/** One of the profile's per-tenant lists, as `<tenantId>/<name>` keys. */
+type TenantList = Volatile<readonly string[]> | undefined
+
+/**
+ * Map items with at most `limit` calls running at once, keeping the input order.
+ * @param items - the inputs.
+ * @param limit - the largest number of calls in flight.
+ * @param map - the call for one item.
+ * @returns the results in input order.
+ */
+async function mapLimited<T, R>(items: readonly T[], limit: number, map: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = []
+  let next = 0
+  const worker = async (): Promise<void> => {
+    for (let index = next++; index < items.length; index = next++) results[index] = await map(items[index] as T)
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
+}
+
+/** Page size used when automatic install walks the market (the Hub's maximum). */
+const AUTO_INSTALL_PAGE_SIZE = 100
+
 /** Discovery source of Skills installed from the Skill Hub. */
 export const MARKET_SOURCE = 'market'
 /** After the user roots (400, 500) and before bundled Skills (600): project Skills still win in their project. */
@@ -61,6 +88,15 @@ export interface Config {
   dshHome?: string
   /** Market Skills switched off, as `<tenantId>/<name>`; edited live through `setDisabled()`. */
   disabledSkills?: Volatile<readonly string[]>
+  /** Market Skills the user uninstalled, as `<tenantId>/<name>`; auto-install leaves them out. Edited through `markUninstalled()`. */
+  uninstalledSkills?: Volatile<readonly string[]>
+  /**
+   * Market Skills the platform withdrew from their tenant, as `<tenantId>/<name>`; switched off until
+   * distributed again. Kept by the market.
+   */
+  withdrawnSkills?: Volatile<readonly string[]>
+  /** After each sign-in, install the Skills the Hub marks for automatic install and update them. */
+  autoInstall?: boolean
   /** Watch the tenant directory for changes made outside DSH. */
   watch?: boolean
   /** Largest Skill package accepted for install, in bytes. */
@@ -72,6 +108,12 @@ export const Config = Schema.object({
   dshHome: Schema.string(),
   disabledSkills: Schema.array(Schema.string()).default([]).volatile()
     .description('Market Skills switched off, as `<tenantId>/<name>`. A switched-off Skill stays installed, but neither the model nor the user can invoke it.'),
+  uninstalledSkills: Schema.array(Schema.string()).default([]).volatile()
+    .description('Market Skills the user uninstalled, as `<tenantId>/<name>`. Automatic install does not bring them back; installing one by hand removes it from the list.'),
+  withdrawnSkills: Schema.array(Schema.string()).default([]).volatile()
+    .description('Market Skills the platform withdrew from their tenant, as `<tenantId>/<name>`. They stay installed but switched off until the Skill Hub offers them again; kept apart from `disabledSkills`, so the user\'s own switch survives.'),
+  autoInstall: Schema.boolean().default(true)
+    .description('After each sign-in, install the Skills the Skill Hub marks for automatic install, and update them when the local files are unedited.'),
   watch: Schema.boolean().default(true),
   maxPackageBytes: Schema.number().min(1).default(64 * 1024 * 1024),
 })
@@ -79,7 +121,11 @@ export const Config = Schema.object({
 const versionInfo = z.object({ version: z.string(), uploadedAt: z.string() })
 const category = z.object({ id: z.string(), name: z.string() }).nullable()
 // displayName: a Hub before T93 sends none, and the slug stands in for it
-const summary = z.object({ id: z.string(), name: z.string(), displayName: z.string().optional(), category, currentVersion: versionInfo })
+// autoInstall: a Hub before Spec #221 sends none, and nothing installs automatically
+const summary = z.object({
+  id: z.string(), name: z.string(), displayName: z.string().optional(), category, currentVersion: versionInfo,
+  autoInstall: z.boolean().optional(),
+})
 const page = z.object({ items: z.array(summary), total: z.number(), page: z.number(), pageSize: z.number() })
 const detail = summary.extend({
   description: z.string(),
@@ -130,7 +176,8 @@ async function localChanges(dir: string, installed: MarketInstallRecord | undefi
   for (const entry of entries) {
     if (!entry.isFile()) continue
     const path = relative(dir, join(entry.parentPath, entry.name)).split(sep).join('/')
-    if (path === INSTALL_RECORD) continue
+    // Junk the file manager or tools leave behind (.DS_Store, …) is not an edit.
+    if (path === INSTALL_RECORD || path.split('/').some(segment => IGNORED_NAMES.has(segment))) continue
     present.add(path)
     if (recorded.get(path) !== sha256(await readFile(join(dir, path)))) changed.add(path)
   }
@@ -298,9 +345,16 @@ export class SkillMarket extends TypertRemoteService {
   private readonly root: string
   private readonly maxPackageBytes: number
   private readonly disabledSkills: Volatile<readonly string[]> | undefined
+  private readonly uninstalledSkills: Volatile<readonly string[]> | undefined
+  private readonly withdrawnSkills: Volatile<readonly string[]> | undefined
+  private readonly autoInstallEnabled: boolean
   private readonly entryId: string | undefined
   private provider: MarketProvider | undefined
-  private disabledWrites: Promise<void> = Promise.resolve()
+  private settingsWrites: Promise<void> = Promise.resolve()
+  /** The running automatic install, aborted when the tenant changes or the service stops. */
+  private sync: AbortController | undefined
+  /** The last install of each `<tenantId>/<hubSkillId>`: installs of the same Skill run one at a time. */
+  private readonly installs = new Map<string, Promise<void>>()
   private readonly lifetime = new AbortController()
 
   /** @param ctx - Host with the skill registry and Hub sign-in. @param config - market options. */
@@ -310,13 +364,16 @@ export class SkillMarket extends TypertRemoteService {
     this.watch = config.watch ?? true
     this.maxPackageBytes = config.maxPackageBytes ?? 64 * 1024 * 1024
     this.disabledSkills = config.disabledSkills
+    this.uninstalledSkills = config.uninstalledSkills
+    this.withdrawnSkills = config.withdrawnSkills
+    this.autoInstallEnabled = config.autoInstall ?? true
     this.entryId = ctx.fiber.entry?.options.id
     ctx.skills.registerProvider((control) => {
       this.provider = new MarketProvider(ctx, this, control)
       return this.provider
     })
     ctx.on('loader/volatile-update', () => { this.provider?.invalidate() })
-    ctx.effect(() => () => { this.lifetime.abort() }, 'skill-market: tenant watch')
+    ctx.effect(() => () => { this.lifetime.abort(); this.sync?.abort() }, 'skill-market: tenant watch')
   }
 
   async [Service.init](): Promise<void> {
@@ -324,6 +381,7 @@ export class SkillMarket extends TypertRemoteService {
     await followTenant(this.ctx.hubAccount, this.lifetime.signal, () => this.tenantId ?? null, (tenantId) => {
       this.tenantId = tenantId ?? undefined
       this.provider?.invalidate()
+      this.startAutoInstall()
       return Promise.resolve()
     }, this.ctx.logger, 'skill-market')
   }
@@ -338,12 +396,23 @@ export class SkillMarket extends TypertRemoteService {
   }
 
   /**
-   * Whether the signed-in tenant switched this market Skill off.
+   * Whether this market Skill is closed for the signed-in tenant: the user switched it off
+   * (`disabledSkills`), or the platform withdrew it (`withdrawnSkills`, see `isWithdrawn`).
    * @param name - Skill name.
-   * @returns true when switched off.
+   * @returns true when closed.
    */
   isDisabled(name: string): boolean {
-    return this.tenantId !== undefined && (this.disabledSkills?.get() ?? []).includes(`${this.tenantId}/${name}`)
+    return this.tenantId !== undefined && (listed(this.disabledSkills, `${this.tenantId}/${name}`) || this.isWithdrawn(name))
+  }
+
+  /**
+   * Whether the platform withdrew this market Skill from the signed-in tenant; such a Skill stays
+   * installed but switched off, and the user cannot switch it on.
+   * @param name - Skill name.
+   * @returns true when withdrawn.
+   */
+  isWithdrawn(name: string): boolean {
+    return this.tenantId !== undefined && listed(this.withdrawnSkills, `${this.tenantId}/${name}`)
   }
 
   /**
@@ -354,16 +423,46 @@ export class SkillMarket extends TypertRemoteService {
    */
   setDisabled(name: string, disabled: boolean): Promise<void> {
     const tenantId = this.tenantId
-    if (tenantId === undefined) return Promise.reject(new RemoteError('hub-account/signed-out', 'sign in to the Skill Hub first', {}))
+    if (tenantId === undefined) return Promise.reject(signedOut())
+    return this.editTenantList('disabledSkills', this.disabledSkills, `${tenantId}/${name}`, disabled)
+  }
+
+  /**
+   * Record (or forget) that the user uninstalled a market Skill of the signed-in tenant, so automatic
+   * install leaves it out. The installed-skill Remote records it before moving the folder away, and
+   * forgets it again when the move fails; installing it by hand forgets it too.
+   * @param name - Skill name.
+   * @param uninstalled - whether the Skill is uninstalled; defaults to true.
+   * @throws when signed out, or when mounted without Settings or a profile entry.
+   */
+  markUninstalled(name: string, uninstalled: boolean = true): Promise<void> {
+    const tenantId = this.tenantId
+    if (tenantId === undefined) return Promise.reject(signedOut())
     const key = `${tenantId}/${name}`
-    const write = this.disabledWrites.then(async () => {
-      const current = this.disabledSkills?.get() ?? []
-      if (current.includes(key) === disabled) return
+    // An uninstalled Skill leaves no withdrawn mark behind; a later install starts from the Hub's answer.
+    const forgetWithdrawn = uninstalled ? this.editTenantKeys('withdrawnSkills', this.withdrawnSkills, [], [key]) : Promise.resolve()
+    return forgetWithdrawn.then(() => this.editTenantList('uninstalledSkills', this.uninstalledSkills, key, uninstalled))
+  }
+
+  /**
+   * Add or remove `<tenantId>/<name>` in one of the profile's per-tenant lists. Writes are queued so
+   * concurrent edits of either list never overwrite each other.
+   */
+  private editTenantList(field: TenantListField, list: TenantList, key: string, include: boolean): Promise<void> {
+    return include ? this.editTenantKeys(field, list, [key], []) : this.editTenantKeys(field, list, [], [key])
+  }
+
+  /** Add and remove several keys in one write (nothing is written when the list would not change). */
+  private editTenantKeys(field: TenantListField, list: TenantList, add: readonly string[], remove: readonly string[]): Promise<void> {
+    const write = this.settingsWrites.then(async () => {
+      const current = list?.get() ?? []
+      const next = [...new Set([...current.filter(item => !remove.includes(item)), ...add])].sort()
+      if (next.length === current.length && next.every(item => current.includes(item))) return
       const settings = this.ctx.get('settings')
-      if (settings === undefined || this.entryId === undefined) throw new Error('switching market Skills requires the settings service and a profile entry')
-      await settings.update(this.entryId, { disabledSkills: disabled ? [...current, key].sort() : current.filter(item => item !== key) })
+      if (settings === undefined || this.entryId === undefined) throw new Error('editing market Skill lists requires the settings service and a profile entry')
+      await settings.update(this.entryId, { [field]: next })
     })
-    this.disabledWrites = write.catch(() => {})
+    this.settingsWrites = write.catch(() => {})
     return write
   }
 
@@ -428,50 +527,154 @@ export class SkillMarket extends TypertRemoteService {
   @Remote
   async installSkill(id: string, options: MarketInstallOptions, signal: AbortSignal): Promise<MarketSkillCard> {
     const tenantId = this.tenantId
-    if (tenantId === undefined) throw new RemoteError('hub-account/signed-out', 'sign in to the Skill Hub first', {})
-    const value = await this.fetchDetail(id, signal)
-    if (!isSkillName(value.name)) throw invalid(`invalid Skill name ${JSON.stringify(value.name)}`)
-    if ((await this.customNames()).has(value.name)) {
-      throw new RemoteError('skill-market/name-conflict', `a Skill named "${value.name}" is already installed on this machine`, { name: value.name })
+    if (tenantId === undefined) throw signedOut()
+    const value = await this.install(tenantId, id, options, signal)
+    const key = `${tenantId}/${value.name}`
+    if (listed(this.uninstalledSkills, key)) {
+      // Installed by hand again: automatic install and update apply to it from now on. The Skill is
+      // installed already, so a failure to forget only stays in the log.
+      await this.editTenantList('uninstalledSkills', this.uninstalledSkills, key, false).catch((error: unknown) => {
+        this.ctx.logger.warn(`skill-market: "${value.name}" stays in uninstalledSkills: ${String(error)}`)
+      })
     }
-    const res = await this.hubRequest(`/api/client/skills/${encodeURIComponent(id)}/download`, signal)
-    const zip = new Uint8Array(await res.arrayBuffer())
-    if (zip.byteLength > this.maxPackageBytes) throw invalid('the package is too large')
-    const files = packageFiles(zip, value.name, this.maxPackageBytes)
-    const expected = new Map(value.files.map(file => [file.path, file.sha256]))
-    if (expected.size !== files.size || [...files].some(([path, data]) => expected.get(path) !== sha256(data))) {
-      throw invalid('the files do not match the published version')
-    }
-    const tenantDir = this.tenantDir(tenantId)
-    const target = join(tenantDir, value.name)
-    if (options.overwriteLocalChanges !== true && await exists(target)) {
-      const changed = await localChanges(target, (await this.records()).get(value.name))
-      if (changed.length > 0) {
-        throw new RemoteError('skill-market/local-changes', `local edits to "${value.name}" would be overwritten`, { name: value.name, files: changed })
-      }
-    }
-    await mkdir(tenantDir, { recursive: true })
-    const staging = await mkdtemp(join(tenantDir, '.installing-'))
-    try {
-      const skillDir = join(staging, value.name)
-      for (const [path, data] of files) {
-        await mkdir(dirname(join(skillDir, path)), { recursive: true })
-        await writeFile(join(skillDir, path), data)
-      }
-      const installRecord: MarketInstallRecord = {
-        hubSkillId: value.id, name: value.name, displayName: shownName(value.displayName, value.name),
-        version: value.currentVersion.version, installedAt: new Date().toISOString(),
-        files: [...files].map(([path, data]) => ({ path, sha256: sha256(data) }))
-          .sort((a, b) => Number(a.path > b.path) - Number(a.path < b.path)),
-      }
-      await writeFile(join(skillDir, INSTALL_RECORD), `${JSON.stringify(installRecord, null, 2)}\n`)
-      if (await exists(target)) await rename(target, join(staging, '.replaced'))
-      await rename(skillDir, target)
-    } finally {
-      await rm(staging, { recursive: true, force: true })
-    }
-    this.provider?.invalidate()
     return card(value, value.description, value.updatedAt, await this.records(), new Set())
+  }
+
+  /**
+   * Download, validate, and move one Hub Skill into `tenantId`'s directory (see installSkill). Installs
+   * of the same name run one at a time; nothing is written once the tenant moved on or the caller
+   * aborted.
+   */
+  private install(tenantId: string, id: string, options: MarketInstallOptions, signal: AbortSignal): Promise<z.infer<typeof detail>> {
+    const run = async (): Promise<z.infer<typeof detail>> => {
+      const value = await this.fetchDetail(id, signal)
+      if (!isSkillName(value.name)) throw invalid(`invalid Skill name ${JSON.stringify(value.name)}`)
+      if ((await this.customNames()).has(value.name)) {
+        throw new RemoteError('skill-market/name-conflict', `a Skill named "${value.name}" is already installed on this machine`, { name: value.name })
+      }
+      const tenantDir = this.tenantDir(tenantId)
+      const target = join(tenantDir, value.name)
+      // Before downloading: an edited copy is refused without fetching the package.
+      if (options.overwriteLocalChanges !== true && await exists(target)) {
+        const changed = await localChanges(target, (await this.records(tenantId)).get(value.name))
+        if (changed.length > 0) {
+          throw new RemoteError('skill-market/local-changes', `local edits to "${value.name}" would be overwritten`, { name: value.name, files: changed })
+        }
+      }
+      const res = await this.hubRequest(`/api/client/skills/${encodeURIComponent(id)}/download`, signal, id)
+      const zip = new Uint8Array(await res.arrayBuffer())
+      if (zip.byteLength > this.maxPackageBytes) throw invalid('the package is too large')
+      const files = packageFiles(zip, value.name, this.maxPackageBytes)
+      const expected = new Map(value.files.map(file => [file.path, file.sha256]))
+      if (expected.size !== files.size || [...files].some(([path, data]) => expected.get(path) !== sha256(data))) {
+        throw invalid('the files do not match the published version')
+      }
+      await mkdir(tenantDir, { recursive: true })
+      const staging = await mkdtemp(join(tenantDir, '.installing-'))
+      try {
+        const skillDir = join(staging, value.name)
+        for (const [path, data] of files) {
+          await mkdir(dirname(join(skillDir, path)), { recursive: true })
+          await writeFile(join(skillDir, path), data)
+        }
+        const installRecord: MarketInstallRecord = {
+          hubSkillId: value.id, name: value.name, displayName: shownName(value.displayName, value.name),
+          version: value.currentVersion.version, installedAt: new Date().toISOString(),
+          files: [...files].map(([path, data]) => ({ path, sha256: sha256(data) }))
+            .sort((a, b) => Number(a.path > b.path) - Number(a.path < b.path)),
+        }
+        await writeFile(join(skillDir, INSTALL_RECORD), `${JSON.stringify(installRecord, null, 2)}\n`)
+        // The Hub answered with whichever sign-in was current: write only while it is still this tenant's.
+        signal.throwIfAborted()
+        await this.assertTenant(tenantId)
+        if (await exists(target)) await rename(target, join(staging, '.replaced'))
+        await rename(skillDir, target)
+      } finally {
+        await rm(staging, { recursive: true, force: true })
+      }
+      this.provider?.invalidate()
+      // The Hub just handed this Skill out, so it is offered to the tenant again.
+      await this.recordWithdrawn(tenantId, [], [value.name])
+      return value
+    }
+    const lockKey = `${tenantId}/${id}`
+    const previous = this.installs.get(lockKey) ?? Promise.resolve()
+    const current = previous.then(run, run)
+    const settled = current.then(() => {}, () => {})
+    this.installs.set(lockKey, settled)
+    void settled.then(() => { if (this.installs.get(lockKey) === settled) this.installs.delete(lockKey) })
+    return current
+  }
+
+  /** Refuse when the sign-in no longer belongs to `tenantId` (the Hub token switches before the tenant watch hears of it). */
+  private async assertTenant(tenantId: string): Promise<void> {
+    if (this.tenantId !== tenantId || (await this.ctx.hubAccount.getState()).profile?.tenantId !== tenantId) {
+      throw new RemoteError('skill-market/tenant-changed', `the Skill Hub sign-in moved away from tenant ${tenantId}`, { tenantId })
+    }
+  }
+
+  /**
+   * After a sign-in: check the installed Skills (switching off withdrawn ones), then run the automatic
+   * install when it is on, replacing a run for an earlier tenant.
+   */
+  private startAutoInstall(): void {
+    this.sync?.abort()
+    this.sync = undefined
+    if (this.tenantId === undefined) return
+    const sync = new AbortController()
+    this.sync = sync
+    const tenantId = this.tenantId
+    const run = async () => {
+      await this.checkInstalled(tenantId, sync.signal)
+      if (this.autoInstallEnabled) await this.autoInstall(tenantId, sync.signal)
+    }
+    void run().catch((error: unknown) => {
+      // The next sign-in or start tries again; nothing here blocks using DSH.
+      this.ctx.logger.warn(`skill-market: automatic install for tenant ${tenantId} stopped: ${String(error)}`)
+    })
+  }
+
+  /**
+   * Install the Skills the Hub marks for automatic install that this employee sees, except those the
+   * user uninstalled, and update installed ones to a newer version. A Skill whose files the user
+   * edited, or whose name a Skill the user placed on this machine already uses, is left alone without
+   * downloading it; one Skill's failure does not stop the others.
+   * @param tenantId - tenant the run belongs to; a tenant switch aborts the run.
+   * @param signal - aborted when the tenant changes or the service stops.
+   * @returns the names installed or updated.
+   */
+  private async autoInstall(tenantId: string, signal: AbortSignal): Promise<readonly string[]> {
+    const marked: z.infer<typeof summary>[] = []
+    for (let pageNo = 1; ; pageNo += 1) {
+      // autoInstall=true lets the Hub send only marked Skills; a Hub before Spec #221 ignores it and sends no autoInstall field.
+      const value = page.parse(await this.hubJson(`/api/client/skills?autoInstall=true&page=${pageNo}&pageSize=${AUTO_INSTALL_PAGE_SIZE}`, signal))
+      if (value.items.some(item => item.autoInstall === undefined)) return []
+      marked.push(...value.items.filter(item => item.autoInstall === true))
+      if (pageNo * value.pageSize >= value.total || value.items.length === 0) break
+    }
+    await this.assertTenant(tenantId)
+    const [records, custom] = await Promise.all([this.records(tenantId), this.customNames()])
+    const done: string[] = []
+    for (const item of marked) {
+      signal.throwIfAborted()
+      if (listed(this.uninstalledSkills, `${tenantId}/${item.name}`) || custom.has(item.name)) continue
+      const local = records.get(item.name)
+      // A copy installed from another Hub Skill of the same name, or already current, stays untouched.
+      const current = local !== undefined
+        && (local.hubSkillId !== item.id || compareVersions(item.currentVersion.version, local.version) <= 0)
+      if (current) continue
+      try {
+        await this.install(tenantId, item.id, {}, signal)
+        done.push(item.name)
+      } catch (error: unknown) {
+        signal.throwIfAborted()
+        // Local edits keep the update notice in the installed list.
+        const code = (error as Partial<RemoteError>).code
+        if (code === 'skill-market/local-changes') this.ctx.logger.info(`skill-market: "${item.name}" has local edits; its update waits for the user`)
+        else this.ctx.logger.warn(`skill-market: automatic install of "${item.name}" failed: ${String(error)}`)
+      }
+    }
+    return done
   }
 
   /**
@@ -568,14 +771,25 @@ export class SkillMarket extends TypertRemoteService {
 
   /**
    * Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the
-   * Hub no longer shows the employee is `unavailable`; its local copy stays installed and usable.
+   * platform withdrew from the tenant is `withdrawn` and gets switched off (its files stay); one the
+   * Hub no longer shows the employee for another reason is `unavailable` and stays installed and usable.
    * @param signal - caller lifetime.
    * @returns one status per installed market Skill, sorted by name.
    */
   @Remote
   async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]> {
-    const installed = [...(await this.records()).values()].sort((a, b) => Number(a.name > b.name) - Number(a.name < b.name))
-    return Promise.all(installed.map(async (local): Promise<MarketInstalledStatus> => {
+    const tenantId = this.tenantId
+    if (tenantId === undefined) return []
+    return this.checkInstalled(tenantId, signal)
+  }
+
+  /**
+   * Ask the Hub about each installed market Skill of `tenantId`, and switch off the ones the platform
+   * withdrew (switching back on the ones it offers again). The user's own switch is a separate list.
+   */
+  private async checkInstalled(tenantId: string, signal: AbortSignal): Promise<readonly MarketInstalledStatus[]> {
+    const installed = [...(await this.records(tenantId)).values()].sort((a, b) => Number(a.name > b.name) - Number(a.name < b.name))
+    const statuses = await mapLimited(installed, STATUS_CHECK_CONCURRENCY, async (local): Promise<MarketInstalledStatus> => {
       const base = {
         name: local.name, displayName: shownName(local.displayName, local.name),
         hubSkillId: local.hubSkillId, installedVersion: local.version,
@@ -586,20 +800,41 @@ export class SkillMarket extends TypertRemoteService {
         return { ...base, displayName: shownName(hub.displayName, base.displayName), latestVersion: latest, state: compareVersions(latest, local.version) > 0 ? 'update' : 'current' }
       } catch (error: unknown) {
         if (signal.aborted) throw error
-        const notFound = error instanceof RemoteError && error.code === 'skill-market/not-found'
-        return { ...base, latestVersion: null, state: notFound ? 'unavailable' : 'unknown' }
+        const code = (error as Partial<RemoteError>).code
+        const state = code === 'skill-market/withdrawn' ? 'withdrawn' : code === 'skill-market/not-found' ? 'unavailable' : 'unknown'
+        return { ...base, latestVersion: null, state }
       }
-    }))
+    })
+    // Answers came under whichever sign-in was current: record them only while it is still this tenant's.
+    signal.throwIfAborted()
+    await this.assertTenant(tenantId)
+    // Only answers about the Skill change the list; an unreachable Hub leaves it as it was. A Skill
+    // deleted after its withdrawal (now unavailable) keeps working like any other unavailable one.
+    await this.recordWithdrawn(
+      tenantId,
+      statuses.filter(status => status.state === 'withdrawn').map(status => status.name),
+      statuses.filter(status => status.state !== 'withdrawn' && status.state !== 'unknown').map(status => status.name),
+    )
+    return statuses
+  }
+
+  /** Mark and clear withdrawn Skills of `tenantId` in one write; a failure to persist stays in the log, the next check tries again. */
+  private async recordWithdrawn(tenantId: string, withdrawn: readonly string[], offered: readonly string[]): Promise<void> {
+    const keys = (names: readonly string[]) => names.map(name => `${tenantId}/${name}`)
+    await this.editTenantKeys('withdrawnSkills', this.withdrawnSkills, keys(withdrawn), keys(offered)).catch((error: unknown) => {
+      this.ctx.logger.warn(`skill-market: could not update the withdrawn list: ${String(error)}`)
+    })
   }
 
   /**
-   * Install records of the signed-in tenant's market Skills, keyed by Skill name.
+   * Install records of a tenant's market Skills (the signed-in tenant's by default), keyed by Skill name.
+   * @param tenantId - the tenant whose directory to read.
    * @returns the readable records; a directory without one is not a market install.
    */
-  async records(): Promise<Map<string, MarketInstallRecord>> {
+  async records(tenantId: string | undefined = this.tenantId): Promise<Map<string, MarketInstallRecord>> {
     const records = new Map<string, MarketInstallRecord>()
-    if (this.tenantId === undefined) return records
-    const dir = this.tenantDir(this.tenantId)
+    if (tenantId === undefined) return records
+    const dir = this.tenantDir(tenantId)
     let names: string[]
     try { names = await readdir(dir) } catch { return records }
     for (const name of names) {
@@ -645,6 +880,7 @@ export class SkillMarket extends TypertRemoteService {
   private async hubRequest(path: string, signal: AbortSignal, id?: string): Promise<Response> {
     const res = await this.hubFetch(path, { signal })
     if (res.status === 404 && id !== undefined) throw new RemoteError('skill-market/not-found', `Skill ${id} is not available`, { id })
+    if (res.status === 410 && id !== undefined) throw new RemoteError('skill-market/withdrawn', `Skill ${id} was withdrawn from this tenant`, { id })
     if (!res.ok) throw new RemoteError('skill-market/unavailable', `the Skill Hub answered ${res.status}`, { status: res.status })
     return res
   }
@@ -684,6 +920,13 @@ export class SkillMarket extends TypertRemoteService {
   private async ownSkills(signal: AbortSignal): Promise<z.infer<typeof ownSkill>[]> {
     return z.array(ownSkill).parse(await this.hubJson('/api/client/skills/mine', signal))
   }
+}
+
+const signedOut = (): RemoteError => new RemoteError('hub-account/signed-out', 'sign in to the Skill Hub first', {})
+
+/** Whether a per-tenant list from the profile contains `<tenantId>/<name>`. */
+function listed(list: Volatile<readonly string[]> | undefined, key: string): boolean {
+  return (list?.get() ?? []).includes(key)
 }
 
 function card(

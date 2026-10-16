@@ -482,9 +482,9 @@ Host owner of the `automationTasks` Remote namespace.
 ```ts cordis-catalog
 /**
  * Create one automation task: a new Session in the workspace, named after the task, with the
- * requested assistant, model, permission preset, connector grant, and declared operations
- * (`automation-tasks/operations`), then the schedule bound to it. The assistant, connectors, and
- * permission presets are optional services; asking for one a deployment lacks is
+ * requested assistant, model, permission preset, and declared operations
+ * (`automation-tasks/operations`), then the schedule bound to it. The assistant and permission
+ * presets are optional services; asking for one a deployment lacks is
  * `automation-tasks/unavailable`. A step's refusal passes through unchanged,
  * except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an
  * unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.

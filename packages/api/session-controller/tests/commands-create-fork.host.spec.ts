@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
@@ -291,4 +294,33 @@ describe('Session fork failures', () => {
     expect(options.meta?.agentPreset).toBe('minimal')
     await ctx.fiber.dispose()
   })
+
+  it('forks into a requested folder and its Workspace, and refuses one that is not a directory here', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'dsh-fork-folder-'))
+    const ctx = await baseContext()
+    const attachSession = vi.fn(() => Promise.resolve())
+    const target = { id: 'w-target' as WorkspaceId, path: '/canonical/target', attachSession } as never as Workspace
+    const create = vi.fn(() => Promise.resolve(target))
+    ctx.provide('workspaceRegistry', { list: () => [], create } as never)
+    const source = completedSession(ctx, 'pulled-source', '/other-computer/project')
+    const agentCreate = vi.spyOn(ctx.agents, 'create').mockImplementation(
+      (options: CreateAgentOptions) => Promise.resolve(resolvedHandle(ctx, options.sessionId)),
+    )
+    const controller = new SessionCommandController(ctx, controllerAgents(), '/default')
+    try {
+      const forked = await controller.fork({ sessionId: source.id, cwd: folder })
+      expect(create).toHaveBeenCalledWith(folder)
+      expect(agentCreate.mock.calls[0]?.[0].meta).toMatchObject({ cwd: '/canonical/target', parentSession: source.id })
+      expect(attachSession).toHaveBeenCalledWith(forked.sessionId)
+      await expect(controller.fork({ sessionId: source.id, cwd: join(folder, 'missing') }))
+        .rejects.toMatchObject({ code: 'session/fork-folder-unavailable', details: { path: join(folder, 'missing') } })
+      // A folder that exists but cannot be registered is not reported as missing.
+      create.mockRejectedValueOnce(new Error('registry write failed'))
+      await expect(controller.fork({ sessionId: source.id, cwd: folder })).rejects.toMatchObject({ code: 'gateway/internal' })
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(folder, { recursive: true, force: true })
+    }
+  })
+
 })

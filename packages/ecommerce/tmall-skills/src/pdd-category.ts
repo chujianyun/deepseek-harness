@@ -179,6 +179,8 @@ export interface Limits {
   /** The ship-within choices, in seconds. */
   readonly shipment_limit_second?: readonly number[] | null
   readonly goods_title_length_limit?: number | null
+  /** Whether the category is a medical device's, whose items need a registration certificate or filing image. */
+  readonly medical_device_related?: boolean | null
 }
 
 /**
@@ -198,10 +200,15 @@ export const propertyKey = (property: Pick<TemplateProperty, 'ref_pid'>): string
 const SINGLE_PRICE: FieldRule = { key: 'singlePriceDelta', label: '单买价比拼单价高（元）', uiType: 'input', required: true, visible: true }
 const MARKET_PRICE: FieldRule = { key: 'marketPrice', label: '参考价（元）', uiType: 'input', required: true, visible: true }
 
+/** The registration certificate or filing image a medical device's item needs, named by its path under the material folder. */
+export const MEDICAL_DEVICE_IMAGE: FieldRule = {
+  key: 'medicalDeviceImage', label: '医疗器械注册证/器械备案凭证（素材文件）', uiType: 'input', required: true, visible: true,
+}
+
 /**
- * Write a category's template and limits as field rules: title, carousel and detail images, the
- * category's properties, SKUs and their stock, ship-within time, the single-buy markup over the group
- * price, and the reference price.
+ * Write a category's template and limits as field rules: title, carousel (1:1 and 3:4), white-background
+ * and detail images, the category's properties, a medical device's registration certificate image, SKUs
+ * and their stock, ship-within time, the single-buy markup over the group price, and the reference price.
  * @param catId - the category.
  * @param path - its path.
  * @param template - its property template.
@@ -223,8 +230,11 @@ export function pddRules(catId: string, path: readonly string[], template: Templ
     fields: [
       { key: 'title', label: '商品标题', uiType: 'input', required: true, visible: true, maxLength: limits.goods_title_length_limit ?? 60 },
       { key: 'mainImagesGroup', label: '商品轮播图', uiType: 'image', required: true, visible: true },
+      { key: 'threeToFourImages', label: '商品轮播图（3:4）', uiType: 'image', required: false, visible: true },
+      { key: 'yinHeWhiteBgImage', label: '白底图', uiType: 'image', required: false, visible: true },
       { key: 'descRepublicOfSell', label: '商品详情', uiType: 'image', required: true, visible: true },
       ...properties,
+      ...limits.medical_device_related === true ? [MEDICAL_DEVICE_IMAGE] : [],
       { key: 'sku', label: '商品规格', uiType: 'sku', required: true, visible: true },
       { key: 'quantity', label: '库存', uiType: 'input', required: true, visible: true },
       { key: 'shipment', label: '发货时间', uiType: 'radio', required: true, visible: true, options: shipment },

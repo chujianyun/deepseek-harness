@@ -157,6 +157,8 @@ export interface Config {
    * deployment that runs every session on its default preset composes `false`.
    */
   showPicker: Volatile<boolean>
+  /** Whether clients show the Agent presets settings section; a deployment whose sessions all run on its default composes `false`. */
+  showSettings: Volatile<boolean>
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-agent-preset-registry -->
@@ -379,7 +381,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-assistants`
 
 - `inject`: `hubAccount` · `sessionProjections` · `agents`
-- `source`: [`packages/assistant/assistants/src/index.ts:61`](../packages/assistant/assistants/src/index.ts)
+- `source`: [`packages/assistant/assistants/src/index.ts:62`](../packages/assistant/assistants/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -827,9 +829,9 @@ export interface ToolResultPruneConfig {
 
 ## `@deepseek-ai/dsh-connectors`
 
-- `inject`: `hubAccount` · `skills` · `shellEnv` · `sessionProjections`
+- `inject`: `hubAccount` · `skills` · `shellEnv`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/connector/connectors/src/index.ts:107`](../packages/connector/connectors/src/index.ts)
+- `source`: [`packages/connector/connectors/src/index.ts:105`](../packages/connector/connectors/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -844,8 +846,10 @@ export interface Config {
   checkIntervalMs?: number
   /** Connectors switched off, as `<tenantId>/<id>`; edited live through `setEnabled()`. */
   disabled?: Volatile<readonly string[]>
-  /** Write commands always allowed, as `<tenantId>/<id>/<command words>`; added from an approval, revoked by `revokeAlwaysAllowed()`. */
-  alwaysAllowed?: Volatile<readonly string[]>
+  /** Company tools switched on, as `<tenantId>/<name>`; edited live through `setCompanyToolEnabled()`. */
+  companyEnabled?: Volatile<readonly string[]>
+  /** Company tools switched off, as `<tenantId>/<name>`; edited live through `setCompanyToolEnabled()`. */
+  companyDisabled?: Volatile<readonly string[]>
 }
 
 /** A connector CLI pinned to one release. */
@@ -974,7 +978,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-ecommerce-accounts`
 
 - `inject`: `hubAccount` · `skills` · `shellEnv`
-- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:76`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
+- `source`: [`packages/ecommerce/ecommerce-accounts/src/index.ts:77`](../packages/ecommerce/ecommerce-accounts/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -1840,7 +1844,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-hub-account`
 
 - `inject`: `credentials` · `authorization`
-- `source`: [`packages/credentials/hub-account/src/index.ts:42`](../packages/credentials/hub-account/src/index.ts)
+- `source`: [`packages/credentials/hub-account/src/index.ts:46`](../packages/credentials/hub-account/src/index.ts)
 
 ```ts config-catalog
 /** Deployment configuration: which user center, as which registered client. */
@@ -1902,7 +1906,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-knowledge-base`
 
 - `inject`: `embedding` · `hubAccount`
-- `source`: [`packages/knowledge/knowledge-base/src/index.ts:49`](../packages/knowledge/knowledge-base/src/index.ts)
+- `source`: [`packages/knowledge/knowledge-base/src/index.ts:55`](../packages/knowledge/knowledge-base/src/index.ts)
 
 ```ts config-catalog
 /** Plugin configuration. */
@@ -1927,6 +1931,16 @@ export interface Config {
   maxNoteTitleLength?: number
   /** Longest note body, in characters. */
   maxNoteChars?: number
+  /** Name of this computer as the employee's other computers show it. Defaults to the host name without `.local`. */
+  deviceName?: string
+  /** Wait after a change before uploading, so changes in quick succession upload once, in milliseconds. */
+  syncDebounceMs?: number
+  /** Interval of the pull and upload pass, in milliseconds. */
+  syncIntervalMs?: number
+  /** Wait before retrying after the user center could not be reached, in milliseconds. */
+  syncRetryMs?: number
+  /** Deadline of each user-center request, in milliseconds. */
+  requestTimeoutMs?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-knowledge-base -->
@@ -2545,7 +2559,7 @@ export interface Config {
 
 - `inject`: `shell` · `approval` · `sessions` · `sessionProjections`
 - `refs`: [`ApprovalPolicy`](subsystems/approval.zh.md) · [`SandboxMode`](subsystems/sandbox.zh.md) · `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/interaction/permission-presets/src/index.ts:159`](../packages/interaction/permission-presets/src/index.ts)
+- `source`: [`packages/interaction/permission-presets/src/index.ts:160`](../packages/interaction/permission-presets/src/index.ts)
 
 ```ts config-catalog
 /** The {@link PermissionPresetService} config: preset table and composition default. */
@@ -3122,6 +3136,33 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-share -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-session-sync -->
+<a id="deepseek-aidsh-session-sync"></a>
+
+## `@deepseek-ai/dsh-session-sync`
+
+- `inject`: `hubAccount` · `sessionQuery` · `sessionPersistence` · `sessionController`
+- `source`: [`packages/session-query/session-sync/src/index.ts:57`](../packages/session-query/session-sync/src/index.ts)
+
+```ts config-catalog
+/** Deployment configuration. */
+export interface Config {
+  /** Deadline of each user-center request, in milliseconds. */
+  requestTimeoutMs?: number
+  /** DeepSeek Harness home; the sync record lives at `<dshHome>/session-sync.json`. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+  /** Name of this machine as other machines show it. Defaults to the host name without `.local`. */
+  deviceName?: string
+  /** Wait after a turn ends before uploading, so turns in quick succession upload once, in milliseconds. */
+  debounceMs?: number
+  /** Interval of the scan that uploads Sessions changed without a turn ending, in milliseconds. */
+  scanIntervalMs?: number
+  /** Wait before retrying after the user center could not be reached, in milliseconds. */
+  retryMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-session-sync -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-session-telemetry-otel -->
 <a id="deepseek-aidsh-session-telemetry-otel"></a>
 
@@ -3330,7 +3371,7 @@ export interface Config {
 
 - `inject`: `skills` · `hubAccount`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/skill/skill-market/src/index.ts:59`](../packages/skill/skill-market/src/index.ts)
+- `source`: [`packages/skill/skill-market/src/index.ts:86`](../packages/skill/skill-market/src/index.ts)
 
 ```ts config-catalog
 /** Market configuration. */
@@ -3339,6 +3380,15 @@ export interface Config {
   dshHome?: string
   /** Market Skills switched off, as `<tenantId>/<name>`; edited live through `setDisabled()`. */
   disabledSkills?: Volatile<readonly string[]>
+  /** Market Skills the user uninstalled, as `<tenantId>/<name>`; auto-install leaves them out. Edited through `markUninstalled()`. */
+  uninstalledSkills?: Volatile<readonly string[]>
+  /**
+   * Market Skills the platform withdrew from their tenant, as `<tenantId>/<name>`; switched off until
+   * distributed again. Kept by the market.
+   */
+  withdrawnSkills?: Volatile<readonly string[]>
+  /** After each sign-in, install the Skills the Hub marks for automatic install and update them. */
+  autoInstall?: boolean
   /** Watch the tenant directory for changes made outside DSH. */
   watch?: boolean
   /** Largest Skill package accepted for install, in bytes. */
@@ -4843,6 +4893,7 @@ export interface Config {
 | `@deepseek-ai/dsh-client-ui-schedule` | — | [`packages/client/ui-schedule/src/index.ts`](../packages/client/ui-schedule/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-session` | — | [`packages/client/ui-session/src/index.ts`](../packages/client/ui-session/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-session-share` | — | [`packages/client/ui-session-share/src/index.ts`](../packages/client/ui-session-share/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-session-sync` | — | [`packages/client/ui-session-sync/src/index.ts`](../packages/client/ui-session-sync/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings` | — | [`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-agent-loop` | — | [`packages/client/ui-settings-agent-loop/src/index.ts`](../packages/client/ui-settings-agent-loop/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-embedding` | — | [`packages/client/ui-settings-embedding/src/index.ts`](../packages/client/ui-settings-embedding/src/index.ts) |

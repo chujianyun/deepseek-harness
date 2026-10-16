@@ -18,9 +18,6 @@
       "path": "../../assistant/assistants"
     },
     {
-      "path": "../../connector/connectors"
-    },
-    {
       "path": "../../interaction/permission-presets"
     },
     {

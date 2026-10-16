@@ -138,7 +138,8 @@ Host owner of the assistants and of the `assistants` Remote namespace.
  * List the Skills, connectors, and knowledge bases available now, which subsets can name.
  * Skills are those a new session's default Agent preset discovers outside any project; a
  * service the deployment does not compose offers none.
- * @returns enabled model-usable Skills other than connector Skills, connectors installed and
+ * @returns enabled model-usable Skills other than connector Skills, named by their Skill Hub display name when the
+ *   tenant installed them from the Hub and by their name otherwise, connectors installed and
  *   switched on for the tenant (named by id), and the tenant's knowledge bases.
  */
 @Remote async capabilityOptions(): Promise<AssistantCapabilityOptions>

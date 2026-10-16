@@ -421,6 +421,23 @@ export async function saveImageFile(
 }
 
 /**
+ * Publish an image another store already normalized, byte for byte under its reference, after
+ * checking that the bytes are what the reference describes.
+ * @param root - absolute `DSH_HOME/attachments/v1` root.
+ * @param ref - the reference recorded with the image.
+ * @param data - the image's stored bytes.
+ * @returns the reference, once the image is stored.
+ * @throws an AttachmentError when the bytes do not match the reference.
+ */
+export async function saveStoredImageFile(root: string, ref: ImageAttachmentRef, data: Uint8Array): Promise<ImageAttachmentRef> {
+  const metadata = await probeImage(data)
+  if (metadata.mediaType !== ref.mediaType || metadata.width !== ref.width || metadata.height !== ref.height) {
+    throw new AttachmentError('Stored attachment metadata does not match its reference.', 'ATTACHMENT_CORRUPT')
+  }
+  return commitPreparedImageFile(root, { ref, data })
+}
+
+/**
  * Read and verify one content-addressed image.
  * @param root - absolute `DSH_HOME/attachments/v1` root.
  * @param ref - reference recorded in the session log.

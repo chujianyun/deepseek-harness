@@ -3,7 +3,8 @@
 // employee adds a Tmall merchant account, which opens the sign-in page in that account's own
 // Chrome, and the dialog turns to success once the platform answers with the account's nick. A
 // second add of the same account is refused, and the account name is corrected to the one Tmall
-// reports. A Pinduoduo shop signs in the same way; when a task finds its sign-in ended, an app-wide
+// reports. A Pinduoduo shop signs in the same way; a JD shop names both the account and the store, and
+// its merchant account stays off JD product pages; when a task finds its sign-in ended, an app-wide
 // notice leads back to Settings. A Health Brand Yuntai account signs in through Alibaba Health's
 // sign-in page, and Yuntai names the account. Deleting an account closes its Chrome and removes its browser data.
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -21,7 +22,10 @@ import { browse, startMockUserCenter } from '../../../packages/credentials/hub-a
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
 import { killRecordedChrome, openSettings, saveFailureShot, ZH_BROWSER_LOCALE } from './support.ts'
 
-const OVERLAYS = ['./hub-account.overlay.yml', './ecommerce-accounts.overlay.yml'].map(path => fileURLToPath(new URL(path, import.meta.url)))
+const SHOTS = process.env.DSH_E2E_SHOTS
+
+// Screenshots for a review show the MO WorkAI look the enterprise build ships.
+const OVERLAYS = ['./hub-account.overlay.yml', './ecommerce-accounts.overlay.yml', ...SHOTS === undefined ? [] : ['./brand-mo.overlay.yml']].map(path => fileURLToPath(new URL(path, import.meta.url)))
 const FAKE_CHROME = fileURLToPath(new URL('../../../packages/ecommerce/ecommerce-accounts/tests/fake-chrome.mjs', import.meta.url))
 
 it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it in through its own Chrome, and deletes it', async () => {
@@ -37,6 +41,7 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
   let failurePage: Page | undefined
   let accountDir: string | undefined
   let pddDir: string | undefined
+  let jdDir: string | undefined
   let yuntaiDir: string | undefined
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
@@ -128,6 +133,51 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     await section.getByRole('button', { name: '全部检查' }).waitFor({ timeout: 15_000 })
     expect(await pddRow.textContent()).toContain('已登录')
 
+    // A JD POP shop signs in the same way; its backend names both the account and the store.
+    await section.getByRole('button', { name: '新增账号' }).click()
+    await add.getByRole('combobox', { name: '平台' }).selectOption('jd')
+    expect(await add.getByRole('combobox', { name: '账号类型' }).locator('option').allTextContents()).toEqual(['商家账号', '买家账号'])
+    await add.getByPlaceholder('例如：名流旗舰店', { exact: true }).fill('京东店')
+    await add.getByPlaceholder('例如：名流旗舰店:运营').fill('jd:运营')
+    if (SHOTS !== undefined) {
+      await page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'))
+      await page.screenshot({ path: join(SHOTS, 'zh-light-add-jd.png') })
+    }
+    await add.getByRole('button', { name: '去登录' }).click()
+    const jdSignIn = page.getByRole('dialog', { name: '登录京东' })
+    await jdSignIn.waitFor()
+    const jdId = (await scaffold.ctx.ecommerceAccounts.getState()).accounts[2]!.id
+    jdDir = join(harnessHome, 'ecommerce', tenantId, 'browsers', jdId)
+    await expect.poll(() => access(join(jdDir!, 'user-data', 'fake-args.json')).then(() => true, () => false), { timeout: 10_000 }).toBe(true)
+    // The stand-in JD names the account after the signed-in user, and the store after it: 京东 + 店.
+    await writeFile(join(jdDir, 'user-data', 'fake-signed-in'), 'jd:运营')
+    await jdSignIn.getByText('登录成功，平台显示的账号是「jd:运营」', { exact: false }).waitFor({ timeout: 15_000 })
+    await jdSignIn.getByRole('note').getByText('「jd:运营店」', { exact: false }).waitFor()
+    await jdSignIn.getByRole('button', { name: '完成' }).click()
+    const jdRow = section.getByRole('button', { name: '查看 京东店 的详情' })
+    await expect.poll(() => jdRow.textContent()).toContain('已登录')
+    // A merchant account opens its backend, never a JD product or search page.
+    const jdTask = bashCall('jd-1')
+    const { cdpUrl: jdCdpUrl } = JSON.parse(await (await fetch(`${scaffold.ctx.shellEnv.collect(jdTask).DSH_ECOMMERCE_URL!}/browser?id=${jdId}`)).text()) as { cdpUrl: string }
+    expect(await openPages(jdCdpUrl, 'https://shop.jd.com/jdm/home', 'https://item.jd.com/100012043978.html', 'https://search.jd.com/Search?keyword=x'))
+      .toEqual(['ok', 'net::ERR_BLOCKED_BY_CLIENT', 'net::ERR_BLOCKED_BY_CLIENT'])
+    scaffold.ctx.emit('tools/result', jdTask, { isError: false, value: { exitCode: 0 } } as object as ToolExecutionResult)
+    if (SHOTS !== undefined) {
+      for (const [locale, name] of [[ZH_BROWSER_LOCALE, 'zh'], ['en-US', 'en']] as const) {
+        for (const colorScheme of ['light', 'dark'] as const) {
+          const shot = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale, colorScheme })
+          await shot.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+          await shot.goto(scaffold.authenticatedUrl)
+          await openSettings(shot, name)
+          const shotSettings = shot.getByRole('dialog', { name: name === 'zh' ? '设置' : 'Settings' })
+          await shotSettings.getByRole('button', { name: name === 'zh' ? '电商账号' : 'E-commerce accounts', exact: true }).click()
+          await shotSettings.getByRole('button', { name: name === 'zh' ? '查看 京东店 的详情' : 'Open 京东店' }).waitFor()
+          await shot.screenshot({ path: join(SHOTS, `${name}-${colorScheme}-accounts.png`) })
+          await shot.close()
+        }
+      }
+    }
+
     // Its sign-in ends during a task: the task's page lands on the sign-in page, and a notice leads back to Settings.
     const task = bashCall('pdd-1')
     const pddId = (await scaffold.ctx.ecommerceAccounts.getState()).accounts[1]!.id
@@ -151,7 +201,7 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     await add.getByRole('button', { name: '去登录' }).click()
     const yuntaiSignIn = page.getByRole('dialog', { name: '登录健康品牌云台' })
     await yuntaiSignIn.waitFor()
-    yuntaiDir = join(harnessHome, 'ecommerce', tenantId, 'browsers', (await scaffold.ctx.ecommerceAccounts.getState()).accounts[2]!.id)
+    yuntaiDir = join(harnessHome, 'ecommerce', tenantId, 'browsers', (await scaffold.ctx.ecommerceAccounts.getState()).accounts[3]!.id)
     await expect.poll(() => access(join(yuntaiDir!, 'user-data', 'fake-args.json')).then(() => true, () => false), { timeout: 10_000 }).toBe(true)
     // The stand-in Yuntai names the account after the signed-in user: 小云 + :ai.
     await writeFile(join(yuntaiDir, 'user-data', 'fake-signed-in'), '小云')
@@ -161,7 +211,7 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     await expect.poll(() => section.getByRole('button', { name: '查看 名流官方旗舰店 的详情' }).textContent()).toContain('已登录')
 
     // Delete them all: each account's Chrome closes and its browser data goes.
-    for (const name of ['名流旗舰店', '拼多多小店', '名流官方旗舰店']) {
+    for (const name of ['名流旗舰店', '拼多多小店', '京东店', '名流官方旗舰店']) {
       await section.getByRole('button', { name: `查看 ${name} 的详情` }).click()
       await section.getByRole('button', { name: '删除账号' }).click()
       await page.getByRole('dialog', { name: '删除电商账号' }).getByRole('button', { name: '删除', exact: true }).click()
@@ -170,6 +220,7 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
     await section.getByText('还没有电商账号。').waitFor({ timeout: 15_000 })
     await expect(access(accountDir)).rejects.toThrow()
     await expect(access(pddDir)).rejects.toThrow()
+    await expect(access(jdDir)).rejects.toThrow()
     await expect(access(yuntaiDir)).rejects.toThrow()
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
@@ -178,7 +229,7 @@ it.skipIf(process.platform === 'win32')('adds a Tmall merchant account, signs it
   } finally {
     await browser.close()
     // A failed run may leave the stand-in Chrome running; deleting the account would have closed it.
-    for (const dir of [accountDir, pddDir, yuntaiDir]) {
+    for (const dir of [accountDir, pddDir, jdDir, yuntaiDir]) {
       if (dir === undefined) continue
       await killRecordedChrome(dir)
     }
@@ -214,10 +265,11 @@ async function openPages(cdpUrl: string, ...urls: string[]): Promise<string[]> {
   }
 }
 
-it.skipIf(process.platform === 'win32')('adds a Tmall buyer account, shows its pages today against the limit set in Settings, and its rest after risk control', async () => {
+it.skipIf(process.platform === 'win32')('adds Tmall and JD buyer accounts, shows their pages today against the limit set in Settings, and their rest after risk control', async () => {
   const center = await startMockUserCenter()
   Object.assign(process.env, { DSH_E2E_HUB_ORIGIN: center.origin })
   const harnessHome = await mkdtemp(join(tmpdir(), 'dsh-ecommerce-buyer-home-'))
+  let jdDir: string | undefined
   await mkdir(join(harnessHome, 'profiles', 'scaffold'), { recursive: true })
   await writeFile(join(harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), JSON.stringify([{
     id: 'ecommerce-accounts', config: { dshHome: harnessHome, chromePath: FAKE_CHROME, signInPollMs: 200, chromeTimeoutMs: 5000, checkTimeoutMs: 3000 },
@@ -294,14 +346,56 @@ it.skipIf(process.platform === 'win32')('adds a Tmall buyer account, shows its p
     await expect.poll(() => row.textContent()).toContain('风控冷却中，剩 72 小时')
     await row.click()
     await section.getByText('风控冷却', { exact: true }).waitFor()
+    await section.getByRole('button', { name: '返回账号列表', exact: false }).click()
+
+    // A JD buyer signs in through the JD home page; JD's block page for too many visits rests it the same way.
+    await section.getByRole('button', { name: '新增账号' }).click()
+    await add.getByRole('combobox', { name: '平台' }).selectOption('jd')
+    await add.getByRole('combobox', { name: '账号类型' }).selectOption('buyer')
+    await add.getByPlaceholder('例如：名流旗舰店:运营').fill('京东买家')
+    await add.getByRole('button', { name: '去登录' }).click()
+    const jdSignIn = page.getByRole('dialog', { name: '登录京东' })
+    await jdSignIn.waitFor()
+    jdDir = join(harnessHome, 'ecommerce', tenantId, 'browsers', (await scaffold.ctx.ecommerceAccounts.getState()).accounts[1]!.id)
+    await expect.poll(() => access(join(jdDir!, 'user-data', 'fake-args.json')).then(() => true, () => false), { timeout: 10_000 }).toBe(true)
+    await writeFile(join(jdDir, 'user-data', 'fake-signed-in'), '京东买家')
+    await jdSignIn.getByText('登录成功，平台显示的账号是「京东买家」', { exact: false }).waitFor({ timeout: 15_000 })
+    await expect.poll(async () => {
+      await jdSignIn.getByRole('button', { name: '完成' }).click({ timeout: 2000 }).catch(() => undefined)
+      return jdSignIn.count()
+    }, { timeout: 15_000 }).toBe(0)
+    const jdRow = section.getByRole('button', { name: '查看 京东买家 的详情' })
+    await expect.poll(() => jdRow.textContent(), { timeout: 15_000 }).toContain('已登录')
+    const fourth = bashCall('buyer-4')
+    const jd = JSON.parse(await (await fetch(`${scaffold.ctx.shellEnv.collect(fourth).DSH_ECOMMERCE_URL!}/buyer?platform=jd`)).text()) as { cdpUrl: string; platform: string }
+    expect(jd.platform).toBe('jd')
+    expect(await openPages(jd.cdpUrl, 'https://item.jd.com/100012043978.html', 'https://pc-frequent-pro.pf.jd.com/?from=pc_item&reason=403', 'https://search.jd.com/Search?keyword=x'))
+      .toEqual(['ok', 'net::ERR_BLOCKED_BY_CLIENT', 'net::ERR_BLOCKED_BY_CLIENT'])
+    scaffold.ctx.emit('tools/result', fourth, { isError: false, value: { exitCode: 0 } } as object as ToolExecutionResult)
+    await expect.poll(() => jdRow.textContent()).toContain('风控冷却中，剩 72 小时')
+    if (SHOTS !== undefined) {
+      for (const [locale, name] of [[ZH_BROWSER_LOCALE, 'zh'], ['en-US', 'en']] as const) {
+        for (const colorScheme of ['light', 'dark'] as const) {
+          const shot = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale, colorScheme })
+          await shot.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+          await shot.goto(scaffold.authenticatedUrl)
+          await openSettings(shot, name)
+          const shotSettings = shot.getByRole('dialog', { name: name === 'zh' ? '设置' : 'Settings' })
+          await shotSettings.getByRole('button', { name: name === 'zh' ? '电商账号' : 'E-commerce accounts', exact: true }).click()
+          await shotSettings.getByRole('button', { name: name === 'zh' ? '查看 京东买家 的详情' : 'Open 京东买家' }).waitFor()
+          await shot.screenshot({ path: join(SHOTS, `${name}-${colorScheme}-buyers.png`) })
+          await shot.close()
+        }
+      }
+    }
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
     if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-ecommerce-buyer')
     throw error
   } finally {
     await browser.close()
-    if (accountDir !== undefined) {
-      await killRecordedChrome(accountDir)
+    for (const dir of [accountDir, jdDir]) {
+      if (dir !== undefined) await killRecordedChrome(dir)
     }
     await scaffold.close()
     await center.close()

@@ -2,8 +2,8 @@
  * A loopback stand-in for the user center's OAuth2 endpoints, enough for Hub sign-in: authorize
  * (redirecting straight back with a code, as a browser with a signed-in session and a recorded
  * consent would), token (authorization_code with PKCE S256, refresh_token with rotation), userinfo,
- * and revoke; the client Skill, login-page branding, Session share, and problem-report APIs. Shared by the package specs and the
- * Desktop web e2e.
+ * and revoke; the client Skill, login-page branding, Session share, Session sync, and problem-report APIs. Shared by
+ * the package specs and the Desktop web e2e.
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { strToU8, unzipSync, zipSync } from 'fflate'
@@ -13,6 +13,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 export interface MockTenant {
   readonly tenantId: string
   readonly tenantName: string
+  /** Phone number of the employee who signs in; defaults to the mock employee's. */
+  readonly phone?: string
 }
 
 /** One published assistant package the mock serves through `/api/client/agent-packages`. */
@@ -37,6 +39,8 @@ export interface MockSkill {
   readonly version: string
   /** Files relative to the Skill root; `SKILL.md` is generated from name and description when absent. */
   readonly files?: Readonly<Record<string, string>>
+  /** Platform Skill marked for automatic install (Spec #221); left out, the answers omit both fields as a user center before it does. */
+  readonly autoInstall?: boolean
 }
 
 /** One upload the mock received through the client write API. */
@@ -75,6 +79,48 @@ export interface MockShare {
   readonly updatedAt: string
 }
 
+/** A raw reply the mock answers with. */
+export interface MockReply {
+  readonly status: number
+  readonly body: string
+}
+
+/** One Session as the mock's Session sync holds it (`/api/client/sync/sessions/:sessionId`). */
+export interface MockSyncedSession {
+  /** The parsed `meta` field of the latest upload; for a deleted Session, its revision only. */
+  readonly meta: {
+    readonly revision: number
+    readonly device?: string
+    readonly attachments?: readonly string[]
+    readonly [field: string]: unknown
+  }
+  /** The latest bundle's bytes; null once deleted. */
+  readonly bundle: Buffer | null
+  readonly deleted: boolean
+  /** Position of its latest change in the store's change order; set by the mock. */
+  readonly seq?: number
+}
+
+/** One knowledge base or item as the mock's knowledge sync holds it (`/api/client/sync/knowledge`): the latest accepted upload. */
+export interface MockSyncedKnowledge {
+  /** The upload's JSON body, with `baseId` for an item; for a deletion before any upload, absent fields. */
+  readonly meta: { readonly revision: number; readonly device?: string; readonly [field: string]: unknown }
+  readonly deleted: boolean
+  /** Position of its latest change in the store's change order; set by the mock. */
+  readonly seq?: number
+}
+
+/** One tenant's Session sync store. */
+export interface MockSync {
+  sessions: Record<string, MockSyncedSession>
+  /** Knowledge bases and items by id; deleting one keeps it, marked deleted, as the user center does. */
+  knowledge?: { bases: Record<string, MockSyncedKnowledge>; items: Record<string, MockSyncedKnowledge> }
+  /** The latest change's position; 0 before the first change. */
+  seq?: number
+  /** Attachment bytes by sha256 hex. */
+  blobs: Record<string, Buffer>
+}
+
 /** One problem report the mock received. */
 export interface MockFeedback {
   /** The parsed `payload` field. */
@@ -84,6 +130,23 @@ export interface MockFeedback {
 }
 
 /** Control and observation surface of the mock user center. */
+/** A company tool the mock lists through `/api/client/connectors`. */
+export interface MockCompanyTool {
+  id: string
+  kind: string
+  name: string
+  displayName: string
+  description: string
+  autoInstall: boolean
+  allowedMethods: string[]
+}
+
+/** A call a company tool forwarded through `/api/client/connectors/:name/call`. */
+export interface MockCompanyCall {
+  name: string
+  body: { method: string; params: unknown; confirmOverwrite: boolean }
+}
+
 export interface MockUserCenter {
   readonly origin: string
   readonly clientId: string
@@ -113,6 +176,8 @@ export interface MockUserCenter {
   skills: MockSkill[]
   /** Assistant packages of the signed-in tenant, in list order. */
   agentPackages: MockAgentPackage[]
+  /** Skill ids the platform withdrew from the tenant: detail and download answer 410 (Spec #221). */
+  readonly withdrawn: Set<string>
   /** When set, a download answers with these bytes instead of the Skill's zip. */
   downloadBody: Uint8Array | undefined
   /** When set, client API calls answer with this status. */
@@ -141,12 +206,32 @@ export interface MockUserCenter {
   shares: Record<string, MockShare>
   /** When set, a session-share call is answered with this raw reply, or its connection is dropped. */
   shareReply: { status: number; body: string } | 'drop' | undefined
+  /**
+   * Session sync stores by tenant id, followed by `/<phone>` for a binding that names a phone, as
+   * `/api/client/sync/*` holds them.
+   */
+  sync: Record<string, MockSync>
+  /** When set, a Session sync call is answered with this raw reply, or its connection is dropped. */
+  syncReply: { status: number; body: string } | 'drop' | undefined
+  /**
+   * When set, called with each Session sync call's method and path after its body arrived and before
+   * it is answered; a returned reply answers it instead.
+   */
+  syncHook: ((method: string, path: string) => Promise<MockReply | undefined> | MockReply | undefined) | undefined
   /** Problem reports received through `/api/client/feedback`, in order. */
   readonly feedback: MockFeedback[]
   /** When set, a problem report is answered with this raw reply, or its connection is dropped. */
   feedbackReply: { status: number; body: string } | 'drop' | undefined
   /** When set, the next problem report only is answered with this raw reply. */
   feedbackReplyOnce: { status: number; body: string } | undefined
+  /** Company tools `/api/client/connectors` lists. */
+  companyTools: MockCompanyTool[]
+  /** When set, `/api/client/connectors` is answered with this raw reply. */
+  companyListReply: { status: number; body: string } | undefined
+  /** Company tool calls received, in order. */
+  readonly companyCalls: MockCompanyCall[]
+  /** The answer to a company tool call; the default answers code 200 with an empty list. */
+  companyReply: (call: MockCompanyCall) => { status: number; body: unknown }
   close(): Promise<void>
 }
 
@@ -172,7 +257,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     const refreshToken = `rt-${randomBytes(8).toString('hex')}`
     access.set(accessToken, bound)
     refresh.set(refreshToken, bound)
-    return { access_token: accessToken, token_type: 'Bearer', expires_in: mock.expiresIn, refresh_token: refreshToken, scope: 'profile skills:read skills:write' }
+    return { access_token: accessToken, token_type: 'Bearer', expires_in: mock.expiresIn, refresh_token: refreshToken, scope: 'profile skills:read skills:write connectors:use' }
   }
   const server: Server = createServer((req, res) => {
     void (async () => {
@@ -226,8 +311,10 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
         }
         if (url.pathname.startsWith('/api/client/branding')) brandingApi(url, res, json, bound)
         else if (url.pathname.startsWith('/api/client/session-shares/')) await shareApi(url, req, res, json)
+        else if (url.pathname.startsWith('/api/client/sync/')) await syncApi(url, req, res, json, bound)
         else if (url.pathname === '/api/client/feedback' && req.method === 'POST') await feedbackApi(url, req, res, json)
         else if (url.pathname.startsWith('/api/client/agent-packages')) agentPackagesApi(url, res, json)
+        else if (url.pathname.startsWith('/api/client/connectors')) await companyApi(url, req, res, json)
         else await clientApi(url, req, res, json)
       } else if (url.pathname === '/oauth/userinfo' && mock.userinfoReply !== undefined) {
         res.writeHead(mock.userinfoReply.status, { 'content-type': 'application/json' }).end(mock.userinfoReply.body)
@@ -249,6 +336,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
   })
   const summary = (skill: MockSkill) => ({
     id: skill.id, name: skill.name, ...skill.displayName === undefined ? {} : { displayName: skill.displayName }, category: skill.category,
+    ...skill.autoInstall === undefined ? {} : { platform: true, autoInstall: skill.autoInstall },
     currentVersion: { id: `${skill.id}-v`, version: skill.version, description: skill.description, uploaderName: '韩梅梅',
       uploadedAt: '2026-10-01T08:00:00.000Z', sizeBytes: 100, fileCount: Object.keys(filesOf(skill)).length, downloadCount: 0 },
   })
@@ -342,6 +430,7 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
       json(200, [...seen.values()])
       return
     }
+    if (parts[0] !== undefined && mock.withdrawn.has(parts[0])) { json(410, { code: 'skill_withdrawn', message: '该平台技能已被收回，本租户不能再使用' }); return }
     const skill = mock.skills.find(item => item.id === parts[0])
     if (skill === undefined) { json(404, { message: 'Skill 不存在' }); return }
     const files = filesOf(skill)
@@ -395,6 +484,176 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
       res.writeHead(204).end()
     } else json(200, link(held))
   }
+  const syncApi = async (url: URL, req: IncomingMessage, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void, bound: MockTenant): Promise<void> => {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) chunks.push(chunk as Buffer)
+    const hooked = await mock.syncHook?.(req.method ?? 'GET', url.pathname)
+    if (hooked !== undefined) {
+      res.writeHead(hooked.status, { 'content-type': 'application/json' }).end(hooked.body)
+      return
+    }
+    if (mock.syncReply === 'drop') { res.destroy(); return }
+    if (mock.syncReply !== undefined) {
+      res.writeHead(mock.syncReply.status, { 'content-type': 'application/json' }).end(mock.syncReply.body)
+      return
+    }
+    const store = mock.sync[bound.phone === undefined ? bound.tenantId : `${bound.tenantId}/${bound.phone}`] ??= { sessions: {}, blobs: {} }
+    const form = async () => new Request(url, { method: 'POST', headers: { 'content-type': req.headers['content-type'] ?? '' }, body: Buffer.concat(chunks) }).formData()
+    const fileOf = async (data: FormData) => Buffer.from(await (data.get('file') as File).arrayBuffer())
+    const changed = (sessionId: string, entry: Omit<MockSyncedSession, 'seq'>) => {
+      store.seq = (store.seq ?? 0) + 1
+      store.sessions = { ...store.sessions, [sessionId]: { ...entry, seq: store.seq } }
+    }
+    if (url.pathname.startsWith('/api/client/sync/knowledge')) {
+      knowledgeApi(url, req, res, json, store, chunks)
+      return
+    }
+    const sessionPath = /^\/api\/client\/sync\/sessions\/([^/]+)$/u.exec(url.pathname)
+    const bundlePath = /^\/api\/client\/sync\/sessions\/([^/]+)\/bundle$/u.exec(url.pathname)
+    const blobPath = /^\/api\/client\/sync\/blobs\/([0-9a-f]{64})$/u.exec(url.pathname)
+    if (sessionPath !== null && req.method === 'PUT') {
+      const sessionId = decodeURIComponent(sessionPath[1]!)
+      const data = await form()
+      const meta = JSON.parse(data.get('meta') as string) as MockSyncedSession['meta']
+      const bundle = await fileOf(data)
+      const held = store.sessions[sessionId]
+      if (bundle.byteLength > 50 * 1024 * 1024) json(413, { message: '对话包不能超过 50MB' })
+      else if (held?.deleted === true) json(410, { code: 'session_deleted', message: '这个对话已在其他电脑上删除' })
+      else if (held !== undefined && (meta.revision < held.meta.revision
+        || (meta.revision === held.meta.revision && meta.device !== held.meta.device))) {
+        json(409, { code: 'stale_revision', message: '服务器上已有更新的版本', revision: held.meta.revision })
+      } else {
+        const missing = (meta.attachments ?? []).filter(sha => store.blobs[sha] === undefined)
+        if (missing.length > 0) json(409, { code: 'missing_attachments', message: '有附件还没上传', missing })
+        else {
+          changed(sessionId, { meta, bundle, deleted: false })
+          json(200, { sessionId, revision: meta.revision })
+        }
+      }
+    } else if (sessionPath !== null && req.method === 'DELETE') {
+      const sessionId = decodeURIComponent(sessionPath[1]!)
+      if (store.sessions[sessionId]?.deleted !== true) {
+        changed(sessionId, { meta: { revision: store.sessions[sessionId]?.meta.revision ?? 0 }, bundle: null, deleted: true })
+      }
+      res.writeHead(204).end()
+    } else if (url.pathname === '/api/client/sync/sessions' && req.method === 'GET') {
+      const asked = Number(url.searchParams.get('since') ?? '0')
+      // Like the server: a cursor past the latest change (a restored backup) lists from the start.
+      const reset = asked > (store.seq ?? 0)
+      const since = reset ? 0 : asked
+      const items = Object.entries(store.sessions)
+        .filter(([, entry]) => (entry.seq ?? 0) > since)
+        .sort(([, a], [, b]) => (a.seq ?? 0) - (b.seq ?? 0))
+        .map(([sessionId, entry]) => ({
+          sessionId, revision: entry.meta.revision, device: entry.meta.device ?? '', attachments: entry.meta.attachments ?? [],
+          cwd: entry.meta.cwd ?? null, title: entry.meta.title ?? null, assistantId: entry.meta.assistantId ?? null,
+          sizeBytes: entry.bundle?.byteLength ?? 0, updatedAt: entry.meta.updatedAt ?? new Date(0).toISOString(),
+          deleted: entry.deleted, seq: entry.seq ?? 0,
+        }))
+      json(200, { items, cursor: items.at(-1)?.seq ?? since, hasMore: false, reset })
+    } else if (bundlePath !== null && req.method === 'GET') {
+      const bundle = store.sessions[decodeURIComponent(bundlePath[1]!)]?.bundle
+      if (bundle == null) json(404, { message: '这个对话没有同步记录' })
+      else res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(bundle)
+    } else if (blobPath !== null && req.method === 'GET') {
+      const [, digest = ''] = blobPath
+      const bytes = store.blobs[digest]
+      if (bytes === undefined) json(404, { message: '附件不存在' })
+      else res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(bytes)
+    } else if (url.pathname === '/api/client/sync/blobs/check' && req.method === 'POST') {
+      const { sha256 } = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { sha256: string[] }
+      json(200, { missing: sha256.filter(sha => store.blobs[sha] === undefined) })
+    } else if (blobPath !== null && req.method === 'PUT') {
+      const bytes = await fileOf(await form())
+      if (createHash('sha256').update(bytes).digest('hex') !== blobPath[1]) json(400, { message: '附件内容与 sha256 不一致' })
+      else {
+        store.blobs = { ...store.blobs, [blobPath[1]]: bytes }
+        res.writeHead(204).end()
+      }
+    } else json(404, { message: 'not found' })
+  }
+  /** The knowledge sync endpoints, with the user center's checks of revisions, references, and deletions. */
+  const knowledgeApi = (
+    url: URL, req: IncomingMessage, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void, store: MockSync, chunks: Buffer[],
+  ): void => {
+    const held = store.knowledge ??= { bases: {}, items: {} }
+    const mark = (table: 'bases' | 'items', id: string, entry: Omit<MockSyncedKnowledge, 'seq'>) => {
+      store.seq = (store.seq ?? 0) + 1
+      held[table] = { ...held[table], [id]: { ...entry, seq: store.seq } }
+    }
+    const stale = (existing: MockSyncedKnowledge | undefined, meta: { revision: number; device?: string }) => existing !== undefined
+      && (meta.revision < existing.meta.revision || (meta.revision === existing.meta.revision && meta.device !== existing.meta.device))
+    const deleteItems = (match: (item: MockSyncedKnowledge) => boolean) => {
+      for (const [id, item] of Object.entries(held.items)) if (!item.deleted && match(item)) mark('items', id, { ...item, deleted: true })
+    }
+    const basePath = /^\/api\/client\/sync\/knowledge\/bases\/([^/]+)$/u.exec(url.pathname)
+    const itemPath = /^\/api\/client\/sync\/knowledge\/items\/([^/]+)$/u.exec(url.pathname)
+    const contentPath = /^\/api\/client\/sync\/knowledge\/items\/([^/]+)\/content$/u.exec(url.pathname)
+    const body = () => JSON.parse(Buffer.concat(chunks).toString('utf8')) as { revision: number; device: string; [field: string]: unknown }
+    if (url.pathname === '/api/client/sync/knowledge' && req.method === 'GET') {
+      const asked = Number(url.searchParams.get('since') ?? '0')
+      const reset = asked > (store.seq ?? 0)
+      const since = reset ? 0 : asked
+      const entry = (type: 'base' | 'item', id: string, value: MockSyncedKnowledge) => ({
+        type, ...(type === 'base' ? { baseId: id } : { itemId: id }), ...value.meta, deleted: value.deleted, seq: value.seq ?? 0,
+        ...(value.deleted ? { name: '', sha256: null, sizeBytes: 0, settings: {}, embeddingModelId: '' } : {}),
+      })
+      const changes = [
+        ...Object.entries(held.bases).map(([id, value]) => entry('base', id, value)),
+        ...Object.entries(held.items).map(([id, value]) => entry('item', id, value)),
+      ].filter(change => change.seq > since).sort((a, b) => a.seq - b.seq)
+      json(200, { changes, cursor: changes.at(-1)?.seq ?? since, hasMore: false, reset })
+    } else if (basePath !== null && req.method === 'PUT') {
+      const id = decodeURIComponent(basePath[1]!)
+      const meta = body()
+      const existing = held.bases[id]
+      if (existing?.deleted === true) json(410, { code: 'base_deleted', message: '这个知识库已在其他电脑上删除' })
+      else if (stale(existing, meta)) json(409, { code: 'stale_revision', message: '服务器上已有更新的版本', revision: existing!.meta.revision })
+      else {
+        mark('bases', id, { meta, deleted: false })
+        json(200, { type: 'base', baseId: id, ...meta })
+      }
+    } else if (basePath !== null && req.method === 'DELETE') {
+      const id = decodeURIComponent(basePath[1]!)
+      const existing = held.bases[id]
+      if (existing !== undefined && !existing.deleted) {
+        deleteItems(item => item.meta.baseId === id)
+        mark('bases', id, { ...existing, deleted: true })
+      }
+      res.writeHead(204).end()
+    } else if (itemPath !== null && req.method === 'PUT') {
+      const id = decodeURIComponent(itemPath[1]!)
+      const meta = body()
+      const base = held.bases[String(meta.baseId)]
+      const existing = held.items[id]
+      const parent = meta.parentId == null ? undefined : held.items[meta.parentId as string]
+      if (base === undefined) json(409, { code: 'base_missing', message: '知识库还没上传' })
+      else if (base.deleted) json(410, { code: 'base_deleted', message: '这个知识库已在其他电脑上删除' })
+      else if (existing?.deleted === true) json(410, { code: 'item_deleted', message: '这个条目已在其他电脑上删除' })
+      else if (stale(existing, meta)) json(409, { code: 'stale_revision', message: '服务器上已有更新的版本', revision: existing!.meta.revision })
+      else if (meta.parentId != null && parent === undefined) json(409, { code: 'parent_missing', message: '所属文件夹还没上传' })
+      else if (parent?.deleted === true) json(410, { code: 'parent_deleted', message: '所属文件夹已在其他电脑上删除' })
+      else if (meta.sha256 != null && store.blobs[meta.sha256 as string] === undefined) json(409, { code: 'missing_content', message: '条目内容还没上传' })
+      else {
+        mark('items', id, { meta, deleted: false })
+        json(200, { type: 'item', itemId: id, ...meta })
+      }
+    } else if (itemPath !== null && req.method === 'DELETE') {
+      const id = decodeURIComponent(itemPath[1]!)
+      const existing = held.items[id]
+      if (existing !== undefined && !existing.deleted) {
+        deleteItems(item => item.meta.parentId === id)
+        mark('items', id, { ...existing, deleted: true })
+      }
+      res.writeHead(204).end()
+    } else if (contentPath !== null && req.method === 'GET') {
+      const item = held.items[decodeURIComponent(contentPath[1]!)]
+      const bytes = item?.meta.sha256 == null ? undefined : store.blobs[item.meta.sha256 as string]
+      if (item?.deleted === true) json(410, { code: 'item_deleted', message: '这个条目已删除' })
+      else if (bytes === undefined) json(404, { message: '这个条目没有内容' })
+      else res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(bytes)
+    } else json(404, { message: 'not found' })
+  }
   const feedbackApi = async (url: URL, req: IncomingMessage, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void): Promise<void> => {
     const chunks: Buffer[] = []
     for await (const chunk of req) chunks.push(chunk as Buffer)
@@ -432,16 +691,37 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     if (item === undefined) { json(404, { message: 'not found' }); return }
     res.writeHead(200, { 'content-type': 'application/zip' }).end(Buffer.from(item.zip))
   }
+  const companyApi = async (url: URL, req: IncomingMessage, res: import('node:http').ServerResponse, json: (status: number, value: unknown) => void): Promise<void> => {
+    if (url.pathname === '/api/client/connectors') {
+      if (mock.companyListReply !== undefined) {
+        res.writeHead(mock.companyListReply.status, { 'content-type': 'application/json' }).end(mock.companyListReply.body)
+        return
+      }
+      json(200, mock.companyTools)
+      return
+    }
+    const name = decodeURIComponent(url.pathname.slice('/api/client/connectors/'.length).replace(/\/call$/, ''))
+    if (!mock.companyTools.some(tool => tool.name === name)) { json(404, { statusCode: 404, message: '连接器不存在，或你没有使用权限' }); return }
+    let text = ''
+    for await (const chunk of req) text += String(chunk)
+    const call: MockCompanyCall = { name, body: JSON.parse(text) as MockCompanyCall['body'] }
+    mock.companyCalls.push(call)
+    const reply = mock.companyReply(call)
+    json(reply.status, reply.body)
+  }
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const mock: MockUserCenter = {
     origin: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
     clientId: 'dsh-desktop',
     tenant, denyWith: undefined, refreshStatus: undefined, expiresIn: 7200,
     exchangeStatus: undefined, tokenBody: undefined, tokenGate: undefined, userinfoReply: undefined,
-    skills: [], agentPackages: [], downloadBody: undefined, clientStatus: undefined, clientRequests: [],
+    skills: [], withdrawn: new Set(), agentPackages: [], downloadBody: undefined, clientStatus: undefined, clientRequests: [],
     tenantAdmin: false, owned: [], uploads: [], uploadReply: undefined, uploadHook: undefined, optionsReply: undefined,
     brandings: {}, brandingGate: undefined, logoReply: undefined, shares: {}, shareReply: undefined,
+    sync: {}, syncReply: undefined, syncHook: undefined,
     feedback: [], feedbackReply: undefined, feedbackReplyOnce: undefined,
+    companyTools: [], companyListReply: undefined, companyCalls: [],
+    companyReply: () => ({ status: 200, body: { code: 200, msg: '', subCode: '', result: { data: [] } } }),
     authorizeRequests: [], tokenRequests: [], revoked: [],
     close: () => new Promise((resolve) => { server.closeAllConnections(); server.close(() => { resolve() }) }),
   }

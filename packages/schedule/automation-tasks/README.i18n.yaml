@@ -3,20 +3,20 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/schedule/automation-tasks/README.md
 /:
-  en: 3c916779ff66094f
-  zh: 03410bfd5d29bac4
+  en: cedca1fc237e3199
+  zh: 1b98f1131fbd6936
 /automation-tasks:
   en: 998110997cc2b7c8
   zh: aef629173b0a1420
 /automation-tasks/summary:
-  en: a88e4b9f72756b86
-  zh: a81106b6c78efeb2
+  en: f76eead061dbb5a0
+  zh: a1426fb16a8bceb2
 /automation-tasks/table-of-contents:
   en: 4e53164159b5ce41
   zh: 89582dc0294d0776
 /automation-tasks/use-this-package:
-  en: 7b33ec057344e7ca
-  zh: 1c6b00414be6ebd4
+  en: 661514add747001a
+  zh: 6e4718c08300f981
 /automation-tasks/model-experience:
   en: b692d882a446d979
   zh: 7a558718560d85e4
@@ -24,8 +24,8 @@
   en: abc73c85919ea836
   zh: 9ea4f855f2310edc
 /automation-tasks/known-limitations-and-deferred-work:
-  en: a6117487988da769
-  zh: a640bf41c7f4d5a3
+  en: 789a023b26b446f6
+  zh: 0407382df26e86bb
 /automation-tasks/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 8ec3e73528ddb1a6

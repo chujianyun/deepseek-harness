@@ -1,0 +1,8 @@
+# Short sync waits and a fixed device name for the keyless Web e2e (`knowledge-sync.e2e.ts`), beside
+# the knowledge rows (`knowledge.overlay.yml`) and the Hub sign-in (`hub-account.overlay.yml`).
+- id: knowledge-base
+  config:
+    deviceName: 前台电脑
+    syncDebounceMs: 50
+    syncRetryMs: 200
+    syncIntervalMs: 1000

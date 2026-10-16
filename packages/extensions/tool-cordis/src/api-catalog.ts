@@ -484,7 +484,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: '@Remote async capabilityOptions(): Promise<AssistantCapabilityOptions>',
         description: 'List the Skills, connectors, and knowledge bases available now, which subsets can name. Skills are those a new session\'s default Agent preset discovers outside any project; a service the deployment does not compose offers none.',
         parameters: [],
-        returns: 'enabled model-usable Skills other than connector Skills, connectors installed and switched on for the tenant (named by id), and the tenant\'s knowledge bases.',
+        returns: 'enabled model-usable Skills other than connector Skills, named by their Skill Hub display name when the tenant installed them from the Hub and by their name otherwise, connectors installed and switched on for the tenant (named by id), and the tenant\'s knowledge bases.',
       },
       {
         signature: '@Remote async otherTenantAssistants(assistantIds: readonly string[]): Promise<string[]>',
@@ -576,6 +576,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Validate and durably commit one image before its owning session event is appended. The returned reference describes the persisted normalized image. When normalization reduces the raster, its `originalDimensions` records the orientation-applied input dimensions.',
         parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
         returns: 'the durable content-addressed normalized image reference.',
+      },
+      {
+        signature: 'saveStoredImage(ref: ImageAttachmentRef, data: Uint8Array): Promise<ImageAttachmentRef>',
+        description: 'Durably store an image another store already normalized, byte for byte under its reference, as when a conversation recorded on another computer is copied here. The bytes must match the reference\'s digest and byte length, media type, and dimensions. Backends without verbatim image storage keep this default rejection.',
+        parameters: [{ name: 'ref', description: 'the reference recorded with the image.' }, { name: 'data', description: 'the image\'s stored bytes.' }],
+        returns: 'the reference, once the image is stored.',
       },
       {
         signature: 'abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>',
@@ -721,7 +727,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: '@Remote(\'create\') async create(request: AutomationTaskCreateRequest): Promise<AutomationTaskCreateValue>',
-        description: 'Create one automation task: a new Session in the workspace, named after the task, with the requested assistant, model, permission preset, connector grant, and declared operations (`automation-tasks/operations`), then the schedule bound to it. The assistant, connectors, and permission presets are optional services; asking for one a deployment lacks is `automation-tasks/unavailable`. A step\'s refusal passes through unchanged, except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.',
+        description: 'Create one automation task: a new Session in the workspace, named after the task, with the requested assistant, model, permission preset, and declared operations (`automation-tasks/operations`), then the schedule bound to it. The assistant and permission presets are optional services; asking for one a deployment lacks is `automation-tasks/unavailable`. A step\'s refusal passes through unchanged, except a Schedule input error, which becomes `automation-tasks/invalid` with its code, and an unavailable model, `automation-tasks/model-unavailable`. Any failure archives the new Session.',
         parameters: [{ name: 'request', description: 'the task as the form submits it.' }],
         returns: 'the new Session and the stored schedule.',
       },
@@ -1028,23 +1034,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the state once the checks have finished.',
       },
       {
+        signature: '@Remote async setCompanyToolEnabled(name: string, enabled: boolean): Promise<ConnectorsState>',
+        description: 'Switch a company tool on or off for the current tenant, persisting the profile\'s lists; off, the model shell gets no command for it.',
+        parameters: [{ name: 'name', description: 'the tool\'s name.' }, { name: 'enabled', description: 'whether the model may use it.' }],
+        returns: 'the state once the setting is saved and the model shell\'s commands follow it.',
+        throws: ['RemoteError `connectors/no-company-tool` or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
+      },
+      {
         signature: '@Remote async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState>',
         description: 'Switch a connector on or off for the current tenant, persisting the profile\'s list. A switched-off connector stays signed in, but the model gets neither its Skills nor its CLI.',
         parameters: [{ name: 'id', description: 'the connector.' }, { name: 'enabled', description: 'whether the model may use it.' }],
         returns: 'the state once the setting is saved and the model\'s script and Skills follow it.',
         throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
-      },
-      {
-        signature: '@Remote async revokeAlwaysAllowed(id: string, command: string): Promise<ConnectorsState>',
-        description: 'Stop always allowing a write command for the current tenant: it asks again.',
-        parameters: [{ name: 'id', description: 'the connector.' }, { name: 'command', description: 'the command words, as the view lists them.' }],
-        returns: 'the state once the setting is saved.',
-        throws: ['RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.'],
-      },
-      {
-        signature: 'allowInSession(session: Session, ids: readonly string[]): void',
-        description: 'Let a session\'s plain connector writes through these connectors run without asking while the signed-in tenant stays signed in, as the session of an unattended automation task needs: appends `connectors/session-allowed`, which replaces the session\'s earlier grant and survives a restart with the session log; an unchanged grant appends nothing. High-risk writes, commands the CLI runs only confirmed, and commands of unknown risk still ask.',
-        parameters: [{ name: 'session', description: 'the session to grant.' }, { name: 'ids', description: 'connectors to allow; an empty list withdraws the grant. Refuses an unknown id with `connectors/not-found`, one unsupported here with `connectors/unavailable`, and a signed-out Hub with `hub-account/signed-out`.' }],
       },
       {
         signature: 'restrict(filter: ConnectorFilter): () => void',
@@ -1883,6 +1884,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the current state, then every change.',
       },
       {
+        signature: '@Remote syncNow(): Promise<void>',
+        description: 'Pull the employee\'s other computers\' knowledge base changes and upload this computer\'s now, as when the Knowledge page opens or the window comes back to the front.',
+        parameters: [],
+      },
+      {
         signature: '@Remote createBase(name: string, embeddingModelId: string): Promise<KnowledgeState>',
         description: 'Create a knowledge base for the signed-in tenant.',
         parameters: [{ name: 'name', description: 'display name, unique within the tenant.' }, { name: 'embeddingModelId', description: 'an embedding model Settings → Embedding models offers.' }],
@@ -1974,10 +1980,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote reprocessItem(id: string, itemId: string): Promise<KnowledgeState>',
-        description: 'Process an item again from its stored copy.',
+        description: 'Process an item again from its stored copy; a folder is scanned again, on the computer it was added on only.',
         parameters: [{ name: 'id', description: 'knowledge base id.' }, { name: 'itemId', description: 'item id.' }],
         returns: 'the state with the item pending.',
-        throws: ['RemoteError `knowledge/not-found`.'],
+        throws: ['RemoteError `knowledge/not-found`, or `knowledge/folder-elsewhere` for a folder another computer added.'],
       },
       {
         signature: '@Remote deleteItem(id: string, itemId: string): Promise<KnowledgeState>',
@@ -2278,7 +2284,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'set(session: Session, name: string): void',
-        description: 'Record a changed preset, then update each changed knob through its own setter. Selecting the effective preset again appends nothing.',
+        description: 'Record a changed preset, then update each changed knob through its own setter. Selecting the effective preset again appends nothing. The default of later sessions stays; only the user\'s `/permission` switch changes it.',
         parameters: [{ name: 'session', description: 'the session the switch belongs to.' }, { name: 'name', description: 'the preset to switch to; unknown names throw.' }],
       },
     ],
@@ -2688,8 +2694,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'fork\') fork(request: SessionForkRequest): Promise<SessionForkValue>',
-        description: 'Fork one cold-readable exact event prefix into a new Session. An omitted boundary selects the latest completed-turn prefix; an open cut receives synthetic fork closers.',
-        parameters: [{ name: 'request', description: 'source Session and optional exact inclusive event boundary.' }],
+        description: 'Fork one cold-readable exact event prefix into a new Session. An omitted boundary selects the latest completed-turn prefix; an open cut receives synthetic fork closers. A requested `cwd` puts the new Session in that directory and its Workspace instead of the source\'s.',
+        parameters: [{ name: 'request', description: 'source Session, optional exact inclusive event boundary, and optional working directory.' }],
         returns: 'the new Session identity.',
       },
       {
@@ -2851,7 +2857,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'coldSnapshot( meta: SessionHeader, inheritedEventCount: SessionLogOffset, events: readonly SessionEvent[], ): ProjectionSnapshot',
-        description: 'Cold-read one session\'s projections from its complete log. Each unit is seeded from the identity-checked cached rows — the registry skips `apply` for the already-folded prefix (events at or below the row\'s `seq`) — and the refreshed checkpoint is written back (fail-soft, fire-and-forget), so the first cold read creates the cache row and later ones seed from it. The caller supplies the complete log in seq order: this service never consults the persistence layer.',
+        description: 'Cold-read one session\'s projections from its complete log. Each unit is seeded from the identity-checked cached rows — the registry skips `apply` for the already-folded prefix (events at or below the row\'s `seq`) — and the refreshed checkpoint is written back (fail-soft, fire-and-forget), so the first cold read creates the cache row and later ones seed from it. The caller supplies the complete log in seq order: this service never consults the persistence layer. A complete log of an id deleted earlier in this process means the session was stored anew under it, so its checkpoint is written again, as after `session/created`.',
         parameters: [{ name: 'meta', description: 'the stored session header (identity witness).' }, { name: 'inheritedEventCount', description: 'exact inherited prefix length for projection initialization and identity.' }, { name: 'events', description: 'the session\'s complete log, in seq order.' }],
         returns: 'the projection cut at the log end.',
       },
@@ -3164,6 +3170,44 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'sessionSync',
+    summary: 'Host owner of Session sync.',
+    description: 'Host owner of Session sync.',
+    methods: [
+      {
+        signature: '@Remote getState(): Promise<SessionSyncView>',
+        description: 'The conversations pulled from the signed-in employee\'s other machines.',
+        parameters: [],
+        returns: 'whether syncing is possible, and each pulled conversation with its machine.',
+      },
+      {
+        signature: '@Remote async continueInfo(request: { readonly sessionId: SessionId }): Promise<SessionSyncContinueInfo>',
+        description: 'Read where a pulled conversation worked, to offer that directory for continuing it here.',
+        parameters: [{ name: 'request', description: 'the pulled conversation.' }],
+        returns: 'its working directory on the other computer and whether it exists here.',
+        throws: ['RemoteError `session-sync/not-pulled` for any other Session.'],
+      },
+      {
+        signature: '@Remote async continueConversation(request: SessionSyncContinueRequest): Promise<{ readonly sessionId: SessionId }>',
+        description: 'Continue a pulled conversation here: a new conversation of this computer, in the given directory, that starts with the whole pulled conversation. The pulled one stays as it is.',
+        parameters: [{ name: 'request', description: 'the pulled conversation and the directory.' }],
+        returns: 'the new conversation\'s top-level Session.',
+        throws: ['RemoteError `session-sync/not-pulled` for any other Session, and the fork\'s own errors, such as `session/fork-folder-unavailable` for a directory that does not exist here.'],
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) watch(signal: AbortSignal): AsyncIterable<SessionSyncView>',
+        description: 'Stream the pulled conversations.',
+        parameters: [{ name: 'signal', description: 'stream lifetime.' }],
+        returns: 'the current state, then every change.',
+      },
+      {
+        signature: '@Remote refresh(): Promise<void>',
+        description: 'Pull the other machines\' changes and look for changes here now, as when the window comes back to the front.',
+        parameters: [],
+      },
+    ],
+  },
+  {
     key: 'sessionTelemetry',
     summary: 'Loadable form of the backend contract: one implementation per context — the cordis `Service` registration under the `telemetry` key throws on a duplicate, cordis\' standard behavior.',
     description: 'Loadable form of the backend contract: one implementation per context — the cordis `Service` registration under the `telemetry` key throws on a duplicate, cordis\' standard behavior. A backend composes a SessionTelemetryCoordinator in its constructor to install the capture side.',
@@ -3381,7 +3425,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Switch one installed skill on or off for this user.',
         parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'enabled', description: 'whether the skill should be invocable.' }],
         returns: 'the skill\'s view after the change.',
-        throws: ['RemoteError when the skill is not installed or the setting cannot be persisted.'],
+        throws: ['RemoteError when the skill is not installed, is a market Skill the platform withdrew (switching on), or the setting cannot be persisted.'],
       },
       {
         signature: '@Remote async reveal(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>',
@@ -3399,7 +3443,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async uninstall(name: string, signal: AbortSignal): Promise<InstalledSkillActionValue>',
-        description: 'Move an installed skill\'s folder (or flat file) to the platform trash and forget its disabled state.',
+        description: 'Move an installed skill\'s folder (or flat file) to the platform trash and forget its disabled state. Only this machine\'s copy goes; the Skill stays on the Skill Hub. A market Skill is also remembered as uninstalled, so the market\'s automatic install does not bring it back.',
         parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
         returns: 'confirmation after the move.',
         throws: ['RemoteError when the skill is not installed, the platform has no trash, or the move fails.'],
@@ -3429,14 +3473,26 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'isDisabled(name: string): boolean',
-        description: 'Whether the signed-in tenant switched this market Skill off.',
+        description: 'Whether this market Skill is closed for the signed-in tenant: the user switched it off (`disabledSkills`), or the platform withdrew it (`withdrawnSkills`, see `isWithdrawn`).',
         parameters: [{ name: 'name', description: 'Skill name.' }],
-        returns: 'true when switched off.',
+        returns: 'true when closed.',
+      },
+      {
+        signature: 'isWithdrawn(name: string): boolean',
+        description: 'Whether the platform withdrew this market Skill from the signed-in tenant; such a Skill stays installed but switched off, and the user cannot switch it on.',
+        parameters: [{ name: 'name', description: 'Skill name.' }],
+        returns: 'true when withdrawn.',
       },
       {
         signature: 'setDisabled(name: string, disabled: boolean): Promise<void>',
         description: 'Switch one market Skill of the signed-in tenant on or off, persisting the profile\'s list.',
         parameters: [{ name: 'name', description: 'Skill name.' }, { name: 'disabled', description: 'whether to switch it off.' }],
+        throws: ['when signed out, or when mounted without Settings or a profile entry.'],
+      },
+      {
+        signature: 'markUninstalled(name: string, uninstalled: boolean = true): Promise<void>',
+        description: 'Record (or forget) that the user uninstalled a market Skill of the signed-in tenant, so automatic install leaves it out. The installed-skill Remote records it before moving the folder away, and forgets it again when the move fails; installing it by hand forgets it too.',
+        parameters: [{ name: 'name', description: 'Skill name.' }, { name: 'uninstalled', description: 'whether the Skill is uninstalled; defaults to true.' }],
         throws: ['when signed out, or when mounted without Settings or a profile entry.'],
       },
       {
@@ -3492,14 +3548,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]>',
-        description: 'Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the Hub no longer shows the employee is `unavailable`; its local copy stays installed and usable.',
+        description: 'Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the platform withdrew from the tenant is `withdrawn` and gets switched off (its files stay); one the Hub no longer shows the employee for another reason is `unavailable` and stays installed and usable.',
         parameters: [{ name: 'signal', description: 'caller lifetime.' }],
         returns: 'one status per installed market Skill, sorted by name.',
       },
       {
-        signature: 'async records(): Promise<Map<string, MarketInstallRecord>>',
-        description: 'Install records of the signed-in tenant\'s market Skills, keyed by Skill name.',
-        parameters: [],
+        signature: 'async records(tenantId: string | undefined = this.tenantId): Promise<Map<string, MarketInstallRecord>>',
+        description: 'Install records of a tenant\'s market Skills (the signed-in tenant\'s by default), keyed by Skill name.',
+        parameters: [{ name: 'tenantId', description: 'the tenant whose directory to read.' }],
         returns: 'the readable records; a directory without one is not a market install.',
       },
     ],
@@ -4816,6 +4872,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'sessionId', description: 'Agent and Session identity.' }, { name: 'running', description: 'whether the Agent is running.' }],
   },
   {
+    name: 'api-session/view-only',
+    mode: 'bail',
+    signature: '\'api-session/view-only\'(sessionId: SessionId): true | undefined',
+    summary: 'A stored Session without an Agent is being opened, or a command needs its Agent.',
+    description: 'A stored Session without an Agent is being opened, or a command needs its Agent. A listener that returns true keeps it view-only: its history is shown, no Agent starts, and commands that need one refuse with `session/view-only`.',
+    parameters: [{ name: 'sessionId', description: 'opened Session identity.' }],
+  },
+  {
     name: 'app-boot/config-reload',
     mode: 'emit',
     signature: '\'app-boot/config-reload\'(): void',
@@ -5473,7 +5537,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ApiSessionAgentError',
-    declaration: 'export type ApiSessionAgentError = RemoteError<\'session/not-found\' | \'session/agent-busy\' | \'session/writer-held\' | \'gateway/internal\'>;',
+    declaration: 'export type ApiSessionAgentError = RemoteError<\'session/not-found\' | \'session/agent-busy\' | \'session/writer-held\' | \'session/view-only\' | \'gateway/internal\'>;',
   },
   {
     name: 'ApiSessionAgentResult',
@@ -5601,7 +5665,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AssistantPackageTask',
-    declaration: 'export interface AssistantPackageTask {\n    readonly id: string;\n    readonly title: string;\n    readonly prompt: string;\n    readonly timing: AssistantPackageTaskTiming;\n    readonly timeZone: string;\n    readonly connectors: readonly string[];\n    readonly permission?: string;\n    readonly operations?: readonly string[];\n}',
+    declaration: 'export interface AssistantPackageTask {\n    readonly id: string;\n    readonly title: string;\n    readonly prompt: string;\n    readonly timing: AssistantPackageTaskTiming;\n    readonly timeZone: string;\n    readonly permission?: string;\n    readonly operations?: readonly string[];\n}',
   },
   {
     name: 'AssistantPackageTaskTiming',
@@ -5741,7 +5805,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AutomationTaskCreateRequest',
-    declaration: 'export interface AutomationTaskCreateRequest {\n    readonly title: string;\n    readonly prompt: string;\n    readonly workspaceId: WorkspaceId;\n    readonly assistantId?: string;\n    readonly model?: ModelSelection;\n    readonly permission?: string;\n    readonly connectors?: readonly string[];\n    readonly operations?: readonly string[];\n    readonly timing: ScheduleTimingChange;\n    readonly window?: ScheduleWindowInput;\n}',
+    declaration: 'export interface AutomationTaskCreateRequest {\n    readonly title: string;\n    readonly prompt: string;\n    readonly workspaceId: WorkspaceId;\n    readonly assistantId?: string;\n    readonly model?: ModelSelection;\n    readonly permission?: string;\n    readonly operations?: readonly string[];\n    readonly timing: ScheduleTimingChange;\n    readonly window?: ScheduleWindowInput;\n}',
   },
   {
     name: 'AutomationTaskCreateValue',
@@ -5880,6 +5944,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CompactionTrigger = \'pressure\' | \'context-overflow\';',
   },
   {
+    name: 'CompanyToolsStatus',
+    declaration: 'export type CompanyToolsStatus = \'signed-out\' | \'loading\' | \'ready\' | \'sign-in-again\' | \'unavailable\';',
+  },
+  {
+    name: 'CompanyToolsView',
+    declaration: 'export interface CompanyToolsView {\n    readonly status: CompanyToolsStatus;\n    readonly tools: readonly CompanyToolView[];\n}',
+  },
+  {
+    name: 'CompanyToolView',
+    declaration: 'export interface CompanyToolView {\n    readonly name: string;\n    readonly kind: string;\n    readonly displayName: string;\n    readonly description: string;\n    readonly methods: readonly string[];\n    readonly enabled: boolean;\n}',
+  },
+  {
     name: 'CompositionRowEnablement',
     declaration: 'export type CompositionRowEnablement = boolean | \'conditional\';',
   },
@@ -5981,7 +6057,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectorsState',
-    declaration: 'export interface ConnectorsState {\n    readonly connectors: readonly ConnectorView[];\n}',
+    declaration: 'export interface ConnectorsState {\n    readonly connectors: readonly ConnectorView[];\n    readonly company: CompanyToolsView;\n}',
   },
   {
     name: 'ConnectorStatus',
@@ -5989,7 +6065,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectorView',
-    declaration: 'export interface ConnectorView {\n    readonly id: ConnectorId;\n    readonly status: ConnectorStatus;\n    readonly cli: string;\n    readonly version: string;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly error: ConnectorInstallError | null;\n    readonly login: ConnectorLoginView | null;\n    readonly loginError: ConnectorLoginError | null;\n    readonly account: string | null;\n    readonly problem: string | null;\n    readonly enabled: boolean;\n    readonly skills: readonly ConnectorSkillView[];\n    readonly alwaysAllowed: readonly string[];\n}',
+    declaration: 'export interface ConnectorView {\n    readonly id: ConnectorId;\n    readonly status: ConnectorStatus;\n    readonly cli: string;\n    readonly version: string;\n    readonly receivedBytes: number;\n    readonly totalBytes: number;\n    readonly error: ConnectorInstallError | null;\n    readonly login: ConnectorLoginView | null;\n    readonly loginError: ConnectorLoginError | null;\n    readonly account: string | null;\n    readonly problem: string | null;\n    readonly enabled: boolean;\n    readonly skills: readonly ConnectorSkillView[];\n}',
   },
   {
     name: 'ContentBlockMap',
@@ -6309,7 +6385,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EcommercePlatform',
-    declaration: 'export type EcommercePlatform = \'tmall\' | \'taobao\' | \'pinduoduo\' | \'doudian\' | \'yuntai\';',
+    declaration: 'export type EcommercePlatform = \'tmall\' | \'taobao\' | \'pinduoduo\' | \'doudian\' | \'jd\' | \'yuntai\';',
   },
   {
     name: 'EditGoalRequest',
@@ -6657,7 +6733,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'InstalledSkillView',
-    declaration: 'export interface InstalledSkillView {\n    readonly name: string;\n    readonly description: string;\n    readonly group: InstalledSkillGroup;\n    readonly source: string;\n    readonly path: string;\n    readonly enabled: boolean;\n}',
+    declaration: 'export interface InstalledSkillView {\n    readonly name: string;\n    readonly description: string;\n    readonly group: InstalledSkillGroup;\n    readonly source: string;\n    readonly path: string;\n    readonly enabled: boolean;\n    readonly withdrawn: boolean;\n}',
   },
   {
     name: 'InstalledTaskView',
@@ -6837,7 +6913,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KnowledgeBaseView',
-    declaration: 'export interface KnowledgeBaseView {\n    readonly id: string;\n    readonly name: string;\n    readonly embeddingModelId: string;\n    readonly embeddingModelName: string;\n    readonly dimensions: number | null;\n    readonly status: \'ready\' | \'rebuilding\' | \'unavailable\';\n    readonly settings: KnowledgeBaseSettings;\n    readonly items: readonly KnowledgeItemView[];\n    readonly createdAt: string;\n}',
+    declaration: 'export interface KnowledgeBaseView {\n    readonly id: string;\n    readonly name: string;\n    readonly embeddingModelId: string;\n    readonly embeddingModelName: string;\n    readonly dimensions: number | null;\n    readonly status: \'ready\' | \'rebuilding\' | \'unavailable\';\n    readonly modelMissing: boolean;\n    readonly settings: KnowledgeBaseSettings;\n    readonly items: readonly KnowledgeItemView[];\n    readonly createdAt: string;\n}',
   },
   {
     name: 'KnowledgeChunkStrategy',
@@ -6849,7 +6925,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KnowledgeItemError',
-    declaration: 'export type KnowledgeItemError = \'unreadable\' | \'empty\' | \'embedding\' | \'interrupted\' | \'storage\' | \'folder-missing\' | \'unreachable\' | \'blocked\';',
+    declaration: 'export type KnowledgeItemError = \'unreadable\' | \'empty\' | \'embedding\' | \'interrupted\' | \'storage\' | \'folder-missing\' | \'unreachable\' | \'blocked\' | \'synced\';',
   },
   {
     name: 'KnowledgeItemKind',
@@ -6861,7 +6937,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KnowledgeItemView',
-    declaration: 'export interface KnowledgeItemView {\n    readonly id: string;\n    readonly kind: KnowledgeItemKind;\n    readonly parentId: string | null;\n    readonly name: string;\n    readonly source: string | null;\n    readonly size: number;\n    readonly skipped: readonly KnowledgeSkippedFile[];\n    readonly skippedCount: number;\n    readonly status: KnowledgeItemStatus;\n    readonly error: KnowledgeItemError | null;\n    readonly chunkCount: number;\n    readonly addedAt: string;\n}',
+    declaration: 'export interface KnowledgeItemView {\n    readonly id: string;\n    readonly kind: KnowledgeItemKind;\n    readonly parentId: string | null;\n    readonly name: string;\n    readonly source: string | null;\n    readonly size: number;\n    readonly skipped: readonly KnowledgeSkippedFile[];\n    readonly skippedCount: number;\n    readonly status: KnowledgeItemStatus;\n    readonly error: KnowledgeItemError | null;\n    readonly chunkCount: number;\n    readonly addedAt: string;\n    readonly scannedOn: string | null;\n}',
   },
   {
     name: 'KnowledgeNote',
@@ -7069,7 +7145,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MarketInstalledState',
-    declaration: 'export type MarketInstalledState = \'current\' | \'update\' | \'unavailable\' | \'unknown\';',
+    declaration: 'export type MarketInstalledState = \'current\' | \'update\' | \'withdrawn\' | \'unavailable\' | \'unknown\';',
   },
   {
     name: 'MarketInstalledStatus',
@@ -8125,7 +8201,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionForkRequest',
-    declaration: 'export interface SessionForkRequest {\n    readonly sessionId: SessionId;\n    readonly atSeq?: number;\n}',
+    declaration: 'export interface SessionForkRequest {\n    readonly sessionId: SessionId;\n    readonly atSeq?: number;\n    readonly cwd?: string;\n}',
   },
   {
     name: 'SessionForkSource',
@@ -8438,6 +8514,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionSurfaceSnapshot',
     declaration: 'export interface SessionSurfaceSnapshot {\n    session: SessionHeader;\n    inheritedEventCount: SessionLogOffset;\n    capturedThroughSeq: OptionalSessionSeq;\n    events: SurfaceEvent[];\n}',
+  },
+  {
+    name: 'SessionSyncContinuation',
+    declaration: 'export interface SessionSyncContinuation {\n    readonly sessionId: SessionId;\n    readonly sourceId: SessionId;\n    readonly title: string | null;\n    readonly device: string;\n}',
+  },
+  {
+    name: 'SessionSyncContinueInfo',
+    declaration: 'export interface SessionSyncContinueInfo {\n    readonly folder: string | null;\n    readonly folderHere: boolean;\n}',
+  },
+  {
+    name: 'SessionSyncContinueRequest',
+    declaration: 'export interface SessionSyncContinueRequest {\n    readonly sessionId: SessionId;\n    readonly cwd: string;\n}',
+  },
+  {
+    name: 'SessionSyncPulled',
+    declaration: 'export interface SessionSyncPulled {\n    readonly sessionId: SessionId;\n    readonly device: string;\n    readonly revision: number;\n}',
+  },
+  {
+    name: 'SessionSyncView',
+    declaration: 'export interface SessionSyncView {\n    readonly signedIn: boolean;\n    readonly changes: number;\n    readonly pulled: readonly SessionSyncPulled[];\n    readonly continuations: readonly SessionSyncContinuation[];\n}',
   },
   {
     name: 'SessionTelemetryRecord',

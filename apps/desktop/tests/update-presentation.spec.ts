@@ -45,7 +45,7 @@ it('keeps raw diagnostics out of error tooltips in both locales', () => {
 })
 
 it('shows a version the Hub offers as available only while the ordinary updater has nothing and nothing is forced', () => {
-  const available = { version: '1.0.1', page: 'https://hub.example.com/download' }
+  const available = { version: '1.0.1', page: 'https://hub.example.com/download', packages: [] }
   expect(presentDesktopStatus({ phase: 'idle' }, { blocking: false, checking: false, available })).toEqual({ phase: 'available', version: '1.0.1' })
   expect(presentDesktopStatus({ phase: 'idle' }, { blocking: false, checking: false })).toEqual({ phase: 'idle' })
   expect(presentDesktopStatus({ phase: 'idle' }, { blocking: true, checking: false, available })).toEqual({ phase: 'idle' })

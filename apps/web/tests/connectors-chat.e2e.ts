@@ -3,11 +3,9 @@
 // stand-in lark-cli, the employee asks about today's schedule; a scripted model sees the connector's
 // Skills in the catalog, runs `lark-cli calendar +agenda` through bash — which reaches the installed
 // CLI with the company's own directories — and answers from its output. Asked to send a message, the
-// model's write waits in the approval panel and the rejection reaches it as a denial; always allowed,
-// the same write then runs unasked until the Connectors page revokes it; asked to delete a file, the
-// high-risk command shows a warning, offers no always-allow and, once allowed, runs with `--yes`. Under full access
-// the write runs without an approval, and the high-risk command, which full access never asks about, is rejected
-// without running. Switched off on the
+// model's plain write runs without an approval; asked to delete a file, the high-risk command shows a
+// warning in the approval panel and offers no always-allow, a rejection reaches the model as a denial,
+// and once allowed it runs with `--yes`. Switched off on the
 // Connectors page, the session's next request carries a catalog without the Skills. A stale copy of a
 // connector Skill in the user's own Skill directory never replaces the one the installed CLI embeds.
 import { execFileSync } from 'node:child_process'
@@ -53,10 +51,9 @@ const COMMANDS: readonly (readonly [RegExp, string])[] = [
   [/日程/u, 'lark-cli calendar +agenda'],
 ]
 
-/** The text of the employee's latest message; a change of access mode adds a user-role policy note after it. */
+/** The text of the latest user message. */
 function latestAsk(request: ChatRequest): string {
-  return JSON.stringify(request.messages.filter(message => message.role === 'user'
-    && !JSON.stringify(message.content ?? '').includes('Current DSH file policy:')).at(-1)?.content ?? '')
+  return JSON.stringify(request.messages.filter(message => message.role === 'user').at(-1)?.content ?? '')
 }
 
 /**
@@ -199,66 +196,35 @@ it.skipIf(process.platform === 'win32')('gives the model the connected connector
     // The agenda only reads, so it ran without an approval.
     expect(await page.locator('[data-approval-key]').count()).toBe(0)
 
-    // A write waits for the user; rejected, it never runs and the model learns the user said no.
-    const answers = await page.getByText(ANSWER).count()
-    await send('帮我在群里发消息：周会改到下午三点')
+    // A plain write runs as the model writes it, without an approval.
     const panel = page.locator('[data-approval-key]')
-    await panel.getByText('飞书连接器将以你的身份执行写操作：lark-cli im +messages-send。允许执行一次吗？').waitFor({ timeout: 30_000 })
-    await panel.getByRole('button', { name: '拒绝', exact: true }).click()
-    await expect.poll(async () => page.getByText(ANSWER).count(), { timeout: 30_000 }).toBeGreaterThan(answers)
-    expect(JSON.stringify(chat.chats.at(-1)!.messages.at(-1)!.content)).toContain('the user rejected tool \\"bash\\"')
-    expect((await calls()).some(call => call.startsWith('im +messages-send'))).toBe(false)
-
-    // Always allowed: this call runs, and the next send of the same command asks nothing.
     const sends = async () => (await calls()).filter(call => call.startsWith('im +messages-send')).length
     await send('帮我在群里发消息：周会改到下午三点')
-    await panel.getByText('飞书连接器将以你的身份执行写操作：lark-cli im +messages-send。允许执行一次吗？').waitFor({ timeout: 30_000 })
-    await panel.getByRole('button', { name: '始终允许', exact: true }).click()
     await expect.poll(sends, { timeout: 30_000 }).toBe(1)
-    await send('帮我在群里发消息：周会改到下午三点')
-    await expect.poll(sends, { timeout: 30_000 }).toBe(2)
     expect(await panel.count()).toBe(0)
 
-    // A high-risk write shows the warning and cannot be always allowed; allowed once, it runs with --yes and the model gets its result.
+    // A high-risk write shows the warning and offers no always-allow; rejected, it never runs and the model learns the user said no.
+    const answers = await page.getByText(ANSWER).count()
     await send('删除旧的周报文件')
     await panel.getByText(/^⚠️ 高风险操作：飞书连接器将以你的身份执行 lark-cli drive \+delete/u).waitFor({ timeout: 30_000 })
     expect(await panel.getByRole('button', { name: '始终允许', exact: true }).count()).toBe(0)
+    await panel.getByRole('button', { name: '拒绝', exact: true }).click()
+    await expect.poll(async () => page.getByText(ANSWER).count(), { timeout: 30_000 }).toBeGreaterThan(answers)
+    expect(JSON.stringify(chat.chats.at(-1)!.messages.at(-1)!.content)).toContain('the user rejected tool \\"bash\\"')
+    expect((await calls()).some(call => call.startsWith('drive +delete'))).toBe(false)
+    // Asked again and allowed once, it runs with --yes and the model gets its result.
+    await send('删除旧的周报文件')
+    await panel.getByText(/^⚠️ 高风险操作/u).waitFor({ timeout: 30_000 })
     await panel.getByRole('button', { name: '允许一次', exact: true }).click()
     await page.getByText(/deleted/u).first().waitFor({ timeout: 30_000 })
     expect(await calls()).toContain('drive +delete --file-token box_old --yes')
 
-    // The card lists the always-allowed command; revoked, the next send asks again.
+    // The card lists no always-allowed commands.
     await page.getByRole('button', { name: '连接器', exact: true }).click()
     const card = page.getByRole('listitem').filter({ hasText: '飞书' }).first()
     await card.getByText('带来的 Skill（2）').waitFor()
-    const allowed = card.getByRole('list', { name: '始终允许的操作' })
-    await allowed.getByText('lark-cli im +messages-send', { exact: true }).waitFor()
-    await allowed.getByRole('button', { name: '撤销始终允许 lark-cli im +messages-send' }).click()
-    await allowed.waitFor({ state: 'detached' })
+    expect(await card.getByRole('list', { name: '始终允许的操作' }).count()).toBe(0)
     await page.getByText('今天有什么日程？').first().click()
-    await send('帮我在群里发消息：周会改到下午三点')
-    await panel.getByText('飞书连接器将以你的身份执行写操作：lark-cli im +messages-send。允许执行一次吗？').waitFor({ timeout: 30_000 })
-    await panel.getByRole('button', { name: '拒绝', exact: true }).click()
-    await panel.waitFor({ state: 'detached' })
-
-    // Full access asks nothing: the plain write runs without an approval, and the high-risk one, which
-    // needs the user each time, is rejected without running.
-    await page.locator('button[aria-label^="访问模式"]').first().click()
-    await page.getByRole('menuitem', { name: '完全权限' }).click()
-    const fullAccess = page.getByRole('dialog', { name: '确认启用完全权限？' })
-    await fullAccess.getByRole('checkbox', { name: '我已了解风险，并愿意继续' }).check()
-    await fullAccess.getByRole('button', { name: '启用完全权限' }).click()
-    await page.locator('button[aria-label="访问模式，当前：完全权限"]').first().waitFor()
-    const before = await sends()
-    await send('帮我在群里发消息：周会改到下午三点')
-    await expect.poll(sends, { timeout: 30_000 }).toBe(before + 1)
-    expect(await panel.count()).toBe(0)
-    const deletes = (await calls()).filter(call => call.startsWith('drive +delete')).length
-    await send('删除旧的周报文件')
-    await expect.poll(() => JSON.stringify(chat.chats.at(-1)?.messages.at(-1)?.content ?? ''), { timeout: 30_000 })
-      .toContain('the user rejected tool')
-    expect(await panel.count()).toBe(0)
-    expect((await calls()).filter(call => call.startsWith('drive +delete')).length).toBe(deletes)
 
     // Switched off on the Connectors page: the next request's catalog no longer lists them.
     await page.getByRole('button', { name: '连接器', exact: true }).click()

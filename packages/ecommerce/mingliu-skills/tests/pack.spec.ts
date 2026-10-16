@@ -104,38 +104,38 @@ describe('recommended tasks', () => {
     const parsed = manifestSchema.parse({ name: 'mingliu-ops', displayName: '运营日报助手', description: 'x', version: '1.0.0', tasks })
     expect(parsed.tasks[0]).toMatchObject({
       title: '天猫一店+拼多多工作日巡检', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '11:00' }, timeZone: 'Asia/Shanghai',
-      connectors: [], permission: 'workspace-write', operations: ['lark-cli im +messages-send'],
+      permission: 'workspace-write', operations: ['lark-cli im +messages-send'],
     })
     // The live data runs every day, weekends too, and only appends rows.
     expect(parsed.tasks[1]).toMatchObject({
-      title: '拼多多直播数据每日采集', timing: { kind: 'daily', time: '09:30' }, connectors: [], permission: 'workspace-write',
+      title: '拼多多直播数据每日采集', timing: { kind: 'daily', time: '09:30' }, permission: 'workspace-write',
       operations: ['lark-cli sheets +cells-set'],
     })
     // The meeting sync only adds records: it declares the one write that adds them, not updating or deleting.
     expect(parsed.tasks[2]).toMatchObject({
-      title: '拼多多日会待办同步', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5, 6, 7], time: '17:00' }, connectors: [], permission: 'workspace-write',
+      title: '拼多多日会待办同步', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5, 6, 7], time: '17:00' }, permission: 'workspace-write',
       operations: ['lark-cli base +record-batch-create'],
     })
     // The ROI runs only preview; what they send waits for the person's reply, so they declare nothing.
     expect(parsed.tasks[3]).toMatchObject({
-      title: '投流ROI内部日报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '09:30' }, connectors: [], permission: 'workspace-write',
+      title: '投流ROI内部日报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '09:30' }, permission: 'workspace-write',
     })
     expect(parsed.tasks[4]).toMatchObject({
-      title: '投流ROI服务商提醒', timing: { kind: 'weekly', weekdays: [1, 3, 5], time: '10:00' }, connectors: [], permission: 'workspace-write',
+      title: '投流ROI服务商提醒', timing: { kind: 'weekly', weekdays: [1, 3, 5], time: '10:00' }, permission: 'workspace-write',
     })
     expect([parsed.tasks[3]!.operations, parsed.tasks[4]!.operations]).toEqual([undefined, undefined])
     // The Tmall daily report fills the sheet at 06:00 and writes only cells.
     expect(parsed.tasks[5]).toMatchObject({
-      title: '天猫日报采集填报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '06:00' }, connectors: [], permission: 'workspace-write',
+      title: '天猫日报采集填报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '06:00' }, permission: 'workspace-write',
       operations: ['lark-cli sheets +cells-set'],
     })
     // The video report runs at 10:00 about yesterday, its reminder at 17:30 about today; each only sends its message.
     expect(parsed.tasks[6]).toMatchObject({ title: '视频素材绩效当日提醒', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '17:30' } })
     expect(parsed.tasks[7]).toMatchObject({ title: '视频素材绩效日报', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '10:00' } })
-    for (const task of parsed.tasks.slice(6, 8)) expect(task).toMatchObject({ connectors: [], operations: ['lark-cli im +messages-send'] })
+    for (const task of parsed.tasks.slice(6, 8)) expect(task).toMatchObject({ operations: ['lark-cli im +messages-send'] })
     // The 云台 backfill runs on weekdays at 07:00 and only adds records.
     expect(parsed.tasks[8]).toMatchObject({
-      title: '站外投流云台数据每日补采', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '07:00' }, connectors: [], permission: 'workspace-write',
+      title: '站外投流云台数据每日补采', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '07:00' }, permission: 'workspace-write',
       operations: ['lark-cli base +record-batch-create'],
     })
     // Each run declares only the write it makes; other Feishu writes are not granted.

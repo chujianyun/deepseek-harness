@@ -16,6 +16,7 @@ const FAILURE_KEYS = {
   'skill-market/invalid-package': 'failureInvalidPackage',
   'skill-market/unavailable': 'failureUnavailable',
   'skill-market/not-found': 'failureNotFound',
+  'skill-market/withdrawn': 'failureWithdrawn',
   'hub-account/signed-out': 'failureSignedOut',
 } as const
 

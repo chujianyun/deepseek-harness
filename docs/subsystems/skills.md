@@ -295,7 +295,8 @@ Host service backing the generated `ctx.remote.installedSkills` namespace. Every
  * @param name - installed skill name.
  * @param enabled - whether the skill should be invocable.
  * @returns the skill's view after the change.
- * @throws RemoteError when the skill is not installed or the setting cannot be persisted.
+ * @throws RemoteError when the skill is not installed, is a market Skill the platform withdrew (switching on),
+ *   or the setting cannot be persisted.
  */
 @Remote async setEnabled(name: string, enabled: boolean): Promise<InstalledSkillView>
 
@@ -319,6 +320,8 @@ Host service backing the generated `ctx.remote.installedSkills` namespace. Every
 
 /**
  * Move an installed skill's folder (or flat file) to the platform trash and forget its disabled state.
+ * Only this machine's copy goes; the Skill stays on the Skill Hub. A market Skill is also
+ * remembered as uninstalled, so the market's automatic install does not bring it back.
  * @param name - installed skill name.
  * @param signal - caller lifetime; abort terminates the native command.
  * @returns confirmation after the move.
@@ -344,11 +347,20 @@ Host owner of the market source and of the `skillMarket` Remote namespace.
 tenantDir(tenantId: string): string
 
 /**
- * Whether the signed-in tenant switched this market Skill off.
+ * Whether this market Skill is closed for the signed-in tenant: the user switched it off
+ * (`disabledSkills`), or the platform withdrew it (`withdrawnSkills`, see `isWithdrawn`).
  * @param name - Skill name.
- * @returns true when switched off.
+ * @returns true when closed.
  */
 isDisabled(name: string): boolean
+
+/**
+ * Whether the platform withdrew this market Skill from the signed-in tenant; such a Skill stays
+ * installed but switched off, and the user cannot switch it on.
+ * @param name - Skill name.
+ * @returns true when withdrawn.
+ */
+isWithdrawn(name: string): boolean
 
 /**
  * Switch one market Skill of the signed-in tenant on or off, persisting the profile's list.
@@ -357,6 +369,16 @@ isDisabled(name: string): boolean
  * @throws when signed out, or when mounted without Settings or a profile entry.
  */
 setDisabled(name: string, disabled: boolean): Promise<void>
+
+/**
+ * Record (or forget) that the user uninstalled a market Skill of the signed-in tenant, so automatic
+ * install leaves it out. The installed-skill Remote records it before moving the folder away, and
+ * forgets it again when the move fails; installing it by hand forgets it too.
+ * @param name - Skill name.
+ * @param uninstalled - whether the Skill is uninstalled; defaults to true.
+ * @throws when signed out, or when mounted without Settings or a profile entry.
+ */
+markUninstalled(name: string, uninstalled: boolean = true): Promise<void>
 
 /**
  * List the market as the signed-in employee sees it on the Skill Hub.
@@ -434,17 +456,19 @@ setDisabled(name: string, disabled: boolean): Promise<void>
 
 /**
  * Ask the Skill Hub where each installed market Skill of the signed-in tenant stands. A Skill the
- * Hub no longer shows the employee is `unavailable`; its local copy stays installed and usable.
+ * platform withdrew from the tenant is `withdrawn` and gets switched off (its files stay); one the
+ * Hub no longer shows the employee for another reason is `unavailable` and stays installed and usable.
  * @param signal - caller lifetime.
  * @returns one status per installed market Skill, sorted by name.
  */
 @Remote async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]>
 
 /**
- * Install records of the signed-in tenant's market Skills, keyed by Skill name.
+ * Install records of a tenant's market Skills (the signed-in tenant's by default), keyed by Skill name.
+ * @param tenantId - the tenant whose directory to read.
  * @returns the readable records; a directory without one is not a market install.
  */
-async records(): Promise<Map<string, MarketInstallRecord>>
+async records(tenantId: string | undefined = this.tenantId): Promise<Map<string, MarketInstallRecord>>
 ```
 
 Source: [`packages/skill/skill-market/src/index.ts`](../../packages/skill/skill-market/src/index.ts)

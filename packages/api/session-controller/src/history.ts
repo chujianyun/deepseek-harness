@@ -201,7 +201,7 @@ export class SessionHistoryController {
           : projectionBlock(source.projections),
         ...assistantStream === undefined ? {} : { assistantStream },
       }
-      if (address.kind === 'session' && source.source === 'prepared') {
+      if (address.kind === 'session' && source.source === 'prepared' && this.ctx.bail('api-session/view-only', address.sessionId) !== true) {
         const promotion = source.retain()
         try {
           this.promote(promotion)

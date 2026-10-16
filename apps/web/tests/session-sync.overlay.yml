@@ -1,0 +1,12 @@
+# Enables Session sync for the keyless Web e2e (`session-sync.e2e.ts`), beside the Hub sign-in
+# (`hub-account.overlay.yml`), with short waits so the spec observes uploads quickly. The shipped
+# web-app bundle enables it only for the `desktop` profile with a configured user center.
+- id: session-sync
+  disabled: false
+  config:
+    deviceName: 前台电脑
+    debounceMs: 50
+    retryMs: 200
+    scanIntervalMs: 1000
+- id: ui-session-sync
+  disabled: false

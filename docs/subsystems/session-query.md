@@ -541,4 +541,50 @@ Host owner of Session sharing and of the `sessionShare` Remote namespace.
 ```
 
 Source: [`packages/session-query/session-share/src/index.ts`](../../packages/session-query/session-share/src/index.ts)
+
+<a id="ctxsessionsync--sessionsync"></a>
+
+### `ctx.sessionSync` — `SessionSync`
+
+Host owner of Session sync.
+
+```ts cordis-catalog
+/**
+ * The conversations pulled from the signed-in employee's other machines.
+ * @returns whether syncing is possible, and each pulled conversation with its machine.
+ */
+@Remote getState(): Promise<SessionSyncView>
+
+/**
+ * Read where a pulled conversation worked, to offer that directory for continuing it here.
+ * @param request - the pulled conversation.
+ * @returns its working directory on the other computer and whether it exists here.
+ * @throws RemoteError `session-sync/not-pulled` for any other Session.
+ */
+@Remote async continueInfo(request: { readonly sessionId: SessionId }): Promise<SessionSyncContinueInfo>
+
+/**
+ * Continue a pulled conversation here: a new conversation of this computer, in the given
+ * directory, that starts with the whole pulled conversation. The pulled one stays as it is.
+ * @param request - the pulled conversation and the directory.
+ * @returns the new conversation's top-level Session.
+ * @throws RemoteError `session-sync/not-pulled` for any other Session, and the fork's own errors,
+ *   such as `session/fork-folder-unavailable` for a directory that does not exist here.
+ */
+@Remote async continueConversation(request: SessionSyncContinueRequest): Promise<{ readonly sessionId: SessionId }>
+
+/**
+ * Stream the pulled conversations.
+ * @param signal - stream lifetime.
+ * @returns the current state, then every change.
+ */
+@Remote({ mode: 'stream' }) watch(signal: AbortSignal): AsyncIterable<SessionSyncView>
+
+/** Pull the other machines' changes and look for changes here now, as when the window comes back to the front. */
+@Remote refresh(): Promise<void>
+```
+
+Types: [SessionId](core.md)
+
+Source: [`packages/session-query/session-sync/src/index.ts`](../../packages/session-query/session-sync/src/index.ts)
 <!-- END GENERATED cordis-surface -->

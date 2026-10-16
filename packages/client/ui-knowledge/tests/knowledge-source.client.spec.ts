@@ -5,7 +5,7 @@ import { createKnowledgeSource, type KnowledgeDependencies } from '../src/client
 
 const SETTINGS = { chunkStrategy: 'structured' as const, chunkSeparator: '\\n\\n', chunkSize: 1024, chunkOverlap: 200, documentCount: 6, threshold: 0 }
 const base = (id: string, name: string) => ({
-  id, name, embeddingModelId: 'local/q', embeddingModelName: 'Q', status: 'ready' as const, items: [], createdAt: '2026-10-05T00:00:00.000Z',
+  id, name, embeddingModelId: 'local/q', embeddingModelName: 'Q', modelMissing: false, status: 'ready' as const, items: [], createdAt: '2026-10-05T00:00:00.000Z',
   dimensions: 4, settings: SETTINGS,
 })
 let revision = 0

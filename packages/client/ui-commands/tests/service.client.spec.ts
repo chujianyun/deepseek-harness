@@ -441,6 +441,29 @@ describe('candidates', () => {
       }
     })
 
+    it('a command hidden from the menu leaves the empty query, stays found by a typed one, and returns when its last registration is disposed', async () => {
+      const { command, source } = await bench({ commands: () => Promise.resolve({ commands: SHIPPED }) })
+      const names = async (query: string) => (await source.candidates(proj('s1'), req(query))).map(c => c.name)
+      const first = command.hideFromMenu('feedback')
+      const second = command.hideFromMenu('feedback')
+      await expect(names('')).resolves.toEqual(['goal', 'plan', 'compact', 'permission', 'export', 'deploy'])
+      await expect(names('feedback')).resolves.toEqual(['feedback'])
+      first()
+      await expect(names('')).resolves.not.toContain('feedback')
+      second()
+      await expect(names('')).resolves.toContain('feedback')
+    })
+
+    it('a menu hide registered on a plugin fiber ends with that fiber', async () => {
+      const { ctx, source } = await bench({ commands: () => Promise.resolve({ commands: SHIPPED }) })
+      const names = async () => (await source.candidates(proj('s1'), req(''))).map(c => c.name)
+      const fiber = ctx.plugin({ inject: ['commandUi'], apply: (child: Context) => { child.get('commandUi')!.hideFromMenu('feedback') } })
+      await fiber.await()
+      await expect(names()).resolves.not.toContain('feedback')
+      await fiber.dispose()
+      await expect(names()).resolves.toContain('feedback')
+    })
+
     it('a typed query ranks rows flat by name or label and drops the section headings', async () => {
       const { command, source } = await bench({ commands: () => Promise.resolve({ commands: SHIPPED }) })
       command.register(modelContribution())

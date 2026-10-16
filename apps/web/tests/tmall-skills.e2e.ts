@@ -58,9 +58,10 @@ const REMEMBERED = {
     { key: 'productConfirm', text: '您已确认所发布的产品信息都准确无误。' },
   ] },
 }
-/** What the scripted model answers for a Pinduoduo draft: the title, properties, and the extra prices. */
-const PDD_ANSWERS = { values: {
+/** What the scripted model answers for a Pinduoduo draft: the title, properties, the certificate image, and the extra prices. */
+const PDD_ANSWERS = { images: { '资质/医疗器械注册证.png': 'other' }, values: {
   商品标题: { value: '名流水多多三合一玻尿酸避孕套', source: '模型生成' }, 品牌: { value: 'Personage/名流', source: '店铺资料' },
+  '医疗器械注册证/器械备案凭证（素材文件）': { value: '资质/医疗器械注册证.png', source: '素材原值' },
   注册证号: { value: '皖械注准20182180006', source: '店铺资料' }, 发货时间: { value: '48小时', source: '店铺资料' },
   '单买价比拼单价高（元）': { value: '5', source: '店铺资料' }, '参考价（元）': { value: '99.9', source: '店铺资料' },
 } }
@@ -517,7 +518,8 @@ it.skipIf(process.platform === 'win32')('saves a checked draft to a Pinduoduo st
     const input = page.locator('[data-composer-input][contenteditable="true"]').first()
     const materials = join(scaffold.workspaceCwd, 'pdd-publish', '素材')
     for (const [file, bytes] of [
-      ['方图/主图-1.png', png(120, 120)], ['详情页/1.png', png(60, 100)], ['sku图/sku1.png', png(100, 100)], ['sku图/sku2.png', png(100, 100)],
+      ['方图/主图-1.png', png(120, 120)], ['长图/主图-1.png', png(90, 120)], ['素材图/白底.png', png(100, 100, 'white')], ['详情页/1.png', png(60, 100)],
+      ['资质/医疗器械注册证.png', png(70, 100)], ['sku图/sku1.png', png(100, 100)], ['sku图/sku2.png', png(100, 100)],
       ['sku.csv', '序号,上架名称,商家编码,到手价\nSKU1,尝鲜装 18只,ml-a,42.9\nSKU2,超值装 40只,ml-b,69.9\n'],
     ] as const) {
       await mkdir(join(materials, file, '..'), { recursive: true })
@@ -532,6 +534,11 @@ it.skipIf(process.platform === 'win32')('saves a checked draft to a Pinduoduo st
     expect(steps[1]).toContain('1. 成人用品 > 计生用品 > 避孕套（类目 id 18770）—— 拼多多类目搜索「避孕套」')
     expect(steps[2]).toContain('- 品牌，可选：Personage/名流')
     expect(steps[3]).toContain('按类目 成人用品 > 计生用品 > 避孕套（18770）的字段规则检查：缺失 1、不符合 0')
+    expect(steps[3]).toContain('- 商品轮播图（3:4）（threeToFourImages）：1 张〔素材原值〕')
+    expect(steps[3]).toContain('- 白底图（yinHeWhiteBgImage）：1 张〔素材原值〕')
+    expect(steps[3]).toContain('- 医疗器械注册证/器械备案凭证（素材文件）（medicalDeviceImage）：资质/医疗器械注册证.png〔素材原值〕')
+    // The stand-in refuses a save without the certificate image or with an unfiled white-background image.
+    expect(steps[4]).toContain('登记白底图')
     expect(steps[4]).toContain('已保存到店铺 拼多多小店 的草稿箱（没有提交上架）：草稿 ID 203110001，商品 ID 1013940001，标题「名流水多多三合一玻尿酸避孕套」。')
     expect(steps[5]).toContain('没有重复保存：店铺 拼多多小店 里已有「名流水多多三合一玻尿酸避孕套」，ID 203110001（')
     const tried = JSON.parse(await readFile(join(scaffold.workspaceCwd, 'pdd-publish', '拼多多发品', '发品记录.json'), 'utf8')) as { status: string; draftId?: string }[]
@@ -685,7 +692,8 @@ it.skipIf(process.platform === 'win32')('publishes one material folder to a Tmal
     const workspace = join(scaffold.workspaceCwd, 'multi-publish')
     for (const [file, bytes] of [
       ['方图/主图-1.png', png(120, 120)], ['长图/主图-1.png', png(90, 120)], ['素材图/白底.png', png(100, 100, 'white')],
-      ['素材图/透明图.png', png(80, 80, 'clear')], ['详情页/1.png', png(60, 100)], ['sku图/sku1.png', png(100, 100)], ['sku图/sku2.png', png(100, 100)],
+      ['素材图/透明图.png', png(80, 80, 'clear')], ['详情页/1.png', png(60, 100)], ['资质/医疗器械注册证.png', png(70, 100)], ['sku图/sku1.png', png(100, 100)],
+      ['sku图/sku2.png', png(100, 100)],
       ['sku.csv', '序号,上架名称,商家编码,到手价\nSKU1,尝鲜装 18只,ml-a,42.9\nSKU2,超值装 40只,ml-b,69.9\n'],
     ] as const) {
       await mkdir(join(workspace, '素材', file, '..'), { recursive: true })

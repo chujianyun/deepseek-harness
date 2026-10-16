@@ -24,7 +24,7 @@ export interface ConnectorsDependencies {
   readonly disconnect: (id: string) => Promise<RemoteResult<ConnectorsState>>
   readonly check: () => Promise<RemoteResult<ConnectorsState>>
   readonly setEnabled: (id: string, enabled: boolean) => Promise<RemoteResult<ConnectorsState>>
-  readonly revokeAlwaysAllowed: (id: string, command: string) => Promise<RemoteResult<ConnectorsState>>
+  readonly setCompanyToolEnabled: (name: string, enabled: boolean) => Promise<RemoteResult<ConnectorsState>>
   /** Open an address in the system browser. */
   readonly openUrl: (url: string) => void
 }
@@ -39,8 +39,8 @@ export interface ConnectorsInjected {
   readonly onDisconnect: (id: string) => Promise<void>
   /** Switch a connector on or off for the current company. */
   readonly onSetEnabled: (id: string, enabled: boolean) => Promise<void>
-  /** Stop always allowing a write command for the current company. */
-  readonly onRevokeAlwaysAllowed: (id: string, command: string) => Promise<void>
+  /** Switch a company tool on or off for the current company; it is busy as `company:<name>`. */
+  readonly onSetCompanyEnabled: (name: string, enabled: boolean) => Promise<void>
   /** Check every connection again, as opening the page does. */
   readonly onCheck: () => Promise<void>
   /** Open a sign-in address in the system browser. */
@@ -97,7 +97,7 @@ export function createConnectorsSource(deps: ConnectorsDependencies): Connectors
     onCancelConnect: id => run(id, () => deps.cancelConnect(id)),
     onDisconnect: id => run(id, () => deps.disconnect(id)),
     onSetEnabled: (id, enabled) => run(id, () => deps.setEnabled(id, enabled)),
-    onRevokeAlwaysAllowed: (id, command) => run(id, () => deps.revokeAlwaysAllowed(id, command)),
+    onSetCompanyEnabled: (name, enabled) => run(`company:${name}`, () => deps.setCompanyToolEnabled(name, enabled)),
     onCheck: async () => {
       const result = await deps.check()
       if (!result.ok) patch({ failure: result.error.message })

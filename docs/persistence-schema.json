@@ -23068,7 +23068,7 @@
       "digest": "2bcf34ac7dc95d34676ac2da19c692bd1fb17a58c54164fb904c8cd1b83c243b",
       "names": [],
       "sources": [
-        "packages/connector/connectors/src/types.ts:18"
+        "packages/connector/connectors/src/types.ts:19"
       ]
     },
     {
@@ -23565,7 +23565,7 @@
         "packages/workflow/workflow/src/types.ts#WorkflowRunId"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:409",
+        "packages/api/session-controller/src/types.ts:418",
         "packages/attachment/attachment/src/brand.ts:6",
         "packages/compaction/compaction/src/brand.ts:4",
         "packages/core/session/src/types.ts:20",
@@ -24020,7 +24020,7 @@
       "digest": "6a4f72e2e179e17b922f2a9392c0e1c8f8c707f32494372454850a3eb184a6e7",
       "names": [],
       "sources": [
-        "packages/api/session-controller/src/types.ts:414"
+        "packages/api/session-controller/src/types.ts:423"
       ]
     },
     {
@@ -24483,7 +24483,7 @@
       "digest": "8a9c990773f798eac10ca8878e6bcc531ee080bc589cac956730e462cc6a09ad",
       "names": [],
       "sources": [
-        "packages/interaction/permission-presets/src/index.ts:59"
+        "packages/interaction/permission-presets/src/index.ts:60"
       ]
     },
     {

@@ -63,7 +63,8 @@
         appVersion: !!js process.env.DSH_CLIENT_VERSION
 
     # Host-owned opt-in sampled when a new Web session receives its preset
-    # delegation tools. The Plugins page edits this settings namespace.
+    # delegation tools. The Plugins page edits this settings namespace (not in the
+    # enterprise Desktop, which keeps the shipped value).
     - id: subagent-model-selection-settings
       name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 
@@ -203,6 +204,13 @@
       name: '@deepseek-ai/dsh-session-share'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
+    # Session sync for Desktop: every conversation, with its subagent Sessions and
+    # attachments, uploaded to the user center of the Hub sign-in for the employee's
+    # other machines; mounted exactly when hub-account is.
+    - id: session-sync
+      name: '@deepseek-ai/dsh-session-sync'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     # Embedding models for Desktop knowledge bases: the local model downloaded at
     # startup and API embedding models over configured provider routes.
     - id: embedding
@@ -229,7 +237,7 @@
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
     # Automation tasks created from the Automation tasks form: a named Session with its assistant,
-    # model, permission, and connector grant, and the schedule bound to it.
+    # model, and permission, and the schedule bound to it.
     - id: automation-tasks
       name: '@deepseek-ai/dsh-automation-tasks'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
@@ -411,9 +419,12 @@
 
     # Plugin management: the sidebar Plugins page installs, enables, disables,
     # and removes the profile's bundles through the `pluginManager` Remote.
-    # Without a profile-backed Host it reports itself unavailable.
+    # Without a profile-backed Host it reports itself unavailable. The enterprise
+    # Desktop (a user center configured) leaves the page out: its employees keep
+    # the shipped plugin defaults.
     - id: ui-plugin-manager
       name: '@deepseek-ai/dsh-client-ui-plugin-manager'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     # Desktop Skills page: the sidebar entry and the installed-skill cards over
     # the `installedSkills` Remote.
@@ -460,9 +471,11 @@
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
 
     # Read-only Plugin list tab in the Settings Plugins section; the built-in
-    # bundles the sidebar page leaves out are inspected here.
+    # bundles the sidebar page leaves out are inspected here. Left out of the
+    # enterprise Desktop with the section it registers into.
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     - id: ui-conversation
       name: '@deepseek-ai/dsh-client-ui-conversation'
@@ -492,6 +505,8 @@
         defaultSessionGrouping: assistant
         # Each group lists its five most recent Sessions before "show more".
         sessionsPerGroup: 5
+        # The composer's + menu leaves out /feedback; the Session header's 问题反馈 button reports problems instead.
+        menuHiddenCommands: [feedback]
 
     - id: ui-attachment
       name: '@deepseek-ai/dsh-client-ui-attachment'
@@ -561,6 +576,12 @@
       name: '@deepseek-ai/dsh-client-ui-session-share'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
 
+    # Conversations from other computers: their row mark and hover line and the
+    # view-only composer, over the session-sync row.
+    - id: ui-session-sync
+      name: '@deepseek-ai/dsh-client-ui-session-sync'
+      disabled: !!js "ctx.get('profileContext')?.name !== 'desktop' || !process.env.DSH_HUB_ORIGIN"
+
     # Report a problem button in the Session header and its dialog, over the feedback-report row.
     - id: ui-feedback-report
       name: '@deepseek-ai/dsh-client-ui-feedback-report'
@@ -593,24 +614,31 @@
 
     # The Built-in plugins settings section: the navigation entry and the tab
     # row the inventory tab registers into. The official configuration pages
-    # are the companion rows below.
+    # are the companion rows below. Left out of the enterprise Desktop, as the
+    # Plugins page is.
     - id: ui-settings-plugins
       name: '@deepseek-ai/dsh-client-ui-settings-plugins'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     # The official settings pages: one companion package per host-plane
     # namespace, each registering its page into the Plugins page while the
-    # Host serves the namespace.
+    # Host serves the namespace. Left out of the enterprise Desktop with the
+    # Plugins page; the namespaces keep their shipped values there.
     - id: ui-settings-shell
       name: '@deepseek-ai/dsh-client-ui-settings-shell'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     - id: ui-settings-agent-loop
       name: '@deepseek-ai/dsh-client-ui-settings-agent-loop'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     - id: ui-settings-subagent
       name: '@deepseek-ai/dsh-client-ui-settings-subagent'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     - id: ui-settings-web-search
       name: '@deepseek-ai/dsh-client-ui-settings-web-search'
+      disabled: !!js "ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN"
 
     # Plan control: the composer plan seat over the plan projection + /plan channel.
     - id: ui-plan
@@ -759,5 +787,6 @@
       config:
         default: standard
         # Desktop configured with a user center (the enterprise build) runs every session on the
-        # default (Standard) preset and shows no preset chip or header label.
+        # default (Standard) preset and shows no preset chip, header label, or Agent presets settings section.
         showPicker: !!js "!(ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN)"
+        showSettings: !!js "!(ctx.get('profileContext')?.name === 'desktop' && !!process.env.DSH_HUB_ORIGIN)"

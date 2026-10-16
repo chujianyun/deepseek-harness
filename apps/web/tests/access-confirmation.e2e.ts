@@ -1,12 +1,14 @@
 // Web e2e scenario: both current-session permission pickers expose the shipped
 // experimental Auto entry and gate it behind the same locale-aware, in-page risk
-// confirmation. Full access keeps its existing gate. Zero model calls: the
+// confirmation. Full access keeps its existing gate and, once enabled, becomes
+// the default of later sessions. Zero model calls: the
 // scenario boots the shipped Web composition and exercises the real process
 // catalog, permission projection, client command path, HTTP RPC, and pushed
 // update.
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import {
@@ -169,6 +171,14 @@ describe('web e2e: experimental Auto and Full access confirmation', () => {
     await expect.poll(() => access.getAttribute('aria-label'), { timeout: 10_000 })
       .toBe('访问模式，当前：完全权限')
     expect(await dialog.count()).toBe(0)
+    // The pick is also the default of later sessions; later cases expect the shipped default back.
+    try {
+      await expect.poll(() => scaffold.ctx.permissionPresets.defaultPreset, { timeout: 10_000 }).toBe('danger-full-access')
+      const later = scaffold.ctx.sessions.create(SessionId(`after-full-access-${String(Date.now())}`))
+      expect(scaffold.ctx.permissionPresets.current(later)).toBe('danger-full-access')
+    } finally {
+      await scaffold.ctx.get('settings')!.update('permission', { defaultPreset: 'workspace-write' })
+    }
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 

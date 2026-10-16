@@ -14,7 +14,7 @@
 
 ## 在对话中使用
 
-连接器已安装且当前租户开启它时，`dsh-shell-env` 的 PATH contributor 会把每个租户以各 CLI 命名的脚本放到模型 shell 的 `PATH` 最前面：已连接时，它用该租户的目录运行已安装的 CLI；未连接时，它拒绝执行并指向连接器页面；命令失败会触发一次健康检查。已连接时，CLI 发行版提供的 Skill 从 `connectors` provider 加入 skill 目录，排在用户自己的 Skill 目录之前。关闭连接器会保留登录，但会把两者都撤下。bash 调用运行前，连接器的 `tools/pre-execute` 监听器按每条连接器命令在 `--help` 中的声明分类（lark-cli 的 `Risk:` 行、dws 的 `Safety:` 行）：读取直接运行；写入以及无法读出风险的命令在审批面板中等待用户批准；高风险写入带 ⚠️ 警告，CLI 只在确认后运行的命令在允许后以 `--yes` 运行。普通写入可以为当前租户 **始终允许**：之后相同命令词的调用不再询问，并留下 `connectors/always-allowed` 审计事件；连接器卡片列出这些命令并可撤销。完全权限（`danger-full-access`）的会话什么都不问，其中这类普通写入不经询问直接运行并留下同样的事件，而每次都需要用户批准的命令仍会询问，自动化任务按声明的操作作答，其他情况由会话的策略拒绝。
+连接器已安装且当前租户开启它时，`dsh-shell-env` 的 PATH contributor 会把每个租户以各 CLI 命名的脚本放到模型 shell 的 `PATH` 最前面：已连接时，它用该租户的目录运行已安装的 CLI；未连接时，它拒绝执行并指向连接器页面；命令失败会触发一次健康检查。已连接时，CLI 发行版提供的 Skill 从 `connectors` provider 加入 skill 目录，排在用户自己的 Skill 目录之前。关闭连接器会保留登录，但会把两者都撤下。bash 调用运行前，连接器的 `tools/pre-execute` 监听器按每条连接器命令在 `--help` 中的声明分类（lark-cli 的 `Risk:` 行、dws 的 `Safety:` 行）：读取和普通写入直接运行；高风险写入、CLI 只在确认后运行的命令以及无法读出风险的命令在审批面板中等待用户批准；高风险写入带 ⚠️ 警告，CLI 只在确认后运行的命令在允许后以 `--yes` 运行。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -94,6 +94,16 @@ Host owner of the connectors and of the `connectors` Remote namespace.
 @Remote async check(): Promise<ConnectorsState>
 
 /**
+ * Switch a company tool on or off for the current tenant, persisting the profile's lists; off, the
+ * model shell gets no command for it.
+ * @param name - the tool's name.
+ * @param enabled - whether the model may use it.
+ * @returns the state once the setting is saved and the model shell's commands follow it.
+ * @throws RemoteError `connectors/no-company-tool` or `hub-account/signed-out`; Error when mounted without Settings or a profile entry.
+ */
+@Remote async setCompanyToolEnabled(name: string, enabled: boolean): Promise<ConnectorsState>
+
+/**
  * Switch a connector on or off for the current tenant, persisting the profile's list. A switched-off
  * connector stays signed in, but the model gets neither its Skills nor its CLI.
  * @param id - the connector.
@@ -105,29 +115,6 @@ Host owner of the connectors and of the `connectors` Remote namespace.
 @Remote async setEnabled(id: string, enabled: boolean): Promise<ConnectorsState>
 
 /**
- * Stop always allowing a write command for the current tenant: it asks again.
- * @param id - the connector.
- * @param command - the command words, as the view lists them.
- * @returns the state once the setting is saved.
- * @throws RemoteError `connectors/not-found`, `connectors/unavailable`, or `hub-account/signed-out`;
- *   Error when mounted without Settings or a profile entry.
- */
-@Remote async revokeAlwaysAllowed(id: string, command: string): Promise<ConnectorsState>
-
-/**
- * Let a session's plain connector writes through these connectors run without asking while the
- * signed-in tenant stays signed in, as the session of an unattended automation task needs: appends
- * `connectors/session-allowed`, which replaces the session's earlier grant and survives a restart
- * with the session log; an unchanged grant appends nothing. High-risk writes, commands the CLI
- * runs only confirmed, and commands of unknown risk still ask.
- * @param session - the session to grant.
- * @param ids - connectors to allow; an empty list withdraws the grant. Refuses an unknown id with
- *   `connectors/not-found`, one unsupported here with `connectors/unavailable`, and a signed-out Hub
- *   with `hub-account/signed-out`.
- */
-allowInSession(session: Session, ids: readonly string[]): void
-
-/**
  * Keep sessions from using connectors. Every added filter applies to each model shell call: a
  * connector a filter refuses for the call's agent puts no CLI on that call's `PATH`, gives the
  * session none of its Skills, and a call that names its CLI is denied. Calls without an agent
@@ -137,8 +124,6 @@ allowInSession(session: Session, ids: readonly string[]): void
  */
 restrict(filter: ConnectorFilter): () => void
 ```
-
-Types: [Session](session.zh.md)
 
 Source: [`packages/connector/connectors/src/index.ts`](../../packages/connector/connectors/src/index.ts)
 <!-- END GENERATED cordis-surface -->

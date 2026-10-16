@@ -33,6 +33,8 @@ access token 在到期前 `refreshMarginMs` 刷新，同时轮换 refresh token�
 
 两个辅助函数供按租户保存数据的服务使用。`followTenant(hub, signal, current, switchTo, logger, owner)` 先以当前登录的租户（或 `null`）调用 `switchTo`，第一次切换完成后才返回，失败时以该错误拒绝；之后直到 `signal` 中止，只要租户与 `current()` 不同就在后台再次调用 `switchTo`。后台切换失败时以 `owner` 为前缀记一条警告，之后照常跟随下一次变化。调用方负责让 `switchTo` 与自己的其他写入依次执行。`userCenterRefusal(res)` 把被拒的客户端接口响应读成 `{reason, status}`：原因取响应体的 `message`（列表用 `；` 连接），响应体没有时为 `the user center answered <状态码>`；调用方据此抛出自己的 `RemoteError`。
 
+通过这个登录同步员工数据的服务（[`session-sync`](../../session-query/session-sync/README.zh.md)、[`knowledge-base`](../../knowledge/knowledge-base/README.zh.md)）共用本包的其余部分。`syncAccountOf(state)` 给出登录用来同步的账号 `<tenantId>/<phone>`，未登录或没有租户时为 `null`。`SyncSignIn` 跟随这个账号（`follow(changed)` 在跟上当前账号后返回，之后每次变化调用 `changed`），并以它调用用户中心：`call(path, init, account)` 在登录已变、或在时限内连不上用户中心时抛出 `SyncRetryLater`。`refuseSync(res)` 对 403 抛出 `SyncNotAllowed`（这个登录不能同步），对其他拒绝抛出 `SyncRetryLater`。`SyncSignIn` 之外，`SyncRecordFile` 保存同步记录（JSON）：`load(warn, owner)` 读取，文件缺失或损坏时按空记录处理，损坏时以 `owner` 为前缀警告；`write(change)` 在之前的修改之后经临时文件写入一次修改，写入失败时记录保持原样。`withEntry(record, key, value)` 设置或删除这种记录中的一项。`SyncPasses` 按定时器一次只跑一轮：`schedule(delay, keepSooner)` 替换等待中的一轮，除非指定 `keepSooner` 且那一轮更早；运行中又请求的一轮在其结束后紧接着运行；`stop()` 取消等待中的一轮，并返回正在运行的一轮供释放时等待。
+
 每次登录后、以及已登录时每次启动时，本包从 `GET /api/client/branding` 读取租户的品牌（登录页 Logo 与欢迎标题、新会话页标语），并从固定路径 `/api/client/branding/logo` 下载 Logo（不使用响应中的地址，访问令牌只发往用户中心）。Logo 类型与声明不符或不是 PNG、JPEG、SVG、超过 512 KB、或 sha256 与声明不符时不予采用；sha256 与缓存相同的 Logo 不重复下载。结果替换 `<dshHome>/cache/hub-branding` 下的缓存（一条记录含用户中心地址与租户 ID，Logo 文件以 sha256 命名）；租户三项都没设置时清空缓存；响应里没有 `slogan`（T45 之前的用户中心）按没有标语处理。读取失败或响应格式不对时保留缓存。`getBranding()` 返回缓存的 `{tenantId, title, slogan, logo}`，Logo 为可用于 `<img>` 的 `data:` URL；每个状态都带随缓存变化的 `branding` 标记（`tenantId`、`title`、`slogan`、`logoSha256`）。已登录时两者只给出当前租户的品牌；未登录时给出上次登录租户的品牌。为其他用户中心写入的缓存会被忽略。
 
 -----
@@ -44,7 +46,7 @@ access token 在到期前 `refreshMarginMs` 刷新，同时轮换 refresh token�
 |---|---|---|
 | `origin` | 必填 | 提供 `/oauth/*` 的用户中心地址；HTTPS，或在 `allowLoopbackHttp` 下的回环 HTTP。 |
 | `clientId` | 必填 | 为 DSH 登记的公共客户端的 `client_id`。 |
-| `scope` | `profile skills:read skills:write` | 登录时申请的权限范围。 |
+| `scope` | `profile skills:read skills:write connectors:use` | 登录时申请的权限范围。 |
 | `allowLoopbackHttp` | `false` | 接受回环上的 HTTP 地址，用于开发和测试。 |
 | `requestTimeoutMs` | `15000` | 每个用户中心请求的超时。 |
 | `attemptTimeoutMs` | `600000` | 一次浏览器登录尝试的上限。 |

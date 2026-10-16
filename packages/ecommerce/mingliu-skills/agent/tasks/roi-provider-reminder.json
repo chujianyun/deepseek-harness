@@ -12,6 +12,5 @@
     "time": "10:00"
   },
   "timeZone": "Asia/Shanghai",
-  "connectors": [],
   "permission": "workspace-write"
 }

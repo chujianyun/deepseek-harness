@@ -2,9 +2,9 @@
 // A stand-in for Google Chrome in tests: it answers `--version`, serves the DevTools HTTP endpoints
 // and the browser WebSocket on --remote-debugging-port, and plays the Tmall check: the home page
 // sends `mtop.user.getusersimple`, signed in while `<user-data-dir>/fake-signed-in` holds a nick; the
-// Taobao, Pinduoduo, Douyin shop, and Yuntai pages answer their own checks, and the Taobao, Douyin shop,
-// and Yuntai pages go to sign in while signed out; the Yuntai check names the account, and the
-// Pinduoduo and Douyin shop pages also name the store, which
+// Taobao, Pinduoduo, Douyin shop, JD merchant, and Yuntai pages answer their own checks, and the Taobao,
+// Douyin shop, JD, and Yuntai pages go to sign in while signed out; the Yuntai check names the account,
+// and the Pinduoduo and Douyin shop pages also name the store, which
 // FAKE_CHROME_NO_STORE leaves out and FAKE_CHROME_NO_STORE_BODY loses. FAKE_CHROME_OFFLINE fails every
 // navigation. A connection that sets auto-attach watches every tab, as DSH's guard does: each tab's
 // page loads pause until it continues or fails them; an item.taobao.com page redirects to Tmall,
@@ -97,6 +97,8 @@ const LOGINS = [
   ['https://mms.pinduoduo.com/login', 'https://mms.pinduoduo.com/home/'],
   ['https://fxg.jinritemai.com/login', 'https://fxg.jinritemai.com/ffa/mshop/homepage/index'],
   ['https://mozi-login.alibaba-inc.com/', 'https://yuntai.taobao.com/v2/third-party-invest'],
+  ['https://passport.shop.jd.com/login', 'https://shop.jd.com/jdm/home'],
+  ['https://passport.jd.com/new/login', 'https://www.jd.com/'],
 ]
 const urlOf = (target) => {
   const home = LOGINS.find(([login]) => target.url.startsWith(login))?.[1]
@@ -127,6 +129,20 @@ const pageLoad = (url, nick) => {
       : { responses: [
         ...store({ url: 'https://mms.pinduoduo.com/earth/api/mallInfo/querySimpleCredential', body: JSON.stringify({ success: true, result: { merchantMainSimpleVO: { mallName: `${nick}店` } } }) }),
         { url: 'https://mms.pinduoduo.com/janus/api/checkLogin', body: JSON.stringify({ success: true, result: { login: true } }) },
+      ] }
+  }
+  if (url.startsWith('https://www.jd.com/')) {
+    const identity = nick === undefined ? { IsAuthenticated: false, Unick: '', Name: '' } : { IsAuthenticated: true, Unick: nick, Name: 'jd_fake' }
+    return { responses: [{ url: 'https://passport.jd.com/loginservice.aspx?method=Login&callback=jsonpLogin', body: `jsonpLogin(${JSON.stringify({ Identity: identity })})` }] }
+  }
+  if (url.startsWith('https://shop.jd.com/')) {
+    // Every backend call shares one path; only its `api` query names what it asks.
+    const sff = api => `https://sff.jd.com/api?v=1.0&appId=ZSCUMIUH2ZNF8Z2PVU1J&api=${api}`
+    return nick === undefined
+      ? { redirect: 'https://passport.shop.jd.com/login/index.action/jdm?ReturnUrl=https%3A%2F%2Fshop.jd.com%2Fjdm%2Fhome' }
+      : { responses: [
+        { url: sff('dsm.shop.home.comm.grayFacade.isGray'), body: JSON.stringify({ code: 200, data: false }) },
+        { url: sff('dsm.shop.center.pageframe.navigation.NavigationFacade.findShopInfo'), body: JSON.stringify({ msg: '成功', code: 200, data: { shopName: `${nick}店`, account: nick, logoUrl: '' } }) },
       ] }
   }
   if (url.startsWith('https://fxg.jinritemai.com/')) {
@@ -237,7 +253,7 @@ const submitItem = (expression) => {
   return { models: { globalMessage: { successUrl: `https://sell.publish.tmall.com/tmall/success.htm?primaryId=${query.get('itemId')}&auctionStatus=-2` } } }
 }
 /** A Pinduoduo store's 草稿箱 and edit sessions. */
-const mall = { drafts: [], sessions: 0 }
+const mall = { drafts: [], sessions: 0, materials: [] }
 const PDD_LINE = { cat_id_1: 16237, cat_id_2: 18768, cat_id_3: 18770, cat_id_4: 0, cat_name_1: '成人用品', cat_name_2: '计生用品', cat_name_3: '避孕套', optional: true }
 const pddApi = (expression) => {
   const [, method, path, body] = /^window\.__dshPdd\("(\w+)", ("(?:[^"\\]|\\.)*"), (.*)\)$/su.exec(expression) ?? []
@@ -251,14 +267,18 @@ const pddApi = (expression) => {
       { id: 510122, ref_pid: 310, pid: 5, name_alias: '品牌', required: true, control_type: 1, choose_max_num: 1, values: { content: [{ vid: 3954, value: 'Personage/名流' }] } },
       { id: 510123, ref_pid: 842, pid: 234, name_alias: '注册证号', required: true, control_type: 0, choose_max_num: 0 },
     ] }] })
-    case 'POST /glide/v2/mms/query/rules/limit/new': return ok({ shipment_limit_second: [86400, 172800], goods_title_length_limit: 60 })
+    case 'POST /glide/v2/mms/query/rules/limit/new': return ok({ shipment_limit_second: [86400, 172800], goods_title_length_limit: 60, medical_device_related: true })
     case 'POST /glide/v2/mms/edit/commit/create_new': mall.sessions++; return ok({ goods_commit_id: 203110000 + mall.sessions, goods_id: 1013940000 + mall.sessions })
     case 'POST /glide/mms/goodsCommit/action/update_goods_commit_info': return ok(true)
     case 'POST /galerie/business/get_signature': return ok({ signature: 'fake-sign' })
     case 'POST /glide/v2/mms/query/spec/by/name': return ok(31406958000 + data.name.length)
-    case 'POST /glide/v2/mms/query/commit/detail': return ok({ goods_id: data.goods_commit_id - 203110000 + 1013940000, check_status: 9, cost_template_id: 1, groups: {} })
+    case 'POST /glide/v2/mms/query/commit/detail': return ok({ goods_id: data.goods_commit_id - 203110000 + 1013940000, check_status: 9, cost_template_id: 1, groups: {}, cat_ids: [16237, 18768, 18770, 0] })
+    case 'POST /giraffe/mms/material/createDraft': mall.materials.push(data.content); return ok(55121723731)
     case 'POST /glide/mms/goodsCommit/action/edit':
       if (signedInAs()?.includes('拒')) return { success: false, error_code: 30001, error_msg: '测试店铺拒收这件商品' }
+      // A medical device's category needs the certificate image, and a white-background image must be filed first.
+      if (!data.gallery?.some(image => image.type === 106)) return { success: false, error_code: 30002, error_msg: '请上传医疗器械注册证/器械备案凭证' }
+      if (data.prefillWhitePic !== undefined && !mall.materials.includes(data.prefillWhitePic)) return { success: false, error_code: 30003, error_msg: '白底图没有登记' }
       mall.drafts.unshift({ id: Number(data.goods_commit_id), goods_id: data.goods_id, goods_name: data.goods_name, check_status: 0 })
       return ok(true)
     case 'POST /glide/v2/mms/query/commit/list': return ok({ total: mall.drafts.length, list: mall.drafts.slice(data.start, data.start + data.length) })
@@ -488,8 +508,10 @@ wss.on('connection', (socket) => {
           const requestId = `r2-${String(index)}`
           const lost = process.env.FAKE_CHROME_NO_BODY !== undefined || (response.store === true && process.env.FAKE_CHROME_NO_STORE_BODY !== undefined)
           if (!lost) bodies.set(requestId, response.body)
-          emit('Network.responseReceived', { requestId, response: { url: `${response.url}?t=1&sign=x` } }, 'other-session')
-          emit('Network.responseReceived', { requestId, response: { url: `${response.url}?t=1&sign=x` } }, sessionId)
+          // Each call carries its own time and signature, after any query of its own.
+          const url = `${response.url}${response.url.includes('?') ? '&' : '?'}t=1&sign=x`
+          emit('Network.responseReceived', { requestId, response: { url } }, 'other-session')
+          emit('Network.responseReceived', { requestId, response: { url } }, sessionId)
           emit('Network.loadingFinished', { requestId }, 'other-session')
           emit('Network.loadingFinished', { requestId }, sessionId)
         })

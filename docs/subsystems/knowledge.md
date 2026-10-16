@@ -47,6 +47,12 @@ Host owner of the knowledge bases and of the `knowledgeBases` Remote namespace.
 @Remote({ mode: 'stream' }) watch(signal: AbortSignal): AsyncIterable<KnowledgeState>
 
 /**
+ * Pull the employee's other computers' knowledge base changes and upload this computer's now, as
+ * when the Knowledge page opens or the window comes back to the front.
+ */
+@Remote syncNow(): Promise<void>
+
+/**
  * Create a knowledge base for the signed-in tenant.
  * @param name - display name, unique within the tenant.
  * @param embeddingModelId - an embedding model Settings → Embedding models offers.
@@ -175,11 +181,11 @@ Host owner of the knowledge bases and of the `knowledgeBases` Remote namespace.
 @Remote async openItem(id: string, itemId: string): Promise<void>
 
 /**
- * Process an item again from its stored copy.
+ * Process an item again from its stored copy; a folder is scanned again, on the computer it was added on only.
  * @param id - knowledge base id.
  * @param itemId - item id.
  * @returns the state with the item pending.
- * @throws RemoteError `knowledge/not-found`.
+ * @throws RemoteError `knowledge/not-found`, or `knowledge/folder-elsewhere` for a folder another computer added.
  */
 @Remote reprocessItem(id: string, itemId: string): Promise<KnowledgeState>
 

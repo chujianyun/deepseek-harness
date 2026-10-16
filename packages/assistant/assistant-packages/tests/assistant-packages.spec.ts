@@ -11,8 +11,8 @@ import type { AssistantPackageManifest } from '../src/types.ts'
 
 const CORE = { 'IDENTITY.md': '# 身份\n', 'SOUL.md': '# 人格\n', 'USER.md': '# 用户\n', 'AGENTS.md': '# 方法\n' }
 const TASKS = [
-  { id: 'inspection', title: '部门巡检', prompt: '跑今日巡检', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '11:00' }, timeZone: 'Asia/Shanghai', connectors: ['feishu'], permission: 'full-access', operations: ['lark-cli im +messages-send'] },
-  { id: 'report', title: '天猫日报', prompt: '采集昨日数据', timing: { kind: 'cron', expression: '0 6 * * 1-5' }, timeZone: 'Asia/Shanghai', connectors: [] },
+  { id: 'inspection', title: '部门巡检', prompt: '跑今日巡检', timing: { kind: 'weekly', weekdays: [1, 2, 3, 4, 5], time: '11:00' }, timeZone: 'Asia/Shanghai', permission: 'full-access', operations: ['lark-cli im +messages-send'] },
+  { id: 'report', title: '天猫日报', prompt: '采集昨日数据', timing: { kind: 'cron', expression: '0 6 * * 1-5' }, timeZone: 'Asia/Shanghai' },
 ] as const satisfies AssistantPackageManifest['tasks']
 
 const manifest = (version = '1.0.0', overrides: Partial<AssistantPackageManifest> = {}): AssistantPackageManifest => ({
@@ -337,13 +337,13 @@ describe('updating', () => {
 })
 
 describe('recommended tasks', () => {
-  it('switching on creates an automation task bound to the assistant with the task\'s timing, permission, connectors, and operations', async () => {
+  it('switching on creates an automation task bound to the assistant with the task\'s timing, permission, and operations', async () => {
     const m = await mount()
     m.publish('pkg-1', manifest())
     const { assistantId } = await m.service.installPackage('pkg-1', m.signal)
     const state = await m.service.enableTask(assistantId, 'inspection', 'ws-1' as never, m.signal)
     expect(m.automationTasks.create).toHaveBeenCalledWith({
-      title: '部门巡检', prompt: '跑今日巡检', workspaceId: 'ws-1', assistantId, permission: 'full-access', connectors: ['feishu'],
+      title: '部门巡检', prompt: '跑今日巡检', workspaceId: 'ws-1', assistantId, permission: 'full-access',
       operations: ['lark-cli im +messages-send'],
       timing: { kind: 'weekly', weekly: { time: '11:00:00', time_zone: 'Asia/Shanghai', weekdays: [1, 2, 3, 4, 5] } },
     })
@@ -354,7 +354,6 @@ describe('recommended tasks', () => {
 
     await m.service.enableTask(assistantId, 'report', 'ws-1' as never, m.signal)
     const last = m.automationTasks.create.mock.lastCall?.[0]
-    expect(last).not.toHaveProperty('connectors')
     expect(last).not.toHaveProperty('permission')
     expect(last).not.toHaveProperty('operations')
   })
@@ -422,7 +421,7 @@ describe('recommended tasks', () => {
 
 describe('schedule timing', () => {
   it('maps daily, weekly, and cron timings with the task\'s zone', () => {
-    const base = { id: 't', title: 't', prompt: 'p', timeZone: 'Asia/Tokyo', connectors: [] }
+    const base = { id: 't', title: 't', prompt: 'p', timeZone: 'Asia/Tokyo' }
     expect(scheduleTiming({ ...base, timing: { kind: 'daily', time: '09:30' } })).toEqual({ kind: 'daily', daily: { time: '09:30:00', time_zone: 'Asia/Tokyo' } })
     expect(scheduleTiming({ ...base, timing: { kind: 'cron', expression: '0 6 * * 1-5' } })).toEqual({ kind: 'cron', cron: { expression: '0 6 * * 1-5', time_zone: 'Asia/Tokyo' } })
   })

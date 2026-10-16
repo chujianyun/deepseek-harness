@@ -3,7 +3,6 @@
 /** Simplified Chinese dictionary and key source of truth. */
 export const zh = {
   section: '电商账号',
-  intro: '在 DSH 里登录电商平台账号，之后模型可以通过技能用这些账号读取店铺数据。登录状态由 Google Chrome 自己保存，DSH 不保存密码或 cookie。',
   add: '新增账号',
   addFirst: '添加第一个账号',
   empty: '还没有电商账号。',
@@ -14,6 +13,7 @@ export const zh = {
   platformTaobao: '淘宝',
   platformPinduoduo: '拼多多',
   platformDoudian: '抖店',
+  platformJd: '京东',
   platformYuntai: '健康品牌云台',
   kindMerchant: '商家账号',
   kindBuyer: '买家账号',
@@ -101,7 +101,6 @@ export type EcommerceLocaleKey = keyof typeof zh
 /** English dictionary. */
 export const en = {
   section: 'E-commerce accounts',
-  intro: 'Sign in to e-commerce platform accounts in DSH, so skills can read store data with them. Google Chrome keeps the sign-in; DSH stores no password or cookie.',
   add: 'Add account',
   addFirst: 'Add the first account',
   empty: 'No e-commerce accounts yet.',
@@ -112,6 +111,7 @@ export const en = {
   platformTaobao: 'Taobao',
   platformPinduoduo: 'Pinduoduo',
   platformDoudian: 'Douyin shop',
+  platformJd: 'JD.com',
   platformYuntai: 'Tmall Health Brand Yuntai',
   kindMerchant: 'Merchant account',
   kindBuyer: 'Buyer account',

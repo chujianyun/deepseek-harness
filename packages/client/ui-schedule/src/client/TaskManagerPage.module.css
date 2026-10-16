@@ -556,6 +556,10 @@
   height: 44px;
   min-height: 44px;
   padding: 0 var(--detail-gutter);
+  /* The Tasks page's strip runs under the window's top-right corner. While a corner button
+     shows there (ui-feedback-report's Report a problem), it publishes how far from the window's
+     right edge controls must stay; the strip keeps its actions, with their -8px inset, left of it. */
+  padding-right: max(var(--detail-gutter), calc(var(--dsh-feedback-corner-inset, 0px) + 8px));
   border-bottom: 0.5px solid var(--dsw-alias-border-l3);
 }
 

@@ -146,7 +146,7 @@ function profileJson(view: Pick<AssistantView, ProfileField>): Record<ProfileFie
 /** A task's definition as comparable JSON. */
 // Operations join only when declared, so a task enabled before they existed is not outdated by them alone.
 const taskJson = (task: AssistantPackageTask): string => JSON.stringify([
-  task.title, task.prompt, task.timing, task.timeZone, task.connectors, task.permission ?? null,
+  task.title, task.prompt, task.timing, task.timeZone, task.permission ?? null,
   ...(task.operations === undefined || task.operations.length === 0 ? [] : [task.operations]),
 ])
 
@@ -284,7 +284,6 @@ export class AssistantPackagesService extends TypertRemoteService {
         const created = await this.automationTasks().create({
           title: task.title, prompt: task.prompt, workspaceId, assistantId, timing: scheduleTiming(task),
           ...(task.permission === undefined ? {} : { permission: task.permission }),
-          ...(task.connectors.length === 0 ? {} : { connectors: task.connectors }),
           ...(task.operations === undefined || task.operations.length === 0 ? {} : { operations: task.operations }),
         })
         install.enabled[taskId] = {

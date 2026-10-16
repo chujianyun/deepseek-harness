@@ -56,7 +56,8 @@ import type {
 
 export type * from './types.ts'
 export {
-  DOUDIAN, mtopUserNick, matchesCheckApi, parseJsonOrJsonp, PINDUODUO, PLATFORMS, PUBLIC_PAGE, specOf, TAOBAO, TAOBAO_BUYER, TMALL, YUNTAI,
+  DOUDIAN, JD, JD_BUYER, mtopUserNick, matchesCheckApi, parseJsonOrJsonp, PINDUODUO, PLATFORMS, PUBLIC_PAGE, specOf,
+  TAOBAO, TAOBAO_BUYER, TMALL, YUNTAI,
   type CheckAnswer, type PlatformSpec,
 } from './platforms.ts'
 import { changeStream } from '@deepseek-ai/dsh-change-stream'
@@ -125,7 +126,11 @@ export const Config: Schema<Config> = Schema.object({
 export const CHROME_DOWNLOAD_URL = 'https://www.google.com/chrome/'
 
 /** Which platforms and kinds can be added now, as `<platform>/<kind>`. */
-const ADDABLE: ReadonlySet<string> = new Set(['tmall/merchant', 'taobao/merchant', 'pinduoduo/merchant', 'doudian/merchant', 'yuntai/merchant', 'tmall/buyer', 'taobao/buyer'])
+const ADDABLE: ReadonlySet<string> = new Set([
+  'tmall/merchant', 'taobao/merchant', 'pinduoduo/merchant', 'doudian/merchant', 'jd/merchant', 'yuntai/merchant', 'tmall/buyer', 'taobao/buyer', 'jd/buyer',
+])
+/** The platforms a buyer account can be on. */
+const BUYER_PLATFORMS: readonly string[] = ECOMMERCE_PLATFORMS.filter(platform => ADDABLE.has(`${platform}/buyer`))
 
 /** What asking about an account found: the platform's answer, or its browser data held by another Chrome. */
 type AccountAnswer = ProbeResult | { readonly kind: 'busy' }
@@ -175,7 +180,7 @@ const NODE_KEY = 'DSH_ECOMMERCE_NODE'
 
 /** Each platform's name in what the model reads. */
 const PLATFORM_NAMES = {
-  tmall: 'Tmall', taobao: 'Taobao', pinduoduo: 'Pinduoduo', doudian: 'Douyin shop', yuntai: 'Tmall Health Brand Yuntai',
+  tmall: 'Tmall', taobao: 'Taobao', pinduoduo: 'Pinduoduo', doudian: 'Douyin shop', jd: 'JD.com', yuntai: 'Tmall Health Brand Yuntai',
 } as const satisfies Record<EcommercePlatform, string>
 
 /** Each check problem in what the model reads. */
@@ -801,16 +806,18 @@ export class EcommerceAccountsService extends TypertRemoteService {
   }
 
   /**
-   * Answer `dsh-ecommerce buyer [platform]`: take over the buyer account that can be used and has
-   * opened the fewest pages today, or say why none can.
+   * Answer `dsh-ecommerce buyer [platform[,platform…]]`: take over the buyer account on those
+   * platforms, or on any, that can be used and has opened the fewest pages today, or say why none can.
    */
   private async modelBuyer(grant: Grant, platform: string): Promise<BridgeReply> {
     if (grant.tenantId !== this.tenantId) return refused(SIGNED_OUT_OF_HUB)
-    if (platform !== '' && platform !== 'tmall' && platform !== 'taobao') {
-      return refused(`DSH: buyer accounts are on tmall and taobao, not "${platform}".`)
+    const wanted = platform === '' ? [] : platform.split(',')
+    const unknown = wanted.find(item => !BUYER_PLATFORMS.includes(item))
+    if (unknown !== undefined) {
+      return refused(`DSH: buyer accounts are on ${new Intl.ListFormat('en', { type: 'conjunction' }).format(BUYER_PLATFORMS)}, not "${unknown}".`)
     }
     const buyers = this.entries
-      .filter(entry => entry.kind === 'buyer' && (platform === '' || entry.platform === platform))
+      .filter(entry => entry.kind === 'buyer' && (wanted.length === 0 || wanted.includes(entry.platform)))
       .sort((a, b) => this.pagesToday(a) - this.pagesToday(b))
     if (buyers.length === 0) {
       return refused('DSH: there is no buyer account for this. Stop, and ask the user to add one in DSH Settings → E-commerce accounts (设置 → 电商账号).')

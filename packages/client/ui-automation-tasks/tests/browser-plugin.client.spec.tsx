@@ -32,7 +32,6 @@ describe('ui-automation-tasks browser plugin', () => {
       assistants: { getState: ok({ assistants: [{ id: 'a1', name: '电商管家' }] }) },
       session: { modelCatalog: ok({ groups: [] }) },
       permissionPresets: { catalog: ok({ options: [], defaultPreset: 'workspace-write' }) },
-      connectors: { getState: ok({ connectors: [] }) },
     }
     new TestRemote(ctx, remotes)
     const slots = ctx.get('slots') as SlotRegistry

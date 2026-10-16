@@ -38,7 +38,7 @@ const NS = 'automationTaskForm'
  * through — and the conversation events the run record reads.
  */
 export const inject = [
-  'slots', 'locale', 'uiConversation', 'workspaces', 'remote', 'remote.automationTasks', 'remote.assistants', 'remote.session', 'remote.permissionPresets', 'remote.connectors',
+  'slots', 'locale', 'uiConversation', 'workspaces', 'remote', 'remote.automationTasks', 'remote.assistants', 'remote.session', 'remote.permissionPresets',
 ]
 
 /**
@@ -54,7 +54,6 @@ export function apply(ctx: ClientContext): void {
       assistants: () => remote.assistants.getState(),
       models: () => remote.session.modelCatalog(),
       permissions: () => remote.permissionPresets.catalog(),
-      connectors: () => remote.connectors.getState(),
     }),
     onCreate: request => remote.automationTasks.create(request),
   }

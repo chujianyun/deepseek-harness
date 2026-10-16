@@ -9,9 +9,7 @@
 
 .header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
+  justify-content: flex-end;
 }
 
 .headerActions {
@@ -39,7 +37,6 @@
   white-space: nowrap;
 }
 
-.intro,
 .muted {
   margin: 0;
   font-size: 12px;

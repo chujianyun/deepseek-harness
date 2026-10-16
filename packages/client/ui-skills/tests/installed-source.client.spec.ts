@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { InstalledSkillView } from '@deepseek-ai/dsh-skill-controller/types'
 import { createInstalledSource, type InstalledDependencies } from '../src/client/installed-source.ts'
 
-function skill(name: string, enabled = true): InstalledSkillView {
-  return { name, description: `${name} description`, group: 'custom', source: 'user-dsh', path: `/home/.dsh/skills/${name}/SKILL.md`, enabled }
+function skill(name: string, enabled = true, withdrawn = false): InstalledSkillView {
+  return { name, description: `${name} description`, group: 'custom', source: 'user-dsh', path: `/home/.dsh/skills/${name}/SKILL.md`, enabled, withdrawn }
 }
 
 const done = { ok: true as const, value: { done: true as const } }
@@ -25,7 +26,7 @@ function deps(overrides: Partial<InstalledDependencies> = {}): InstalledDependen
 describe('installed-skill source', () => {
   it('starts loading, then publishes the listed skills', async () => {
     const source = createInstalledSource(deps())
-    expect(source.hooks.installed.getSnapshot()).toEqual({ status: 'loading', skills: [], busy: [], failure: null })
+    expect(source.hooks.installed.getSnapshot()).toEqual({ status: 'loading', skills: [], busy: [], failure: null, pinned: [] })
     await source.onRefresh()
     expect(source.hooks.installed.getSnapshot()).toMatchObject({ status: 'ready', skills: [skill('alpha'), skill('beta', false)] })
   })
@@ -38,6 +39,47 @@ describe('installed-skill source', () => {
     await source.onRefresh()
     await source.onRefresh()
     expect(source.hooks.installed.getSnapshot()).toMatchObject({ status: 'error', skills: [skill('alpha')] })
+  })
+
+  it('reads the list again quietly: no loading state, and a failed read keeps the list shown', async () => {
+    const list = vi.fn()
+      .mockResolvedValueOnce({ ok: true, value: { skills: [skill('alpha')] } })
+      .mockResolvedValueOnce({ ok: true, value: { skills: [skill('alpha', false)] } })
+      .mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'down', {}) })
+    const source = createInstalledSource(deps({ list }))
+    await source.onRefresh()
+    const sync = source.onSync()
+    expect(source.hooks.installed.getSnapshot().status).toBe('ready')
+    await sync
+    expect(source.hooks.installed.getSnapshot()).toMatchObject({ status: 'ready', skills: [skill('alpha', false)] })
+    await source.onSync()
+    expect(source.hooks.installed.getSnapshot()).toMatchObject({ status: 'ready', skills: [skill('alpha', false)] })
+  })
+
+  it('a quiet read that takes over a loading read ends the loading state, as data or as an error', async () => {
+    let finish: (value: unknown) => void = () => {}
+    const list = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+      .mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'down', {}) })
+    const source = createInstalledSource(deps({ list }))
+    const loading = source.onRefresh()
+    await source.onSync()
+    finish({ ok: true, value: { skills: [skill('alpha')] } })
+    await loading
+    expect(source.hooks.installed.getSnapshot().status).toBe('error')
+  })
+
+  it('drops a quiet read that a newer read superseded', async () => {
+    let finish: (value: unknown) => void = () => {}
+    const list = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+      .mockResolvedValueOnce({ ok: true, value: { skills: [skill('beta')] } })
+    const source = createInstalledSource(deps({ list }))
+    const sync = source.onSync()
+    await source.onRefresh()
+    finish({ ok: true, value: { skills: [skill('alpha')] } })
+    await sync
+    expect(source.hooks.installed.getSnapshot().skills).toEqual([skill('beta')])
   })
 
   it('ignores a read superseded by a newer one', async () => {
@@ -111,5 +153,46 @@ describe('installed-skill source', () => {
     const d = deps()
     createInstalledSource(d).onChat('alpha')
     expect(d.chat).toHaveBeenCalledWith('alpha')
+  })
+
+  describe('pins and bulk actions (Spec #221 T176)', () => {
+    afterEach(() => { localStorage.clear() })
+
+    it('pins and unpins on this machine, and a new source reads the pins back', () => {
+      const source = createInstalledSource(deps())
+      source.onTogglePin('/a/SKILL.md', true)
+      source.onTogglePin('/m/pdf/SKILL.md', true)
+      source.onTogglePin('/a/SKILL.md', false)
+      expect(source.hooks.installed.getSnapshot().pinned).toEqual(['/m/pdf/SKILL.md'])
+      expect(createInstalledSource(deps()).hooks.installed.getSnapshot().pinned).toEqual(['/m/pdf/SKILL.md'])
+    })
+
+    it('switches several skills, leaving those already in the requested state alone, and returns the refused names', async () => {
+      const setEnabled = vi.fn(async (name: string, enabled: boolean) => (name === 'beta' ? refused('no') : { ok: true as const, value: skill(name, enabled) }))
+      const list = vi.fn(async () => ({ ok: true as const, value: { skills: [skill('alpha', false), skill('beta', false), skill('on', true)] } }))
+      const source = createInstalledSource(deps({ setEnabled, list }))
+      await source.onRefresh()
+      expect(await source.onBatch('enable', ['alpha', 'beta', 'on', 'missing'])).toEqual(['beta'])
+      expect(setEnabled.mock.calls.map(([name]) => name)).toEqual(['alpha', 'beta'])
+      // The refused skill keeps its real (off) state
+      expect(source.hooks.installed.getSnapshot()).toMatchObject({ failure: null, skills: [skill('alpha', true), skill('beta', false), skill('on', true)] })
+      expect(await source.onBatch('disable', ['alpha', 'beta'])).toEqual([])
+      expect(setEnabled.mock.calls.slice(2).map(([name, on]) => [name, on])).toEqual([['alpha', false]])
+    })
+
+    it('uninstalls several skills, dropping each and its pin once the Host confirms', async () => {
+      const uninstall = vi.fn(async (name: string) => (name === 'beta' ? refused('busy') : done))
+      const source = createInstalledSource(deps({ uninstall }))
+      await source.onRefresh()
+      source.onTogglePin(skill('alpha').path, true)
+      source.onTogglePin(skill('beta').path, true)
+      expect(await source.onBatch('uninstall', ['alpha', 'beta'])).toEqual(['beta'])
+      expect(source.hooks.installed.getSnapshot().skills.map(item => item.name)).toEqual(['beta'])
+      expect(source.hooks.installed.getSnapshot().pinned).toEqual([skill('beta').path])
+      // An unpinned skill uninstalls without touching the pins
+      await source.onRefresh()
+      await source.onUninstall('alpha')
+      expect(source.hooks.installed.getSnapshot().pinned).toEqual([skill('beta').path])
+    })
   })
 })

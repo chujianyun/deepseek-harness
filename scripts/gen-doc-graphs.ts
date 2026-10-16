@@ -691,7 +691,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'automation-tasks',
     title: 'Automation tasks',
     mode: 'core',
-    note: 'Creates a form-made automation task in one call: its named Session with assistant, model, permission, and connector grant, and the schedule bound to it.',
+    note: 'Creates a form-made automation task in one call: its named Session with assistant, model, and permission, and the schedule bound to it.',
   },
   {
     key: 'sessionShare',
@@ -699,6 +699,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Session sharing',
     mode: 'core',
     note: "Uploads a snapshot of one Session's conversation to the user center of the Hub sign-in, reads its link, and withdraws it.",
+  },
+  {
+    key: 'sessionSync',
+    pkg: 'session-sync',
+    title: 'Session sync',
+    mode: 'core',
+    note: 'Uploads every top-level Session with its subagent Sessions and attachments to the user center of the Hub sign-in, and deletes it there when it is deleted here.',
   },
   {
     key: 'goals',

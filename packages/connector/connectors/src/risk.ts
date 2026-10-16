@@ -2,8 +2,8 @@
  * The risk of one connector CLI's commands in a bash command. Each invocation of the CLI is found
  * by splitting the command into words and separators, and its risk is the one the CLI states in
  * `<command> --help`, as the connector's driver reads it. Anything this cannot read with
- * certainty — command substitution, `eval`, a nested shell, an argument built from a variable, a
- * command without a stated risk — counts as a write, so it is confirmed rather than run unasked.
+ * certainty — command substitution, `eval`, a nested shell, a variable among the command words, a
+ * command without a stated risk — counts as `unknown`, which is confirmed rather than run unasked.
  */
 import { execFile } from 'node:child_process'
 
@@ -244,7 +244,9 @@ export async function classify(
     const listed = readOnly.some(words => name === words || name.startsWith(`${words} `))
     if (args.length === 0 || args.some(token => READ_ONLY_FLAGS.has(token.text)) || listed) {
       classified.push({ command: name, risk: 'read', confirm: false })
-    } else if (args.some(token => token.expanded)) {
+    } else if (args.slice(0, first === -1 ? args.length : first).some(token => token.expanded)) {
+      // A variable among the command words may name any command; one in a flag value cannot, since
+      // only a command that states its risk is read, and the CLI reads later words as its arguments.
       classified.push({ command: name, risk: 'unknown', confirm: false })
     } else {
       classified.push({ command: name, ...await read(words) })

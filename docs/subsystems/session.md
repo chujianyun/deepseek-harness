@@ -895,8 +895,9 @@ workspaceDesktop(): { name: string; available: boolean; fileManager: 'finder' | 
 /**
  * Fork one cold-readable exact event prefix into a new Session. An omitted
  * boundary selects the latest completed-turn prefix; an open cut receives
- * synthetic fork closers.
- * @param request - source Session and optional exact inclusive event boundary.
+ * synthetic fork closers. A requested `cwd` puts the new Session in that
+ * directory and its Workspace instead of the source's.
+ * @param request - source Session, optional exact inclusive event boundary, and optional working directory.
  * @returns the new Session identity.
  */
 @Remote('fork') fork(request: SessionForkRequest): Promise<SessionForkValue>
@@ -1230,6 +1231,28 @@ One Agent changed running state.
  * @param running - whether the Agent is running.
  */
 'api-session/status'(sessionId: SessionId, running: boolean): void
+```
+
+Types: [SessionId](core.md)
+
+Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
+
+<a id="api-sessionview-only--bail"></a>
+
+#### `api-session/view-only` — bail
+
+A stored Session without an Agent is being opened, or a command needs its Agent. A listener that returns true keeps it view-only: its history is shown, no Agent starts, and commands that need one refuse with `session/view-only`.
+
+```ts cordis-catalog
+/**
+ * A stored Session without an Agent is being opened, or a command needs its Agent. A listener
+ * that returns true keeps it view-only: its history is shown, no Agent starts, and commands that
+ * need one refuse with `session/view-only`.
+ * @mode bail
+ * @param sessionId - opened Session identity.
+ * @returns true to keep the Session view-only, or undefined to start its Agent.
+ */
+'api-session/view-only'(sessionId: SessionId): true | undefined
 ```
 
 Types: [SessionId](core.md)

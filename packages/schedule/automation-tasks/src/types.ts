@@ -56,8 +56,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
      * declared operation is refused (`too_many`, `too_long`, `shell_character`, or `not_declarable`).
      */
     'automation-tasks/invalid': { readonly code: string }
-    /** The task asked for an assistant, connectors, or a permission preset, but this deployment does not mount that service. */
-    'automation-tasks/unavailable': { readonly field: 'assistant' | 'connectors' | 'permission' }
+    /** The task asked for an assistant or a permission preset, but this deployment does not mount that service. */
+    'automation-tasks/unavailable': { readonly field: 'assistant' | 'permission' }
     /** The requested model is not available. */
     'automation-tasks/model-unavailable': { readonly provider: string; readonly model: string }
   }
@@ -77,8 +77,6 @@ export interface AutomationTaskCreateRequest {
   readonly model?: ModelSelection
   /** Permission preset of the Session, such as `workspace-write`; omitted keeps the default. */
   readonly permission?: string
-  /** Connectors whose plain writes run without asking in the Session; omitted or empty grants none. */
-  readonly connectors?: readonly string[]
   /**
    * Operations that run without asking when the task runs on its schedule, as a command's first
    * words such as `lark-cli im +messages-send` or `dsh-ecommerce browser`; in such a run a call

@@ -58,7 +58,7 @@ export class ApiSessionPresetConflict extends Error {
 }
 
 /** Failures produced while resolving one ordinary Session identity to its live Agent. */
-export type ApiSessionAgentError = RemoteError<'session/not-found' | 'session/agent-busy' | 'session/writer-held' | 'gateway/internal'>
+export type ApiSessionAgentError = RemoteError<'session/not-found' | 'session/agent-busy' | 'session/writer-held' | 'session/view-only' | 'gateway/internal'>
 
 /** Result of resolving one ordinary Session identity to its live Agent. */
 export type ApiSessionAgentResult =
@@ -194,6 +194,9 @@ export class ApiSessionAgentController {
     observation?: SessionObservation,
   ): Promise<ApiSessionAgentResult> {
     if (this.deleting.has(sessionId)) return { error: beingDeleted(sessionId) }
+    if (this.ctx.bail('api-session/view-only', sessionId) === true) {
+      return { error: new RemoteError('session/view-only', `session "${sessionId}" is view-only here`, { sessionId }) }
+    }
     const live = this.liveAgent(sessionId)
     if (live !== undefined) return live
     const attached = this.ctx.sessions.get(sessionId)

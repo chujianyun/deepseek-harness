@@ -7,7 +7,6 @@
     "time": "09:30"
   },
   "timeZone": "Asia/Shanghai",
-  "connectors": [],
   "permission": "workspace-write",
   "operations": [
     "lark-cli sheets +cells-set"

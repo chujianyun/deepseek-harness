@@ -35,7 +35,8 @@ describe('the Assistant grouping', () => {
     [zh, '智能体', '通用模式', '其他'],
     [en, 'Assistant', 'General mode', 'Other'],
   ])('sections Sessions by their assistant, with General mode for none and Other for one it cannot name', (copy, label, general, other) => {
-    const grouping = assistantGrouping(key => copy[key], createSnapshotStore(snapshot(state)), noLocaleChanges)
+    const newSession = vi.fn()
+    const grouping = assistantGrouping(key => copy[key], createSnapshotStore(snapshot(state)), noLocaleChanges, newSession)
     expect(grouping).toMatchObject({ id: 'assistant', order: 50 })
     expect(grouping.label()).toBe(label)
     expect(drawn(grouping.icon).tag).toBe('svg')
@@ -55,17 +56,22 @@ describe('the Assistant grouping', () => {
     const unknown = grouping.groupOf(session('gone'))
     expect(unknown).toMatchObject({ key: 'other', label: other })
     expect(drawn(unknown.icon)).toEqual({ tag: 'SPAN', text: '?', tone: 'neutral' })
+    // An assistant's heading and General mode start a new session in their section; Other offers none.
+    first.create!()
+    none.create!()
+    expect(newSession.mock.calls).toEqual([['a1'], [null]])
+    expect(unknown.create).toBeUndefined()
   })
 
   it('puts every bound Session under Other while signed out or before the first state', () => {
     for (const value of [undefined, { ...state, tenantId: null, assistants: [] }]) {
-      const grouping = assistantGrouping(key => zh[key], createSnapshotStore(snapshot(value)), noLocaleChanges)
+      const grouping = assistantGrouping(key => zh[key], createSnapshotStore(snapshot(value)), noLocaleChanges, vi.fn())
       expect(grouping.groupOf(session('a1')).key).toBe('other')
       expect(grouping.groupOf(session()).key).toBe('general')
       // The sidebar keeps stored folds until the tenant's assistants are known.
       expect(grouping.ready!()).toBe(false)
     }
-    expect(assistantGrouping(key => zh[key], createSnapshotStore(snapshot(state)), noLocaleChanges).ready!()).toBe(true)
+    expect(assistantGrouping(key => zh[key], createSnapshotStore(snapshot(state)), noLocaleChanges, vi.fn()).ready!()).toBe(true)
   })
 
   it('reports a new assistants state or a language switch until unsubscribed, and regroups by the new state', () => {
@@ -74,7 +80,7 @@ describe('the Assistant grouping', () => {
     const grouping = assistantGrouping(key => zh[key], store, (onChange) => {
       localeListeners.add(onChange)
       return () => { localeListeners.delete(onChange) }
-    })
+    }, vi.fn())
     const onChange = vi.fn()
     const stop = grouping.subscribe!(onChange)
     // The same heading object serves every Session of an assistant while the state stands.

@@ -47,7 +47,6 @@ const task = z.object({
       return false
     }
   }, 'timeZone is not an IANA time zone'),
-  connectors: z.array(key),
   permission: key.optional(),
   // The automation task reads the declaration again when the user switches the task on.
   operations: z.array(z.string()).optional().refine(operations => operations === undefined || 'operations' in readOperations(operations), 'operations must be plain command words'),

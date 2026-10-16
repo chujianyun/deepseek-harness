@@ -8,7 +8,7 @@ import type { FeedbackReportId, FeedbackReportReceipt } from '@deepseek-ai/dsh-f
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { en, zh, type FeedbackReportLocaleKey } from '../src/client/locales.ts'
 import {
-  ReportButton, ReportCorner, ReportDialog, ReportNotice,
+  CORNER_INSET_PROPERTY, ReportButton, ReportCorner, ReportDialog, ReportNotice,
   type ReportButtonProps, type ReportCornerProps, type ReportDialogProps, type ReportNoticeProps, type ReportTarget,
 } from '../src/client/ReportDialog.tsx'
 
@@ -69,8 +69,8 @@ function renderCorner(options: { signedIn?: boolean; headerButtons?: number; pan
     usePanelInfo: bindSnapshotSelector(createSnapshotStore({ activePanelId: options.panel ?? null })),
     requestReport,
   } as Partial<ReportCornerProps> as ReportCornerProps
-  render(<ReportCorner {...props} />)
-  return requestReport
+  const view = render(<ReportCorner {...props} />)
+  return Object.assign(requestReport, { unmount: view.unmount })
 }
 
 describe('Report a problem button in the window corner', () => {
@@ -86,6 +86,36 @@ describe('Report a problem button in the window corner', () => {
   it.each([['a Session header shows the button', { headerButtons: 1 }], ['no sign-in', { signedIn: false }]])('is absent when %s', (_label, options) => {
     renderCorner(options)
     expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('publishes how far from the right edge controls must stay while it shows, and withdraws it when hidden or gone', () => {
+    let resized: () => void = () => {}
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resized = callback }
+      observe() {}
+      disconnect() {}
+    })
+    let box = { x: 0, width: 0 }
+    const measure = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => DOMRect.fromRect(box))
+    const root = document.documentElement.style
+    let unmount: (() => void) | undefined
+    try {
+      box = { x: window.innerWidth - 142, width: 94 }
+      unmount = renderCorner().unmount
+      expect(root.getPropertyValue(CORNER_INSET_PROPERTY)).toBe('150px')
+      // An open right panel hides the corner through CSS, which leaves it no width.
+      box = { x: 0, width: 0 }
+      act(() => { resized() })
+      expect(root.getPropertyValue(CORNER_INSET_PROPERTY)).toBe('')
+      box = { x: window.innerWidth - 142, width: 94 }
+      act(() => { resized() })
+      expect(root.getPropertyValue(CORNER_INSET_PROPERTY)).toBe('150px')
+    } finally {
+      unmount?.()
+      measure.mockRestore()
+      vi.unstubAllGlobals()
+    }
+    expect(root.getPropertyValue(CORNER_INSET_PROPERTY)).toBe('')
   })
 })
 

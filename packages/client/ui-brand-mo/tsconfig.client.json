@@ -19,6 +19,9 @@
       "path": "../ui-assistants"
     },
     {
+      "path": "../ui-commands"
+    },
+    {
       "path": "../ui-conversation/tsconfig.client.json"
     },
     {

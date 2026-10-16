@@ -1,6 +1,7 @@
 /**
  * Problem reports through the enterprise composition against a mock user center: the button in the
- * Session header, its corner copy on a blank new Session and a page without one, and an explained thumbs-down.
+ * Session header, its corner copy on a blank new Session and a page without one (clear of the Tasks page's
+ * detail actions), and an explained thumbs-down.
  */
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -104,6 +105,38 @@ it('reports a problem from every page, with no More actions menu, and an explain
     await corner.waitFor()
     expect(await reportButtons.count()).toBe(1)
     await shot(page, 'e2e-plugins-page')
+
+    // The Tasks page's detail strip runs under the corner: its actions stay left of it, on the
+    // strip's row and uncovered, at every width, so the task menu (where Delete lives) stays usable.
+    const task = await ctx.schedule.create(sessionId, { prompt: 'Daily shop report', title: 'Daily shop report', at: '2099-09-01T12:00:00.000Z' })
+    await page.getByRole('button', { name: 'Automation tasks', exact: true }).click()
+    const manager = page.getByTestId('task-manager-page')
+    await manager.getByRole('list', { name: 'Task catalog' }).getByRole('button', { name: task.title, exact: true }).click()
+    const detail = manager.getByRole('complementary', { name: 'Task details' })
+    const more = detail.getByRole('button', { name: 'Automation task actions', exact: true })
+    await more.waitFor()
+    const viewport = page.viewportSize()!
+    for (const width of [viewport.width, 900, 560]) {
+      await page.setViewportSize({ width, height: viewport.height })
+      await corner.waitFor()
+      await page.waitForTimeout(200)
+      const cornerBox = (await corner.boundingBox())!
+      for (const control of [more, detail.getByRole('button', { name: /^Linked session/ }), detail.getByRole('button', { name: 'Close details', exact: true })]) {
+        const label = `${await control.getAttribute('aria-label') ?? ''} at ${String(width)}px`
+        const box = (await control.boundingBox())!
+        expect(box.x + box.width, label).toBeLessThanOrEqual(cornerBox.x)
+        expect(Math.abs(box.y + box.height / 2 - (cornerBox.y + cornerBox.height / 2)), label).toBeLessThan(cornerBox.height)
+        const middle = [box.x + box.width / 2, box.y + box.height / 2]
+        const reached = await control.evaluate((element, [x, y]) => element.contains(document.elementFromPoint(x!, y!)), middle)
+        expect(reached, label).toBe(true)
+      }
+    }
+    await page.setViewportSize(viewport)
+    await shot(page, 'e2e-task-detail')
+    await more.click()
+    await page.getByRole('menuitem', { name: 'Delete task', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Delete this task?' }).getByRole('button', { name: 'Confirm deletion', exact: true }).click()
+    await expect.poll(async () => (await ctx.schedule.catalog()).some(entry => entry.id === task.id)).toBe(false)
     await page.getByRole('treeitem').filter({ has: page.getByText('Multi-shop draft', { exact: true }) }).click()
     await page.getByText('DONE', { exact: true }).waitFor({ timeout: 30_000 })
     await corner.waitFor({ state: 'detached' })

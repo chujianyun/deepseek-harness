@@ -1,16 +1,18 @@
 /**
- * The Connectors page: one card per built-in connector, with its install control or connection
- * status in the top-right corner, the sign-in dialog, and the disconnect and uninstall confirmations.
+ * The Connectors page: one card per built-in connector under Office platforms, with its install
+ * control or connection status in the top-right corner, the sign-in dialog, and the disconnect and
+ * uninstall confirmations; then the company tools the user center gives the company.
  */
 
 import { useEffect, useState } from 'react'
-import type { ConnectorId, ConnectorLoginStep, ConnectorView } from '@deepseek-ai/dsh-connectors/types'
+import type { CompanyToolsView, CompanyToolView, ConnectorId, ConnectorLoginStep, ConnectorView } from '@deepseek-ai/dsh-connectors/types'
 import {
   Button, IconEllipsisOutlineRegular, IconPlusOutlineRegular, Menu, Modal, StateDot, Switch, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConnectorsInjected } from './connectors-source.ts'
 import type { ConnectorsLocaleKey } from './locales.ts'
+import { ConnectorLogo } from './ConnectorLogo.tsx'
 import css from './ConnectorsPage.module.css'
 
 /** Props the page reads from its `main` registration: the translator and the connectors face. */
@@ -55,7 +57,6 @@ export function ConnectorsPage(props: ConnectorsPageProps) {
     <div className={css.page}>
       <header className={css.header} data-window-drag>
         <h1 className={css.title}>{t('title')}</h1>
-        <p className={css.intro}>{t('intro')}</p>
       </header>
       {failure !== null && (
         <div className={css.alert} role="alert">
@@ -64,15 +65,19 @@ export function ConnectorsPage(props: ConnectorsPageProps) {
         </div>
       )}
       {state !== undefined && (
-        <ul className={css.grid}>
-          {state.connectors.map(connector => (
-            <ConnectorCard
-              key={connector.id} connector={connector} props={props}
-              onConfirm={(action) => { setConfirming({ action, connector }) }}
-            />
-          ))}
-        </ul>
+        <section className={css.group} aria-label={t('group.office')}>
+          <h2 className={css.groupTitle}>{t('group.office')}</h2>
+          <ul className={css.grid}>
+            {state.connectors.map(connector => (
+              <ConnectorCard
+                key={connector.id} connector={connector} props={props}
+                onConfirm={(action) => { setConfirming({ action, connector }) }}
+              />
+            ))}
+          </ul>
+        </section>
       )}
+      {state !== undefined && <CompanyTools company={state.company} props={props} />}
       {connecting !== undefined && <LoginDialog connector={connecting} props={props} />}
       <ConfirmDialog confirming={confirming} props={props} onClose={() => { setConfirming(undefined) }} />
     </div>
@@ -89,14 +94,57 @@ function ConnectorCard({ connector, props, onConfirm }: {
   return (
     <li className={css.card} data-status={connector.status} data-enabled={connector.enabled ? 'true' : 'false'}>
       <div className={css.cardHead}>
-        <span className={css.avatar} aria-hidden="true">{name.slice(0, 1)}</span>
+        <ConnectorLogo id={connector.id} name={name} />
         <span className={css.name}>{name}</span>
         <Corner connector={connector} name={name} props={props} onConfirm={onConfirm} />
       </div>
       <p className={css.description}>{t(`description.${connector.id}`)}</p>
       <Skills connector={connector} t={t} />
-      <AlwaysAllowed connector={connector} props={props} />
       <Footer connector={connector} t={t} />
+    </li>
+  )
+}
+
+/**
+ * The company tools: shown once the company has one, or when they cannot be read or need a new
+ * sign-in; signed out or still loading, the group is left out.
+ */
+function CompanyTools({ company, props }: { company: CompanyToolsView; props: ConnectorsPageProps }) {
+  const { t } = props
+  const notice = company.status === 'sign-in-again' ? t('company.signInAgain') : company.status === 'unavailable' ? t('company.unavailable') : undefined
+  if (company.tools.length === 0 && notice === undefined) return null
+  return (
+    <section className={css.group} aria-label={t('group.company')}>
+      <h2 className={css.groupTitle}>{t('group.company')}</h2>
+      {notice !== undefined && <p className={css.notice} role="status">{notice}</p>}
+      {company.tools.length > 0 && (
+        <ul className={css.grid}>
+          {company.tools.map(tool => <CompanyToolCard key={tool.name} tool={tool} props={props} />)}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function CompanyToolCard({ tool, props }: { tool: CompanyToolView; props: ConnectorsPageProps }) {
+  const { t, useConnectors, onCheck, onSetCompanyEnabled } = props
+  const busy = useConnectors(snapshot => snapshot.busy.includes(`company:${tool.name}`))
+  const name = tool.displayName
+  return (
+    <li className={css.card} data-status="connected" data-enabled={tool.enabled ? 'true' : 'false'}>
+      <div className={css.cardHead}>
+        <ConnectorLogo id={tool.kind} name={name} />
+        <span className={css.name}>{name}</span>
+        <span className={css.corner}>
+          <span className={css.status} data-status="connected"><StateDot state="done" />{t('company.available')}</span>
+          <ActionsMenu name={name} t={t} busy={busy} actions={[{ id: 'check', label: t('check') }]} onSelect={() => { void onCheck() }} />
+          <Switch checked={tool.enabled} label={t('enable', { name })} disabled={busy}
+            onChange={(next) => { void onSetCompanyEnabled(tool.name, next) }} />
+        </span>
+      </div>
+      <p className={css.description}>{tool.description === '' ? t('company.description') : tool.description}</p>
+      {!tool.enabled && <p className={css.meta}>{t('company.disabledHint', { name })}</p>}
+      <p className={css.meta}>{t('company.methods', { count: String(tool.methods.length) })}</p>
     </li>
   )
 }
@@ -200,32 +248,6 @@ function Skills({ connector, t }: { connector: ConnectorView; t: T }) {
       <span className={css.skillsLabel}>{t('skills', { count: String(connector.skills.length) })}</span>
       {shown.map(skill => <span key={skill.name} className={css.skill} title={skill.description}>{skill.name}</span>)}
       {rest > 0 && <button type="button" className={css.more} onClick={() => { setAll(true) }}>{t('skillsMore', { count: String(rest) })}</button>}
-    </div>
-  )
-}
-
-/** The write commands the current company always allows through the connector, each with a way to revoke it. */
-function AlwaysAllowed({ connector, props }: { connector: ConnectorView; props: ConnectorsPageProps }) {
-  const { t, useConnectors, onRevokeAlwaysAllowed } = props
-  const busy = useConnectors(snapshot => snapshot.busy.includes(connector.id))
-  if (connector.alwaysAllowed.length === 0) return null
-  return (
-    <div className={css.allowed}>
-      <span className={css.allowedLabel} title={t('alwaysAllowedHint')}>{t('alwaysAllowed')}</span>
-      <ul className={css.allowedList} aria-label={t('alwaysAllowed')}>
-        {connector.alwaysAllowed.map((command) => {
-          const full = `${connector.cli} ${command}`
-          return (
-            <li key={command} className={css.allowedItem}>
-              <code>{full}</code>
-              <button type="button" className={css.more} disabled={busy} aria-label={t('revoke', { command: full })}
-                onClick={() => { void onRevokeAlwaysAllowed(connector.id, command) }}>
-                {t('revokeLabel')}
-              </button>
-            </li>
-          )
-        })}
-      </ul>
     </div>
   )
 }

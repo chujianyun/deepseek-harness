@@ -65,7 +65,8 @@ describe('takeOverMerchant', () => {
       return ran({ stdout: JSON.stringify(buyer) })()
     }
     expect(await takeOverBuyer(run)).toEqual({ id: 'b1', platform: 'taobao', account: 'tb797483650', cdpUrl: 'http://127.0.0.1:7', pagesLeft: 18 })
-    expect(args).toEqual([['buyer']])
+    // Only a Tmall or Taobao buyer reads Tmall and Taobao pages, never a JD one.
+    expect(args).toEqual([['buyer', 'tmall,taobao']])
     const { pagesLeft: _left, ...withoutPages } = buyer
     expect((await takeOverBuyer(ran({ stdout: JSON.stringify(withoutPages) }))).pagesLeft).toBe(0)
   })
