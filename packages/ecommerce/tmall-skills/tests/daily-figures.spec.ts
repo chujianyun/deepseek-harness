@@ -76,6 +76,11 @@ describe('readSycm', () => {
       missing: [], notes: ['店铺 名流官方旗舰店；统计日 2026-10-13（日维度）'],
     })
     expect(page.visited).toEqual(['https://sycm.taobao.com/portal/home.htm'])
+    // A store name copied from a sub-account keeps its operator; the page shows only the store.
+    const sub = sycmPage()
+    expect((await readSycm(sub, '2026-10-13', '名流官方旗舰店:诺诺', ITEMS)).notes).toEqual(['店铺 名流官方旗舰店；统计日 2026-10-13（日维度）'])
+    expect(sub.evaluated).toContainEqual('document.body.innerText.includes("名流官方旗舰店")')
+    expect(sub.evaluated).not.toContainEqual(expect.stringContaining('诺诺'))
     expect(page.evaluated).toContainEqual(expect.stringContaining('dateType=day&dateRange=2026-10-13%7C2026-10-13'))
   })
 

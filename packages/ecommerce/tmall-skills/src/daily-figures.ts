@@ -104,7 +104,7 @@ interface RankAnswer {
  * Read Business Advisor: the store's payment amount for the day and each item's, from the store home page's own APIs.
  * @param page - the tab.
  * @param date - the day.
- * @param store - the store name the page must show.
+ * @param store - the store name the page must show; an operator after a colon, as a sub-account's name has, is left out.
  * @param items - name → item id.
  * @returns the figures: 全店支付金额 and `<name>支付金额` per item.
  * @throws SkillError signed-out on the sign-in page, not-ready when the day's overview is not there yet.
@@ -112,9 +112,11 @@ interface RankAnswer {
 export async function readSycm(page: Page, date: string, store: string, items: ReadonlyMap<string, string>): Promise<PlatformFigures> {
   await page.goto('https://sycm.taobao.com/portal/home.htm')
   if (/login/iu.test(new URL(await page.evaluate<string>('location.href')).hostname)) signedOut('生意参谋')
-  const named = `document.body.innerText.includes(${JSON.stringify(store)})`
+  // A sub-account signs in as 「店铺名:操作人」, and a store name copied from it keeps the operator, which the page never shows.
+  const shown = store.replace(/[:：].*$/u, '').trim()
+  const named = `document.body.innerText.includes(${JSON.stringify(shown)})`
   if (!await page.waitFor(() => page.evaluate<boolean>(named), STORE_TIMEOUT_MS)) {
-    throw new SkillError(`生意参谋页面上没有店铺名「${store}」：这个账号看到的不是这家店，没有取数。`)
+    throw new SkillError(`生意参谋页面上没有店铺名「${shown}」：这个账号看到的不是这家店，没有取数。`)
   }
   const range = `dateType=day&dateRange=${date}%7C${date}`
   const overview = await page.evaluate<OverviewAnswer>(fetchJson(`https://sycm.taobao.com/portal/coreIndex/new/overview/v3.json?needCycleCrc=true&${range}`))
@@ -137,7 +139,7 @@ export async function readSycm(page: Page, date: string, store: string, items: R
       missing.push({ field: `${name}支付金额`, reason: rows.length === 0 ? `商品排行里没有 ID:${id}` : `商品排行里 ID:${id} 不止一行` })
     }
   }
-  return { platform: '生意参谋', date, metrics, missing, notes: [`店铺 ${store}；统计日 ${date}（日维度）`] }
+  return { platform: '生意参谋', date, metrics, missing, notes: [`店铺 ${shown}；统计日 ${date}（日维度）`] }
 }
 
 /**
