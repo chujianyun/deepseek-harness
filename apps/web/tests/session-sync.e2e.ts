@@ -91,10 +91,11 @@ it('uploads old and new conversations with their attachments once, deletes, and 
     await input.fill(PROMPT)
     await input.press('Enter')
     const live = await settled
-    await expect.poll(() => held(center, live)?.meta.revision, { timeout: 20_000 }).toBe(1)
+    await expect.poll(() => held(center, live)?.meta.revision, { timeout: 20_000 }).toBeGreaterThanOrEqual(1)
+    // The turn's events can reach the user center over more than one upload: wait for the reply, not the first revision.
+    await expect.poll(() => bundleOf(center, live).sessions[0].events.some(event => event.type === 'assistant/message'), { timeout: 20_000 }).toBe(true)
     const liveEvents = bundleOf(center, live).sessions[0].events
     expect(JSON.stringify(liveEvents.filter(event => event.type === 'user/message'))).toContain(PROMPT)
-    expect(liveEvents.some(event => event.type === 'assistant/message')).toBe(true)
 
     // Deleting deletes it on the user center.
     expect(await ctx.sessionController.delete({ sessionId: first })).toEqual({ deletedSessionIds: [first] })
