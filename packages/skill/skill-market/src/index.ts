@@ -492,7 +492,8 @@ export class SkillMarket extends TypertRemoteService {
    */
   @Remote
   async categories(signal: AbortSignal): Promise<readonly MarketCategory[]> {
-    return z.array(z.object({ id: z.string(), name: z.string() })).parse(await this.hubJson('/api/client/skills/categories', signal))
+    return z.array(z.object({ id: z.string(), name: z.string(), skillCount: z.number().int().nonnegative().optional() }))
+      .parse(await this.hubJson('/api/client/skills/categories', signal))
   }
 
   /**

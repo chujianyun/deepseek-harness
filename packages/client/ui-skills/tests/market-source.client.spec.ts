@@ -48,6 +48,22 @@ describe('market source', () => {
     expect(d.list).toHaveBeenLastCalledWith({ q: 'old', page: 1, pageSize: MARKET_PAGE_SIZE })
   })
 
+  it('gives a tab only to categories with a Skill the employee can see; an emptied selected tab goes back to all', async () => {
+    const d = deps()
+    d.categories.mockReturnValue(ok([{ id: 'c', name: 'C', skillCount: 2 }, { id: 'empty', name: 'E', skillCount: 0 }, { id: 'old', name: 'O' }]))
+    const source = createMarketSource(d)
+    await source.onOpenMarket()
+    expect(source.hooks.market.getSnapshot().categories.map(category => category.id)).toEqual(['c', 'old'])
+
+    await source.onCategory('c')
+    await source.onOpenMarket()
+    expect(source.hooks.market.getSnapshot().categoryId).toBe('c')
+    d.categories.mockReturnValue(ok([{ id: 'c', name: 'C', skillCount: 0 }]))
+    await source.onOpenMarket()
+    expect(source.hooks.market.getSnapshot()).toMatchObject({ categoryId: null, categories: [] })
+    expect(d.list).toHaveBeenLastCalledWith({ q: '', page: 1, pageSize: MARKET_PAGE_SIZE })
+  })
+
   it('reports a failed read and a failed category read leaves the categories alone', async () => {
     const d = deps()
     d.list.mockReturnValueOnce(fail('offline'))

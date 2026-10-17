@@ -14,7 +14,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-skill-market'
 import { startMockUserCenter } from '../../../packages/credentials/hub-account/tests/mock-user-center.ts'
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot, signInToSkillHub } from './support.ts'
+import { connectFreshWorkspace, newEnglishPage, saveFailureShot, signInToSkillHub, ZH_BROWSER_LOCALE } from './support.ts'
 
 const OVERLAY = fileURLToPath(new URL('./skills-market.overlay.yml', import.meta.url))
 
@@ -36,6 +36,8 @@ it('browses the market, installs a Skill, lists it from the market, and invokes 
     { id: 's-pdf', name: 'pdf-tools', displayName: 'PDF 工具', description: 'Read PDF files', category: { id: 'c-doc', name: 'Docs' }, version: '1.0.0', files: { 'scripts/run.sh': 'echo pdf\n' } },
     { id: 's-sql', name: 'sql-helper', description: 'Write SQL', category: { id: 'c-dev', name: 'Dev' }, version: '2.1.0' },
   ]
+  // A category with no Skill the employee can see gets no tab (Spec #266).
+  center.emptyCategories = [{ id: 'c-empty', name: 'Empty' }]
   const replayDir = await mkdtemp(join(tmpdir(), 'dsh-skills-market-replay-'))
   await writeFile(join(replayDir, 'replay.override.json'), JSON.stringify(replay()))
   process.env.DSH_E2E_HUB_ORIGIN = center.origin
@@ -68,9 +70,25 @@ it('browses the market, installs a Skill, lists it from the market, and invokes 
     await expect.poll(() => page.getByRole('button', { name: 'PDF 工具', exact: true }).count()).toBe(0)
     await page.getByRole('searchbox', { name: 'Search Skills' }).fill('')
     await page.getByRole('searchbox', { name: 'Search Skills' }).press('Enter')
+    await page.getByRole('tab', { name: 'Dev' }).waitFor()
+    expect(await page.getByRole('tab', { name: 'Empty' }).count()).toBe(0)
     await page.getByRole('tab', { name: 'Docs' }).click()
     await expect.poll(() => page.getByRole('button', { name: 'sql-helper', exact: true }).count()).toBe(0)
     expect(center.clientRequests.some(path => path.includes('categoryId=c-doc'))).toBe(true)
+    const shots = process.env.DSH_E2E_SHOTS
+    if (shots !== undefined) {
+      for (const [locale, name] of [[ZH_BROWSER_LOCALE, 'zh'], ['en-US', 'en']] as const) {
+        for (const colorScheme of ['light', 'dark'] as const) {
+          const shot = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale, colorScheme })
+          await shot.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+          await shot.goto(scaffold.authenticatedUrl)
+          await shot.getByRole('button', { name: 'Skills', exact: true }).click()
+          await shot.getByRole('tab', { name: 'Dev' }).waitFor()
+          await shot.screenshot({ path: join(shots, `${name}-${colorScheme}-market-tabs.png`) })
+          await shot.close()
+        }
+      }
+    }
 
     // Detail and install.
     await page.getByRole('button', { name: 'PDF 工具', exact: true }).click()
