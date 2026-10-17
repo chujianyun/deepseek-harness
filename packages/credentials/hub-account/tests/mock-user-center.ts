@@ -174,6 +174,8 @@ export interface MockUserCenter {
   readonly revoked: string[]
   /** Skills visible to every tenant through the client API, in list order. */
   skills: MockSkill[]
+  /** Categories with no Skill the caller can see (Spec #266): listed after the Skills' own, with a zero count. */
+  emptyCategories: { id: string; name: string }[]
   /** Assistant packages of the signed-in tenant, in list order. */
   agentPackages: MockAgentPackage[]
   /** Skill ids the platform withdrew from the tenant: detail and download answer 410 (Spec #221). */
@@ -426,8 +428,11 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
       return
     }
     if (parts[0] === 'categories') {
-      const seen = new Map(mock.skills.flatMap(skill => skill.category === null ? [] : [[skill.category.id, skill.category]] as const))
-      json(200, [...seen.values()])
+      const counts = new Map<string, { id: string; name: string; skillCount: number }>()
+      for (const { category } of mock.skills) {
+        if (category !== null) counts.set(category.id, { ...category, skillCount: (counts.get(category.id)?.skillCount ?? 0) + 1 })
+      }
+      json(200, [...counts.values(), ...mock.emptyCategories.map(category => ({ ...category, skillCount: 0 }))])
       return
     }
     if (parts[0] !== undefined && mock.withdrawn.has(parts[0])) { json(410, { code: 'skill_withdrawn', message: '该平台技能已被收回，本租户不能再使用' }); return }
@@ -715,7 +720,8 @@ export async function startMockUserCenter(tenant: MockTenant = { tenantId: 't-a'
     clientId: 'dsh-desktop',
     tenant, denyWith: undefined, refreshStatus: undefined, expiresIn: 7200,
     exchangeStatus: undefined, tokenBody: undefined, tokenGate: undefined, userinfoReply: undefined,
-    skills: [], withdrawn: new Set(), agentPackages: [], downloadBody: undefined, clientStatus: undefined, clientRequests: [],
+    skills: [], emptyCategories: [], withdrawn: new Set(), agentPackages: [],
+    downloadBody: undefined, clientStatus: undefined, clientRequests: [],
     tenantAdmin: false, owned: [], uploads: [], uploadReply: undefined, uploadHook: undefined, optionsReply: undefined,
     brandings: {}, brandingGate: undefined, logoReply: undefined, shares: {}, shareReply: undefined,
     sync: {}, syncReply: undefined, syncHook: undefined,

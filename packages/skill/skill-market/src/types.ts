@@ -34,6 +34,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 export interface MarketCategory {
   readonly id: string
   readonly name: string
+  /** Skills in it the signed-in employee can see; older user centers leave it out. */
+  readonly skillCount?: number | undefined
 }
 
 /** Market list query, as the user center's client API takes it. */

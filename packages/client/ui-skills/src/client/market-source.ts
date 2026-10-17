@@ -139,7 +139,16 @@ export function createMarketSource(deps: MarketDependencies): MarketInjected {
   return {
     hooks: { market: store },
     onOpenMarket: async () => {
-      const categories = deps.categories().then((result) => { if (result.ok) patch(() => ({ categories: result.value })) })
+      const categories = deps.categories().then(async (result) => {
+        if (!result.ok) return
+        // Only categories the employee has a Skill in get a tab; an older user center sends no count, so every category shows.
+        const shown = result.value.filter(category => category.skillCount !== 0)
+        const { categoryId } = store.getSnapshot()
+        const emptied = categoryId !== null && !shown.some(category => category.id === categoryId)
+        patch(() => ({ categories: shown, ...emptied ? { categoryId: null } : {} }))
+        // The selected tab went away: show every Skill again.
+        if (emptied) await read(1)
+      })
       await Promise.all([read(1), categories])
     },
     onSearch: async (q) => {

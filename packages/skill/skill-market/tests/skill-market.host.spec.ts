@@ -91,7 +91,7 @@ describe('skillMarket', () => {
       items: [{ id: 's-pdf', name: 'pdf-tools', displayName: 'pdf-tools', description: 'Read PDF files', category: { id: 'c-doc', name: '文档' }, version: '1.0.0', updatedAt: '2026-10-01T08:00:00.000Z', installedVersion: null, updateAvailable: false, conflict: false }],
     })
     expect((await market.list({ page: 2, pageSize: 1 }, signal())).items.map(item => item.name)).toEqual(['sql-helper'])
-    expect(await market.categories(signal())).toEqual([{ id: 'c-doc', name: '文档' }, { id: 'c-dev', name: '研发' }])
+    expect(await market.categories(signal())).toEqual([{ id: 'c-doc', name: '文档', skillCount: 1 }, { id: 'c-dev', name: '研发', skillCount: 1 }])
   })
 
   it('shows a Skill with its SKILL.md and files', async () => {
@@ -529,7 +529,7 @@ describe('skillMarket', () => {
     it('reads visibility and category choices', async () => {
       const { market } = await boot()
       expect(await market.uploadOptions(signal())).toEqual({
-        categories: [{ id: 'c-doc', name: '文档' }, { id: 'c-dev', name: '研发' }],
+        categories: [{ id: 'c-doc', name: '文档', skillCount: 1 }, { id: 'c-dev', name: '研发', skillCount: 1 }],
         departments: [{ id: 'd-root', parentId: null, name: '甲公司' }, { id: 'd-rd', parentId: 'd-root', name: '研发部' }],
         employees: [{ id: 'e-li', name: '李雷', departmentName: '研发部' }, { id: 'e-han', name: '韩梅梅', departmentName: '甲公司' }],
       })

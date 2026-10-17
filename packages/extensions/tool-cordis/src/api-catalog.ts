@@ -7137,7 +7137,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MarketCategory',
-    declaration: 'export interface MarketCategory {\n    readonly id: string;\n    readonly name: string;\n}',
+    declaration: 'export interface MarketCategory {\n    readonly id: string;\n    readonly name: string;\n    readonly skillCount?: number | undefined;\n}',
   },
   {
     name: 'MarketFolderProblem',
