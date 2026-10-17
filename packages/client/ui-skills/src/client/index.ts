@@ -73,8 +73,12 @@ export function apply(ctx: ClientContext): void {
     inspectFolder: dir => market.inspectFolder(dir),
     uploadOptions: () => market.uploadOptions(),
     uploadSkill: request => market.uploadSkill(request),
-    // The Desktop folder chooser; a browse-only Host leaves the typed path as the way in.
+    // Desktop's own chooser when its window exposes one, as the workspace picker does: the Host cannot open a system
+    // window there, so asking it answered nothing. Otherwise the Host's; a browse-only Host leaves the typed path as the way in.
     pickDirectory: async () => {
+      const desktop = (globalThis as typeof globalThis & { __DSH_DIRECTORY_PICKER__?: { pick: () => Promise<string | null> } })
+        .__DSH_DIRECTORY_PICKER__
+      if (desktop !== undefined) return desktop.pick()
       const result = await ctx.remote.directoryPicker.pick()
       return result.ok ? result.value : null
     },

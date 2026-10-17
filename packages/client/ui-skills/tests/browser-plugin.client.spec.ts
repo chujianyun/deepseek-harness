@@ -157,6 +157,23 @@ describe('ui-skills browser plugin', () => {
     expect(clipboard).toHaveBeenCalledWith('https://hub/r/1')
   })
 
+  it('chooses the folder with the Desktop window\'s own chooser when it exposes one', async () => {
+    const pick = vi.fn(async (): Promise<string | null> => '/desktop-picked')
+    Object.defineProperty(globalThis, '__DSH_DIRECTORY_PICKER__', { value: { pick }, configurable: true })
+    try {
+      const b = await bench()
+      await b.ctx.plugin({ inject: [...inject], apply }).await()
+      const face = pageFace(b.slots) as UploadInjected
+      await face.onOpenUpload()
+      await face.onBrowseFolder()
+      expect(pick).toHaveBeenCalledOnce()
+      expect(b.directoryPicker.pick).not.toHaveBeenCalled()
+      expect(b.skillMarket.inspectFolder).toHaveBeenCalledWith('/desktop-picked')
+    } finally {
+      Reflect.deleteProperty(globalThis, '__DSH_DIRECTORY_PICKER__')
+    }
+  })
+
   it('has a node half that contributes nothing', () => {
     expect(() => { applyNode() }).not.toThrow()
   })
