@@ -107,8 +107,14 @@ it('browses the market, installs a Skill, lists it from the market, and invokes 
     const pdfCard = page.locator('li').filter({ has: page.getByRole('button', { name: 'PDF 工具', exact: true }) })
     await pdfCard.getByText('Installed v1.0.0').waitFor()
     expect(await page.getByRole('button', { name: /^Use .* in a new session$/ }).count()).toBe(1)
+    // A real pointer: the fading badge shares the button's cell and must not take the click (1.0.12 regression).
+    const use = pdfCard.getByRole('button', { name: 'Use PDF 工具 in a new session' })
     await pdfCard.hover()
-    await pdfCard.getByRole('button', { name: 'Use PDF 工具 in a new session' }).click()
+    await expect.poll(() => use.evaluate(element => getComputedStyle(element).opacity)).toBe('1')
+    const box = (await use.boundingBox())!
+    const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+    expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-use-skill]') !== null, point)).toBe(true)
+    await page.mouse.click(point.x, point.y)
     const draft = page.locator('[data-composer-input][contenteditable="true"]').first()
     // The draft opens on the Skill's chip showing its display name.
     await expect.poll(async () => (await draft.textContent())?.trim()).toBe('/PDF 工具')
