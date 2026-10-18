@@ -1,0 +1,11 @@
+/* Sits at the card's trailing edge above the card-wide preview button. */
+.anchor {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+}
+
+.button {
+  gap: 4px;
+  white-space: nowrap;
+}

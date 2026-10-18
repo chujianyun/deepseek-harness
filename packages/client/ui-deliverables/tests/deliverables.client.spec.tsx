@@ -28,7 +28,7 @@ import { Deliverables, DeliverablesTail, selectDeliverables, type DeliverablesIn
 import type { ReviewInjected } from '../src/client/ReviewTab.tsx'
 import { ChangesDiffStore } from '../src/client/changes-diff.ts'
 import { ChangesSummaryStore } from '../src/client/changes-summary.ts'
-import { changesSummaryUrl, type ChangesSummary } from '../src/changes.ts'
+import { changedFileUrl, changesSummaryUrl, type ChangesSummary } from '../src/changes.ts'
 import { PresentedOpenController } from '../src/client/present-open.ts'
 import {
   basename, changesForClosing, deliverablesDefinition, presentedForClosing, producedFileMentions, producedForClosing,
@@ -506,6 +506,25 @@ describe('ChangedFiles card', () => {
     const view = render(<Deliverables {...props} matched={matched} openFile={openFile} sessionId={SessionId('child-session')} t={makeTranslate(locale)} />)
     return { props, openFile, view }
   }
+
+  it('offers the native file actions on a single changed file and on each listed file, through its changed-file route', () => {
+    const single = servedStore({ turn: 1, files: [changedFile('report.html', 3, 1)], total: 1, added: 3, deleted: 1 })
+    const one = renderCard(new PresentedOpenController(), en, { changes, presented: [] }, single)
+    const action = one.view.getByRole('button', { name: 'Native file action' })
+    expect(action.getAttribute('data-action-url')).toBe(changedFileUrl(SessionId('child-session'), 5, 0))
+    fireEvent.click(action)
+    expect(one.props.openChanged).toHaveBeenCalledWith(SessionId('child-session'), 5, 0, 'open', undefined)
+    // The action is its own control: it does not open the review.
+    expect(one.props.openChangesReview).not.toHaveBeenCalled()
+    cleanup()
+
+    const many = renderCard()
+    const actions = many.view.getAllByRole('button', { name: 'Native file action' })
+    expect(actions.map(button => button.getAttribute('data-action-url')))
+      .toEqual([0, 1, 2, 3].map(index => changedFileUrl(SessionId('child-session'), 5, index)))
+    fireEvent.click(actions[2]!)
+    expect(many.props.openChanged).toHaveBeenCalledWith(SessionId('child-session'), 5, 2, 'open', undefined)
+  })
 
   it.each([en, zh])('shows one edited filename without a list and opens its review', (locale) => {
     const single = servedStore({ turn: 1, files: [changedFile('src/example.scss', 3, 1)], total: 1, added: 3, deleted: 1 })

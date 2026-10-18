@@ -10,9 +10,6 @@
   ],
   "references": [
     {
-      "path": "../../../vendor/cordis"
-    },
-    {
       "path": "../locale/tsconfig.client.json"
     },
     {
@@ -23,6 +20,12 @@
     },
     {
       "path": "../ui-conversation/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-deliverables/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-primitives"
     },
     {
       "path": "../ui-renderer"
@@ -41,6 +44,9 @@
     },
     {
       "path": "../ui-workspace"
+    },
+    {
+      "path": "../../../vendor/cordis"
     }
   ],
   "exclude": [

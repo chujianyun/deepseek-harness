@@ -35,3 +35,9 @@ button.header:disabled { cursor: progress; }
 
 .previewPath { flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; color: var(--dsw-alias-label-tertiary); font-family: var(--ds-font-family-code); font-size: 12px; line-height: 20px; white-space: nowrap; }
 .preview [data-diff-note='metadata'], .preview [data-diff-hunk-header] { display: none; }
+.headerRow { display: flex; align-items: center; min-width: 0; background: var(--changes-fill); }
+.headerRow > :first-child { flex: 1; min-width: 0; }
+.item { display: flex; align-items: center; min-width: 0; }
+.item > :first-child { flex: 1; min-width: 0; }
+.actions { display: inline-flex; flex: none; align-items: center; }
+.actions:not(:empty) { padding-right: 10px; }
