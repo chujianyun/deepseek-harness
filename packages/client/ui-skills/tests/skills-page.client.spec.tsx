@@ -70,7 +70,7 @@ describe('Skills page', () => {
   it('runs chat, edit, and reveal from the card menu', () => {
     const { props } = renderPage({ skills: [skill('alpha')] })
     fireEvent.click(within(openMenu('alpha')).getByRole('menuitem', { name: '去对话' }))
-    expect(props.onChat).toHaveBeenCalledWith('alpha')
+    expect(props.onChat).toHaveBeenCalledWith('alpha', 'alpha')
     fireEvent.click(within(openMenu('alpha')).getByRole('menuitem', { name: '编辑' }))
     expect(props.onEdit).toHaveBeenCalledWith('alpha')
     fireEvent.click(within(openMenu('alpha')).getByRole('menuitem', { name: '打开文件夹' }))

@@ -61,7 +61,7 @@ function providePresentation(ctx: Context): PresentationCapture {
 }
 
 /** Boot the plugin over fake slash/connection faces; returns the captured source and its ctx. */
-async function bench(list: ListFn, addressed?: SessionId, opening: Pick<SessionFixture, 'initialOpen' | 'snapshot'> = {}) {
+async function bench(list: ListFn, addressed?: SessionId, opening: Pick<SessionFixture, 'initialOpen' | 'snapshot'> = {}, extra: object = {}) {
   const ctx = new Context()
   const openResource = vi.fn()
   ctx.provide('sidebarRight', { openResource })
@@ -79,7 +79,7 @@ async function bench(list: ListFn, addressed?: SessionId, opening: Pick<SessionF
       ? { parentSessionId: sid('parent'), childSessionId: addressed, mode: 'continuable' }
       : sid(id))
   }
-  const remote = new TestRemote(ctx, { skills: { list } })
+  const remote = new TestRemote(ctx, { skills: { list }, ...extra })
   providePresentation(ctx)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   onTestFinished(async () => { await fiber.dispose() })
@@ -443,11 +443,67 @@ describe('pick lands plain text', () => {
     expect(outcome).toEqual({ text: '/commit-helper ' })
   })
 
-  it('keeps the legacy reference codec removed and stays out of adjudication', async () => {
+  it('titles market Skills by their display name and picks them as a chip carrying /name', async () => {
+    const displayNames = vi.fn(async () => ({ ok: true as const, value: { 'commit-helper': '提交助手' } }))
+    const { source } = await bench(listOk(CATALOG), undefined, {}, { skillMarket: { displayNames } })
+    // The menu never waits for the read: the first rows may carry names only, later ones the display names.
+    await source.candidates(proj('s1'), req(''))
+    await vi.waitFor(async () => {
+      expect((await source.candidates(proj('s1'), req(''))).map(row => [row.name, row.label]))
+        .toEqual([['commit-helper', '提交助手'], ['code-review', undefined], ['deploy', undefined]])
+    })
+    // The display name is a search key too.
+    expect((await source.candidates(proj('s1'), req('提交'))).map(row => row.name)).toEqual(['commit-helper'])
+    // One market read per catalog.
+    expect(displayNames).toHaveBeenCalledOnce()
+    const pick = (candidate: { name: string; label?: string }) => source.onPick({
+      candidate, session: proj('s1'), position: 'leading', via: 'menu', action: 'pick', span: { start: 0, end: 4, draftRev: 7 },
+    })
+    expect(pick({ name: 'commit-helper', label: '提交助手' }))
+      .toEqual({ insert: { source: 'skill', ref: '/commit-helper', label: '提交助手', appearance: 'skill', clipboardText: '/commit-helper' } })
+    expect(pick({ name: 'code-review' })).toEqual({ text: '/code-review ' })
+  })
+
+  it('lists Skills by name in a composition without the Skill market', async () => {
     const { source } = await bench(listOk(CATALOG))
-    // Determinism lives host-side (the pre-step gesture boundary), so the
-    // source neither claims lines nor serializes reference markup.
-    expect(source.codec).toBeUndefined()
+    expect((await source.candidates(proj('s1'), req(''))).map(row => row.label)).toEqual([undefined, undefined, undefined])
+  })
+
+  it('keeps the newest read when an older one settles last', async () => {
+    let first!: (value: unknown) => void
+    const displayNames = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { first = resolve }))
+      .mockImplementation(async () => ({ ok: true as const, value: { deploy: '部署' } }))
+    const { source, remote } = await bench(listOk(CATALOG), undefined, {}, { skillMarket: { displayNames } })
+    await source.candidates(proj('s1'), req(''))
+    // A preset switch refetches the catalog and reads again.
+    remote.emit('agent-preset/selected', [sid('s1'), 'minimal'])
+    await source.candidates(proj('s1'), req(''))
+    first({ ok: true, value: { deploy: '旧的' } })
+    await vi.waitFor(async () => {
+      expect((await source.candidates(proj('s1'), req(''))).find(row => row.name === 'deploy')?.label).toBe('部署')
+    })
+  })
+
+  it('keeps Skill names when the market read fails or answers with an error', async () => {
+    for (const displayNames of [vi.fn(async () => { throw new Error('offline') }), vi.fn(async () => ({ ok: false as const, error: new RemoteError('gateway/internal', 'y', {}) }))]) {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const { source, fiber } = await bench(listOk(CATALOG), undefined, {}, { skillMarket: { displayNames } })
+      await source.candidates(proj('s1'), req(''))
+      await vi.waitFor(() => { expect(displayNames).toHaveBeenCalled() })
+      await Promise.resolve()
+      expect((await source.candidates(proj('s1'), req(''))).every(row => row.label === undefined)).toBe(true)
+      warn.mockRestore()
+      await fiber.dispose()
+    }
+  })
+
+  it('serializes a display-name chip back to the literal /name and stays out of adjudication', async () => {
+    const { source } = await bench(listOk(CATALOG))
+    // Determinism still lives host-side (the pre-step gesture boundary): a chip's model form is the same /name literal
+    // a plain-text pick ships, and the source claims no lines.
+    expect(source.codec?.clipboardText('/pdf-tools')).toBe('/pdf-tools')
+    await expect(source.codec?.serialize('/pdf-tools', new AbortController().signal)).resolves.toBe('/pdf-tools')
     expect(typeof source.matchSpace).toBe('undefined')
     expect(typeof source.matchEnter).toBe('undefined')
   })

@@ -25,6 +25,12 @@ describe('ReferenceChip', () => {
     expect(container.textContent).toBe('@commit-helper')
   })
 
+  it('marks a Skill chip with the / its gesture types', () => {
+    const { container } = render(<ReferenceChip label="PDF 工具" appearance="skill" invalid={false} />)
+    expect(container.querySelector('svg')).toBeNull()
+    expect(container.textContent).toBe('/PDF 工具')
+  })
+
   it('applies the invalid styling bit', () => {
     const { container } = render(<ReferenceChip label="gone" appearance="folder" invalid />)
     const chip = container.firstElementChild

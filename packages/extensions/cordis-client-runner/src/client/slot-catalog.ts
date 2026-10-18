@@ -1794,6 +1794,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.chat.turnTail\' (client-ui-deliverables), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-brand-mo OpenWithMenu id \'mo-open-with\'',
       'client-ui-open-in-app FileRouteAction id \'open-in-app\'',
     ],
     replaceRisk: 'none',
@@ -1854,6 +1855,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'sidebar.right.pane.tab\' (client-ui-deliverables), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-brand-mo OpenWithMenu id \'mo-open-with\'',
       'client-ui-open-in-app FileRouteAction id \'open-in-app\'',
     ],
     replaceRisk: 'none',

@@ -30,7 +30,8 @@ export interface InstalledDependencies {
   readonly edit: (name: string) => Promise<RemoteResult<InstalledSkillActionValue>>
   readonly uninstall: (name: string) => Promise<RemoteResult<InstalledSkillActionValue>>
   /** Open a new Session whose draft invokes the skill. */
-  readonly chat: (name: string) => void
+  /** Start a Session invoking the Skill; a display name shows on its chip. */
+  readonly chat: (name: string, displayName?: string) => void
 }
 
 /** Business face injected into the Skills page. */
@@ -46,7 +47,7 @@ export interface InstalledSkillsInjected {
   readonly onEdit: (name: string) => Promise<void>
   /** Move one skill to the trash, then re-read the list. */
   readonly onUninstall: (name: string) => Promise<void>
-  readonly onChat: (name: string) => void
+  readonly onChat: (name: string, displayName?: string) => void
   readonly onDismissFailure: () => void
   /** Pin or unpin one skill on this machine. */
   readonly onTogglePin: (key: string, pinned: boolean) => void

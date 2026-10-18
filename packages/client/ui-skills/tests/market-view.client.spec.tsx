@@ -197,7 +197,7 @@ describe('Market view', () => {
     expect(screen.getAllByText('已安装 v1.0.0')).toHaveLength(2)
     fireEvent.click(use[0]!)
     expect(props.onCloseDetail).toHaveBeenCalledOnce()
-    expect(props.onChat).toHaveBeenCalledWith('pdf-tools')
+    expect(props.onChat).toHaveBeenCalledWith('pdf-tools', 'PDF 工具')
   })
 
   it('offers 使用 beside the installed badge in the detail, and on a Skill the installed list has not read yet', () => {
@@ -209,7 +209,7 @@ describe('Market view', () => {
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText('已安装 v1.0.0')).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: /^使用 / }))
-    expect(props.onChat).toHaveBeenCalledWith('pdf-tools')
+    expect(props.onChat).toHaveBeenCalledWith('pdf-tools', 'pdf-tools')
   })
 
   it('offers an update on cards and in the detail when the Hub has a newer version', () => {

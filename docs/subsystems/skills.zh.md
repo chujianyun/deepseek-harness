@@ -464,6 +464,15 @@ markUninstalled(name: string, uninstalled: boolean = true): Promise<void>
 @Remote async installedStatus(signal: AbortSignal): Promise<readonly MarketInstalledStatus[]>
 
 /**
+ * Display names of the signed-in tenant's installed market Skills, from their install records only: no Hub request and no
+ * switching, so the composer's / menu can read it on every catalog (Spec #266 follow-up, T209). A Skill installed before
+ * the Hub had display names, and any outside the market, is absent.
+ * @param signal - caller lifetime.
+ * @returns display name by Skill name, for Skills whose display name differs from the name.
+ */
+@Remote async displayNames(signal: AbortSignal): Promise<Readonly<Record<string, string>>>
+
+/**
  * Install records of a tenant's market Skills (the signed-in tenant's by default), keyed by Skill name.
  * @param tenantId - the tenant whose directory to read.
  * @returns the readable records; a directory without one is not a market install.

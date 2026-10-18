@@ -115,6 +115,16 @@ describe('ui-skills browser plugin', () => {
     face.onChat('alpha')
     // The New Session flow seeds the draft without sending it.
     expect(b.startSession).toHaveBeenCalledWith(undefined, { prompt: '/alpha ' })
+    face.onChat('alpha', 'alpha')
+    expect(b.startSession).toHaveBeenLastCalledWith(undefined, { prompt: '/alpha ' })
+    // With a display name the draft opens on the Skill's chip showing it; its text, and so the prompt, is still /name.
+    face.onChat('pdf-tools', 'PDF 工具')
+    expect(b.startSession).toHaveBeenLastCalledWith(undefined, {
+      prompt: {
+        text: '/pdf-tools ',
+        references: [{ source: 'skill', ref: '/pdf-tools', label: 'PDF 工具', appearance: 'skill', clipboardText: '/pdf-tools', offset: 0, length: 10 }],
+      },
+    })
   })
 
   it('wires the market callbacks to the skillMarket Remote and refreshes the installed list after an install', async () => {

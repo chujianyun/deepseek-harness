@@ -54,9 +54,15 @@ export function apply(ctx: ClientContext): void {
     reveal: name => remote.reveal(name),
     edit: name => remote.edit(name),
     uninstall: name => remote.uninstall(name),
-    // A new Session in the usual New Session Workspace, its draft invoking the skill without sending.
-    chat: (name) => {
-      ctx.uiWorkspace.startSession(undefined, { prompt: `/${name} ` })
+    // A new Session in the usual New Session Workspace, its draft invoking the skill without sending. With a display name
+    // the draft opens on the Skill's chip showing it (as the / menu inserts it); the prompt is still /name.
+    chat: (name, displayName) => {
+      const text = `/${name} `
+      ctx.uiWorkspace.startSession(undefined, {
+        prompt: displayName === undefined || displayName === name
+          ? text
+          : { text, references: [{ source: 'skill', ref: `/${name}`, label: displayName, appearance: 'skill', clipboardText: `/${name}`, offset: 0, length: name.length + 1 }] },
+      })
     },
   })
   const market = ctx.remote.skillMarket

@@ -47,7 +47,7 @@ Hovering over `/name` highlights the entire reference. Clicking a known skill op
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The source implements no adjudication hooks and no reference codec: the pick lands literal text and the prompt ships the same literal, so determinism lives host-side ([slash pipeline note](../../../.agents/notes/archived/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md)).
+The source implements no adjudication hooks: the prompt always ships the literal `/name`, so determinism lives host-side ([slash pipeline note](../../../.agents/notes/archived/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md)). A Skill installed from the Skill Hub with a display name (read from the market's local install records while `remote.skillMarket` is mounted, never awaited by the menu) is titled by it in the menu and picks as a chip showing it with a `/` marker; the chip's text and its codec's model form are the same `/name`. Other Skills pick as literal text.
 
 ### Candidate flow
 

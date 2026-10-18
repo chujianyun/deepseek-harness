@@ -187,7 +187,7 @@ function InstallControl({ item, props, compact = false }: { item: MarketSkillCar
         <Button size="sm" variant="primary" className={css.use} aria-label={t('useSkillAria', { name: item.displayName })} data-use-skill=""
           onClick={() => {
             onCloseDetail()
-            onChat(item.name)
+            onChat(item.name, item.displayName)
           }}>
           {t('useSkill')}
         </Button>

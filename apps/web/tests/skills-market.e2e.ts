@@ -110,7 +110,8 @@ it('browses the market, installs a Skill, lists it from the market, and invokes 
     await pdfCard.hover()
     await pdfCard.getByRole('button', { name: 'Use PDF 工具 in a new session' }).click()
     const draft = page.locator('[data-composer-input][contenteditable="true"]').first()
-    await expect.poll(async () => (await draft.textContent())?.trim()).toBe('/pdf-tools')
+    // The draft opens on the Skill's chip showing its display name.
+    await expect.poll(async () => (await draft.textContent())?.trim()).toBe('/PDF 工具')
     expect(events.some(event => event.type === 'user/message')).toBe(false)
     if (shots !== undefined) {
       for (const [locale, name] of [[ZH_BROWSER_LOCALE, 'zh'], ['en-US', 'en']] as const) {
@@ -140,7 +141,7 @@ it('browses the market, installs a Skill, lists it from the market, and invokes 
     await marketGroup.getByRole('button', { name: 'More actions for PDF 工具' }).click()
     await page.getByRole('menuitem', { name: 'Chat with it' }).click()
     const input = page.locator('[data-composer-input][contenteditable="true"]').first()
-    await expect.poll(async () => (await input.textContent())?.trim()).toBe('/pdf-tools')
+    await expect.poll(async () => (await input.textContent())?.trim()).toBe('/PDF 工具')
     await input.click()
     await page.keyboard.press('End')
     await page.keyboard.type('summarize the report')
@@ -150,6 +151,19 @@ it('browses the market, installs a Skill, lists it from the market, and invokes 
       && (event.data.source as { name?: string }).name === 'pdf-tools'
       && event.data.content.some(block => block.type === 'text' && block.text.includes('Use pdf-tools.'))), { timeout: 20_000 }).toBe(true)
     await page.getByText('MARKET_SKILL_DONE').first().waitFor({ timeout: 20_000 })
+
+    // The / menu titles the market Skill by its display name and finds it by it; the pick is the same chip.
+    await page.getByText('New Session', { exact: true }).first().click()
+    const fresh = page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build, / commands, @ files or sessions"]')
+    await fresh.waitFor()
+    await fresh.click()
+    await fresh.fill('/PDF')
+    const menuRow = page.getByRole('option', { name: /PDF 工具/ })
+    await menuRow.waitFor()
+    expect(await menuRow.innerText()).toContain('pdf-tools')
+    if (shots !== undefined) await page.screenshot({ path: join(shots, 'en-light-slash-menu.png') })
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => (await fresh.textContent())?.trim()).toBe('/PDF 工具')
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
     if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-skills-market')

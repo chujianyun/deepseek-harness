@@ -351,7 +351,7 @@ function SkillCard({ skill, props, pinned, selection, onUninstall }: {
               ]}
               onSelect={(id) => {
                 setMenuOpen(false)
-                if (id === 'chat') onChat(skill.name)
+                if (id === 'chat') onChat(skill.name, shown)
                 else if (id === 'edit') void onEdit(skill.name)
                 else if (id === 'reveal') void onReveal(skill.name)
                 else onUninstall()

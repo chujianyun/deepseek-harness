@@ -15,7 +15,8 @@ export interface ReferenceInsert {
   readonly source: string
   readonly ref: string
   readonly label: string
-  readonly appearance?: 'session' | 'file' | 'folder'
+  /** Domain glyph; a Skill chip shows the `/` its gesture types, an absent one the `@` of a mention. */
+  readonly appearance?: 'session' | 'file' | 'folder' | 'skill'
   readonly clipboardText: string
 }
 
