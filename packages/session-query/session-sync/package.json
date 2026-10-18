@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-session-sync",
   "description": "Sync Sessions to the user center of the Hub sign-in: each conversation with its subagent Sessions and attachments, uploads after each turn, and deletions",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "publishConfig": {
     "access": "public"
   },
