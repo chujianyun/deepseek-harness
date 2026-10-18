@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-verified-download",
   "description": "Resumable download over an ordered mirror list, verified by size and sha256",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "publishConfig": {
     "access": "public"
   },
