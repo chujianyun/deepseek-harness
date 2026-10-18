@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-skill-controller",
   "description": "Remote owner for the user-level skills installed on this machine",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "publishConfig": {
     "access": "public"
   },

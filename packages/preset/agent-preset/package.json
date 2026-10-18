@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-agent-preset",
   "description": "Declare an Agent capability composition in Cordis YAML",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "publishConfig": {
     "access": "public"
   },
