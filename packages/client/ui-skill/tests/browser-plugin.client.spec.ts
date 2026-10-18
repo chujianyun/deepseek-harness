@@ -254,6 +254,20 @@ describe('candidates: sessionId addressing', () => {
     await expect(names('zzz')).resolves.toEqual([])
   })
 
+  it('finds a Skill by words of its description after the name hits, so a Chinese query finds it', async () => {
+    const { source } = await bench(listOk([
+      { name: 'tmall-publish', description: '天猫发品存仓库：把新品素材发到天猫店铺', modelInvocable: true },
+      { name: 'domestic-logistics-query', description: '国内物流详情查询技能', modelInvocable: true },
+      { name: 'pdd-publish', description: '拼多多发品存草稿', modelInvocable: true },
+    ]))
+    const names = async (query: string) => (await source.candidates(proj('s1'), req(query))).map(c => c.name)
+    await expect(names('天猫发品')).resolves.toEqual(['tmall-publish'])
+    await expect(names('发品')).resolves.toEqual(['tmall-publish', 'pdd-publish'])
+    await expect(names('物流')).resolves.toEqual(['domestic-logistics-query'])
+    // A name hit ranks before a description-only hit.
+    await expect(names('pdd')).resolves.toEqual(['pdd-publish'])
+  })
+
   it('rejects on a failed result (the slash shell owns the menu-side fold)', async () => {
     const { source } = await bench(() => Promise.resolve({
       ok: false, error: new RemoteError('gateway/internal', 'boom', {}),

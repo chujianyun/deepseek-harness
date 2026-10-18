@@ -166,8 +166,14 @@ export function apply(ctx: ClientContext): void {
       // Superseded keystroke: the shared fetch stays warm, this caller yields.
       if (signal.aborted) return []
       // The same ranking as the command group of this menu: case-insensitive
-      // ordered subsequence, prefix hits first.
-      return rankByName(skills, query)
+      // ordered subsequence, prefix hits first. Then Skills whose description
+      // holds the query: slugs are Latin, so this is how a Chinese query finds one.
+      const named = rankByName(skills, query)
+      const lower = query.toLowerCase()
+      const described = query === ''
+        ? []
+        : skills.filter(skill => !named.includes(skill) && skill.description.toLowerCase().includes(lower))
+      return [...named, ...described]
         .map(skill => ({
           name: skill.name,
           // The user-only marker rides the description (the menu's only
