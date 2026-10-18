@@ -62,7 +62,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-/** One session's catalog fetch: the shared promise plus its own abort handle. */
 /**
  * The chip a Skill lands as when it has a display name: shows the name the user knows, carries /name.
  * @param name - the Skill's name.
@@ -73,6 +72,7 @@ export function skillChip(name: string, label: string): ReferenceInsert {
   return { source: 'skill', ref: `/${name}`, label, appearance: 'skill', clipboardText: `/${name}` }
 }
 
+/** One session's catalog fetch: the shared promise plus its own abort handle. */
 interface CatalogFetch {
   readonly promise: Promise<readonly SkillEntry[]>
   readonly abort: AbortController

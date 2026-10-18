@@ -29,8 +29,7 @@ export interface InstalledDependencies {
   readonly reveal: (name: string) => Promise<RemoteResult<InstalledSkillActionValue>>
   readonly edit: (name: string) => Promise<RemoteResult<InstalledSkillActionValue>>
   readonly uninstall: (name: string) => Promise<RemoteResult<InstalledSkillActionValue>>
-  /** Open a new Session whose draft invokes the skill. */
-  /** Start a Session invoking the Skill; a display name shows on its chip. */
+  /** Open a new Session whose draft invokes the skill; a display name shows on its chip. */
   readonly chat: (name: string, displayName?: string) => void
 }
 

@@ -786,8 +786,7 @@ export class SkillMarket extends TypertRemoteService {
 
   /**
    * Display names of the signed-in tenant's installed market Skills, from their install records only: no Hub request and no
-   * switching, so the composer's / menu can read it on every catalog (Spec #266 follow-up, T209). A Skill installed before
-   * the Hub had display names, and any outside the market, is absent.
+   * switching. A Skill installed before the Hub had display names, and any outside the market, is absent.
    * @param signal - caller lifetime.
    * @returns display name by Skill name, for Skills whose display name differs from the name.
    */

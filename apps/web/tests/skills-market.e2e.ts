@@ -161,7 +161,24 @@ it('browses the market, installs a Skill, lists it from the market, and invokes 
     const menuRow = page.getByRole('option', { name: /PDF 工具/ })
     await menuRow.waitFor()
     expect(await menuRow.innerText()).toContain('pdf-tools')
-    if (shots !== undefined) await page.screenshot({ path: join(shots, 'en-light-slash-menu.png') })
+    if (shots !== undefined) {
+      for (const [locale, name] of [[ZH_BROWSER_LOCALE, 'zh'], ['en-US', 'en']] as const) {
+        for (const colorScheme of ['light', 'dark'] as const) {
+          const shot = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale, colorScheme })
+          await shot.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+          await shot.goto(scaffold.authenticatedUrl)
+          const composer = shot.locator('[data-composer-input][contenteditable="true"][data-placeholder]')
+          await composer.first().waitFor()
+          await composer.first().fill('/PDF')
+          await shot.getByRole('option', { name: /PDF 工具/ }).waitFor()
+          await shot.screenshot({ path: join(shots, `${name}-${colorScheme}-slash-menu.png`) })
+          await shot.keyboard.press('Enter')
+          await expect.poll(async () => (await composer.first().textContent())?.trim()).toBe('/PDF 工具')
+          await shot.screenshot({ path: join(shots, `${name}-${colorScheme}-skill-chip.png`) })
+          await shot.close()
+        }
+      }
+    }
     await page.keyboard.press('Enter')
     await expect.poll(async () => (await fresh.textContent())?.trim()).toBe('/PDF 工具')
     expect(tripwire.pageErrors).toEqual([])
