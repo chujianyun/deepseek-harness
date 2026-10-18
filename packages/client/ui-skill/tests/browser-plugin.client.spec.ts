@@ -61,7 +61,7 @@ function providePresentation(ctx: Context): PresentationCapture {
 }
 
 /** Boot the plugin over fake slash/connection faces; returns the captured source and its ctx. */
-async function bench(list: ListFn, addressed?: SessionId, opening: Pick<SessionFixture, 'initialOpen' | 'snapshot'> = {}, extra: object = {}) {
+async function bench(list: ListFn, addressed?: SessionId, opening: Pick<SessionFixture, 'initialOpen' | 'snapshot'> = {}, displayNames?: () => Promise<unknown>) {
   const ctx = new Context()
   const openResource = vi.fn()
   ctx.provide('sidebarRight', { openResource })
@@ -79,7 +79,8 @@ async function bench(list: ListFn, addressed?: SessionId, opening: Pick<SessionF
       ? { parentSessionId: sid('parent'), childSessionId: addressed, mode: 'continuable' }
       : sid(id))
   }
-  const remote = new TestRemote(ctx, { skills: { list }, ...extra })
+  if (displayNames !== undefined) ctx.provide('skillDisplayNames', { read: displayNames } as never)
+  const remote = new TestRemote(ctx, { skills: { list } })
   providePresentation(ctx)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   onTestFinished(async () => { await fiber.dispose() })
@@ -445,7 +446,7 @@ describe('pick lands plain text', () => {
 
   it('titles market Skills by their display name and picks them as a chip carrying /name', async () => {
     const displayNames = vi.fn(async () => ({ ok: true as const, value: { 'commit-helper': '提交助手' } }))
-    const { source } = await bench(listOk(CATALOG), undefined, {}, { skillMarket: { displayNames } })
+    const { source } = await bench(listOk(CATALOG), undefined, {}, displayNames)
     // The menu never waits for the read: the first rows may carry names only, later ones the display names.
     await source.candidates(proj('s1'), req(''))
     await vi.waitFor(async () => {
@@ -464,7 +465,7 @@ describe('pick lands plain text', () => {
     expect(pick({ name: 'code-review' })).toEqual({ text: '/code-review ' })
   })
 
-  it('lists Skills by name in a composition without the Skill market', async () => {
+  it('lists Skills by name in a composition without the market display names', async () => {
     const { source } = await bench(listOk(CATALOG))
     expect((await source.candidates(proj('s1'), req(''))).map(row => row.label)).toEqual([undefined, undefined, undefined])
   })
@@ -474,7 +475,7 @@ describe('pick lands plain text', () => {
     const displayNames = vi.fn()
       .mockImplementationOnce(() => new Promise((resolve) => { first = resolve }))
       .mockImplementation(async () => ({ ok: true as const, value: { deploy: '部署' } }))
-    const { source, remote } = await bench(listOk(CATALOG), undefined, {}, { skillMarket: { displayNames } })
+    const { source, remote } = await bench(listOk(CATALOG), undefined, {}, displayNames)
     await source.candidates(proj('s1'), req(''))
     // A preset switch refetches the catalog and reads again.
     remote.emit('agent-preset/selected', [sid('s1'), 'minimal'])
@@ -488,7 +489,7 @@ describe('pick lands plain text', () => {
   it('keeps Skill names when the market read fails or answers with an error', async () => {
     for (const displayNames of [vi.fn(async () => { throw new Error('offline') }), vi.fn(async () => ({ ok: false as const, error: new RemoteError('gateway/internal', 'y', {}) }))]) {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-      const { source, fiber } = await bench(listOk(CATALOG), undefined, {}, { skillMarket: { displayNames } })
+      const { source, fiber } = await bench(listOk(CATALOG), undefined, {}, displayNames)
       await source.candidates(proj('s1'), req(''))
       await vi.waitFor(() => { expect(displayNames).toHaveBeenCalled() })
       await Promise.resolve()

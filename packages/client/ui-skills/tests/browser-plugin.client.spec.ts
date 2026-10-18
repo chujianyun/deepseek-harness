@@ -43,6 +43,7 @@ async function bench() {
     detail: vi.fn(async () => ({ ok: true as const, value: { ...card, ownerName: '', skillMd: '', files: [] } })),
     installSkill: vi.fn(async () => ({ ok: true as const, value: card })),
     installedStatus: vi.fn(async () => ({ ok: true as const, value: [] })),
+    displayNames: vi.fn(async () => ({ ok: true as const, value: {} })),
     uploadSources: vi.fn(async () => ({ ok: true as const, value: [] })),
     inspectFolder: vi.fn(async (dir: string) => ({ ok: true as const, value: { dir, name: 'x', description: 'x', fileCount: 1, sizeBytes: 1, problems: [], existing: null, suggestedVersion: '1.0.0' } })),
     uploadOptions: vi.fn(async () => ({ ok: true as const, value: { categories: [], departments: [], employees: [] } })),
@@ -140,6 +141,13 @@ describe('ui-skills browser plugin', () => {
     expect(b.skillMarket.installSkill).toHaveBeenCalledWith('s1', {})
     expect(b.skillMarket.installedStatus).toHaveBeenCalledOnce()
     await vi.waitFor(() => { expect(b.installedSkills.list).toHaveBeenCalledOnce() })
+  })
+
+  it('provides the / menu the market Skills\' display names', async () => {
+    const b = await bench()
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    await b.ctx.skillDisplayNames.read()
+    expect(b.skillMarket.displayNames).toHaveBeenCalledOnce()
   })
 
   it('wires the upload dialog to the skillMarket Remote, the folder chooser, and the clipboard', async () => {

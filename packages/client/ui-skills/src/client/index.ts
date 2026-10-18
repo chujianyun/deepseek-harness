@@ -2,7 +2,8 @@
  * Skills page, browser half: the **Skills** entry of the sidebar and the page it opens in the main
  * column. The page browses the Skill Hub market and installs from it through the `skillMarket` Remote,
  * and lists the skills installed on this machine through the `installedSkills` Remote,
- * switches them on and off, and opens, edits, reveals, or uninstalls one.
+ * switches them on and off, and opens, edits, reveals, or uninstalls one. It also provides the
+ * `skillDisplayNames` service the / menu reads market Skills' display names from.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -12,6 +13,7 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import type {} from '@deepseek-ai/dsh-client-ui-skill/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { createInstalledSource } from './installed-source.ts'
 import { createMarketSource } from './market-source.ts'
@@ -66,6 +68,8 @@ export function apply(ctx: ClientContext): void {
     },
   })
   const market = ctx.remote.skillMarket
+  // The / menu titles market Skills by their display names; it reads them only where this market page is composed.
+  ctx.provide('skillDisplayNames', { read: () => market.displayNames() })
   const marketFace = createMarketSource({
     list: query => market.list(query),
     categories: () => market.categories(),

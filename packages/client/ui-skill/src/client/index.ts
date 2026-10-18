@@ -34,7 +34,7 @@
 // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { SkillEntry } from '@deepseek-ai/dsh-api-remotes/client'
+import type { RemoteResult, SkillEntry } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { InputTriggerServiceContract, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
@@ -80,6 +80,25 @@ interface CatalogFetch {
   settled?: readonly SkillEntry[]
 }
 
+/**
+ * Display names of the Skills installed from the Skill Hub. The plugin that composes the Skill market provides it, so a
+ * composition without the market never asks for them.
+ */
+export interface SkillDisplayNames {
+  /**
+   * Read the market Skills' display names.
+   * @returns display name by Skill name, for Skills whose display name differs from the name.
+   */
+  read(): Promise<RemoteResult<Readonly<Record<string, string>>>>
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Optional display names of Skill Hub Skills, read by the '/' menu. */
+    skillDisplayNames: SkillDisplayNames
+  }
+}
+
 /** Required services: reference source faces plus the tool-row and locale registries. */
 export const inject = ['inputTriggers', 'sessions', 'slots', 'locale', 'remote', 'remote.skills', 'sidebarRight']
 
@@ -115,16 +134,16 @@ export function apply(ctx: ClientContext): void {
     }
   }
 
-  // Display names of Skills installed from the Skill Hub (e.g. 「天猫发品」), read from the market's local install records where
-  // it is mounted: the menu titles a Skill by it and its pick lands a chip showing it, while the prompt still carries /name.
-  // Read alongside each catalog and never awaited by the menu, so a composition without the market, a slow read, or a failed
-  // one leaves Skills titled by their names until the read settles.
+  // Display names of Skills installed from the Skill Hub (e.g. 「天猫发品」), provided where the Skill market is composed: the
+  // menu titles a Skill by it and its pick lands a chip showing it, while the prompt still carries /name. Read alongside each
+  // catalog and never awaited by the menu, so a composition without the market, a slow read, or a failed one leaves Skills
+  // titled by their names until the read settles.
   let labels: ReadonlyMap<string, string> = new Map()
   let labelsRead = 0
-  // Bound while the market namespace is mounted (an optional dependency of this plugin).
-  let marketNames: (() => ReturnType<typeof ctx.remote.skillMarket.displayNames>) | undefined
-  ctx.inject(['remote.skillMarket'], (scope: ClientContext) => {
-    marketNames = () => scope.remote.skillMarket.displayNames()
+  // Bound while the market's display-name service is provided (an optional dependency of this plugin).
+  let marketNames: SkillDisplayNames['read'] | undefined
+  ctx.inject(['skillDisplayNames'], (scope: ClientContext) => {
+    marketNames = () => scope.skillDisplayNames.read()
     scope.effect(() => () => { marketNames = undefined }, 'ui-skill: market display names')
   })
   const readDisplayNames = (): void => {
