@@ -71,7 +71,7 @@ describe('skillMarket', () => {
   it('publishes the namespace and its methods', async () => {
     const { market } = await boot()
     expect(market.typertRemote.namespace).toBe('skillMarket')
-    expect(remoteMethods(market).map(method => method.method)).toEqual(['list', 'categories', 'detail', 'installSkill', 'uploadSources', 'inspectFolder', 'uploadOptions', 'uploadSkill', 'installedStatus'])
+    expect(remoteMethods(market).map(method => method.method)).toEqual(['list', 'categories', 'detail', 'installSkill', 'uploadSources', 'inspectFolder', 'uploadOptions', 'uploadSkill', 'installedStatus', 'displayNames'])
   })
 
   it('needs a Hub sign-in and discovers nothing while signed out', async () => {
@@ -120,6 +120,9 @@ describe('skillMarket', () => {
     expect(record).toMatchObject({ name: 'pdf-tools', displayName: 'PDF 工具' })
     center.skills = [{ ...PDF, displayName: 'PDF 工具箱' }, SQL]
     expect((await market.installedStatus(signal()))[0]).toMatchObject({ name: 'pdf-tools', displayName: 'PDF 工具箱', state: 'current' })
+    // The local read: install records only, and only names that differ (sql-helper has none).
+    await market.installSkill('s-sql', {}, signal())
+    expect(await market.displayNames(signal())).toEqual({ 'pdf-tools': 'PDF 工具' })
     center.skills = [SQL]
     expect((await market.installedStatus(signal()))[0]).toMatchObject({ name: 'pdf-tools', displayName: 'PDF 工具', state: 'unavailable' })
   })

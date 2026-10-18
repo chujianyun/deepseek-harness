@@ -103,7 +103,36 @@ it('browses the market, installs a Skill, lists it from the market, and invokes 
     expect(await readFile(join(installedDir, 'scripts', 'run.sh'), 'utf8')).toBe('echo pdf\n')
     expect(JSON.parse(await readFile(join(installedDir, '.hub-install.json'), 'utf8'))).toMatchObject({ hubSkillId: 's-pdf', displayName: 'PDF 工具', version: '1.0.0' })
 
+    // An installed card's badge turns into Use on hover: a new Session whose draft invokes the Skill, not sent.
+    const pdfCard = page.locator('li').filter({ has: page.getByRole('button', { name: 'PDF 工具', exact: true }) })
+    await pdfCard.getByText('Installed v1.0.0').waitFor()
+    expect(await page.getByRole('button', { name: /^Use .* in a new session$/ }).count()).toBe(1)
+    await pdfCard.hover()
+    await pdfCard.getByRole('button', { name: 'Use PDF 工具 in a new session' }).click()
+    const draft = page.locator('[data-composer-input][contenteditable="true"]').first()
+    // The draft opens on the Skill's chip showing its display name.
+    await expect.poll(async () => (await draft.textContent())?.trim()).toBe('/PDF 工具')
+    expect(events.some(event => event.type === 'user/message')).toBe(false)
+    if (shots !== undefined) {
+      for (const [locale, name] of [[ZH_BROWSER_LOCALE, 'zh'], ['en-US', 'en']] as const) {
+        for (const colorScheme of ['light', 'dark'] as const) {
+          const shot = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale, colorScheme })
+          await shot.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+          await shot.goto(scaffold.authenticatedUrl)
+          await shot.getByRole('button', { name: 'Skills', exact: true }).click()
+          const shotCard = shot.locator('li').filter({ has: shot.getByRole('button', { name: 'PDF 工具', exact: true }) })
+          await shotCard.locator('[data-installed]').waitFor()
+          await shotCard.hover()
+          await shotCard.locator('[data-use-skill]').waitFor()
+          await shot.waitForTimeout(300)
+          await shot.screenshot({ path: join(shots, `${name}-${colorScheme}-market-use.png`) })
+          await shot.close()
+        }
+      }
+    }
+
     // Installed: the market group, then chat with it.
+    await page.getByRole('button', { name: 'Skills', exact: true }).click()
     await page.getByRole('button', { name: /^Installed \(\d+\)$/ }).click()
     const marketGroup = page.getByRole('region', { name: /From the market/ })
     await marketGroup.getByText('PDF 工具').waitFor()
@@ -112,7 +141,7 @@ it('browses the market, installs a Skill, lists it from the market, and invokes 
     await marketGroup.getByRole('button', { name: 'More actions for PDF 工具' }).click()
     await page.getByRole('menuitem', { name: 'Chat with it' }).click()
     const input = page.locator('[data-composer-input][contenteditable="true"]').first()
-    await expect.poll(async () => (await input.textContent())?.trim()).toBe('/pdf-tools')
+    await expect.poll(async () => (await input.textContent())?.trim()).toBe('/PDF 工具')
     await input.click()
     await page.keyboard.press('End')
     await page.keyboard.type('summarize the report')
@@ -122,6 +151,36 @@ it('browses the market, installs a Skill, lists it from the market, and invokes 
       && (event.data.source as { name?: string }).name === 'pdf-tools'
       && event.data.content.some(block => block.type === 'text' && block.text.includes('Use pdf-tools.'))), { timeout: 20_000 }).toBe(true)
     await page.getByText('MARKET_SKILL_DONE').first().waitFor({ timeout: 20_000 })
+
+    // The / menu titles the market Skill by its display name and finds it by it; the pick is the same chip.
+    await page.getByText('New Session', { exact: true }).first().click()
+    const fresh = page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build, / commands, @ files or sessions"]')
+    await fresh.waitFor()
+    await fresh.click()
+    await fresh.fill('/PDF')
+    const menuRow = page.getByRole('option', { name: /PDF 工具/ })
+    await menuRow.waitFor()
+    expect(await menuRow.innerText()).toContain('pdf-tools')
+    if (shots !== undefined) {
+      for (const [locale, name] of [[ZH_BROWSER_LOCALE, 'zh'], ['en-US', 'en']] as const) {
+        for (const colorScheme of ['light', 'dark'] as const) {
+          const shot = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale, colorScheme })
+          await shot.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+          await shot.goto(scaffold.authenticatedUrl)
+          const composer = shot.locator('[data-composer-input][contenteditable="true"][data-placeholder]')
+          await composer.first().waitFor()
+          await composer.first().fill('/PDF')
+          await shot.getByRole('option', { name: /PDF 工具/ }).waitFor()
+          await shot.screenshot({ path: join(shots, `${name}-${colorScheme}-slash-menu.png`) })
+          await shot.keyboard.press('Enter')
+          await expect.poll(async () => (await composer.first().textContent())?.trim()).toBe('/PDF 工具')
+          await shot.screenshot({ path: join(shots, `${name}-${colorScheme}-skill-chip.png`) })
+          await shot.close()
+        }
+      }
+    }
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => (await fresh.textContent())?.trim()).toBe('/PDF 工具')
     expect(tripwire.pageErrors).toEqual([])
   } catch (error) {
     if (failurePage !== undefined) await saveFailureShot(failurePage, 'web-e2e-skills-market')

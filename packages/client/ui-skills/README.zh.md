@@ -23,7 +23,7 @@ Skills 页面在侧栏加入 **Skills** 入口，并在主栏打开 Skill Hub �
 <a id="use-this-package"></a>
 ## 使用本包
 
-把浏览器条目与 Host 的 `skill-controller` 条目一起挂载；web-app bundle 只在 `desktop` profile 下启用两者。页面注入 `remote.installedSkills`、`remote.skillMarket`、`uiWorkspace`、`sessions` 与 `conversation`（**选择文件夹…** 调用 `remote.directoryPicker`，该 Remote 不存在时仍可手动输入路径），以面板 id `skills` 注册到 root 的 `main` keyed slot，并以 order 5 把图标加入 `sidebar.panellist`。
+把浏览器条目与 Host 的 `skill-controller` 条目一起挂载；web-app bundle 只在 `desktop` profile 下启用两者。页面注入 `remote.installedSkills`、`remote.skillMarket`、`uiWorkspace`、`sessions` 与 `conversation`（**选择文件夹…** 调用 `remote.directoryPicker`，该 Remote 不存在时仍可手动输入路径），以面板 id `skills` 注册到 root 的 `main` keyed slot，以 order 5 把图标加入 `sidebar.panellist`，并提供 `skillDisplayNames` 服务，供 / 菜单读取市场 Skill 的显示名称（`skillMarket.displayNames()`）。
 
 市场每次打开时读取分类和第一页（十二张卡片），同时读取已安装数量；搜索（在搜索框中按回车，旁边是紧凑的分类 Tab）或切换分类 Tab 会重新读取第 1 页，「加载更多」追加下一页。卡片和详情显示 Skill 的显示名称，详情中还列出它的 slug。卡片头像按分类使用固定色调。卡片上的 **安装** 安装该 Skill；已安装的 Skill 以成功色显示 **已安装 vX**，名称已被自定义 Skill 占用的 Skill 不能安装并给出提示。详情对话框把去掉 frontmatter 的 SKILL.md 作为不可信 Markdown 渲染（原始 HTML 保持为文本），安装方式相同。Hub 上有新版本的已装 Skill 会显示 **更新到 vX** 而不是版本号；「来自市场」中的卡片显示可更新和 **更新** 按钮，平台从本公司收回时显示 **已被收回** 并锁住开关（仍可卸载；页面打开时的 Hub 检查完成后会不显示加载状态地重读列表，收回或恢复立即体现），因其他原因不再提供时显示 **市场已不可用**。更新会覆盖本地修改时，对话框列出被修改的文件，只有点 **覆盖并更新** 才更新。被拒绝的安装会显示其消息，直到下一次操作或被关闭。
 

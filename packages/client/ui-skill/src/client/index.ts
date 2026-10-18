@@ -34,10 +34,11 @@
 // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { SkillEntry } from '@deepseek-ai/dsh-api-remotes/client'
+import type { RemoteResult, SkillEntry } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { InputTriggerServiceContract, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type { ReferenceInsert } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import { rankByName } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
@@ -61,12 +62,41 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
+/**
+ * The chip a Skill lands as when it has a display name: shows the name the user knows, carries /name.
+ * @param name - the Skill's name.
+ * @param label - its display name.
+ * @returns the reference to insert.
+ */
+export function skillChip(name: string, label: string): ReferenceInsert {
+  return { source: 'skill', ref: `/${name}`, label, appearance: 'skill', clipboardText: `/${name}` }
+}
+
 /** One session's catalog fetch: the shared promise plus its own abort handle. */
 interface CatalogFetch {
   readonly promise: Promise<readonly SkillEntry[]>
   readonly abort: AbortController
   /** Settled catalog for synchronous lexicon reads (unset while in flight or on failure). */
   settled?: readonly SkillEntry[]
+}
+
+/**
+ * Display names of the Skills installed from the Skill Hub. The plugin that composes the Skill market provides it, so a
+ * composition without the market never asks for them.
+ */
+export interface SkillDisplayNames {
+  /**
+   * Read the market Skills' display names.
+   * @returns display name by Skill name, for Skills whose display name differs from the name.
+   */
+  read(): Promise<RemoteResult<Readonly<Record<string, string>>>>
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Optional display names of Skill Hub Skills, read by the '/' menu. */
+    skillDisplayNames: SkillDisplayNames
+  }
 }
 
 /** Required services: reference source faces plus the tool-row and locale registries. */
@@ -104,9 +134,37 @@ export function apply(ctx: ClientContext): void {
     }
   }
 
+  // Display names of Skills installed from the Skill Hub (e.g. 「天猫发品」), provided where the Skill market is composed: the
+  // menu titles a Skill by it and its pick lands a chip showing it, while the prompt still carries /name. Read alongside each
+  // catalog and never awaited by the menu, so a composition without the market, a slow read, or a failed one leaves Skills
+  // titled by their names until the read settles.
+  let labels: ReadonlyMap<string, string> = new Map()
+  let labelsRead = 0
+  // Bound while the market's display-name service is provided (an optional dependency of this plugin).
+  let marketNames: SkillDisplayNames['read'] | undefined
+  ctx.inject(['skillDisplayNames'], (scope: ClientContext) => {
+    marketNames = () => scope.skillDisplayNames.read()
+    scope.effect(() => () => { marketNames = undefined }, 'ui-skill: market display names')
+  })
+  const readDisplayNames = (): void => {
+    const read = ++labelsRead
+    const market = marketNames
+    if (market === undefined) return
+    // A failed read keeps the names last read; the menu still lists every Skill.
+    void market().then(
+      (result) => {
+        if (read === labelsRead && result.ok) labels = new Map(Object.entries(result.value))
+      },
+      (error: unknown) => {
+        console.warn('[ui-skill] display names unavailable:', error)
+      },
+    )
+  }
+
   const fetchCatalog = (sessionId: SessionId): CatalogFetch => {
     const existing = fetches.get(sessionId)
     if (existing !== undefined) return existing
+    readDisplayNames()
     const abort = new AbortController()
     const promise = (async () => {
       if (sessions.binding(sessionId) === undefined) {
@@ -162,9 +220,15 @@ export function apply(ctx: ClientContext): void {
     order: 2,
     async candidates(session, { query, signal }) {
       if (sessions.subagentAddress(session.sessionId) !== undefined) return []
-      const skills = await fetchCatalog(session.sessionId).promise
+      const catalog = await fetchCatalog(session.sessionId).promise
+      const names = labels
       // Superseded keystroke: the shared fetch stays warm, this caller yields.
       if (signal.aborted) return []
+      // The display name is the row's title and a search key; the name stays beside it.
+      const skills: readonly (SkillEntry & { readonly label?: string })[] = catalog.map((skill) => {
+        const label = names.get(skill.name)
+        return label === undefined ? skill : { ...skill, label }
+      })
       // The same ranking as the command group of this menu: case-insensitive
       // ordered subsequence, prefix hits first. Then Skills whose description
       // holds the query: slugs are Latin, so this is how a Chinese query finds one.
@@ -176,6 +240,7 @@ export function apply(ctx: ClientContext): void {
       return [...named, ...described]
         .map(skill => ({
           name: skill.name,
+          ...(skill.label === undefined ? {} : { label: skill.label }),
           // The user-only marker rides the description (the menu's only
           // secondary text); `hint` is the claim-state ghost text, not a badge.
           description: skill.modelInvocable ? skill.description : `${t('menu.userOnly')} · ${skill.description}`,
@@ -227,7 +292,13 @@ export function apply(ctx: ClientContext): void {
       // injects the rendered body for every entry point. A name shared with a
       // host command still resolves to the command: adjudication claims the
       // line client-side before it ever becomes a prompt.
+      // A Skill with a display name lands as a chip showing it; the chip's text, and so the prompt, is still /name.
+      if (candidate.label !== undefined) return { insert: skillChip(candidate.name, candidate.label) }
       return { text: `/${candidate.name} ` }
+    },
+    codec: {
+      clipboardText: ref => ref,
+      serialize: ref => Promise.resolve(ref),
     },
   }
   const inputTriggers = ctx.get('inputTriggers') as InputTriggerServiceContract

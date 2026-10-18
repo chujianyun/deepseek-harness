@@ -47,7 +47,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-source 不实现任何裁决钩子，也没有引用 codec：pick 落下字面文本，发出的提示词中也是同一段字面文本，因此确定性在宿主侧（[slash 流水线笔记](../../../.agents/notes/archived/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md)）。
+source 不实现任何裁决钩子：发出的提示词始终是字面的 `/name`，因此确定性在宿主侧（[slash 流水线笔记](../../../.agents/notes/archived/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md)）。从 Skill Hub 安装、带显示名称的 skill（通过可选的 `skillDisplayNames` 服务读取，该服务由组合了市场的 Skills 页面提供，菜单从不等待这次读取）在菜单里以显示名称为标题，pick 后落为带 `/` 标记、显示该名称的 chip；chip 的文本和 codec 的模型形式都是同一个 `/name`。其他 skill 仍落为字面文本。
 
 ### 候选流程
 

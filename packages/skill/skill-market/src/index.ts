@@ -785,6 +785,23 @@ export class SkillMarket extends TypertRemoteService {
   }
 
   /**
+   * Display names of the signed-in tenant's installed market Skills, from their install records only: no Hub request and no
+   * switching. A Skill installed before the Hub had display names, and any outside the market, is absent.
+   * @param signal - caller lifetime.
+   * @returns display name by Skill name, for Skills whose display name differs from the name.
+   */
+  @Remote
+  async displayNames(signal: AbortSignal): Promise<Readonly<Record<string, string>>> {
+    signal.throwIfAborted()
+    const names: Record<string, string> = {}
+    for (const local of (await this.records()).values()) {
+      const shown = shownName(local.displayName, local.name)
+      if (shown !== local.name) names[local.name] = shown
+    }
+    return names
+  }
+
+  /**
    * Ask the Hub about each installed market Skill of `tenantId`, and switch off the ones the platform
    * withdrew (switching back on the ones it offers again). The user's own switch is a separate list.
    */

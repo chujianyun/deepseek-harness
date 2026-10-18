@@ -178,6 +178,40 @@ describe('Market view', () => {
     }
   })
 
+  it('turns an installed card\'s badge into 使用, which closes the detail and starts a Session invoking the Skill', () => {
+    const installedSkill = (name: string, enabled: boolean) => ({ name, description: '', group: 'market' as const, source: 'market', path: `/m/${name}/SKILL.md`, enabled, withdrawn: false })
+    const { props } = pageProps({ skills: [installedSkill('pdf-tools', true), installedSkill('off-skill', false)] }, {
+      items: [
+        card('pdf-tools', { displayName: 'PDF 工具', installedVersion: '1.0.0' }),
+        card('off-skill', { installedVersion: '1.0.0' }),
+        card('new-skill', { installedVersion: '1.0.0', version: '1.1.0', updateAvailable: true }),
+        card('not-installed'),
+      ],
+      total: 4,
+    })
+    render(<MarketView {...props} onShowInstalled={() => {}} />)
+    const use = screen.getAllByRole('button', { name: /^使用 / })
+    // Only the installed, current, switched-on Skill: an off one cannot be invoked, and an outdated one offers its update.
+    expect(use.map(button => button.getAttribute('aria-label'))).toEqual(['使用 PDF 工具：开一个新会话并带上它'])
+    expect(use[0]!.textContent).toBe('使用')
+    expect(screen.getAllByText('已安装 v1.0.0')).toHaveLength(2)
+    fireEvent.click(use[0]!)
+    expect(props.onCloseDetail).toHaveBeenCalledOnce()
+    expect(props.onChat).toHaveBeenCalledWith('pdf-tools', 'PDF 工具')
+  })
+
+  it('offers 使用 beside the installed badge in the detail, and on a Skill the installed list has not read yet', () => {
+    const { props } = pageProps({ status: 'loading' }, {
+      items: [], total: 0,
+      detail: { status: 'ready', id: 'id-pdf-tools', value: { ...detail, installedVersion: '1.0.0' } },
+    })
+    render(<MarketView {...props} onShowInstalled={() => {}} />)
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('已安装 v1.0.0')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: /^使用 / }))
+    expect(props.onChat).toHaveBeenCalledWith('pdf-tools', 'pdf-tools')
+  })
+
   it('offers an update on cards and in the detail when the Hub has a newer version', () => {
     const { props } = pageProps({}, {
       items: [card('pdf-tools', { installedVersion: '1.0.0', version: '1.1.0', updateAvailable: true })], total: 1,

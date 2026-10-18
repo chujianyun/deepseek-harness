@@ -3553,6 +3553,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'one status per installed market Skill, sorted by name.',
       },
       {
+        signature: '@Remote async displayNames(signal: AbortSignal): Promise<Readonly<Record<string, string>>>',
+        description: 'Display names of the signed-in tenant\'s installed market Skills, from their install records only: no Hub request and no switching. A Skill installed before the Hub had display names, and any outside the market, is absent.',
+        parameters: [{ name: 'signal', description: 'caller lifetime.' }],
+        returns: 'display name by Skill name, for Skills whose display name differs from the name.',
+      },
+      {
         signature: 'async records(tenantId: string | undefined = this.tenantId): Promise<Map<string, MarketInstallRecord>>',
         description: 'Install records of a tenant\'s market Skills (the signed-in tenant\'s by default), keyed by Skill name.',
         parameters: [{ name: 'tenantId', description: 'the tenant whose directory to read.' }],

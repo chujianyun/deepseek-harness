@@ -49,6 +49,9 @@
     },
     {
       "path": "../../skill/skill-market"
+    },
+    {
+      "path": "../ui-skill"
     }
   ]
 }

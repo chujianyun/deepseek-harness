@@ -426,6 +426,12 @@
 :global(body[data-ds-dark-theme]) .avatar[data-tint='4'] { background: color-mix(in srgb, #B8BEDA 16%, transparent); color: #E2E5F0; }
 
 /* An installed market Skill: success-coloured state instead of a neutral tag. */
+.installedUse { display: inline-flex; flex: none; align-items: center; gap: 8px; }
+.installedUse[data-compact] { display: inline-grid; justify-items: end; }
+.installedUse[data-compact] > * { grid-area: 1 / 1; }
+.installedUse[data-compact] .use { opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
+.card:hover .installedUse[data-compact] .use, .installedUse[data-compact]:focus-within .use { opacity: 1; pointer-events: auto; }
+.card:hover .installedUse[data-compact] .installed, .installedUse[data-compact]:focus-within .installed { opacity: 0; }
 .installed { flex: none; padding: 2px 8px; border-radius: 6px; background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent); color: var(--dsw-alias-state-success-primary); font-size: 12px; line-height: 18px; white-space: nowrap; }
 
 .headerActions {
