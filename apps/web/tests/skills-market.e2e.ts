@@ -103,7 +103,35 @@ it('browses the market, installs a Skill, lists it from the market, and invokes 
     expect(await readFile(join(installedDir, 'scripts', 'run.sh'), 'utf8')).toBe('echo pdf\n')
     expect(JSON.parse(await readFile(join(installedDir, '.hub-install.json'), 'utf8'))).toMatchObject({ hubSkillId: 's-pdf', displayName: 'PDF 工具', version: '1.0.0' })
 
+    // An installed card's badge turns into Use on hover: a new Session whose draft invokes the Skill, not sent.
+    const pdfCard = page.locator('li').filter({ has: page.getByRole('button', { name: 'PDF 工具', exact: true }) })
+    await pdfCard.getByText('Installed v1.0.0').waitFor()
+    expect(await page.getByRole('button', { name: /^Use .* in a new session$/ }).count()).toBe(1)
+    await pdfCard.hover()
+    await pdfCard.getByRole('button', { name: 'Use PDF 工具 in a new session' }).click()
+    const draft = page.locator('[data-composer-input][contenteditable="true"]').first()
+    await expect.poll(async () => (await draft.textContent())?.trim()).toBe('/pdf-tools')
+    expect(events.some(event => event.type === 'user/message')).toBe(false)
+    if (shots !== undefined) {
+      for (const [locale, name] of [[ZH_BROWSER_LOCALE, 'zh'], ['en-US', 'en']] as const) {
+        for (const colorScheme of ['light', 'dark'] as const) {
+          const shot = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale, colorScheme })
+          await shot.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+          await shot.goto(scaffold.authenticatedUrl)
+          await shot.getByRole('button', { name: 'Skills', exact: true }).click()
+          const shotCard = shot.locator('li').filter({ has: shot.getByRole('button', { name: 'PDF 工具', exact: true }) })
+          await shotCard.locator('[data-installed]').waitFor()
+          await shotCard.hover()
+          await shotCard.locator('[data-use-skill]').waitFor()
+          await shot.waitForTimeout(300)
+          await shot.screenshot({ path: join(shots, `${name}-${colorScheme}-market-use.png`) })
+          await shot.close()
+        }
+      }
+    }
+
     // Installed: the market group, then chat with it.
+    await page.getByRole('button', { name: 'Skills', exact: true }).click()
     await page.getByRole('button', { name: /^Installed \(\d+\)$/ }).click()
     const marketGroup = page.getByRole('region', { name: /From the market/ })
     await marketGroup.getByText('PDF 工具').waitFor()

@@ -172,10 +172,27 @@ function MarketCard({ item, props }: { item: MarketSkillCard; props: SkillsPageP
 
 /** The + on a card, or the install button of the detail; installed and conflicting Skills cannot be installed. */
 function InstallControl({ item, props, compact = false }: { item: MarketSkillCard; props: SkillsPageProps; compact?: boolean }) {
-  const { t, useMarket, onInstall } = props
+  const { t, useMarket, useInstalled, onInstall, onChat, onCloseDetail } = props
   const installing = useMarket(snapshot => snapshot.installing.includes(item.id))
+  // A Skill switched off under 我安装的 cannot be invoked; one the installed list has not read yet still can.
+  const usable = useInstalled(snapshot => snapshot.skills.find(skill => skill.name === item.name)?.enabled ?? true)
   if (item.installedVersion !== null && !item.updateAvailable) {
-    return <span className={css.installed} data-installed="">{t('installedVersion', { version: item.installedVersion })}</span>
+    const badge = <span className={css.installed} data-installed="">{t('installedVersion', { version: item.installedVersion })}</span>
+    if (!usable) return badge
+    // 使用: a new Session whose draft invokes the Skill, not sent. On a card it takes the badge's place while the card is
+    // hovered or focused; in the detail it stands beside the badge.
+    return (
+      <span className={css.installedUse} data-compact={compact || undefined}>
+        {badge}
+        <Button size="sm" variant="primary" className={css.use} aria-label={t('useSkillAria', { name: item.displayName })} data-use-skill=""
+          onClick={() => {
+            onCloseDetail()
+            onChat(item.name)
+          }}>
+          {t('useSkill')}
+        </Button>
+      </span>
+    )
   }
   if (item.updateAvailable) {
     return (
