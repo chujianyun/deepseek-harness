@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-knowledge-base",
   "description": "Local knowledge bases for Desktop: per-tenant document collections chunked, embedded, and indexed for hybrid search",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "publishConfig": {
     "access": "public"
   },
