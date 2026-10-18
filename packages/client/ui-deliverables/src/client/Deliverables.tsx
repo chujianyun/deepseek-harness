@@ -10,7 +10,7 @@ import type { ChangesSummaryStore } from './changes-summary.ts'
 import { ChangedFiles } from './ChangedFiles.tsx'
 import { changesForClosing, presentedForClosing, type ChangesTurnData, type PresentedPath } from './turn-deliverables.ts'
 import type { NS } from './locales.ts'
-import { changesSummaryUrl, type ChangesReviewCoordinates } from '../changes.ts'
+import { changedFileUrl, changesSummaryUrl, type ChangesReviewCoordinates } from '../changes.ts'
 import { presentedFileUrl } from '../presented.ts'
 import { PresentedFileCard } from './PresentedFileCard.tsx'
 import css from './Deliverables.module.css'
@@ -66,7 +66,7 @@ export function DeliverablesTail(props: PropsRuntime<'conversation.chat.turnTail
  * @returns the closing turn's file rows.
  */
 export function Deliverables({
-  matched, openFile, t, sessionId, useSessions, openPresented, openChangesReview, usePresentedOpen, usePresentedHost,
+  matched, openFile, t, sessionId, useSessions, openPresented, openChanged, openChangesReview, usePresentedOpen, usePresentedHost,
   useChangesDiff, loadChangesDiff, useChangesSummary, reloadPresentedHost, loadChangesSummary, useShowCodeDiff, renderSlot,
 }: Pick<TurnTailOwnerProps, 'openFile'> & {
   matched: DeliverablesMatch
@@ -94,7 +94,14 @@ export function Deliverables({
   return <>
     {changes !== null && <ChangedFiles changes={changes} cwd={cwd} t={t}
       sessionId={sessionId} useChangesDiff={useChangesDiff} loadChangesDiff={loadChangesDiff}
-      openReview={(index) => { openChangesReview({ sessionId, seq: changes.seq, turn: changes.turn }, index) }} />}
+      openReview={(index) => { openChangesReview({ sessionId, seq: changes.seq, turn: changes.turn }, index) }}
+      actions={index => renderSlot('deliverables.file.actions', {
+        actionUrl: changedFileUrl(sessionId, changes.seq, index),
+        available: host !== null && host !== 'error' && host.available,
+        pending: states[changedFileUrl(sessionId, changes.seq, index)] === 'opening'
+          || states[changedFileUrl(sessionId, changes.seq, index)] === 'revealing',
+        onAction: (action, application) => openChanged(sessionId, changes.seq, index, action, application),
+      })} />}
     {matched.presented.length > 0 && <div
       className={css.root}
       data-after-changes={changes !== null || undefined}

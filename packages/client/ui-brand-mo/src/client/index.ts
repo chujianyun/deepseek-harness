@@ -4,6 +4,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-assistants/client'
 import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-deliverables/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -12,6 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { BRAND_SETTINGS_NAMESPACE } from '../quick-tasks.ts'
 import { MoBrandMark, MoWordmark } from './Brand.tsx'
 import { en, zh, type BrandLocaleKey } from './locales.ts'
+import { OpenWithMenu } from './OpenWithMenu.tsx'
 import { QuickTasks, type BrandSettings, type QuickTasksInjected } from './QuickTasks.tsx'
 import { MO_THEME_TOKENS } from './tokens.ts'
 
@@ -56,6 +58,11 @@ export function apply(ctx: ClientContext): void {
       // The assistants UI is optional and read at click time; without it there is nothing to pick.
       pickAssistant: templateId => ctx.get('assistantPicker')?.pickTemplate(templateId) ?? Promise.resolve(true),
     }
+    // "打开方式" on delivered and changed files: the enterprise Desktop mounts no Open In, so this is the only file action.
+    scope.slots.inject('deliverables.file.actions', () => scope.slots.inject('deliverables.review.file.actions', function* () {
+      yield scope.slots.register({ name: 'deliverables.file.actions', id: 'mo-open-with', locale: NS }, OpenWithMenu)
+      yield scope.slots.register({ name: 'deliverables.review.file.actions', id: 'mo-open-with', locale: NS }, OpenWithMenu)
+    }))
     scope.slots.inject('conversation.hero.dock', () => scope.slots.register({
       name: 'conversation.hero.dock', id: 'mo-quick-tasks', order: 10, locale: NS, inject: () => quickTasksFace,
     }, QuickTasks))

@@ -1,0 +1,5 @@
+# The enterprise Desktop composition for delivered files: no Open In (developer tool), so MO's "打开方式" menu is the file action.
+- id: open-in-app
+  disabled: true
+- id: ui-open-in-app
+  disabled: true

@@ -1,5 +1,6 @@
 /** Turn changes use a compact single-file card or a header with a folded file list. */
 import { useEffect, useId, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { FileTypeIcon, HoverCard, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, SessionStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
@@ -34,12 +35,14 @@ function Counts({ added, deleted, t }: { added: number; deleted: number } & Prop
  * @param props - the recorded summary, the review opener, and localized copy.
  * @returns the card.
  */
-export function ChangedFiles({ changes, cwd, openReview, t, sessionId, useChangesDiff, loadChangesDiff }: {
+export function ChangedFiles({ changes, cwd, openReview, actions, t, sessionId, useChangesDiff, loadChangesDiff }: {
   /** The served summary with the sequence of the event that announced it. */
   changes: Pick<ChangesSummary, 'files' | 'total' | 'added' | 'deleted'> & { seq: number }
   cwd: string | undefined
   /** Open the turn's review on the file at an original summary index. */
   openReview: (index: number) => void
+  /** Native file actions for the file at an original summary index (the `deliverables.file.actions` occupants). */
+  actions?: (index: number) => ReactNode
 } & PropsLocale<typeof NS> & PreviewProps) {
   const cardRef = useRef<HTMLDivElement>(null)
   const pathDescriptionId = useId()
@@ -67,16 +70,17 @@ export function ChangedFiles({ changes, cwd, openReview, t, sessionId, useChange
     </span>
   </button>
   return <div ref={cardRef} className={css.card} data-changed-files data-single={singleFile !== undefined || undefined}>
-    {singleFile === undefined ? header : <>
+    {singleFile === undefined ? header : <div className={css.headerRow}>
       <HoverCard variant="preview" widthAnchorRef={cardRef} openDelayMs={500} anchor={header}
         content={<ChangedFilePreview sessionId={sessionId} seq={changes.seq} index={0}
           display={resolveWorkspacePath(cwd, singleFile.path)} useChangesDiff={useChangesDiff}
           loadChangesDiff={loadChangesDiff} t={t} />} />
+      <span className={css.actions}>{actions?.(0)}</span>
       <span id={pathDescriptionId} hidden>{resolveWorkspacePath(cwd, singleFile.path)}</span>
-    </>}
+    </div>}
     {singleFile === undefined && <ul className={css.list}>
       {rows.map((file, index) => (
-        <li key={file.display}>
+        <li key={file.display} className={css.item}>
           <HoverCard variant="preview" widthAnchorRef={cardRef} openDelayMs={500}
             content={<ChangedFilePreview sessionId={sessionId} seq={changes.seq} index={index}
               display={resolveWorkspacePath(cwd, file.path)} useChangesDiff={useChangesDiff} loadChangesDiff={loadChangesDiff} t={t} />}
@@ -91,6 +95,7 @@ export function ChangedFiles({ changes, cwd, openReview, t, sessionId, useChange
                     : <Counts t={t} added={file.added} deleted={file.deleted} />}
               </span>
             </button>} />
+          <span className={css.actions}>{actions?.(index)}</span>
           <span id={`${pathDescriptionId}-${index}`} hidden>{resolveWorkspacePath(cwd, file.path)}</span>
         </li>
       ))}

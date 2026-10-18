@@ -123,6 +123,7 @@
     "apps/web/tests/ptc-round.e2e.ts",
     "apps/web/tests/ptc-escalation.e2e.ts",
     "apps/web/tests/present.e2e.ts",
+    "apps/web/tests/present-open-with.e2e.ts",
     "apps/web/tests/present-svg.e2e.ts",
     "apps/web/tests/composer-draft-scroll.e2e.ts",
     "apps/web/tests/composer-placeholder.e2e.ts",
